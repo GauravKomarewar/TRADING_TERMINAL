@@ -1,0 +1,109 @@
+🧭 TARGET ARCHITECTURE (FINAL)
+Internet
+ ├── https://13.201.178.26/webhook            → TradingView
+ ├── https://13.201.178.26/telegram/webhook   → Telegram Control Bot
+ └── https://13.201.178.26/health             → Monitoring
+                │
+                ▼
+              NGINX (80/443)
+                │
+                ▼
+        Flask (localhost:5000)
+        shoonya_bot.signals_processor
+
+
+✔ Flask stays non-root
+✔ Telegram HTTPS requirement satisfied
+✔ TradingView works
+✔ Secure & future-proof
+
+✅ PHASE 1 — INSTALL NGINX (ON EC2)
+
+📍 Run ALL commands on EC2 (SSH terminal)
+////////////////////////////////////////////////////////////
+sudo yum update -y
+sudo yum install nginx -y
+////////////////////////////////////////////////////////////
+
+Start & enable:
+////////////////////////////////////////////////////////////
+sudo systemctl start nginx
+sudo systemctl enable nginx
+////////////////////////////////////////////////////////////
+
+Verify:
+////////////////////////////////////////////////////////////
+curl http://localhost
+////////////////////////////////////////////////////////////
+
+You should see NGINX welcome page.
+
+Also verify externally:
+////////////////////////////////////////////////////////////
+http://13.201.178.26
+////////////////////////////////////////////////////////////
+✅ PHASE 2 — OPEN REQUIRED PORTS (VERY IMPORTANT)
+EC2 Security Group
+
+Ensure Inbound Rules allow:
+
+Type	Port	Source
+HTTP	80	0.0.0.0/0
+HTTPS	443	0.0.0.0/0
+
+⚠️ If 443 is not open → HTTPS will FAIL.
+
+✅ PHASE 3 — CONFIGURE NGINX REVERSE PROXY
+
+📍 Create config file:
+
+////////////////////////////////////////////////////////////
+sudo nano /etc/nginx/conf.d/shoonya_bot.conf
+////////////////////////////////////////////////////////////
+
+🔥 PASTE THIS EXACT CONFIG (NO EDITS YET)
+
+////////////////////////////////////////////////////////////
+server {
+    listen 80;
+    server_name 13.201.178.26;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 300;
+        proxy_send_timeout 300;
+        proxy_read_timeout 300;
+    }
+}
+////////////////////////////////////////////////////////////
+
+Save & exit.
+
+Test config:
+
+////////////////////////////////////////////////////////////
+sudo nginx -t
+////////////////////////////////////////////////////////////
+
+Reload:
+
+////////////////////////////////////////////////////////////
+sudo systemctl reload nginx
+////////////////////////////////////////////////////////////
+
+✅ TEST NOW
+
+////////////////////////////////////////////////////////////
+curl http://13.201.178.26/health
+////////////////////////////////////////////////////////////
+
+You should see JSON health response from Flask.
+
+✔ TradingView can already work now (HTTP)

@@ -1,0 +1,52 @@
+sudo systemctl daemon-reload
+sudo systemctl restart shoonya_bot
+sudo systemctl status shoonya_bot
+
+sudo journalctl -u shoonya_bot -n 100 --no-pager
+
+
+
+###paste this by doing sudo nano /etc/systemd/system/shoonya_bot.service
+
+
+
+[Unit]
+Description=shoonya_Webhook_Bot
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/shoonya
+
+# 🔑 HOME for libraries that expect it
+Environment="HOME=/home/ec2-user"
+
+# 🔐 Explicit virtualenv activation
+Environment="VIRTUAL_ENV=/home/ec2-user/shoonya/venv"
+Environment="PATH=/home/ec2-user/shoonya/venv/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ec2-user/shoonya"
+
+# 🔐 Secrets
+EnvironmentFile=/home/ec2-user/shoonya/shoonya_bot/config/credentials.env
+
+# ▶️ Execution entrypoint
+ExecStart=/home/ec2-user/shoonya/venv/bin/python -m shoonya_bot.signals_processor
+
+# 🔁 Restart rules
+Restart=always
+RestartSec=5
+
+# 📜 Logging
+StandardOutput=journal
+StandardError=journal
+
+# 🛑 Graceful shutdown (CRITICAL)
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

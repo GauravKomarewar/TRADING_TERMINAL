@@ -65,7 +65,7 @@ class Config:
     def __init__(self, env_path: Optional[Path] = None):
         # Resolve credentials.env relative to this file
         self.env_path: Path = env_path or (
-            Path(__file__).resolve().parents[2] / "env" / "primary.env"
+            Path(__file__).resolve().parents[2] / "config_env" / "primary.env"
         )
         self._load_env()
         self._load_values()

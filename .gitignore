@@ -18,6 +18,7 @@ scripts/scriptmaster_store/processed/
 # ===============================
 # Environment & secrets
 # ===============================
+config_env/
 env/
 ENV/
 venv/

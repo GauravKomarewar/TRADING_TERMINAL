@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Orderbook – Shoonya OMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root{--bg:#0a0e13;--panel:#151b26;--panel-2:#1c2333;--panel-hover:#222938;--border:#2d3548;--border-focus:#3b82f6;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--primary-hover:#2563eb;--success:#10b981;--success-bg:#10b98115;--danger:#ef4444;--warning:#f59e0b;--shadow:0 4px 6px -1px rgba(0,0,0,0.3),0 2px 4px -2px rgba(0,0,0,0.3)}*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}header{height:64px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;padding:0 24px;box-shadow:var(--shadow);position:sticky;top:0;z-index:100}.nav-left{display:flex;gap:24px;align-items:center}.brand{font-weight:700;font-size:18px;color:var(--primary);cursor:pointer;transition:color .2s}.brand:hover{color:var(--primary-hover)}.nav-link{color:var(--muted);font-size:14px;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .2s}.nav-link:hover{color:var(--text);background:var(--panel-2)}.nav-right button{background:transparent;border:1px solid var(--border);color:var(--danger);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:all .2s}.nav-right button:hover{background:var(--danger);color:#fff;border-color:var(--danger)}main{max-width:1800px;margin:0 auto;padding:24px}.section{background:var(--panel);border:1px solid var(--border);border-radius:16px;margin-bottom:24px;box-shadow:var(--shadow);overflow:hidden}.section-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}.section-title{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}.section-title::before{content:'';width:4px;height:20px;background:var(--primary);border-radius:2px}.badge{padding:4px 10px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}.badge.live{background:rgba(16,185,129,.1);border-color:var(--success);color:var(--success)}.table-container{overflow-x:auto;max-height:400px;overflow-y:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{position:sticky;top:0;background:var(--panel-2);padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;border-bottom:2px solid var(--border);white-space:nowrap;z-index:5}th.actions-col{position:sticky;left:0;background:var(--panel-2);z-index:10;box-shadow:2px 0 4px rgba(0,0,0,0.1)}td{padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap}td.actions-col{position:sticky;left:0;background:var(--panel);z-index:5;box-shadow:2px 0 4px rgba(0,0,0,0.05)}tr:hover td.actions-col{background:var(--panel-hover)}.status{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}.status.CREATED{background:rgba(245,158,11,.1);color:var(--warning);border:1px solid var(--warning)}.status.TRIGGERED{background:rgba(59,130,246,.1);color:var(--primary);border:1px solid var(--primary)}.status.EXECUTED{background:var(--success-bg);color:var(--success);border:1px solid var(--success)}.status.CANCELLED{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid var(--danger)}.status.REJECTED{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid var(--danger)}.status.PENDING{background:rgba(245,158,11,.1);color:var(--warning);border:1px solid var(--warning)}.status.COMPLETE{background:var(--success-bg);color:var(--success);border:1px solid var(--success)}.source{font-weight:600;font-size:11px;padding:2px 6px;border-radius:3px}.source.ENGINE{color:var(--primary)}.source.MANUAL{color:var(--warning)}.source.STRATEGY{color:var(--success)}.actions{display:flex;gap:6px;flex-wrap:wrap}.btn-small{padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-weight:600;transition:all .2s;border:1px solid var(--border);background:transparent;color:var(--text);white-space:nowrap}.btn-small:hover{background:var(--panel-2)}.btn-modify{color:var(--primary);border-color:var(--primary)}.btn-modify:hover{background:rgba(59,130,246,.1)}.btn-cancel{color:var(--danger);border-color:var(--danger)}.btn-cancel:hover{background:rgba(239,68,68,.1)}.empty{text-align:center;padding:40px;color:var(--muted);font-size:14px}.action-btn{padding:6px 14px;font-size:12px;border-radius:6px;cursor:pointer;font-weight:600;transition:all .2s;border:1px solid var(--border);background:var(--panel-2);color:var(--text)}.action-btn:hover{background:var(--panel-hover);border-color:var(--primary)}.danger-btn{border-color:var(--danger);color:var(--danger)}.danger-btn:hover{background:rgba(239,68,68,.1);border-color:var(--danger)}.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}.modal.active{display:flex}.modal-content{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:500px;width:90%;box-shadow:0 20px 25px -5px rgba(0,0,0,.5)}.modal-title{font-size:18px;font-weight:700;margin-bottom:16px;color:var(--text)}.modal-field{margin-bottom:16px}.modal-field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}.modal-field input,.modal-field select{width:100%;padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:8px;font-size:14px;transition:all .2s;font-family:inherit}.modal-field input:focus,.modal-field select:focus{outline:none;border-color:var(--border-focus);background:var(--panel-hover)}.modal-actions{display:flex;gap:12px;margin-top:20px}.modal-btn{flex:1;padding:10px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;transition:all .2s;border:none}.modal-btn.primary{background:linear-gradient(135deg,var(--primary) 0%,var(--primary-hover) 100%);color:#fff}.modal-btn.primary:hover{transform:translateY(-2px)}.modal-btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}.modal-btn.secondary:hover{background:var(--panel-2)}@media (max-width:768px){.nav-link{display:none}.nav-link:first-of-type{display:block}.table-container{max-height:300px}}
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-left">
+        <div class="brand" onclick="window.location.href='/dashboard/home'">⚡ Shoonya OMS</div>
+        <a class="nav-link" href="/dashboard/home">Home</a>
+        <a class="nav-link" href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
+        <a class="nav-link" href="/dashboard/web/place_order.html">Place Order</a>
+        <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
+    </div>
+    <div class="nav-right"><button onclick="logout()">Logout</button></div>
+</header>
+<main>
+    <div class="section">
+        <div class="section-header">
+            <div class="section-title">System Orders (Intent Layer)</div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="action-btn danger-btn" onclick="cancelAllSystem()">🚫 Cancel All Pending</button>
+                <button class="action-btn" onclick="exportSystemCSV()">📥 Export CSV</button>
+                <button class="action-btn" onclick="loadOrderbook()">🔄 Refresh</button>
+                <span class="badge live">● LIVE</span>
+                <span class="badge" id="systemCount">0 Orders</span>
+            </div>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="actions-col">Actions</th>
+                        <th>Created</th>
+                        <th>Updated</th>
+                        <th>Command ID</th>
+                        <th>Broker ID</th>
+                        <th>Execution</th>
+                        <th>Tag</th>
+                        <th>Source</th>
+                        <th>User</th>
+                        <th>Strategy</th>
+                        <th>Exchange</th>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th>Qty</th>
+                        <th>Product</th>
+                        <th>Order Type</th>
+                        <th>Price</th>
+                        <th>Stop Loss</th>
+                        <th>Target</th>
+                        <th>Trailing Type</th>
+                        <th>Trailing Value</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="systemRows"></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="section">
+        <div class="section-header">
+            <div class="section-title">Broker Orders (Execution Layer)</div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="action-btn danger-btn" onclick="cancelAllBroker()">🚫 Cancel All Pending</button>
+                <button class="action-btn" onclick="exportBrokerCSV()">📥 Export CSV</button>
+                <button class="action-btn" onclick="loadOrderbook()">🔄 Refresh</button>
+                <span class="badge live">● LIVE</span>
+                <span class="badge" id="brokerCount">0 Orders</span>
+            </div>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="actions-col">Actions</th>
+                        <th>Stat</th>
+                        <th>Noren Order No</th>
+                        <th>User ID</th>
+                        <th>Account ID</th>
+                        <th>Exchange</th>
+                        <th>Trading Symbol</th>
+                        <th>Token</th>
+                        <th>Tran Type</th>
+                        <th>Qty</th>
+                        <th>Product</th>
+                        <th>Price Type</th>
+                        <th>Price</th>
+                        <th>Trigger Price</th>
+                        <th>Retention</th>
+                        <th>Status</th>
+                        <th>Report Type</th>
+                        <th>Fill Shares</th>
+                        <th>Avg Price</th>
+                        <th>Cancel Qty</th>
+                        <th>Disclosed Qty</th>
+                        <th>Exchange Order ID</th>
+                        <th>Noren Time</th>
+                        <th>Exchange Time</th>
+                        <th>Remarks</th>
+                        <th>Rejection Reason</th>
+                        <th>Book Profit Price</th>
+                        <th>Book Loss Price</th>
+                        <th>Trail Price</th>
+                        <th>AMO</th>
+                    </tr>
+                </thead>
+                <tbody id="brokerRows"></tbody>
+            </table>
+        </div>
+    </div>
+</main>
+<div class="modal" id="modifyModal">
+    <div class="modal-content">
+        <div class="modal-title">Modify Order</div>
+        <div class="modal-field">
+            <label>Order Type</label>
+            <select id="modifyType">
+                <option>MARKET</option>
+                <option>LIMIT</option>
+            </select>
+        </div>
+        <div class="modal-field">
+            <label>Price</label>
+            <input id="modifyPrice" type="number" step="0.05" placeholder="Enter price">
+        </div>
+        <div class="modal-field">
+            <label>Quantity</label>
+            <input id="modifyQty" type="number" min="1" placeholder="Enter quantity">
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn secondary" onclick="closeModify()">Cancel</button>
+            <button class="modal-btn primary" onclick="submitModify()">Update Order</button>
+        </div>
+    </div>
+</div>
+<script>
+let timer=null,currentModifyId=null,currentModifyType=null,systemOrdersCache=[],brokerOrdersCache=[];async function logout(){await fetch('/auth/logout',{method:'POST'});window.location.href='/';}async function loadOrderbook(){try{const res=await fetch('/dashboard/orderbook');const data=await res.json();systemOrdersCache=data.system_orders||[];brokerOrdersCache=data.broker_orders||[];renderSystemOrders(systemOrdersCache);renderBrokerOrders(brokerOrdersCache)}catch(err){console.error('Load failed:',err)}}function renderSystemOrders(orders){const tbody=document.getElementById('systemRows');systemCount.textContent=`${orders.length} Orders`;if(!orders.length){tbody.innerHTML='<tr><td colspan="22" class="empty">No system orders</td></tr>';return}tbody.innerHTML=orders.map(o=>`<tr><td class="actions-col"><div class="actions">${o.status==='CREATED'||o.status==='TRIGGERED'?`<button class="btn-small btn-modify" onclick="openModify('${o.command_id}','system')">Modify</button><button class="btn-small btn-cancel" onclick="cancelOrder('${o.command_id}','system')">Cancel</button>`:'<span style="color:var(--muted);font-size:11px">-</span>'}</div></td><td style="color:var(--muted);font-size:11px">${formatTime(o.created_at)}</td><td style="color:var(--muted);font-size:11px">${formatTime(o.updated_at)}</td><td style="font-weight:600;font-size:12px">${o.command_id}</td><td style="color:var(--muted);font-size:11px">${o.broker_order_id||'-'}</td><td style="font-weight:600;color:var(--primary)">${o.execution_type}</td><td style="color:var(--muted);font-size:11px">${o.tag||'-'}</td><td><span class="source ${o.source}">${o.source}</span></td><td style="color:var(--muted)">${o.user||'-'}</td><td style="color:var(--muted)">${o.strategy_name||'-'}</td><td>${o.exchange}</td><td style="font-weight:600">${o.symbol}</td><td style="color:${o.side==='BUY'?'var(--success)':'var(--danger)'}">${o.side}</td><td>${o.quantity}</td><td>${o.product||'-'}</td><td>${o.order_type||'-'}</td><td>${o.price!=null?o.price.toFixed(2):'-'}</td><td style="color:var(--danger)">${o.stop_loss!=null?o.stop_loss.toFixed(2):'-'}</td><td style="color:var(--success)">${o.target!=null?o.target.toFixed(2):'-'}</td><td style="font-size:11px">${o.trailing_type||'-'}</td><td style="font-size:11px">${o.trailing_value!=null?o.trailing_value.toFixed(2):'-'}</td><td><span class="status ${o.status}">${o.status}</span></td></tr>`).join('')}function renderBrokerOrders(orders){const tbody=document.getElementById('brokerRows');brokerCount.textContent=`${orders.length} Orders`;if(!orders.length){tbody.innerHTML='<tr><td colspan="30" class="empty">No broker orders</td></tr>';return}tbody.innerHTML=orders.map(o=>`<tr><td class="actions-col"><div class="actions">${o.status==='OPEN'||o.status==='PENDING'?`<button class="btn-small btn-modify" onclick="openModify('${o.norenordno}','broker')">Modify</button><button class="btn-small btn-cancel" onclick="cancelOrder('${o.norenordno}','broker')">Cancel</button>`:'<span style="color:var(--muted);font-size:11px">-</span>'}</div></td><td><span class="status ${o.stat==='Ok'?'COMPLETE':'REJECTED'}">${o.stat||'-'}</span></td><td style="font-weight:600;font-size:12px">${o.norenordno||'-'}</td><td style="color:var(--muted);font-size:11px">${o.uid||'-'}</td><td style="color:var(--muted);font-size:11px">${o.actid||'-'}</td><td>${o.exch||'-'}</td><td style="font-weight:600">${o.tsym||'-'}</td><td style="color:var(--muted);font-size:11px">${o.token||'-'}</td><td style="color:${o.trantype==='B'?'var(--success)':'var(--danger)'}">${o.trantype==='B'?'BUY':'SELL'}</td><td>${o.qty||'-'}</td><td>${o.prd||'-'}</td><td>${o.prctyp||'-'}</td><td>${o.prc?parseFloat(o.prc).toFixed(2):'-'}</td><td style="color:var(--warning)">${o.trgprc?parseFloat(o.trgprc).toFixed(2):'-'}</td><td>${o.ret||'-'}</td><td><span class="status ${o.status}">${o.status||'-'}</span></td><td style="font-size:11px">${o.reporttype||o.rpt||'-'}</td><td style="font-weight:600;color:var(--primary)">${o.fillshares||'0'}</td><td style="font-weight:600">${o.avgprc?parseFloat(o.avgprc).toFixed(2):'-'}</td><td>${o.cancelqty||'-'}</td><td>${o.dscqty||'-'}</td><td style="color:var(--muted);font-size:11px">${o.exchordid||'-'}</td><td style="color:var(--muted);font-size:11px">${o.norentm||'-'}</td><td style="color:var(--muted);font-size:11px">${o.exch_tm||'-'}</td><td style="font-size:11px">${o.remarks||'-'}</td><td style="color:var(--danger);font-size:11px">${o.rejreason||'-'}</td><td style="color:var(--success)">${o.bpprc?parseFloat(o.bpprc).toFixed(2):'-'}</td><td style="color:var(--danger)">${o.blprc?parseFloat(o.blprc).toFixed(2):'-'}</td><td>${o.trailprc?parseFloat(o.trailprc).toFixed(2):'-'}</td><td>${o.amo||'-'}</td></tr>`).join('')}function formatTime(ts){if(!ts)return'-';const d=new Date(ts);return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}function openModify(id,type){currentModifyId=id;currentModifyType=type;modifyModal.classList.add('active')}function closeModify(){modifyModal.classList.remove('active');currentModifyId=null;currentModifyType=null;modifyType.value='MARKET';modifyPrice.value='';modifyQty.value=''}async function submitModify(){if(!currentModifyId||!currentModifyType)return;const payload={order_id:currentModifyId,order_type:modifyType.value,price:modifyType.value==='LIMIT'?Number(modifyPrice.value):null,quantity:modifyQty.value?Number(modifyQty.value):null};try{const endpoint=currentModifyType==='system'?'/dashboard/orders/modify/system':'/dashboard/orders/modify/broker';const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(res.ok){closeModify();loadOrderbook()}else{alert('Modify failed')}}catch(err){alert('Modify error')}}async function cancelOrder(id,type){if(!confirm(`Cancel this ${type} order?`))return;try{const endpoint=type==='system'?'/dashboard/orders/cancel/system':'/dashboard/orders/cancel/broker';const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:id})});if(res.ok){loadOrderbook()}else{alert('Cancel failed')}}catch(err){alert('Cancel error')}}async function cancelAllSystem(){const pending=systemOrdersCache.filter(o=>o.status==='CREATED'||o.status==='TRIGGERED');if(!pending.length){alert('No pending system orders');return}if(!confirm(`Cancel ${pending.length} pending system orders?`))return;try{const res=await fetch('/dashboard/orders/cancel/system/all',{method:'POST',headers:{'Content-Type':'application/json'}});const data=await res.json();alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);loadOrderbook()}catch(err){alert('Cancel all failed')}}async function cancelAllBroker(){const pending=brokerOrdersCache.filter(o=>o.status==='OPEN'||o.status==='PENDING');if(!pending.length){alert('No pending broker orders');return}if(!confirm(`Cancel ${pending.length} pending broker orders?`))return;try{const res=await fetch('/dashboard/orders/cancel/broker/all',{method:'POST',headers:{'Content-Type':'application/json'}});const data=await res.json();alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);loadOrderbook()}catch(err){alert('Cancel all failed')}}function exportSystemCSV(){if(!systemOrdersCache.length){alert('No data to export');return}const headers=['Created','Updated','Command ID','Broker ID','Execution','Tag','Source','User','Strategy','Exchange','Symbol','Side','Qty','Product','Order Type','Price','Stop Loss','Target','Trailing Type','Trailing Value','Status'];const rows=systemOrdersCache.map(o=>[o.created_at||'',o.updated_at||'',o.command_id||'',o.broker_order_id||'',o.execution_type||'',o.tag||'',o.source||'',o.user||'',o.strategy_name||'',o.exchange||'',o.symbol||'',o.side||'',o.quantity||'',o.product||'',o.order_type||'',o.price||'',o.stop_loss||'',o.target||'',o.trailing_type||'',o.trailing_value||'',o.status||'']);downloadCSV('system_orders.csv',[headers,...rows])}function exportBrokerCSV(){if(!brokerOrdersCache.length){alert('No data to export');return}const headers=['Stat','Noren Order No','UID','Account ID','Exchange','Symbol','Token','Tran Type','Qty','Product','Price Type','Price','Trigger Price','Retention','Status','Report Type','Fill Shares','Avg Price','Cancel Qty','Disclosed Qty','Exchange Order ID','Noren Time','Exchange Time','Remarks','Rejection Reason','Book Profit','Book Loss','Trail Price','AMO'];const rows=brokerOrdersCache.map(o=>[o.stat||'',o.norenordno||'',o.uid||'',o.actid||'',o.exch||'',o.tsym||'',o.token||'',o.trantype||'',o.qty||'',o.prd||'',o.prctyp||'',o.prc||'',o.trgprc||'',o.ret||'',o.status||'',o.reporttype||o.rpt||'',o.fillshares||'',o.avgprc||'',o.cancelqty||'',o.dscqty||'',o.exchordid||'',o.norentm||'',o.exch_tm||'',o.remarks||'',o.rejreason||'',o.bpprc||'',o.blprc||'',o.trailprc||'',o.amo||'']);downloadCSV('broker_orders.csv',[headers,...rows])}function downloadCSV(filename,data){const csv=data.map(row=>row.map(cell=>typeof cell==='string'&&cell.includes(',')?`"${cell}"`:cell).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url)}window.onload=()=>{loadOrderbook();timer=setInterval(loadOrderbook,3000)};window.onbeforeunload=()=>{if(timer)clearInterval(timer)};
+</script>
+</body>
+</html>

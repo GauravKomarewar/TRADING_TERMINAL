@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Option Chain – Shoonya OMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root{--bg:#0a0e13;--panel:#151b26;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444;--warning:#f59e0b}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+        header{height:64px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;padding:0 24px;position:sticky;top:0;z-index:100}
+        .nav-left{display:flex;gap:24px;align-items:center}
+        .brand{font-weight:700;font-size:18px;color:var(--primary);cursor:pointer}
+        .nav-link{color:var(--muted);font-size:14px;text-decoration:none;padding:8px 12px;border-radius:6px}
+        .nav-link:hover{color:var(--text);background:#1c2333}
+        main{max-width:1800px;margin:0 auto;padding:24px}
+        .controls{display:flex;gap:16px;margin-bottom:24px;background:var(--panel);padding:16px;border-radius:12px;border:1px solid var(--border)}
+        select, input{padding:8px 12px;background:#1c2333;border:1px solid var(--border);color:#fff;border-radius:6px}
+        .oc-grid{display:grid;grid-template-columns:1fr;gap:2px;background:var(--border);border:1px solid var(--border)}
+        .oc-row{display:grid;grid-template-columns:repeat(11, 1fr);background:var(--panel);text-align:center;font-size:12px}
+        .oc-header{font-weight:700;background:#1c2333;color:var(--muted);text-transform:uppercase;font-size:10px;padding:8px 0}
+        .oc-cell{padding:10px 4px;border-right:1px solid var(--border)}
+        .strike{background:#1c2333;font-weight:700;color:var(--primary)}
+        .call{background:rgba(16,185,129,0.02)}
+        .put{background:rgba(239,68,68,0.02)}
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-left">
+        <div class="brand" onclick="window.location.href='/dashboard/home'">⚡ Shoonya OMS</div>
+        <a class="nav-link" href="/dashboard/home">Home</a>
+        <a class="nav-link" href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
+        <a class="nav-link" href="/dashboard/web/place_order.html">Place Order</a>
+        <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
+    </div>
+</header>
+<main>
+    <div class="controls">
+        <select id="symbol"><option selected>NIFTY</option><option>BANKNIFTY</option><option>FINNIFTY</option></select>
+        <select id="expiry"></select>
+        <button onclick="loadChain()" style="background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">Refresh</button>
+    </div>
+    <div class="oc-grid" id="chainGrid">
+        <!-- Headers -->
+        <div class="oc-row oc-header">
+            <div class="oc-cell">OI</div><div class="oc-cell">Chg OI</div><div class="oc-cell">Vol</div><div class="oc-cell">IV</div><div class="oc-cell">LTP</div>
+            <div class="oc-cell strike">STRIKE</div>
+            <div class="oc-cell">LTP</div><div class="oc-cell">IV</div><div class="oc-cell">Vol</div><div class="oc-cell">Chg OI</div><div class="oc-cell">OI</div>
+        </div>
+        <div id="rows"></div>
+    </div>
+</main>
+<script>
+    async function loadExpiries(){
+        const res = await fetch(`/dashboard/symbols/expiries?exchange=NFO&symbol=${symbol.value}`, { credentials: 'include' });
+        if (!res.ok) { expiry.innerHTML = ''; return; }
+        const expiries = await res.json();
+        if (!Array.isArray(expiries) || expiries.length === 0) {
+            expiry.innerHTML = '';
+            return;
+        }
+        // Server returns sorted expiries; pick the latest by default
+        expiry.innerHTML = expiries.map(e => `<option value="${e}">${e}</option>`).join('');
+        expiry.value = expiries[expiries.length - 1];
+        loadChain();
+    }
+    async function loadChain(){
+        const res = await fetch(`/dashboard/option-chain?exchange=NFO&symbol=${symbol.value}&expiry=${expiry.value}`, { credentials: 'include' });
+        const data = await res.json();
+        rows.innerHTML = data.rows.map(r => `
+            <div class="oc-row">
+                <div class="oc-cell call">${r.ce_oi || 0}</div>
+                <div class="oc-cell call">${r.ce_oi_change || 0}</div>
+                <div class="oc-cell call">${r.ce_volume || 0}</div>
+                <div class="oc-cell call">${r.ce_iv || '-'}</div>
+                <div class="oc-cell call" style="font-weight:700">${r.ce_lp || 0}</div>
+                <div class="oc-cell strike">${r.strike}</div>
+                <div class="oc-cell put" style="font-weight:700">${r.pe_lp || 0}</div>
+                <div class="oc-cell put">${r.pe_iv || '-'}</div>
+                <div class="oc-cell put">${r.pe_volume || 0}</div>
+                <div class="oc-cell put">${r.pe_oi_change || 0}</div>
+                <div class="oc-cell put">${r.pe_oi || 0}</div>
+            </div>
+        `).join('');
+    }
+    symbol.onchange = loadExpiries;
+    // Ensure defaults on load: NFO / NIFTY / latest expiry
+    window.onload = function(){
+        try { symbol.value = 'NIFTY'; } catch(e){}
+        loadExpiries();
+    };
+</script>
+</body>
+</html>

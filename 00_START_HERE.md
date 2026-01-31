@@ -1,5 +1,6 @@
 # 📚 SHOONYA PLATFORM - COMPLETE DOCUMENTATION INDEX
-
+first run once this file only when new installation of system.
+/shoonya_platform/bootstrap.py
 ## 📋 All Documentation Files Created
 
 I've created **6 comprehensive documentation files** analyzing the complete order execution architecture of the Shoonya Platform.

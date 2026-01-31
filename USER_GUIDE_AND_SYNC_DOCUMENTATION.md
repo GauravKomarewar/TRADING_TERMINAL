@@ -27,7 +27,7 @@
 ```bash
 # Clone the repo
 git clone https://github.com/GauravKomarewar/TRADING_TERMINAL.git
-cd TRADING_TERMINAL
+cd shoonya_platform
 
 # Create virtual environment
 python -m venv env

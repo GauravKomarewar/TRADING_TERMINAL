@@ -90,11 +90,26 @@ def main() -> None:
     print(f"📂 Project directory: {PROJECT_ROOT}")
 
     # -------------------------------------------------------------------------
+    # ENSURE REQUIRED WHEEL EXISTS (DOWNLOAD IF MISSING)
+    # -------------------------------------------------------------------------
+    if not WHEEL_PATH.exists():
+        print("📦 Required wheel not found locally.")
+        print(f"⬇️ Downloading from GitHub Releases:\n   {WHEEL_URL}")
+
+        WHEEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        urlretrieve(WHEEL_URL, WHEEL_PATH)
+
+        print("✅ Download complete")
+
+    else:
+        print("ℹ️ Required wheel already present")
+
+    # -------------------------------------------------------------------------
     # SAFETY: refuse to run inside an existing virtual environment
     # -------------------------------------------------------------------------
     if os.environ.get("VIRTUAL_ENV"):
         print("❌ ERROR: Do NOT run this script inside an active virtualenv.")
-        print("👉 Deactivate it first, then re-run setup.py")
+        print("👉 Deactivate it first, then re-run bootstrap.py")
         sys.exit(1)
 
     # -------------------------------------------------------------------------
@@ -142,21 +157,6 @@ def main() -> None:
 
     print("📥 Installing Python dependencies...")
     run([str(pip), "install", "-r", str(REQUIREMENTS_FILE)])
-
-    # -------------------------------------------------------------------------
-    # ENSURE REQUIRED WHEEL EXISTS (DOWNLOAD IF MISSING)
-    # -------------------------------------------------------------------------
-    if not WHEEL_PATH.exists():
-        print("📦 Required wheel not found locally.")
-        print(f"⬇️ Downloading from GitHub Releases:\n   {WHEEL_URL}")
-
-        WHEEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        urlretrieve(WHEEL_URL, WHEEL_PATH)
-
-        print("✅ Download complete")
-
-    else:
-        print("ℹ️ Required wheel already present")
 
     # -------------------------------------------------------------------------
     # INSTALL WHEEL

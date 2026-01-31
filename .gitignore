@@ -1,69 +1,61 @@
-
-# Virtual Environments
-env/
-venv/
-ENV/
-.venv/
-
-# Environment files
-*.env
-.env.local
-credentials.json
-
-# Python cache & compiled
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-.pyc
-
-# IDE & Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
-
-# Testing & Coverage
+# ===============================
+# Runtime logs & caches
+# ===============================
+logs/
 .pytest_cache/
+__pycache__/
+
+# ===============================
+# Runtime-generated market & DB data
+# ===============================
+shoonya_platform/market_data/option_chain/data/
+shoonya_platform/persistence/data/
+
+scripts/scriptmaster_store/
+scripts/scriptmaster_store/raw/
+scripts/scriptmaster_store/processed/
+
+# ===============================
+# Environment & secrets
+# ===============================
+env/
+ENV/
+venv/
+.venv/
+.env*
+credentials.json
+cookies.txt
+
+# ===============================
+# Installers / binary artifacts
+# ===============================
+python-3.9.13-amd64.exe
+requirements/*.whl
+
+# ===============================
+# Compiled / native artifacts
+# ===============================
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# ===============================
+# Test / coverage artifacts
+# ===============================
 .coverage
 htmlcov/
 .tox/
 .hypothesis/
 
-# Logs & Temp Files
-logs/
-*.log
-*.err
-cookies.txt
-
-# Backup files
-*.bak
-*.backup
-*~
-
-# OS files
+# ===============================
+# OS / Editor noise
+# ===============================
 .DS_Store
-.AppleDouble
-.LSOverride
 Thumbs.db
 desktop.ini
 
+.vscode/
+.idea/
+*.swp
+*.swo

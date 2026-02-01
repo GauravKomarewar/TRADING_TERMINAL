@@ -4,9 +4,7 @@ import os
 from pathlib import Path
 
 _DB_LOCK = threading.Lock()
-# Use workspace-relative path if the default path doesn't exist
 _DB_PATH = "/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data/orders.db"
-_DB_PATH = os.environ.get("SHOONYA_ORDERS_DB", _DB_PATH)
 
 # Ensure parent directory exists
 db_parent = Path(_DB_PATH).parent
@@ -21,8 +19,10 @@ def get_connection():
             check_same_thread=False
         )
         conn.row_factory = sqlite3.Row
+        
         # Ensure minimal schema exists for tests and runtime
         try:
+            # Create orders table
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orders (
@@ -63,6 +63,7 @@ def get_connection():
             try:
                 indexes = conn.execute("PRAGMA index_list('orders')").fetchall()
                 need_migrate = False
+                
                 for idx in indexes:
                     if idx[2] == 1:  # unique flag
                         idx_name = idx[1]
@@ -132,11 +133,30 @@ def get_connection():
                     )
                     conn.execute("DROP TABLE orders_old")
                     conn.commit()
+                    
             except Exception:
                 # Migration best-effort; fall back to existing table
                 conn.rollback()
+
+            # Ensure control_intents table exists (dashboard control plane)
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS control_intents (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        type TEXT NOT NULL,
+                        payload TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'PENDING',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                
         except Exception:
             # Best-effort: if schema creation fails, tests will report error
-            pass
+            conn.rollback()
 
         return conn

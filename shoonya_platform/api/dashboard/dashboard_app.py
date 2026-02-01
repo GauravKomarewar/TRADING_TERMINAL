@@ -45,7 +45,7 @@ import os
 from pathlib import Path
 
 # Absolute, production-safe env path
-ENV_FILE = Path(__file__).resolve().parents[3] / "env" / "primary.env"
+ENV_FILE = Path(__file__).resolve().parents[3] / "config_env" / "primary.env"
 
 if not ENV_FILE.exists():
     raise RuntimeError(f"ENV file not found: {ENV_FILE}")

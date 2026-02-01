@@ -2,6 +2,14 @@
 """
 Shoonya Dashboard – Clean Runtime Utility
 =========================================
+run in terminal
+chmod +x /home/ec2-user/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py
+
+sudo ln -sf \
+/home/ec2-user/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py \
+/usr/local/bin/shoonya-clean
+
+now use anywhere just by entering "shoonya-clean" in terminal done.
 
 This script performs a clean runtime reset for the dashboard by:
 1. Removing all __pycache__ directories

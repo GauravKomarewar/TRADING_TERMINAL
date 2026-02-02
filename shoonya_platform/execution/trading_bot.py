@@ -108,42 +108,68 @@ class ShoonyaBot:
     """Main trading bot class with integrated Telegram notifications"""
     
     def __init__(self, config: Optional[Config] = None):
-        """Initialize the Shoonya trading bot"""
+        """Initialize the Shoonya trading bot (PRODUCTION)"""
         logger.critical("🔥 ShoonyaBot INIT STARTED")
 
+        # -------------------------------------------------
+        # 🔧 CORE CONFIG
+        # -------------------------------------------------
         self.config = config or Config()
 
-        # 🔒(copy-trading ready, NO behavior change) 🔥
         # 🔒 Canonical client identity (SINGLE SOURCE OF TRUTH)
+        # (copy-trading ready, NO behavior change)
         self.client_identity = self.config.get_client_identity()
         self.client_id = self.client_identity["client_id"]
 
         self.trade_records: List[TradeRecord] = []
 
-        
-        # Initialize Shoonya API
-        self.api = ShoonyaClient(self.config)
+        # -------------------------------------------------
+        # 🔌 BROKER CLIENT (LAZY LOGIN)
+        # -------------------------------------------------
         # 🔒 Login is enforced lazily via _ensure_login()
+        self.api = ShoonyaClient(self.config)
 
-        # Initialize Supreme Risk Manager (capital protection layer)
-        self.risk_manager = SupremeRiskManager(self)
+        # -------------------------------------------------
+        # 📦 PERSISTENCE (POSITION / ORDER SOURCE OF TRUTH)
+        # -------------------------------------------------
+        self.order_repo = OrderRepository(client_id=self.client_id)
+
+        # -------------------------------------------------
+        # 🚨 SINGLE EXIT AUTHORITY(POSITION-DRIVEN) (MUST BE INITIALIZED FIRST)
+        # -------------------------------------------------
+        # 🔒 ALL exits (risk / manual / dashboard / recovery)
+        # 🔒 MUST flow through OrderWatcherEngine ONLY
+        self.order_watcher = OrderWatcherEngine(self)
+
+        # -------------------------------------------------
+        # 🛡 EXECUTION & COMMAND LAYER
+        # -------------------------------------------------
         self.execution_guard = ExecutionGuard()
+
+        # ⚠️ CommandService DEPENDS on order_watcher
         self.command_service = CommandService(self)
 
-        # ------------------------------
-        # COMMAND STATE
-        # ------------------------------
+        # -------------------------------------------------
+        # 🧠 RISK MANAGER (INTENT ONLY – NO DIRECT ORDERS)
+        # -------------------------------------------------
+        self.risk_manager = SupremeRiskManager(self)
+
+        # -------------------------------------------------
+        # 🧾 COMMAND STATE
+        # -------------------------------------------------
         self.pending_commands = []
         self._cmd_lock = threading.Lock()
 
-        # Initialize Telegram (optional)
+        # -------------------------------------------------
+        # 📢 TELEGRAM (OPTIONAL, NON-BLOCKING)
+        # -------------------------------------------------
         self.telegram_enabled = self.config.is_telegram_enabled()
         if self.telegram_enabled:
             try:
                 telegram_config = self.config.get_telegram_config()
                 self.telegram = TelegramNotifier(
-                    telegram_config['bot_token'],
-                    telegram_config['chat_id']
+                    telegram_config["bot_token"],
+                    telegram_config["chat_id"],
                 )
                 logger.info("Telegram integration enabled")
             except Exception as e:
@@ -154,26 +180,25 @@ class ShoonyaBot:
             self.telegram = None
             logger.warning("Telegram configuration missing - notifications disabled")
 
-        self.order_repo = OrderRepository(client_id=self.client_id)
-
-        self._live_strategies = {}   # strategy_name -> (strategy, market)        
-        # ------------------------------
-        # WATCHER STATE
-        # ------------------------------
-        self.start_order_watcher()
-        
         # -------------------------------------------------
-        # ♻️ PHASE-2 RECOVERY (SAFE)
+        # 📈 STRATEGY REGISTRY
+        # -------------------------------------------------
+        self._live_strategies = {}  # strategy_name -> (strategy, market)
+
+        # -------------------------------------------------
+        # ♻️ PHASE-2 RECOVERY (SAFE, NON-ACTIVE)
         # -------------------------------------------------
         RecoveryBootstrap(self).run()
 
         # -------------------------------------------------
-        # 🧭 DASHBOARD CONTROL INTENT CONSUMERS
+        # 🧭 DASHBOARD / API CONTROL CONSUMERS
         # -------------------------------------------------
         self._shutdown_event = threading.Event()
         self.start_control_intent_consumers()
-        
-        # Start scheduler
+
+        # -------------------------------------------------
+        # ⏱ SCHEDULER
+        # -------------------------------------------------
         self.start_scheduler()
 
 
@@ -189,6 +214,7 @@ class ShoonyaBot:
         self._live_strategies[strategy_name] = (strategy, market)
         logger.info(f"📡 Registered live strategy for reporting: {strategy_name}")
 
+  
     # ==================================================
     # STRATEGY LIFECYCLE WRAPPERS (called by consumers)
     # ==================================================

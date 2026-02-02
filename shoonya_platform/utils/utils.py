@@ -61,8 +61,16 @@ def setup_logging(log_file: str = 'webhook_bot.log',
     file_handler.setLevel(numeric_level)
     file_handler.setFormatter(formatter)
 
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Console handler (wrap stdout to ensure UTF-8 with safe error handling)
+    try:
+        import io
+        console_stream = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+        )
+    except Exception:
+        console_stream = sys.stdout
+
+    console_handler = logging.StreamHandler(console_stream)
     console_handler.setLevel(numeric_level)
     console_handler.setFormatter(formatter)
 

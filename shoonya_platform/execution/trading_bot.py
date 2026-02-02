@@ -305,19 +305,28 @@ class ShoonyaBot:
         except Exception:
             logger.exception("Strategy ADJUST failed | %s", strategy_name)
 
-    def request_exit(self, strategy_name: str):
-        """Trigger a graceful EXIT for a registered strategy."""
-        try:
-            strategy, market = self._live_strategies[strategy_name]
-        except KeyError:
-            logger.error("Request EXIT failed: strategy not registered: %s", strategy_name)
-            raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
-
-        try:
-            intents = strategy.force_exit() or []
-            self._process_strategy_intents(strategy_name, strategy, market, intents, force_exit=True)
-        except Exception:
-            logger.exception("Strategy EXIT failed | %s", strategy_name)
+    def request_exit(
+        self,
+        *,
+        scope,
+        symbols=None,
+        product_type="ALL",
+        reason,
+        source,
+    ):
+        """
+        Route EXIT intent to CommandService for position-driven execution.
+        
+        Never constructs orders directly.
+        PositionExitService handles all exit logic (broker-driven).
+        """
+        self.command_service.handle_exit_intent(
+            scope=scope,
+            symbols=symbols,
+            product_type=product_type,
+            reason=reason,
+            source=source,
+        )
 
     def request_force_exit(self, strategy_name: str):
         """Trigger an immediate force-exit for a registered strategy."""
@@ -496,52 +505,6 @@ class ShoonyaBot:
             ):
                 return True
         return False
-
-    def request_exit(
-        self,
-        *,
-        symbol: str,
-        exchange: str,
-        quantity: int,
-        side: str,
-        product_type: str,
-        reason: str,
-        source: str = "SYSTEM",
-    ):
-        """
-        Register an EXIT intent.
-        Actual execution is handled ONLY by OrderWatcherEngine.
-        """
-
-        logger.critical(
-            "EXIT REQUEST | %s | %s %s qty=%s | reason=%s",
-            exchange,
-            symbol,
-            side,
-            quantity,
-            reason,
-        )
-
-        order_params = {
-            "exchange": exchange,
-            "symbol": symbol,
-            "quantity": quantity,
-            "side": side,
-            "product": product_type,
-            "order_type": "MARKET",   
-            "price": None,        # 🔒 intentionally unset
-        }
-
-        exit_cmd = UniversalOrderCommand.from_order_params(
-            order_params={
-                **order_params,
-                "strategy_name": "__RISK__",   # 🔒 canonical RMS strategy
-            },
-            source="ENGINE",
-            user="SYSTEM",
-        )
-
-        self.command_service.register(exit_cmd)   # NOT submit()
 
     def start_control_intent_consumers(self):
         """

@@ -480,7 +480,7 @@ class ShoonyaClient(NorenApi):
         Returns:
             OrderResult with success status and error details
         """
-        MAX_ATTEMPTS = 2  # 🔥 FIX: Hard limit on retries
+        MAX_ATTEMPTS = 3  # 🔥 FIX: Hard limit on retries (allow one extra attempt)
         
         # -------------------------------------------------
         # SESSION CHECK (FAST FAIL)
@@ -514,30 +514,36 @@ class ShoonyaClient(NorenApi):
                     return OrderResult.from_api_response(response)
 
                 # Empty response on first attempt
-                if attempt == 1:
-                    logger.warning(
-                        "EMPTY_RESPONSE | place_order attempt %d/%d | "
-                        "attempting session recovery",
-                        attempt, MAX_ATTEMPTS
+                # Log and attempt recovery on empty response
+                logger.warning(
+                    "EMPTY_RESPONSE | place_order attempt %d/%d",
+                    attempt, MAX_ATTEMPTS
+                )
+
+                # First recover session then exponential backoff and retry
+                with self._api_lock:
+                    self._logged_in = False
+
+                if not self.login():
+                    # If login failed, short-circuit with explicit error
+                    return OrderResult(
+                        success=False,
+                        error_message="SESSION_RECOVERY_FAILED"
                     )
-                    
-                    # 🔥 FIX: Thread-safe session reset
-                    with self._api_lock:
-                        self._logged_in = False
-                    
-                    if not self.login():
-                        return OrderResult(
-                            success=False,
-                            error_message="SESSION_RECOVERY_FAILED"
-                        )
-                    
-                    # Continue to retry
+
+                # Backoff before next retry (1s, 2s, ...)
+                if attempt < MAX_ATTEMPTS:
+                    try:
+                        import time as _time
+                        _time.sleep(1 * attempt)
+                    except Exception:
+                        pass
                     continue
                 
                 # Second attempt also failed
                 logger.critical(
-                    "ORDER_REJECTED | empty response after retry | params=%s",
-                    params
+                    "ORDER_REJECTED | empty response after %d attempts | params=%s",
+                    MAX_ATTEMPTS, params
                 )
                 return OrderResult(
                     success=False,

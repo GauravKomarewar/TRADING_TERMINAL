@@ -166,153 +166,47 @@ class SupremeRiskManager:
 
     def emergency_exit_all(self, reason: str = "RISK_VIOLATION"):
         """
-        🚨 GUARANTEED EXIT using OFFICIAL NorenApi parameters.
+        🚨 GUARANTEE EXIT THROUGH POSITION-DRIVEN OMS.
         
-        ✅ Uses exact parameter names from NorenApi.place_order():
-           - exchange (NOT "exch")
-           - tradingsymbol (NOT "symbol")  
-           - buy_or_sell (NOT "side")
-           - product_type (NOT "product")
-           - price_type (NOT "order_type")
+        Risk manager ONLY DECIDES.
+        PositionExitService EXECUTES.
+        
+        This is a deterministic, non-ambiguous exit path:
+        - No qty logic here (broker supplies it)
+        - No symbol assumptions (position book drives it)
+        - Only route the decision, don't execute
         """
         logger.critical(
             f"🚨 EMERGENCY EXIT INITIATED | reason={reason} | "
-            f"DIRECT BROKER EXECUTION"
+            f"ROUTING TO POSITION_EXIT_SERVICE"
         )
 
         try:
-            self.bot._ensure_login()
-            positions = self.bot.api.get_positions() or []
-
-            exit_count = 0
-            failed_exits = []
-
-            for pos in positions:
-                try:
-                    netqty = int(pos.get("netqty", 0))
-                except Exception:
-                    continue
-
-                if netqty == 0:
-                    continue
-
-                symbol = pos.get("tsym")
-                exchange = pos.get("exch")
-                product = pos.get("prd")
-
-                if not symbol or not exchange or not product:
-                    continue
-
-                exit_side = "SELL" if netqty > 0 else "BUY"
-                exit_qty = abs(netqty)
-
-                must_limit = requires_limit_order(
-                    exchange=exchange,
-                    tradingsymbol=symbol
-                )
-
-                price_type = "LMT" if must_limit else "MKT"
-                price = None
-
-                if must_limit:
-                    try:
-                        ltp = self.bot.api.get_ltp(exchange, symbol)
-                        if ltp:
-                            price = self._calc_emergency_limit_price(
-                                ltp=ltp,
-                                side=exit_side,
-                                tick=0.05
-                            )
-                    except Exception as e:
-                        logger.error(f"LTP fetch failed for {symbol}: {e}")
-                        price = 0.0 if exit_side == "BUY" else 99999.99
-
-                logger.critical(
-                    f"🚨 EMERGENCY EXIT | {symbol} | {exit_side} | "
-                    f"qty={exit_qty} | type={price_type} | price={price}"
-                )
-
-                try:
-                    # ✅ OFFICIAL NorenApi PARAMETERS (from your ShoonyaClient)
-                    order_params = {
-                        "exchange": exchange,          # ✅ Official NorenApi
-                        "tradingsymbol": symbol,       # ✅ Official NorenApi
-                        "quantity": exit_qty,
-                        "buy_or_sell": exit_side,      # ✅ Official NorenApi
-                        "product_type": product,       # ✅ Official NorenApi
-                        "price_type": price_type,      # ✅ Official NorenApi
-                        "retention": "DAY",
-                        "discloseqty": 0,
-                    }
-                    
-                    if price is not None:
-                        order_params["price"] = price
-
-                    result = self.bot.api.place_order(order_params)
-
-                    if result.success:
-                        exit_count += 1
-                        logger.critical(
-                            f"✅ EMERGENCY EXIT PLACED | {symbol} | {result.order_id}"
-                        )
-                    else:
-                        failed_exits.append((symbol, result.error_message))
-                        logger.error(
-                            f"❌ EMERGENCY EXIT FAILED | {symbol} | {result.error_message}"
-                        )
-
-                except Exception as e:
-                    failed_exits.append((symbol, str(e)))
-                    logger.exception(f"❌ EMERGENCY EXIT EXCEPTION | {symbol}")
-
-            total_positions = len([p for p in positions if int(p.get("netqty", 0)) != 0])
-
-            logger.critical(
-                f"🚨 EMERGENCY EXIT COMPLETE | total={total_positions} "
-                f"successful={exit_count} failed={len(failed_exits)}"
+            # ✅ SINGLE LINE: Risk manager decides, PositionExitService executes
+            self.bot.request_exit(
+                scope="ALL",
+                symbols=None,
+                product_type="ALL",
+                reason=reason,
+                source="supreme_risk",
             )
 
-            if self.bot.telegram_enabled:
-                msg = (
-                    f"🚨 <b>EMERGENCY EXIT EXECUTED</b>\n"
-                    f"Reason: {reason}\n"
-                    f"Total: {total_positions}\n"
-                    f"Successful: {exit_count}\n"
-                    f"Failed: {len(failed_exits)}"
-                )
-                if failed_exits:
-                    msg += "\n\n❌ Failures:\n"
-                    for sym, err in failed_exits[:5]:
-                        msg += f"• {sym}: {err[:50]}\n"
-                self.bot.send_telegram(msg)
+            logger.critical("🔔 EMERGENCY EXIT ROUTED TO POSITION_EXIT_SERVICE")
 
-            # ✅ ExecutionGuard cleanup (check for method existence)
+            # Allow PositionExitService time to process exits
             try:
-                if hasattr(self.bot, "execution_guard"):
-                    guard = self.bot.execution_guard
-                    # Try different method names
-                    if hasattr(guard, 'force_close_strategy'):
-                        for strategy_id in list(getattr(guard, '_strategy_positions', {}).keys()):
-                            guard.force_close_strategy(strategy_id)
-                        logger.warning("ExecutionGuard cleared via force_close_strategy")
-                    else:
-                        logger.warning("ExecutionGuard has no cleanup method available")
+                logger.info("Waiting up to 10s for position-based exits to complete")
+                self._verify_exit_progress(timeout_sec=10)
             except Exception:
-                logger.exception("ExecutionGuard cleanup failed")
+                logger.exception("Exception while waiting for exit completion")
+
+        except Exception as e:
+            logger.exception(f"❌ EMERGENCY EXIT ROUTING FAILED | {e}")
+            if self.bot.telegram_enabled:
+                self.bot.send_telegram(f"🚨 CRITICAL: Emergency exit routing failed: {e}")
+            
             # allow heartbeat to retry later
             self.force_exit_in_progress = False
-            
-            return exit_count, failed_exits
-        
-        except Exception as e:
-            logger.critical(f"❌ EMERGENCY EXIT FATAL ERROR: {e}")
-            if self.bot.telegram_enabled:
-                self.bot.send_telegram(
-                    f"🚨 <b>EMERGENCY EXIT FAILED</b>\n"
-                    f"Fatal error: {str(e)}\n"
-                    f"MANUAL INTERVENTION REQUIRED!"
-                )
-            raise
 
     def _calc_emergency_limit_price(self, *, ltp: float, side: str, tick: float = 0.05) -> float:
         buffer = 0.02
@@ -370,6 +264,10 @@ class SupremeRiskManager:
                 self._activate_cooldown()
 
     def _request_exit_for_all_positions(self):
+        """
+        Request exit for all positions using the new unified API.
+        Routes through position-driven OMS (no assumptions).
+        """
         try:
             self.bot._ensure_login()
             positions = self.bot.api.get_positions() or []
@@ -378,35 +276,16 @@ class SupremeRiskManager:
                 logger.info("RMS: no live positions to exit")
                 return
 
-            logger.critical("RMS EXIT REQUEST → delegating to OrderWatcher")
+            logger.critical("RMS EXIT REQUEST → delegating to PositionExitService")
 
-            for pos in positions:
-                try:
-                    netqty = int(pos.get("netqty", 0))
-                except Exception:
-                    continue
-
-                if netqty == 0:
-                    continue
-
-                symbol = pos.get("tsym")
-                exchange = pos.get("exch")
-                product = pos.get("prd")
-
-                if not symbol or not exchange or not product:
-                    continue
-
-                side = "SELL" if netqty > 0 else "BUY"
-
-                self.bot.request_exit(
-                    symbol=symbol,
-                    exchange=exchange,
-                    quantity=abs(netqty),
-                    side=side,
-                    product_type=product,
-                    reason="RMS_FORCE_EXIT",
-                    source="RISK",
-                )
+            # Use unified request_exit with position-driven scope
+            self.bot.request_exit(
+                scope="ALL",
+                symbols=None,
+                product_type="ALL",
+                reason="RMS_FORCE_EXIT",
+                source="RISK",
+            )
 
         except Exception as exc:
             log_exception("SupremeRiskManager._request_exit_for_all_positions", exc)

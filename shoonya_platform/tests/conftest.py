@@ -36,16 +36,20 @@ class FakeBot:
         )
 
         self.order_repo = OrderRepository(client_id)
+        
+        # ExecutionGuard (must be before CommandService)
+        self.execution_guard = MagicMock()
+        
+        # OrderWatcher (must be before CommandService)
+        # ❌ DO NOT start background thread in tests
+        self.order_watcher = OrderWatcherEngine(self, poll_interval=9999)
+        
+        # CommandService (depends on order_watcher, execution_guard, order_repo)
         self.command_service = CommandService(self)
 
         # RMS
         self.risk_manager = SupremeRiskManager(self)
 
-        # OrderWatcher (start thread so heartbeat sees it alive)
-        self.order_watcher = OrderWatcherEngine(self, poll_interval=9999)
-        # ❌ DO NOT start background thread in tests
-
-        self.execution_guard = MagicMock()
         self.telegram_enabled = False
 
     def _ensure_login(self):

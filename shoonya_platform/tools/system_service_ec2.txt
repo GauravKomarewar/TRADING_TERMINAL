@@ -160,3 +160,16 @@ WantedBy=multi-user.target
 //////////////////////////////////////////////////////////////////////////////////////////////
 
 sudo systemctl daemon-reload
+
+
+sudo systemctl stop option_data
+sudo systemctl stop shoonya-dashboard
+sudo systemctl stop signal_processor
+
+sudo systemctl status option_data
+sudo systemctl status shoonya-dashboard
+sudo systemctl status signal_processor
+
+sudo systemctl start option_data
+sudo systemctl start shoonya-dashboard
+sudo systemctl start signal_processor

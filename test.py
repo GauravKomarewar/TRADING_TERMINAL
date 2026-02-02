@@ -4,10 +4,12 @@ import json
 
 config = Config()
 client = ShoonyaClient(config=config)
-client.ensure_login()
+client.login()
 
-api = client.api  # underlying NorenApi instance
+position_ = client.get_positions()
+print(position_)
+print(type(position_))
 
-raw = api.get_positions()
-print(raw)
-print(type(raw))
+limit_ = client.get_limits()
+print(limit_)
+print(type(limit_))

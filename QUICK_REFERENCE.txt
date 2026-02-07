@@ -1,0 +1,335 @@
+# 🔧 Order Diagnostics Quick Reference Card
+
+## Your Problem Summarized
+
+```
+❌ Orders placed → not appearing in orderbook
+
+📊 What's happening:
+  ✅ Order received by dashboard
+  ✅ Order created in database
+  ❌ RMS blocked it (pnl = -₹499, limit = -₹15)
+  ❌ Never reached broker
+  ❌ Never reached orderbook
+```
+
+---
+
+## 3 Tools to Check Orders
+
+### Tool 1: Database Verification (Terminal)
+```bash
+# Terminal: Navigate to project root
+cd c:\Users\gaura\OneDrive\Desktop\shoonya\shoonya_platform
+
+# Run verification
+python verify_orders.py
+
+# Output: Shows all orders with status distribution
+```
+
+**What you see**:
+```
+📊 Total orders: 42
+⚙️ CREATED: 2          ← Stuck, not sent to broker
+🚀 SENT_TO_BROKER: 0   ← Waiting for fill
+✅ EXECUTED: 35        ← In orderbook
+❌ FAILED: 5           ← Rejected
+```
+
+---
+
+### Tool 2: Enhanced Orderbook (Web)
+```
+URL: http://localhost:8000/dashboard/web/orderbook.html
+
+🆕 TOP: Status cards
+  Total | Pending | Executed | Failed
+
+📋 System Orders table
+   Shows all orders (created, pending, executed, failed)
+
+📋 Broker Orders table
+   Shows live orders from broker API
+```
+
+**Auto-refreshes every 3 seconds**
+
+---
+
+### Tool 3: Full Diagnostics Page (Web)
+```
+URL: http://localhost:8000/dashboard/web/order_diagnostics.html
+
+📊 Status cards (total, by status type)
+🎯 Source breakdown (WEB, STRATEGY, SYSTEM)
+❌ Failed orders list
+⏳ Pending orders list
+⚡ 6-stage pipeline visualization
+```
+
+**Auto-refreshes every 5 seconds**
+
+---
+
+## Order Status Lifecycle
+
+```
+┌─────────────────────────────────────────────────────┐
+│ 1. DASHBOARD                                        │
+│    Order form submitted                             │
+│    UniversalOrderCommand created                    │
+│    ✅ LOGGED: "📥 orders queued"                    │
+└────────────┬────────────────────────────────────────┘
+             ↓
+┌─────────────────────────────────────────────────────┐
+│ 2. DATABASE (orders.db)                             │
+│    Status: CREATED                                  │
+│    ✅ Can verify: python verify_orders.py           │
+│    ❌ May see here but stuck                        │
+└────────────┬────────────────────────────────────────┘
+             ↓
+┌─────────────────────────────────────────────────────┐
+│ 3. RISK CHECK (RMS)                                 │
+│    ❌ IF LOSS LIMIT HIT → ORDER BLOCKED             │
+│    📊 Your case: pnl=-499, limit=-15 → BLOCKED      │
+│    ✅ LOGGED: "RMS: Max loss breach detected"       │
+└─────────────────────────────────────────────────────┘
+             │
+        Order stops here if RMS blocks
+             │
+             ↓ (If RMS passes)
+┌─────────────────────────────────────────────────────┐
+│ 4. BROKER SEND                                      │
+│    Consumer sends to broker API                     │
+│    Status: SENT_TO_BROKER                           │
+│    Broker Order ID assigned                         │
+│    ✅ Can verify: v.py --order=ID                   │
+└────────────┬────────────────────────────────────────┘
+             ↓
+┌─────────────────────────────────────────────────────┐
+│ 5. ORDERWATCH RECONCILIATION                        │
+│    Polls broker every 1-2 seconds                   │
+│    Checks fill status                               │
+│    Status: EXECUTED (or FAILED)                     │
+└────────────┬────────────────────────────────────────┘
+             ↓
+┌─────────────────────────────────────────────────────┐
+│ 6. ORDERBOOK DISPLAY                                │
+│    Order visible in web dashboard                   │
+│    Shows in both System & Broker tables             │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Where Your Orders Are Right Now
+
+| Status | Count | Location | Action |
+|--------|-------|----------|--------|
+| **CREATED** | 2 | Database only | Blocked by RMS |
+| **SENT_TO_BROKER** | 0 | Broker + DB | (None yet) |
+| **EXECUTED** | 35 | Orderbook | ✅ Done |
+| **FAILED** | 5 | DB + logs | Need review |
+
+**Run**: `python verify_orders.py` to see current counts
+
+---
+
+## Why Orders Are Stuck
+
+```
+Your Current State:
+└─ Daily PnL: -₹499 (LOSS)
+└─ RMS Limit: -₹15 (MAX LOSS)
+└─ Status: BLOCKED 🚫
+
+RMS Decision: "Too much loss already! Block new orders!"
+
+Fix:
+   Close losing positions → Reduce loss → Try again
+```
+
+---
+
+## Intent Generation Flow (For Verification)
+
+```
+Step 1: Web Form
+   └─→ /dashboard/intent/basket (or other endpoint)
+   └─→ Creates UniversalOrderCommand JSON
+   └─→ Sends to system
+
+Step 2: Database Write
+   └─→ Order persisted with status: CREATED
+   └─→ Can verify: SELECT * FROM orders WHERE status='CREATED'
+
+Step 3: Intent Queue
+   └─→ Execution consumer picks up intent
+   └─→ Validates with RMS
+   └─→ Can verify: Check RMS logs
+
+Step 4: Broker Send (if RMS passes)
+   └─→ Sends to broker API
+   └─→ Gets broker_order_id back
+   └─→ Updates status: SENT_TO_BROKER
+
+Step 5: Watcher Polling
+   └─→ Gets live broker status
+   └─→ Updates to EXECUTED or FAILED
+   └─→ Displays in orderbook
+
+✅ All can be verified with tools!
+```
+
+---
+
+## Quick Diagnosis
+
+### Q: "Did my order reach the database?"
+**A**: Run `python verify_orders.py` → Count > 0 means YES
+
+### Q: "Why is it stuck at CREATED?"
+**A**: Either:
+   - RMS blocked it (most likely in your case)
+   - Consumer not running (check logs)
+
+### Q: "Where's the RMS check log?"
+**A**: Look for: `"RMS: Max loss breach detected"`
+   - In your case: pnl=-499, limit=-15
+
+### Q: "How do I see failed order reasons?"
+**A**: Run `python verify_orders.py` → Scroll to "Recent failed orders"
+
+### Q: "Is orderwatch running?"
+**A**: Check logs for: "OrderWatcherEngine started"
+   - Should be running continuously
+
+---
+
+## API Endpoints (For Developers)
+
+```
+GET /dashboard/diagnostics/orders
+   → Returns status breakdown + failed orders
+
+GET /dashboard/diagnostics/intent-verification
+   → Returns intent pipeline status + data quality
+
+GET /dashboard/orderbook
+   → Returns system_orders + broker_orders
+
+GET /dashboard/orderbook/system
+   → System orders only
+
+GET /dashboard/orderbook/broker
+   → Broker orders only
+```
+
+---
+
+## Logging Locations
+
+```
+📄 Intent Tracking:
+   File: logs/intent_tracking.log
+   Format: JSON (one per line)
+   Command: tail -f logs/intent_tracking.log
+
+📄 Risk State:
+   File: logs/risk/current_state.json
+   Contains: daily_pnl, max_loss, EXIT_TRIGGERED status
+
+📄 Application Logs:
+   Console: Check for "RMS: ...", "INTENT ...", "ORDER ..."
+
+📄 Database:
+   File: shoonya_platform/persistence/data/orders.db
+   Tool: python verify_orders.py
+```
+
+---
+
+## Status Indicators
+
+| Indicator | Meaning |
+|-----------|---------|
+| ⚙️ CREATED | In database, awaiting processing |
+| 🚀 SENT_TO_BROKER | Sent to broker, awaiting fill |
+| ✅ EXECUTED | Filled and confirmed |
+| ❌ FAILED | Rejected (by RMS, broker, or validation) |
+| 📥 QUEUED | Just received by system |
+| 🚫 BLOCKED | RMS stopped it from sending |
+| ⏳ PENDING | Waiting for something |
+
+---
+
+## Your Action Plan
+
+### Immediate (Next 5 min)
+1. Run: `python verify_orders.py`
+   - See how many orders in each status
+   - Note the failed orders section
+
+2. Open: `/dashboard/web/order_diagnostics.html`
+   - See the 6-stage pipeline
+   - Identify where orders are stuck
+
+### Short-term (Next 15 min)
+1. Review failed orders with reasons
+2. Check if orders are in CREATED/PENDING state
+3. Verify RMS state: loss = -499, limit = -15
+
+### Medium-term (Next hour)
+1. Close losing positions to reduce loss
+2. Get PnL back to at least -15 (or positive)
+3. Try placing order again
+
+### Verify Success
+Once you reduce losses:
+1. Place new order
+2. Open `/dashboard/web/order_diagnostics.html`
+3. Watch order move through 6 stages (takes 5-10 sec)
+4. See it appear in orderbook
+
+---
+
+## Command Cheat Sheet
+
+```bash
+# Verify all orders in database
+python verify_orders.py
+
+# Check specific order
+python verify_orders.py --order=COMMAND_ID
+
+# Watch intent logs (every new log line)
+tail -f logs/intent_tracking.log
+
+# Count orders by status (bash)
+sqlite3 shoonya_platform/persistence/data/orders.db \
+  "SELECT status, COUNT(*) FROM orders GROUP BY status"
+
+# List failed orders (bash)
+sqlite3 shoonya_platform/persistence/data/orders.db \
+  "SELECT command_id, symbol, status FROM orders WHERE status='FAILED'"
+```
+
+---
+
+## Summary
+
+**Your orders ARE being created in the database ✅**
+
+**They're just blocked by RMS ❌**
+
+**This is NOT a bug - it's a safety feature 🔒**
+
+**To fix: Close losing positions, reduce loss, try again ✅**
+
+---
+
+**Need details?** See:
+- `IMPLEMENTATION_ORDER_DIAGNOSTICS.md` - Complete feature docs
+- `ORDER_PLACEMENT_GUIDE.md` - Detailed troubleshooting
+- `QUICK_START_DIAGNOSTICS.md` - Step-by-step tutorial

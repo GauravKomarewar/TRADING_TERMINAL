@@ -1,0 +1,152 @@
+# ⚡ Executive Summary - 2 Minute Read
+
+## Your Problem
+**Orders placed but not appearing in orderbook**
+
+## Root Cause
+**RMS (Risk Management System) Emergency Exit** triggered because:
+- Your current loss: **-₹499**
+- System maximum loss: **-₹15**
+- Result: **NEW ORDERS BLOCKED** to protect your account
+
+## What Was Built For You
+
+### 📊 Visual Tracking (2 ways)
+1. **Enhanced Orderbook** - See status cards (Total, Pending, Executed, Failed)
+2. **Diagnostics Page** - See complete 6-stage pipeline
+
+### 🛠️ Tools (3 ways to verify)
+1. **Verify Script** - `python verify_orders.py`
+2. **API Endpoints** - `/dashboard/diagnostics/orders`
+3. **Intent Logs** - Watch `logs/intent_tracking.log`
+
+### 📚 Documentation (5 guides)
+- Quick Reference (1 page cheat sheet)
+- Quick Start (10-minute tutorial)
+- Complete Guide (30-minute reference)
+- API Reference (JSON documentation)
+- Implementation Details (for developers)
+
+---
+
+## How It Works (The 6 Stages)
+
+```
+1. Order Created       → In dashboard
+2. Database Write      → Saved to orders.db (status: CREATED)
+3. Risk Check  ❌      ← YOUR ORDERS STOPPED HERE (RMS blocks)
+4. Broker Send         → Would send to broker (SENT_TO_BROKER)
+5. Watcher Poll        → Would get fill status (EXECUTED)
+6. Orderbook Display   → Would show in web UI
+```
+
+**Your orders are stuck at Stage 3 due to excessive losses.**
+
+---
+
+## What You Can Do NOW
+
+### 1. Verify Orders Are in Database (30 seconds)
+```bash
+python verify_orders.py
+```
+✅ Confirms orders ARE being saved (not a bug)
+
+### 2. See Visual Dashboard (1 minute)
+Open: `http://localhost:8000/dashboard/web/order_diagnostics.html`
+
+✅ See order status breakdown and pipeline visualization
+
+### 3. Fix RMS Issue (Next hour)
+Close losing positions to reduce PnL loss from -₹499 to at least -₹15
+
+✅ Once fixed, RMS will allow new orders
+
+### 4. Try Again
+Place new order and watch it progress through 6 stages
+
+✅ Should reach orderbook in 5-10 seconds
+
+---
+
+## What Changed
+
+| What | Before | After |
+|------|--------|-------|
+| **Order visibility** | Only successful orders shown | All orders shown (failed too) |
+| **Debugging** | Mystery why orders fail | Complete pipeline tracker |
+| **Verification** | Guessing | Can verify at each stage |
+| **Root cause** | Unknown | Identified (RMS block) |
+| **Documentation** | None | 5 comprehensive guides |
+
+---
+
+## Key Files
+
+### To Use
+- `orderbook.html` - Enhanced dashboard
+- `order_diagnostics.html` - Full pipeline view
+- `verify_orders.py` - Database checker
+- `logs/intent_tracking.log` - Audit trail
+
+### To Read
+- `QUICK_REFERENCE.txt` - 1-page lookup
+- `QUICK_START_DIAGNOSTICS.md` - Tutorial
+- `ORDER_PLACEMENT_GUIDE.md` - Complete reference
+- `API_REFERENCE.json` - Technical docs
+
+---
+
+## Your Immediate Action
+
+**Step 1**: Run verification
+```bash
+python verify_orders.py
+```
+
+**Step 2**: Open diagnostics
+```
+http://localhost:8000/dashboard/web/order_diagnostics.html
+```
+
+**Step 3**: Reduce losses
+Close failing positions to fix RMS issue
+
+**Step 4**: Try new order
+Watch it move through 6 stages to orderbook
+
+---
+
+## The Bottom Line
+
+✅ **System is working correctly**
+- Orders ARE being created
+- Orders ARE being saved to database
+- Pipeline IS tracking correctly
+
+❌ **RMS is blocking them** (this is a feature, not a bug)
+- Protecting you from excessive losses
+- Your loss (-₹499) is 33x over the safe limit (-₹15)
+- Fix by closing losing positions first
+
+✅ **Now you have complete visibility**
+- See every order at every stage
+- Know exactly why orders fail
+- Track with multiple tools
+- Full audit trail
+
+---
+
+## Read Next
+
+**2 minutes**: `QUICK_REFERENCE.txt`
+**10 minutes**: `QUICK_START_DIAGNOSTICS.md`
+**30 minutes**: `ORDER_PLACEMENT_GUIDE.md`
+
+---
+
+**Status**: ✅ Implementation Complete  
+**Ready**: For immediate use  
+**Support**: Fully documented  
+
+**Start with**: `python verify_orders.py` → Then check `/dashboard/web/order_diagnostics.html`

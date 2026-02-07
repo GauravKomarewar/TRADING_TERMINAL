@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Order Diagnostics – Shoonya OMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root{--bg:#0a0e13;--panel:#151b26;--panel-2:#1c2333;--panel-hover:#222938;--border:#404856;--border-focus:#3b82f6;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--primary-hover:#2563eb;--success:#10b981;--success-bg:#10b98115;--danger:#ef4444;--warning:#f59e0b;--shadow:0 4px 6px -1px rgba(0,0,0,0.3),0 2px 4px -2px rgba(0,0,0,0.3)}*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}header{height:64px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;padding:0 24px;box-shadow:var(--shadow);position:sticky;top:0;z-index:100}.nav-left{display:flex;gap:24px;align-items:center}.brand{font-weight:700;font-size:18px;color:var(--primary);cursor:pointer;transition:color .2s}.brand:hover{color:var(--primary-hover)}.nav-link{color:var(--muted);font-size:14px;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .2s}.nav-link:hover{color:var(--text);background:var(--panel-2)}.nav-right button{background:transparent;border:1px solid var(--border);color:var(--danger);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:all .2s}.nav-right button:hover{background:var(--danger);color:#fff;border-color:var(--danger)}.nav-right{display:flex}main{max-width:1600px;margin:0 auto;padding:24px}.section{background:var(--panel);border:1px solid var(--border);border-radius:16px;margin-bottom:24px;box-shadow:var(--shadow);overflow:hidden}.section-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}.section-title{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}.section-title::before{content:'';width:4px;height:20px;background:var(--primary);border-radius:2px}.badge{padding:4px 10px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}.badge.live{background:rgba(16,185,129,.1);border-color:var(--success);color:var(--success)}.badge.warning{background:rgba(245,158,11,.1);border-color:var(--warning);color:var(--warning)}.badge.danger{background:rgba(239,68,68,.1);border-color:var(--danger);color:var(--danger)}table{width:100%;border-collapse:collapse;font-size:13px}th{background:var(--panel-2);padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;border-bottom:2px solid var(--border)}.status{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}.status.CREATED{background:rgba(245,158,11,.1);color:var(--warning);border:1px solid var(--warning)}.status.SENT_TO_BROKER{background:rgba(59,130,246,.1);color:var(--primary);border:1px solid var(--primary)}.status.EXECUTED{background:var(--success-bg);color:var(--success);border:1px solid var(--success)}.status.FAILED{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid var(--danger)}.code-block{background:var(--panel-2);padding:12px;border-radius:8px;font-family:monospace;font-size:12px;overflow-x:auto;margin:8px 0;color:#d4d4d4;border:1px solid var(--border)}.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:16px}.info-card{background:var(--panel-2);padding:12px;border-radius:8px;border-left:4px solid var(--primary)}.info-card.warning{border-left-color:var(--warning)}.info-card.danger{border-left-color:var(--danger)}.info-card.success{border-left-color:var(--success)}.info-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;margin-bottom:4px}.info-value{font-size:18px;font-weight:700;color:var(--text)}.action-btn{padding:6px 14px;font-size:12px;border-radius:6px;cursor:pointer;font-weight:600;transition:all .2s;border:1px solid var(--border);background:var(--panel-2);color:var(--text)}.action-btn:hover{background:var(--panel-hover);border-color:var(--primary)}.pipeline-step{display:flex;align-items:center;gap:12px;padding:12px;background:var(--panel-2);border-radius:8px;margin-bottom:8px;border-left:4px solid var(--border)}.pipeline-step.active{background:rgba(16,185,129,.05);border-left-color:var(--success)}.pipeline-step.pending{background:rgba(245,158,11,.05);border-left-color:var(--warning)}.pipeline-step.failed{background:rgba(239,68,68,.05);border-left-color:var(--danger)}.step-icon{font-size:20px}.step-content{flex:1}.step-label{font-weight:600;font-size:12px;color:var(--text)}.step-desc{font-size:11px;color:var(--muted);margin-top:2px}.loading{text-align:center;padding:20px;color:var(--muted)}.list-item{padding:12px;background:var(--panel-2);border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--border)}.list-item.error{border-left-color:var(--danger)}.list-item.warning{border-left-color:var(--warning)}.list-item.success{border-left-color:var(--success)}
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-left">
+        <div class="brand" onclick="window.location.href='/dashboard/web/dashboard.html'">⚡ Shoonya OMS</div>
+        <a class="nav-link" href="/dashboard/web/dashboard.html">Dashboard</a>
+        <a class="nav-link" href="/dashboard/web/home.html">Home</a>
+        <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
+        <a class="nav-link" href="/dashboard/web/order_diagnostics.html">Diagnostics</a>
+    </div>
+    <div class="nav-right"><button onclick="logout()">Logout</button></div>
+</header>
+<main>
+    <div class="section">
+        <div class="section-header">
+            <div class="section-title">📊 Order Pipeline Diagnostics</div>
+            <div style="display:flex;gap:8px">
+                <button class="action-btn" onclick="loadDiagnostics()">🔄 Refresh</button>
+                <span class="badge live">● LIVE</span>
+            </div>
+        </div>
+        <div style="padding:16px" id="diagnosticsContent">
+            <div class="loading">Loading diagnostics...</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <div class="section-title">🎯 Intent Verification</div>
+            <div style="display:flex;gap:8px">
+                <button class="action-btn" onclick="loadIntentVerification()">🔄 Refresh</button>
+            </div>
+        </div>
+        <div style="padding:16px" id="intentContent">
+            <div class="loading">Loading intent verification...</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <div class="section-title">⚠️ Order Processing Pipeline</div>
+        </div>
+        <div style="padding:16px">
+            <div class="pipeline-step pending">
+                <div class="step-icon">1️⃣</div>
+                <div class="step-content">
+                    <div class="step-label">Intent Created</div>
+                    <div class="step-desc">Order created in OMS layer (status: CREATED)</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">2️⃣</div>
+                <div class="step-content">
+                    <div class="step-label">Intent Generation</div>
+                    <div class="step-desc">Dashboard generates UniversalOrderCommand via /intent endpoint</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">3️⃣</div>
+                <div class="step-content">
+                    <div class="step-label">DB Write</div>
+                    <div class="step-desc">Order persisted to orders.db with command_id</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">4️⃣</div>
+                <div class="step-content">
+                    <div class="step-label">Sent to Broker</div>
+                    <div class="step-desc">Execution consumer processes intent, sends to broker (status: SENT_TO_BROKER)</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">5️⃣</div>
+                <div class="step-content">
+                    <div class="step-label">Broker Confirmation</div>
+                    <div class="step-desc">Broker returns order_id, persisted as broker_order_id</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">6️⃣</div>
+                <div class="step-content">
+                    <div class="step-label">Watcher Reconciliation</div>
+                    <div class="step-desc">OrderWatcher polls broker, updates status on fill/rejection</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+async function logout(){
+    try{
+        await fetch('/auth/logout',{method:'POST',credentials:'include'});
+    }catch(e){console.log('Logout request completed')}
+    window.location.href='/';
+}
+
+async function loadDiagnostics(){
+    try{
+        document.getElementById('diagnosticsContent').innerHTML='<div class="loading">Loading...</div>';
+        const res=await fetch('/dashboard/diagnostics/orders',{credentials:'include'});
+        const data=await res.json();
+        
+        let html=`<div class="info-grid">`;
+        
+        // Summary cards
+        html+=`<div class="info-card">
+            <div class="info-label">Total Orders</div>
+            <div class="info-value">${data.summary.total_orders}</div>
+        </div>`;
+        
+        for(const [status, count] of Object.entries(data.summary.status_breakdown)){
+            let color='info-card';
+            if(status==='EXECUTED') color='info-card success';
+            if(status==='FAILED') color='info-card danger';
+            if(status==='CREATED'||status==='SENT_TO_BROKER') color='info-card warning';
+            html+=`<div class="${color}">
+                <div class="info-label">${status}</div>
+                <div class="info-value">${count||0}</div>
+            </div>`;
+        }
+        
+        html+=`</div>`;
+        
+        // Status breakdown
+        html+=`<h3 style="margin-top:16px;margin-bottom:8px">Source Breakdown</h3>`;
+        html+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">`;
+        for(const [source, count] of Object.entries(data.summary.source_breakdown)){
+            html+=`<div class="list-item"><span>${source}</span><strong>${count}</strong></div>`;
+        }
+        html+=`</div>`;
+        
+        // Failed orders
+        if(data.failed_orders.count>0){
+            html+=`<h3 style="margin-top:16px;margin-bottom:8px;color:var(--danger)">❌ Failed Orders (${data.failed_orders.count})</h3>`;
+            for(const order of data.failed_orders.details){
+                html+=`<div class="list-item error">
+                    <div>
+                        <strong>${order.symbol}</strong> ${order.side} ${order.qty}<br>
+                        <span style="color:var(--muted);font-size:11px">${order.command_id}</span>
+                    </div>
+                    <span style="color:var(--muted);font-size:11px">${formatTime(order.updated)}</span>
+                </div>`;
+            }
+        }
+        
+        // Pending orders
+        if(data.pending_orders.count>0){
+            html+=`<h3 style="margin-top:16px;margin-bottom:8px;color:var(--warning)">⏳ Pending Orders (${data.pending_orders.count})</h3>`;
+            for(const order of data.pending_orders.details.slice(0,10)){
+                html+=`<div class="list-item warning">
+                    <div>
+                        <strong>${order.symbol}</strong> ${order.side} ${order.qty} - <span style="color:var(--warning)">${order.status}</span><br>
+                        <span style="color:var(--muted);font-size:11px">${order.command_id}</span>
+                    </div>
+                </div>`;
+            }
+        }
+        
+        document.getElementById('diagnosticsContent').innerHTML=html;
+    }catch(err){
+        document.getElementById('diagnosticsContent').innerHTML=`<div style="color:var(--danger)">Error: ${err.message}</div>`;
+    }
+}
+
+async function loadIntentVerification(){
+    try{
+        document.getElementById('intentContent').innerHTML='<div class="loading">Loading...</div>';
+        const res=await fetch('/dashboard/diagnostics/intent-verification',{credentials:'include'});
+        const data=await res.json();
+        
+        let html=`<div class="info-grid">`;
+        html+=`<div class="info-card">
+            <div class="info-label">Total Intents</div>
+            <div class="info-value">${data.intent_pipeline.total_intents}</div>
+        </div>`;
+        html+=`<div class="info-card success">
+            <div class="info-label">Sent to Broker</div>
+            <div class="info-value">${data.intent_pipeline.sent_to_broker}</div>
+        </div>`;
+        html+=`<div class="info-card danger">
+            <div class="info-label">Missing Broker ID</div>
+            <div class="info-value">${data.data_quality.missing_broker_id_count}</div>
+        </div>`;
+        html+=`</div>`;
+        
+        // By execution type
+        html+=`<h3 style="margin-top:16px;margin-bottom:8px">Orders by Execution Type</h3>`;
+        for(const [execType, orders] of Object.entries(data.intent_pipeline.by_execution_type)){
+            html+=`<div class="list-item"><strong>${execType}</strong><span style="color:var(--primary)">${orders.length}</span></div>`;
+        }
+        
+        // Data quality issues
+        if(data.data_quality.incomplete_orders.length>0){
+            html+=`<h3 style="margin-top:16px;margin-bottom:8px;color:var(--danger)">⚠️ Data Quality Issues (${data.data_quality.incomplete_orders.length})</h3>`;
+            for(const order of data.data_quality.incomplete_orders.slice(0,5)){
+                html+=`<div class="list-item error">
+                    <div>
+                        <strong>${order.command_id}</strong><br>
+                        <span style="color:var(--danger);font-size:11px">${order.issues.join(', ')}</span>
+                    </div>
+                </div>`;
+            }
+        }
+        
+        // Recent activity
+        html+=`<h3 style="margin-top:16px;margin-bottom:8px">📈 Recent Activity</h3>`;
+        for(const order of data.recent_activity){
+            html+=`<div class="list-item">
+                <div>
+                    <strong>${order.symbol}</strong> [${order.source}] <span class="status ${order.status}">${order.status}</span><br>
+                    <span style="color:var(--muted);font-size:11px">${order.command_id}</span>
+                </div>
+                <span style="color:var(--muted);font-size:11px">${formatTime(order.updated)}</span>
+            </div>`;
+        }
+        
+        document.getElementById('intentContent').innerHTML=html;
+    }catch(err){
+        document.getElementById('intentContent').innerHTML=`<div style="color:var(--danger)">Error: ${err.message}</div>`;
+    }
+}
+
+function formatTime(ts){
+    if(!ts)return'-';
+    const d=new Date(ts);
+    return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+window.onload=()=>{loadDiagnostics();loadIntentVerification();setInterval(()=>{loadDiagnostics();loadIntentVerification()},5000)};
+</script>
+</body>
+</html>

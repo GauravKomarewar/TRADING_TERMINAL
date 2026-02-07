@@ -1,0 +1,405 @@
+{
+  "diagnostic_endpoints": {
+    "version": "1.0.0",
+    "date": "2026-02-07",
+    "status": "production",
+    "endpoints": [
+      {
+        "name": "Order Diagnostics",
+        "path": "/dashboard/diagnostics/orders",
+        "method": "GET",
+        "authentication": "required",
+        "description": "Complete order database analysis with status breakdown",
+        "response_schema": {
+          "summary": {
+            "total_orders": "integer",
+            "status_breakdown": {
+              "CREATED": "integer",
+              "SENT_TO_BROKER": "integer",
+              "EXECUTED": "integer",
+              "FAILED": "integer"
+            },
+            "source_breakdown": {
+              "WEB": "integer",
+              "STRATEGY": "integer",
+              "SYSTEM": "integer"
+            }
+          },
+          "failed_orders": {
+            "count": "integer",
+            "details": [
+              {
+                "command_id": "string",
+                "symbol": "string",
+                "side": "BUY|SELL",
+                "qty": "integer",
+                "created": "ISO8601",
+                "updated": "ISO8601",
+                "source": "string"
+              }
+            ]
+          },
+          "pending_orders": {
+            "count": "integer",
+            "details": [
+              {
+                "command_id": "string",
+                "symbol": "string",
+                "side": "BUY|SELL",
+                "qty": "integer",
+                "status": "string",
+                "broker_id": "string|null",
+                "created": "ISO8601",
+                "source": "string"
+              }
+            ]
+          },
+          "executed_orders": {
+            "count": "integer",
+            "details": [
+              {
+                "command_id": "string",
+                "symbol": "string",
+                "side": "BUY|SELL",
+                "qty": "integer",
+                "broker_id": "string",
+                "created": "ISO8601",
+                "updated": "ISO8601"
+              }
+            ]
+          }
+        },
+        "example_curl": "curl http://localhost:8000/dashboard/diagnostics/orders",
+        "example_response": {
+          "summary": {
+            "total_orders": 42,
+            "status_breakdown": {
+              "CREATED": 2,
+              "SENT_TO_BROKER": 0,
+              "EXECUTED": 35,
+              "FAILED": 5
+            },
+            "source_breakdown": {
+              "WEB": 30,
+              "STRATEGY": 10,
+              "SYSTEM": 2
+            }
+          },
+          "failed_orders": {
+            "count": 5,
+            "details": [
+              {
+                "command_id": "CMD-001",
+                "symbol": "NIFTY",
+                "side": "BUY",
+                "qty": 1,
+                "created": "2026-02-07T17:45:00",
+                "updated": "2026-02-07T17:45:15",
+                "source": "WEB",
+                "reason": "RMS max loss breach"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "Intent Verification",
+        "path": "/dashboard/diagnostics/intent-verification",
+        "method": "GET",
+        "authentication": "required",
+        "description": "Verify intent generation pipeline and data quality",
+        "response_schema": {
+          "intent_pipeline": {
+            "total_intents": "integer",
+            "sent_to_broker": "integer",
+            "by_execution_type": {
+              "ENTRY": "integer",
+              "EXIT": "integer",
+              "ADJUST": "integer"
+            }
+          },
+          "data_quality": {
+            "incomplete_orders": [
+              {
+                "command_id": "string",
+                "issues": ["string"]
+              }
+            ],
+            "missing_broker_id_count": "integer"
+          },
+          "recent_activity": [
+            {
+              "command_id": "string",
+              "symbol": "string",
+              "status": "string",
+              "source": "string",
+              "updated": "ISO8601"
+            }
+          ]
+        },
+        "example_curl": "curl http://localhost:8000/dashboard/diagnostics/intent-verification",
+        "example_response": {
+          "intent_pipeline": {
+            "total_intents": 42,
+            "sent_to_broker": 35,
+            "by_execution_type": {
+              "ENTRY": 30,
+              "EXIT": 5,
+              "ADJUST": 0
+            }
+          },
+          "data_quality": {
+            "incomplete_orders": [],
+            "missing_broker_id_count": 0
+          },
+          "recent_activity": [
+            {
+              "command_id": "CMD-001",
+              "symbol": "NIFTY",
+              "status": "EXECUTED",
+              "source": "WEB",
+              "updated": "2026-02-07T17:46:30"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "tools": {
+    "verify_orders_script": {
+      "name": "Order Database Verification",
+      "location": "verify_orders.py",
+      "type": "CLI Tool",
+      "usage": [
+        "python verify_orders.py",
+        "python verify_orders.py --order=COMMAND_ID"
+      ],
+      "output": {
+        "total_orders": "count",
+        "status_breakdown": "distribution by status",
+        "source_breakdown": "distribution by source",
+        "data_quality_checks": "validation results",
+        "recent_orders": "last 10 orders",
+        "failed_orders": "with timestamps"
+      }
+    },
+    "intent_tracker": {
+      "name": "Intent Lifecycle Tracker",
+      "location": "shoonya_platform/execution/intent_tracker.py",
+      "type": "Python Module",
+      "usage": {
+        "import": "from shoonya_platform.execution.intent_tracker import get_intent_tracker",
+        "initialize": "tracker = get_intent_tracker(client_id)",
+        "methods": [
+          "log_intent_created(command_id, payload)",
+          "log_db_write(command_id, status)",
+          "log_sent_to_broker(command_id, broker_id)",
+          "log_broker_confirmed(command_id, broker_id, filled_qty, avg_price)",
+          "log_order_executed(command_id, broker_id, filled_qty, avg_price)",
+          "log_order_failed(command_id, broker_id, reason)",
+          "log_intent_error(command_id, step, error)"
+        ]
+      },
+      "output_file": "logs/intent_tracking.log",
+      "format": "JSON (one line per log entry)"
+    }
+  },
+  "web_pages": {
+    "enhanced_orderbook": {
+      "url": "http://localhost:8000/dashboard/web/orderbook.html",
+      "type": "Enhanced Dashboard",
+      "new_features": [
+        "Status summary cards (Total, Pending, Executed, Failed)",
+        "Real-time counters",
+        "Auto-refresh every 3 seconds",
+        "Console logging"
+      ],
+      "displays": {
+        "system_orders": "All OMS orders with full details",
+        "broker_orders": "Live broker order book",
+        "status_cards": "Summary of order counts by status"
+      }
+    },
+    "diagnostics_page": {
+      "url": "http://localhost:8000/dashboard/web/order_diagnostics.html",
+      "type": "Full Diagnostics Dashboard",
+      "new_page": true,
+      "features": [
+        "Order pipeline status cards",
+        "Status breakdown by count",
+        "Source breakdown",
+        "Failed orders list",
+        "Pending orders tracking",
+        "6-stage pipeline visualization",
+        "Intent verification data",
+        "Data quality indicators",
+        "Recent activity log"
+      ],
+      "refresh_interval": "5 seconds"
+    }
+  },
+  "database": {
+    "location": "shoonya_platform/persistence/data/orders.db",
+    "type": "SQLite3",
+    "tables": [
+      {
+        "name": "orders",
+        "columns": [
+          "id INTEGER PRIMARY KEY",
+          "client_id TEXT",
+          "command_id TEXT",
+          "source TEXT",
+          "user TEXT",
+          "strategy_name TEXT",
+          "exchange TEXT",
+          "symbol TEXT",
+          "side TEXT (BUY|SELL)",
+          "quantity INTEGER",
+          "product TEXT",
+          "order_type TEXT",
+          "price REAL",
+          "stop_loss REAL",
+          "target REAL",
+          "trailing_type TEXT",
+          "trailing_value REAL",
+          "broker_order_id TEXT",
+          "execution_type TEXT",
+          "status TEXT (CREATED|SENT_TO_BROKER|EXECUTED|FAILED)",
+          "created_at TEXT",
+          "updated_at TEXT",
+          "tag TEXT"
+        ],
+        "indexes": [
+          "idx_orders_client_status (client_id, status)",
+          "idx_orders_client_updated (client_id, updated_at)"
+        ]
+      }
+    ]
+  },
+  "order_statuses": {
+    "CREATED": {
+      "meaning": "Order created in OMS, not yet sent to broker",
+      "next_stage": "Risk check and consumer processing",
+      "database_location": "orders.db"
+    },
+    "SENT_TO_BROKER": {
+      "meaning": "Order sent to broker, awaiting confirmation",
+      "next_stage": "Broker fills or rejects",
+      "has_broker_id": true
+    },
+    "EXECUTED": {
+      "meaning": "Order completely filled by broker",
+      "next_stage": "Displayed in orderbook",
+      "visibility": "In orderbook dashboard"
+    },
+    "FAILED": {
+      "meaning": "Order rejected by system or broker",
+      "reasons": [
+        "RMS max loss breach",
+        "Broker order validation error",
+        "Insufficient liquidity",
+        "Broker cancellation",
+        "System error"
+      ],
+      "visibility": "In failed orders section"
+    }
+  },
+  "order_sources": {
+    "WEB": "Orders placed via dashboard web form",
+    "STRATEGY": "Orders generated by automated strategy",
+    "SYSTEM": "Orders from system-level operations"
+  },
+  "order_execution_types": {
+    "ENTRY": "Position entry order",
+    "EXIT": "Position exit order",
+    "ADJUST": "Position adjustment order"
+  },
+  "pipeline_stages": [
+    {
+      "stage": 1,
+      "name": "Intent Created",
+      "location": "Dashboard/Frontend",
+      "action": "User submits order via form, UniversalOrderCommand created"
+    },
+    {
+      "stage": 2,
+      "name": "Database Write",
+      "location": "Persistence Layer",
+      "action": "Order persisted to orders.db with status: CREATED"
+    },
+    {
+      "stage": 3,
+      "name": "Risk Check",
+      "location": "RMS (Risk Management System)",
+      "action": "Validates daily loss limits, max loss thresholds",
+      "can_block": true,
+      "block_reason": "Daily loss exceeds maximum"
+    },
+    {
+      "stage": 4,
+      "name": "Sent to Broker",
+      "location": "Execution Consumer",
+      "action": "Sends to broker API, receives broker_order_id",
+      "status_update": "SENT_TO_BROKER"
+    },
+    {
+      "stage": 5,
+      "name": "Broker Reconciliation",
+      "location": "OrderWatcher",
+      "action": "Polls broker every 1-2 seconds for order status",
+      "status_update": "EXECUTED or FAILED"
+    },
+    {
+      "stage": 6,
+      "name": "Orderbook Display",
+      "location": "Frontend Dashboard",
+      "action": "Order visible in orderbook with final status"
+    }
+  ],
+  "logging": {
+    "intent_tracking_log": {
+      "location": "logs/intent_tracking.log",
+      "format": "JSON (one line per stage)",
+      "entries": [
+        {"stage": "INTENT_CREATED", "command_id": "...", "symbol": "...", "timestamp": "..."},
+        {"stage": "DB_WRITE", "command_id": "...", "status": "CREATED", "timestamp": "..."},
+        {"stage": "SENT_TO_BROKER", "command_id": "...", "broker_order_id": "...", "timestamp": "..."},
+        {"stage": "EXECUTED", "command_id": "...", "filled_qty": "...", "avg_price": "...", "timestamp": "..."},
+        {"stage": "FAILED", "command_id": "...", "reason": "...", "timestamp": "..."},
+        {"stage": "ERROR", "command_id": "...", "step": "...", "error": "...", "timestamp": "..."}
+      ],
+      "view_command": "tail -f logs/intent_tracking.log"
+    }
+  },
+  "files_modified": [
+    "shoonya_platform/api/dashboard/web/orderbook.html",
+    "shoonya_platform/api/dashboard/api/router.py"
+  ],
+  "files_created": [
+    "shoonya_platform/api/dashboard/web/order_diagnostics.html",
+    "shoonya_platform/execution/intent_tracker.py",
+    "verify_orders.py",
+    "ORDER_PLACEMENT_GUIDE.md",
+    "QUICK_START_DIAGNOSTICS.md",
+    "IMPLEMENTATION_ORDER_DIAGNOSTICS.md",
+    "ORDER_DIAGNOSTICS_FINAL_SUMMARY.md",
+    "QUICK_REFERENCE.txt",
+    "FILES_CHANGED.md",
+    "ORDER_DIAGNOSTICS_INDEX.md",
+    "API_REFERENCE.json"
+  ],
+  "quick_commands": {
+    "verify_database": "python verify_orders.py",
+    "check_specific_order": "python verify_orders.py --order=COMMAND_ID",
+    "watch_intent_logs": "tail -f logs/intent_tracking.log",
+    "count_orders": "sqlite3 shoonya_platform/persistence/data/orders.db 'SELECT status, COUNT(*) FROM orders GROUP BY status'",
+    "list_failed_orders": "sqlite3 shoonya_platform/persistence/data/orders.db 'SELECT command_id, symbol FROM orders WHERE status=FAILED'"
+  },
+  "status": {
+    "implementation": "✅ Complete",
+    "testing": "✅ Passed",
+    "documentation": "✅ Complete",
+    "ready_for_production": true,
+    "date": "2026-02-07"
+  }
+}

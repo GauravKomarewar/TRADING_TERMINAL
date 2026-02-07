@@ -55,6 +55,34 @@ async function checkAuth() {
 <main>
     <div class="section">
         <div class="section-header">
+            <div class="section-title">⚡ Order Pipeline Status</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="action-btn" onclick="loadOrderbook()">🔄 Refresh</button>
+                <button class="action-btn" onclick="showDiagnostics()">🔍 Diagnostics</button>
+                <span class="badge live">● LIVE</span>
+            </div>
+        </div>
+        <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+            <div style="background:var(--panel-2);padding:12px;border-radius:8px;border-left:4px solid var(--primary)">
+                <div style="color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:600">Total Orders</div>
+                <div style="font-size:24px;font-weight:700;color:var(--text);margin-top:4px" id="totalOrders">0</div>
+            </div>
+            <div style="background:var(--panel-2);padding:12px;border-radius:8px;border-left:4px solid var(--warning)">
+                <div style="color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:600">Created/Pending</div>
+                <div style="font-size:24px;font-weight:700;color:var(--warning);margin-top:4px" id="pendingOrders">0</div>
+            </div>
+            <div style="background:var(--panel-2);padding:12px;border-radius:8px;border-left:4px solid var(--success)">
+                <div style="color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:600">Executed</div>
+                <div style="font-size:24px;font-weight:700;color:var(--success);margin-top:4px" id="executedOrders">0</div>
+            </div>
+            <div style="background:var(--panel-2);padding:12px;border-radius:8px;border-left:4px solid var(--danger)">
+                <div style="color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:600">Failed</div>
+                <div style="font-size:24px;font-weight:700;color:var(--danger);margin-top:4px" id="failedOrders">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="section">
+        <div class="section-header">
             <div class="section-title">System Orders (Intent Layer)</div>
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="action-btn danger-btn" onclick="cancelAllSystem()">🚫 Cancel All Pending</button>
@@ -173,7 +201,182 @@ async function checkAuth() {
     </div>
 </div>
 <script>
-let timer=null,currentModifyId=null,currentModifyType=null,systemOrdersCache=[],brokerOrdersCache=[];async function logout(){await fetch('/auth/logout',{method:'POST'});window.location.href='/';}async function loadOrderbook(){try{const res=await fetch('/dashboard/orderbook');const data=await res.json();systemOrdersCache=data.system_orders||[];brokerOrdersCache=data.broker_orders||[];renderSystemOrders(systemOrdersCache);renderBrokerOrders(brokerOrdersCache)}catch(err){console.error('Load failed:',err)}}function renderSystemOrders(orders){const tbody=document.getElementById('systemRows');systemCount.textContent=`${orders.length} Orders`;if(!orders.length){tbody.innerHTML='<tr><td colspan="22" class="empty">No system orders</td></tr>';return}tbody.innerHTML=orders.map(o=>`<tr><td class="actions-col"><div class="actions">${o.status==='CREATED'||o.status==='TRIGGERED'?`<button class="btn-small btn-modify" onclick="openModify('${o.command_id}','system')">Modify</button><button class="btn-small btn-cancel" onclick="cancelOrder('${o.command_id}','system')">Cancel</button>`:'<span style="color:var(--muted);font-size:11px">-</span>'}</div></td><td style="color:var(--muted);font-size:11px">${formatTime(o.created_at)}</td><td style="color:var(--muted);font-size:11px">${formatTime(o.updated_at)}</td><td style="font-weight:600;font-size:12px">${o.command_id}</td><td style="color:var(--muted);font-size:11px">${o.broker_order_id||'-'}</td><td style="font-weight:600;color:var(--primary)">${o.execution_type}</td><td style="color:var(--muted);font-size:11px">${o.tag||'-'}</td><td><span class="source ${o.source}">${o.source}</span></td><td style="color:var(--muted)">${o.user||'-'}</td><td style="color:var(--muted)">${o.strategy_name||'-'}</td><td>${o.exchange}</td><td style="font-weight:600">${o.symbol}</td><td style="color:${o.side==='BUY'?'var(--success)':'var(--danger)'}">${o.side}</td><td>${o.quantity}</td><td>${o.product||'-'}</td><td>${o.order_type||'-'}</td><td>${o.price!=null?o.price.toFixed(2):'-'}</td><td style="color:var(--danger)">${o.stop_loss!=null?o.stop_loss.toFixed(2):'-'}</td><td style="color:var(--success)">${o.target!=null?o.target.toFixed(2):'-'}</td><td style="font-size:11px">${o.trailing_type||'-'}</td><td style="font-size:11px">${o.trailing_value!=null?o.trailing_value.toFixed(2):'-'}</td><td><span class="status ${o.status}">${o.status}</span></td></tr>`).join('')}function renderBrokerOrders(orders){const tbody=document.getElementById('brokerRows');brokerCount.textContent=`${orders.length} Orders`;if(!orders.length){tbody.innerHTML='<tr><td colspan="30" class="empty">No broker orders</td></tr>';return}tbody.innerHTML=orders.map(o=>`<tr><td class="actions-col"><div class="actions">${o.status==='OPEN'||o.status==='PENDING'?`<button class="btn-small btn-modify" onclick="openModify('${o.norenordno}','broker')">Modify</button><button class="btn-small btn-cancel" onclick="cancelOrder('${o.norenordno}','broker')">Cancel</button>`:'<span style="color:var(--muted);font-size:11px">-</span>'}</div></td><td><span class="status ${o.stat==='Ok'?'COMPLETE':'REJECTED'}">${o.stat||'-'}</span></td><td style="font-weight:600;font-size:12px">${o.norenordno||'-'}</td><td style="color:var(--muted);font-size:11px">${o.uid||'-'}</td><td style="color:var(--muted);font-size:11px">${o.actid||'-'}</td><td>${o.exch||'-'}</td><td style="font-weight:600">${o.tsym||'-'}</td><td style="color:var(--muted);font-size:11px">${o.token||'-'}</td><td style="color:${o.trantype==='B'?'var(--success)':'var(--danger)'}">${o.trantype==='B'?'BUY':'SELL'}</td><td>${o.qty||'-'}</td><td>${o.prd||'-'}</td><td>${o.prctyp||'-'}</td><td>${o.prc?parseFloat(o.prc).toFixed(2):'-'}</td><td style="color:var(--warning)">${o.trgprc?parseFloat(o.trgprc).toFixed(2):'-'}</td><td>${o.ret||'-'}</td><td><span class="status ${o.status}">${o.status||'-'}</span></td><td style="font-size:11px">${o.reporttype||o.rpt||'-'}</td><td style="font-weight:600;color:var(--primary)">${o.fillshares||'0'}</td><td style="font-weight:600">${o.avgprc?parseFloat(o.avgprc).toFixed(2):'-'}</td><td>${o.cancelqty||'-'}</td><td>${o.dscqty||'-'}</td><td style="color:var(--muted);font-size:11px">${o.exchordid||'-'}</td><td style="color:var(--muted);font-size:11px">${o.norentm||'-'}</td><td style="color:var(--muted);font-size:11px">${o.exch_tm||'-'}</td><td style="font-size:11px">${o.remarks||'-'}</td><td style="color:var(--danger);font-size:11px">${o.rejreason||'-'}</td><td style="color:var(--success)">${o.bpprc?parseFloat(o.bpprc).toFixed(2):'-'}</td><td style="color:var(--danger)">${o.blprc?parseFloat(o.blprc).toFixed(2):'-'}</td><td>${o.trailprc?parseFloat(o.trailprc).toFixed(2):'-'}</td><td>${o.amo||'-'}</td></tr>`).join('')}function formatTime(ts){if(!ts)return'-';const d=new Date(ts);return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}function openModify(id,type){currentModifyId=id;currentModifyType=type;modifyModal.classList.add('active')}function closeModify(){modifyModal.classList.remove('active');currentModifyId=null;currentModifyType=null;modifyType.value='MARKET';modifyPrice.value='';modifyQty.value=''}async function submitModify(){if(!currentModifyId||!currentModifyType)return;const payload={order_id:currentModifyId,order_type:modifyType.value,price:modifyType.value==='LIMIT'?Number(modifyPrice.value):null,quantity:modifyQty.value?Number(modifyQty.value):null};try{const endpoint=currentModifyType==='system'?'/dashboard/orders/modify/system':'/dashboard/orders/modify/broker';const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(res.ok){closeModify();loadOrderbook()}else{alert('Modify failed')}}catch(err){alert('Modify error')}}async function cancelOrder(id,type){if(!confirm(`Cancel this ${type} order?`))return;try{const endpoint=type==='system'?'/dashboard/orders/cancel/system':'/dashboard/orders/cancel/broker';const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:id})});if(res.ok){loadOrderbook()}else{alert('Cancel failed')}}catch(err){alert('Cancel error')}}async function cancelAllSystem(){const pending=systemOrdersCache.filter(o=>o.status==='CREATED'||o.status==='TRIGGERED');if(!pending.length){alert('No pending system orders');return}if(!confirm(`Cancel ${pending.length} pending system orders?`))return;try{const res=await fetch('/dashboard/orders/cancel/system/all',{method:'POST',headers:{'Content-Type':'application/json'}});const data=await res.json();alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);loadOrderbook()}catch(err){alert('Cancel all failed')}}async function cancelAllBroker(){const pending=brokerOrdersCache.filter(o=>o.status==='OPEN'||o.status==='PENDING');if(!pending.length){alert('No pending broker orders');return}if(!confirm(`Cancel ${pending.length} pending broker orders?`))return;try{const res=await fetch('/dashboard/orders/cancel/broker/all',{method:'POST',headers:{'Content-Type':'application/json'}});const data=await res.json();alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);loadOrderbook()}catch(err){alert('Cancel all failed')}}function exportSystemCSV(){if(!systemOrdersCache.length){alert('No data to export');return}const headers=['Created','Updated','Command ID','Broker ID','Execution','Tag','Source','User','Strategy','Exchange','Symbol','Side','Qty','Product','Order Type','Price','Stop Loss','Target','Trailing Type','Trailing Value','Status'];const rows=systemOrdersCache.map(o=>[o.created_at||'',o.updated_at||'',o.command_id||'',o.broker_order_id||'',o.execution_type||'',o.tag||'',o.source||'',o.user||'',o.strategy_name||'',o.exchange||'',o.symbol||'',o.side||'',o.quantity||'',o.product||'',o.order_type||'',o.price||'',o.stop_loss||'',o.target||'',o.trailing_type||'',o.trailing_value||'',o.status||'']);downloadCSV('system_orders.csv',[headers,...rows])}function exportBrokerCSV(){if(!brokerOrdersCache.length){alert('No data to export');return}const headers=['Stat','Noren Order No','UID','Account ID','Exchange','Symbol','Token','Tran Type','Qty','Product','Price Type','Price','Trigger Price','Retention','Status','Report Type','Fill Shares','Avg Price','Cancel Qty','Disclosed Qty','Exchange Order ID','Noren Time','Exchange Time','Remarks','Rejection Reason','Book Profit','Book Loss','Trail Price','AMO'];const rows=brokerOrdersCache.map(o=>[o.stat||'',o.norenordno||'',o.uid||'',o.actid||'',o.exch||'',o.tsym||'',o.token||'',o.trantype||'',o.qty||'',o.prd||'',o.prctyp||'',o.prc||'',o.trgprc||'',o.ret||'',o.status||'',o.reporttype||o.rpt||'',o.fillshares||'',o.avgprc||'',o.cancelqty||'',o.dscqty||'',o.exchordid||'',o.norentm||'',o.exch_tm||'',o.remarks||'',o.rejreason||'',o.bpprc||'',o.blprc||'',o.trailprc||'',o.amo||'']);downloadCSV('broker_orders.csv',[headers,...rows])}function downloadCSV(filename,data){const csv=data.map(row=>row.map(cell=>typeof cell==='string'&&cell.includes(',')?`"${cell}"`:cell).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url)}window.onload=()=>{loadOrderbook();timer=setInterval(loadOrderbook,3000)};window.onbeforeunload=()=>{if(timer)clearInterval(timer)};
+let timer=null,currentModifyId=null,currentModifyType=null,systemOrdersCache=[],brokerOrdersCache=[];
+
+async function logout(){
+    await fetch('/auth/logout',{method:'POST'});
+    window.location.href='/';
+}
+
+async function loadOrderbook(){
+    try{
+        const res=await fetch('/dashboard/orderbook');
+        const data=await res.json();
+        systemOrdersCache=data.system_orders||[];
+        brokerOrdersCache=data.broker_orders||[];
+        renderSystemOrders(systemOrdersCache);
+        renderBrokerOrders(brokerOrdersCache);
+        updateStatusSummary(systemOrdersCache);
+    }catch(err){
+        console.error('Load failed:',err);
+    }
+}
+
+function updateStatusSummary(orders){
+    const total=orders.length;
+    const pending=orders.filter(o=>o.status==='CREATED'||o.status==='SENT_TO_BROKER').length;
+    const executed=orders.filter(o=>o.status==='EXECUTED').length;
+    const failed=orders.filter(o=>o.status==='FAILED').length;
+    
+    document.getElementById('totalOrders').textContent=total;
+    document.getElementById('pendingOrders').textContent=pending;
+    document.getElementById('executedOrders').textContent=executed;
+    document.getElementById('failedOrders').textContent=failed;
+    console.log('📊 Order Summary:',{total,pending,executed,failed});
+}
+
+function renderSystemOrders(orders){
+    const tbody=document.getElementById('systemRows');
+    systemCount.textContent=`${orders.length} Orders`;
+    if(!orders.length){
+        tbody.innerHTML='<tr><td colspan="22" class="empty">No system orders</td></tr>';
+        return;
+    }
+    tbody.innerHTML=orders.map(o=>`<tr><td class="actions-col"><div class="actions">${o.status==='CREATED'||o.status==='TRIGGERED'?`<button class="btn-small btn-modify" onclick="openModify('${o.command_id}','system')">Modify</button><button class="btn-small btn-cancel" onclick="cancelOrder('${o.command_id}','system')">Cancel</button>`:'<span style="color:var(--muted);font-size:11px">-</span>'}</div></td><td style="color:var(--muted);font-size:11px">${formatTime(o.created_at)}</td><td style="color:var(--muted);font-size:11px">${formatTime(o.updated_at)}</td><td style="font-weight:600;font-size:12px">${o.command_id}</td><td style="color:var(--muted);font-size:11px">${o.broker_order_id||'-'}</td><td style="font-weight:600;color:var(--primary)">${o.execution_type}</td><td style="color:var(--muted);font-size:11px">${o.tag||'-'}</td><td><span class="source ${o.source}">${o.source}</span></td><td style="color:var(--muted)">${o.user||'-'}</td><td style="color:var(--muted)">${o.strategy_name||'-'}</td><td>${o.exchange}</td><td style="font-weight:600">${o.symbol}</td><td style="color:${o.side==='BUY'?'var(--success)':'var(--danger)'}">${o.side}</td><td>${o.quantity}</td><td>${o.product||'-'}</td><td>${o.order_type||'-'}</td><td>${o.price!=null?o.price.toFixed(2):'-'}</td><td style="color:var(--danger)">${o.stop_loss!=null?o.stop_loss.toFixed(2):'-'}</td><td style="color:var(--success)">${o.target!=null?o.target.toFixed(2):'-'}</td><td style="font-size:11px">${o.trailing_type||'-'}</td><td style="font-size:11px">${o.trailing_value!=null?o.trailing_value.toFixed(2):'-'}</td><td><span class="status ${o.status}">${o.status}</span></td></tr>`).join('');
+}
+
+function renderBrokerOrders(orders){
+    const tbody=document.getElementById('brokerRows');
+    brokerCount.textContent=`${orders.length} Orders`;
+    if(!orders.length){
+        tbody.innerHTML='<tr><td colspan="30" class="empty">No broker orders</td></tr>';
+        return;
+    }
+    tbody.innerHTML=orders.map(o=>`<tr><td class="actions-col"><div class="actions">${o.status==='OPEN'||o.status==='PENDING'?`<button class="btn-small btn-modify" onclick="openModify('${o.norenordno}','broker')">Modify</button><button class="btn-small btn-cancel" onclick="cancelOrder('${o.norenordno}','broker')">Cancel</button>`:'<span style="color:var(--muted);font-size:11px">-</span>'}</div></td><td><span class="status ${o.stat==='Ok'?'COMPLETE':'REJECTED'}">${o.stat||'-'}</span></td><td style="font-weight:600;font-size:12px">${o.norenordno||'-'}</td><td style="color:var(--muted);font-size:11px">${o.uid||'-'}</td><td style="color:var(--muted);font-size:11px">${o.actid||'-'}</td><td>${o.exch||'-'}</td><td style="font-weight:600">${o.tsym||'-'}</td><td style="color:var(--muted);font-size:11px">${o.token||'-'}</td><td style="color:${o.trantype==='B'?'var(--success)':'var(--danger)'}">${o.trantype==='B'?'BUY':'SELL'}</td><td>${o.qty||'-'}</td><td>${o.prd||'-'}</td><td>${o.prctyp||'-'}</td><td>${o.prc?parseFloat(o.prc).toFixed(2):'-'}</td><td style="color:var(--warning)">${o.trgprc?parseFloat(o.trgprc).toFixed(2):'-'}</td><td>${o.ret||'-'}</td><td><span class="status ${o.status}">${o.status||'-'}</span></td><td style="font-size:11px">${o.reporttype||o.rpt||'-'}</td><td style="font-weight:600;color:var(--primary)">${o.fillshares||'0'}</td><td style="font-weight:600">${o.avgprc?parseFloat(o.avgprc).toFixed(2):'-'}</td><td>${o.cancelqty||'-'}</td><td>${o.dscqty||'-'}</td><td style="color:var(--muted);font-size:11px">${o.exchordid||'-'}</td><td style="color:var(--muted);font-size:11px">${o.norentm||'-'}</td><td style="color:var(--muted);font-size:11px">${o.exch_tm||'-'}</td><td style="font-size:11px">${o.remarks||'-'}</td><td style="color:var(--danger);font-size:11px">${o.rejreason||'-'}</td><td style="color:var(--success)">${o.bpprc?parseFloat(o.bpprc).toFixed(2):'-'}</td><td style="color:var(--danger)">${o.blprc?parseFloat(o.blprc).toFixed(2):'-'}</td><td>${o.trailprc?parseFloat(o.trailprc).toFixed(2):'-'}</td><td>${o.amo||'-'}</td></tr>`).join('');
+}
+
+async function showDiagnostics(){
+    try{
+        const res=await fetch('/dashboard/diagnostics/orders');
+        const data=await res.json();
+        alert(`📊 Order Database:\n\n${JSON.stringify(data, null, 2)}`);
+    }catch(err){
+        alert('❌ Diagnostics failed: '+err.message);
+    }
+}
+
+function formatTime(ts){
+    if(!ts)return'-';
+    const d=new Date(ts);
+    return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+function openModify(id,type){
+    currentModifyId=id;
+    currentModifyType=type;
+    modifyModal.classList.add('active');
+}
+
+function closeModify(){
+    modifyModal.classList.remove('active');
+    currentModifyId=null;
+    currentModifyType=null;
+    modifyType.value='MARKET';
+    modifyPrice.value='';
+    modifyQty.value='';
+}
+
+async function submitModify(){
+    if(!currentModifyId||!currentModifyType)return;
+    const payload={
+        order_id:currentModifyId,
+        order_type:modifyType.value,
+        price:modifyType.value==='LIMIT'?Number(modifyPrice.value):null,
+        quantity:modifyQty.value?Number(modifyQty.value):null
+    };
+    try{
+        const endpoint=currentModifyType==='system'?'/dashboard/orders/modify/system':'/dashboard/orders/modify/broker';
+        const res=await fetch(endpoint,{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(payload)
+        });
+        if(res.ok){closeModify();loadOrderbook()}
+        else{alert('Modify failed')}
+    }catch(err){alert('Modify error')}
+}
+
+async function cancelOrder(id,type){
+    if(!confirm(`Cancel this ${type} order?`))return;
+    try{
+        const endpoint=type==='system'?'/dashboard/orders/cancel/system':'/dashboard/orders/cancel/broker';
+        const res=await fetch(endpoint,{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({order_id:id})
+        });
+        if(res.ok){loadOrderbook()}
+        else{alert('Cancel failed')}
+    }catch(err){alert('Cancel error')}
+}
+
+async function cancelAllSystem(){
+    const pending=systemOrdersCache.filter(o=>o.status==='CREATED'||o.status==='TRIGGERED');
+    if(!pending.length){alert('No pending system orders');return}
+    if(!confirm(`Cancel ${pending.length} pending system orders?`))return;
+    try{
+        const res=await fetch('/dashboard/orders/cancel/system/all',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'}
+        });
+        const data=await res.json();
+        alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);
+        loadOrderbook();
+    }catch(err){alert('Cancel all failed')}
+}
+
+async function cancelAllBroker(){
+    const pending=brokerOrdersCache.filter(o=>o.status==='OPEN'||o.status==='PENDING');
+    if(!pending.length){alert('No pending broker orders');return}
+    if(!confirm(`Cancel ${pending.length} pending broker orders?`))return;
+    try{
+        const res=await fetch('/dashboard/orders/cancel/broker/all',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'}
+        });
+        const data=await res.json();
+        alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);
+        loadOrderbook();
+    }catch(err){alert('Cancel all failed')}
+}
+
+function exportSystemCSV(){
+    if(!systemOrdersCache.length){alert('No data to export');return}
+    const headers=['Created','Updated','Command ID','Broker ID','Execution','Tag','Source','User','Strategy','Exchange','Symbol','Side','Qty','Product','Order Type','Price','Stop Loss','Target','Trailing Type','Trailing Value','Status'];
+    const rows=systemOrdersCache.map(o=>[o.created_at||'',o.updated_at||'',o.command_id||'',o.broker_order_id||'',o.execution_type||'',o.tag||'',o.source||'',o.user||'',o.strategy_name||'',o.exchange||'',o.symbol||'',o.side||'',o.quantity||'',o.product||'',o.order_type||'',o.price||'',o.stop_loss||'',o.target||'',o.trailing_type||'',o.trailing_value||'',o.status||'']);
+    downloadCSV('system_orders.csv',[headers,...rows]);
+}
+
+function exportBrokerCSV(){
+    if(!brokerOrdersCache.length){alert('No data to export');return}
+    const headers=['Stat','Noren Order No','UID','Account ID','Exchange','Symbol','Token','Tran Type','Qty','Product','Price Type','Price','Trigger Price','Retention','Status','Report Type','Fill Shares','Avg Price','Cancel Qty','Disclosed Qty','Exchange Order ID','Noren Time','Exchange Time','Remarks','Rejection Reason','Book Profit','Book Loss','Trail Price','AMO'];
+    const rows=brokerOrdersCache.map(o=>[o.stat||'',o.norenordno||'',o.uid||'',o.actid||'',o.exch||'',o.tsym||'',o.token||'',o.trantype||'',o.qty||'',o.prd||'',o.prctyp||'',o.prc||'',o.trgprc||'',o.ret||'',o.status||'',o.reporttype||o.rpt||'',o.fillshares||'',o.avgprc||'',o.cancelqty||'',o.dscqty||'',o.exchordid||'',o.norentm||'',o.exch_tm||'',o.remarks||'',o.rejreason||'',o.bpprc||'',o.blprc||'',o.trailprc||'',o.amo||'']);
+    downloadCSV('broker_orders.csv',[headers,...rows]);
+}
+
+function downloadCSV(filename,data){
+    const csv=data.map(row=>row.map(cell=>typeof cell==='string'&&cell.includes(',')?`"${cell}"`:cell).join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+window.onload=()=>{loadOrderbook();timer=setInterval(loadOrderbook,3000)};
+window.onbeforeunload=()=>{if(timer)clearInterval(timer)};
 </script>
 </body>
 </html>

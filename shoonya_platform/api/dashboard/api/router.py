@@ -559,3 +559,162 @@ def get_option_chain(
         "meta": meta,
         "rows": [dict(r) for r in rows],
     }
+
+# ==================================================
+# 🔍 DIAGNOSTICS — ORDER PIPELINE TRACKING
+# ==================================================
+
+@router.get("/diagnostics/orders")
+def get_order_diagnostics(
+    system=Depends(get_system),
+):
+    """
+    Complete order diagnostics:
+    - Order database contents
+    - Status distribution  
+    - Intent-to-broker mapping
+    - Failed order tracking
+    """
+    all_orders = system.get_orders(limit=1000)
+    
+    # Count by status
+    status_counts = {}
+    for order in all_orders:
+        status = order.status
+        status_counts[status] = status_counts.get(status, 0) + 1
+    
+    # Count by source
+    source_counts = {}
+    for order in all_orders:
+        source = order.source
+        source_counts[source] = source_counts.get(source, 0) + 1
+    
+    # Failed orders details
+    failed_orders = [
+        {
+            "command_id": o.command_id,
+            "symbol": o.symbol,
+            "side": o.side,
+            "qty": o.quantity,
+            "created": o.created_at,
+            "updated": o.updated_at,
+            "source": o.source,
+        }
+        for o in all_orders
+        if o.status == "FAILED"
+    ]
+    
+    # Pending orders (not yet filled)
+    pending_orders = [
+        {
+            "command_id": o.command_id,
+            "symbol": o.symbol,
+            "side": o.side,
+            "qty": o.quantity,
+            "status": o.status,
+            "broker_id": o.broker_order_id,
+            "created": o.created_at,
+            "source": o.source,
+        }
+        for o in all_orders
+        if o.status in ("CREATED", "SENT_TO_BROKER")
+    ]
+    
+    # Executed orders
+    executed_orders = [
+        {
+            "command_id": o.command_id,
+            "symbol": o.symbol,
+            "side": o.side,
+            "qty": o.quantity,
+            "broker_id": o.broker_order_id,
+            "created": o.created_at,
+            "updated": o.updated_at,
+        }
+        for o in all_orders
+        if o.status == "EXECUTED"
+    ]
+    
+    return {
+        "summary": {
+            "total_orders": len(all_orders),
+            "status_breakdown": status_counts,
+            "source_breakdown": source_counts,
+        },
+        "failed_orders": {
+            "count": len(failed_orders),
+            "details": failed_orders,
+        },
+        "pending_orders": {
+            "count": len(pending_orders),
+            "details": pending_orders,
+        },
+        "executed_orders": {
+            "count": len(executed_orders),
+            "details": executed_orders,
+        },
+    }
+
+
+@router.get("/diagnostics/intent-verification")
+def verify_intent_generation(
+    system=Depends(get_system),
+):
+    """
+    Verify intent generation pipeline:
+    - Check database writes
+    - Verify status transitions
+    - Track intent->broker mapping
+    """
+    all_orders = system.get_orders(limit=500)
+    
+    # Check for orders that have broker_order_id (sent to broker)
+    sent_to_broker = [o for o in all_orders if o.broker_order_id]
+    
+    # Check for orders with execution_type
+    by_execution_type = {}
+    for order in all_orders:
+        exec_type = order.execution_type or "UNKNOWN"
+        if exec_type not in by_execution_type:
+            by_execution_type[exec_type] = []
+        by_execution_type[exec_type].append({
+            "command_id": order.command_id,
+            "symbol": order.symbol,
+            "status": order.status,
+        })
+    
+    # Check order completeness
+    incomplete_orders = []
+    for order in all_orders:
+        issues = []
+        if not order.execution_type:
+            issues.append("missing_execution_type")
+        if order.status == "SENT_TO_BROKER" and not order.broker_order_id:
+            issues.append("sent_to_broker_but_no_broker_id")
+        if issues:
+            incomplete_orders.append({
+                "command_id": order.command_id,
+                "issues": issues,
+            })
+    
+    return {
+        "intent_pipeline": {
+            "total_intents": len(all_orders),
+            "sent_to_broker": len(sent_to_broker),
+            "by_execution_type": by_execution_type,
+        },
+        "data_quality": {
+            "incomplete_orders": incomplete_orders,
+            "missing_broker_id_count": len([o for o in all_orders if o.status == "SENT_TO_BROKER" and not o.broker_order_id]),
+        },
+        "recent_activity": [
+            {
+                "command_id": o.command_id,
+                "symbol": o.symbol,
+                "status": o.status,
+                "source": o.source,
+                "updated": o.updated_at,
+            }
+            for o in all_orders[:20]
+        ],
+    }

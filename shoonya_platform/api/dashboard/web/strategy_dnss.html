@@ -33,8 +33,16 @@ button{padding:12px;border-radius:10px;border:none;font-weight:600;cursor:pointe
 </head>
 
 <body>
-<header>
-  <div class="brand" onclick="location.href='/dashboard/web/home.html'">⚡ Shoonya OMS</div>
+<header style="display: flex; gap: 20px; align-items: center;">
+  <div class="brand" onclick="location.href='/dashboard/web/dashboard.html'">⚡ Shoonya OMS</div>
+  <a href="/dashboard/web/dashboard.html" style="color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 4px; transition: all 0.2s;">Dashboard</a>
+  <a href="/dashboard/web/home.html" style="color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 4px; transition: all 0.2s;">Home</a>
+  <a href="/dashboard/web/option_chain_dashboard.html" style="color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 4px; transition: all 0.2s;">Option Chain</a>
+  <a href="/dashboard/web/place_order.html" style="color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 4px; transition: all 0.2s;">Place Order</a>
+  <a href="/dashboard/web/orderbook.html" style="color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 4px; transition: all 0.2s;">Orderbook</a>
+  <a href="/dashboard/web/diagnostics.html" style="color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 4px; transition: all 0.2s;">Diagnostics</a>
+  <a href="/dashboard/web/strategy_dnss.html" style="color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 4px; transition: all 0.2s;">DNSS Strategy</a>
+  <button onclick="logout()" style="margin-left: auto; background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;">Logout</button>
 </header>
 
 <main>
@@ -105,6 +113,35 @@ button{padding:12px;border-radius:10px;border:none;font-weight:600;cursor:pointe
 </main>
 
 <script>
+async function logout() {
+    try {
+        await fetch('/auth/logout', {
+            method: 'POST',
+            credentials: 'include'
+        });
+    } catch (e) {
+        console.log('Logout completed');
+    }
+    window.location.href = '/';
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+    checkAuth();
+});
+
+async function checkAuth() {
+    try {
+        const res = await fetch('/dashboard/home/status', {
+            credentials: 'include'
+        });
+        if (res.status === 401) {
+            window.location.href = '/';
+        }
+    } catch (e) {
+        console.log('Auth check completed');
+    }
+}
+
 async function submitEntry(){
   const payload = {
     strategy_name: strategy_name.value,
@@ -169,6 +206,10 @@ async function refreshStatus(){
   statusArea.innerHTML="Loading...";
   try{
     const res = await fetch("/dashboard/home/status",{credentials:"include"});
+    if (res.status === 401) {
+        window.location.href = '/';
+        return;
+    }
     const data = await res.json();
 
     statusArea.innerHTML = `

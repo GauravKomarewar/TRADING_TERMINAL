@@ -381,7 +381,7 @@ def implied_volatility(
             result = sigma * 100
             if 0.1 <= result <= 500:
                 return round(result, 2)
-    except:
+    except Exception:
         pass
     
     # ------------------------------------------------------------------

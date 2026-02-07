@@ -67,16 +67,21 @@
             padding: 6px 10px;
             border-radius: 4px;
             transition: all 0.2s;
+            display: inline-block;
+            border: 1px solid transparent;
         }
         
         .nav-link:hover {
             color: var(--text);
-            background: rgba(28, 35, 51, 0.5);
+            background: rgba(28, 35, 51, 0.8);
+            border-color: var(--primary);
         }
         
         .nav-link.active {
             color: var(--primary);
-            background: rgba(59, 130, 246, 0.1);
+            background: rgba(59, 130, 246, 0.15);
+            border-color: var(--primary);
+            font-weight: 600;
         }
         
         /* Main Container */
@@ -648,12 +653,16 @@
 <body>
 <header>
     <div class="nav-left">
-        <div class="brand" onclick="window.location.href='/dashboard/home'">⚡ Shoonya OMS</div>
-        <a class="nav-link" href="/dashboard/home">Home</a>
+        <div class="brand" onclick="window.location.href='/dashboard/web/dashboard.html'">⚡ Shoonya OMS</div>
+        <a class="nav-link" href="/dashboard/web/dashboard.html">Dashboard</a>
+        <a class="nav-link" href="/dashboard/web/home.html">Home</a>
         <a class="nav-link active" href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
         <a class="nav-link" href="/dashboard/web/place_order.html">Place Order</a>
         <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
+        <a class="nav-link" href="/dashboard/web/diagnostics.html">Diagnostics</a>
+        <a class="nav-link" href="/dashboard/web/strategy_dnss.html">DNSS Strategy</a>
     </div>
+    <div style="margin-left: auto;"><button onclick="logout()" style="background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Logout</button></div>
 </header>
 
 <main>
@@ -1682,6 +1691,13 @@
                 order_type: item.orderType,
                 price: item.orderType === 'LIMIT' ? item.price : null,
                 execution_type: 'ENTRY',
+                test_mode: null,
+                triggered_order: 'NO',
+                trigger_value: null,
+                target: null,
+                stoploss: null,
+                trail_sl: null,
+                trail_when: null,
                 reason: 'OPTION_CHAIN_BASKET'
             }));
             
@@ -1692,14 +1708,18 @@
                 body: JSON.stringify({ orders, reason: 'OPTION_CHAIN_BASKET' })
             });
             
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
             
-            showBasketToast('✓ Basket orders submitted!');
+            const data = await res.json();
+            showBasketToast(`✓ Orders queued (${data.intent_id})`);
             basket = [];
             updateBasketUI();
             closeBasketModal();
         } catch (err) {
-            showError('Failed to place basket orders: ' + err.message);
+            showError('Order placement failed: ' + err.message);
         } finally {
             confirmBtn.disabled = false;
             confirmBtn.textContent = 'Confirm & Place Orders';

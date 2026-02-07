@@ -38,6 +38,19 @@ import time
 from pathlib import Path
 from typing import Optional
 
+# CRITICAL: Fix Windows console encoding for Unicode support BEFORE any imports
+if sys.platform == "win32":
+    import io
+    import logging
+    
+    # Wrap both stdout and stderr with UTF-8 encoding (handles emoji gracefully)
+    # Do this EXTRA early to catch all logging initialization
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+    
+    # Suppress logging module's exception handling for Unicode errors
+    logging.raiseExceptions = False
+
 from waitress import serve
 import uvicorn
 
@@ -73,22 +86,27 @@ def signal_handler(signum, frame):
     # 2️⃣ Shutdown bot FIRST (owns feed, supervisor, watcher)
     if bot_instance:
         try:
-            logger.info("Shutting down trading bot...")
+            if logger:
+                logger.info("Shutting down trading bot...")
             bot_instance.shutdown()
         except Exception as e:
-            logger.error(f"Error shutting down bot: {e}")
+            if logger:
+                logger.error(f"Error shutting down bot: {e}")
 
     # 3️⃣ Stop dashboard server
     if dashboard_server:
         try:
-            logger.info("Stopping dashboard server...")
+            if logger:
+                logger.info("Stopping dashboard server...")
             dashboard_server.should_exit = True
         except Exception as e:
-            logger.error(f"Error stopping dashboard: {e}")
+            if logger:
+                logger.error(f"Error stopping dashboard: {e}")
 
     # 4️⃣ Wait for dashboard thread
     if dashboard_thread and dashboard_thread.is_alive():
-        logger.info("Waiting for dashboard thread to terminate...")
+        if logger:
+            logger.info("Waiting for dashboard thread to terminate...")
         dashboard_thread.join(timeout=5.0)
 
     if logger:
@@ -123,14 +141,16 @@ def run_dashboard():
 
             dashboard_server = uvicorn.Server(config)
 
-            logger.info(
-                f"📊 Dashboard starting | PID={os.getpid()} | Thread={threading.current_thread().name}"
-            )
+            if logger:
+                logger.info(
+                    f"📊 Dashboard starting | PID={os.getpid()} | Thread={threading.current_thread().name}"
+                )
 
             # This will block until server.should_exit is set
             dashboard_server.run()
 
-            logger.info("Dashboard server stopped")
+            if logger:
+                logger.info("Dashboard server stopped")
             
             # If we exit cleanly (shutdown_event set), don't restart
             if shutdown_event.is_set():
@@ -146,7 +166,8 @@ def run_dashboard():
                 break
             
             # Wait before restart to avoid rapid crash loops
-            logger.warning("Dashboard will restart in 5 seconds...")
+            if logger:
+                logger.warning("Dashboard will restart in 5 seconds...")
             time.sleep(5)
 
 
@@ -201,7 +222,7 @@ def main():
         # -------------------------------------------------
         # TELEGRAM STARTUP NOTIFICATION
         # -------------------------------------------------
-        if bot_instance.telegram_enabled:
+        if bot_instance.telegram_enabled and bot_instance.telegram:
             bot_instance.telegram.send_startup_message(
                 host=server_cfg["host"],
                 port=server_cfg["port"],
@@ -250,7 +271,7 @@ def main():
         # -------------------------------------------------
         # TELEGRAM READY NOTIFICATION
         # -------------------------------------------------
-        if bot_instance.telegram_enabled:
+        if bot_instance.telegram_enabled and bot_instance.telegram:
             bot_instance.telegram.send_ready_message(
                 host=server_cfg["host"],
                 port=server_cfg["port"],
@@ -279,7 +300,8 @@ def main():
         )
 
     except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt")
+        if logger:
+            logger.info("Received keyboard interrupt")
         shutdown_event.set()
 
     except Exception as exc:
@@ -291,14 +313,14 @@ def main():
             import traceback
             traceback.print_exc()
 
-        if bot_instance and bot_instance.telegram_enabled:
+        if bot_instance and bot_instance.telegram_enabled and bot_instance.telegram:
             try:
                 bot_instance.telegram.send_error_message(
                     "🚨 EXECUTION SERVICE CRASHED",
                     str(exc),
                 )
-            except:
-                pass
+            except Exception as notify_error:
+                logger.error(f"Failed to send crash notification via telegram: {notify_error}")
 
         sys.exit(1)
 

@@ -1037,7 +1037,7 @@ class OptionChainData:
                         issues.append("Contract expired")
                     elif expiry_dt.date() == datetime.now().date():
                         warnings.append("Expiry day")
-            except:
+            except (ValueError, TypeError):
                 pass
             
             healthy = len(issues) == 0
@@ -1112,7 +1112,7 @@ class OptionChainData:
         """Destructor - ensure cleanup on garbage collection."""
         try:
             self.cleanup()
-        except:
+        except Exception:
             pass
 
 

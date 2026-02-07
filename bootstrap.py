@@ -142,11 +142,16 @@ def main() -> None:
         pip = VENV_DIR / "bin" / "pip"
         activate_hint = f"source {VENV_DIR}/bin/activate"
 
+    if is_windows():
+        python = VENV_DIR / "Scripts" / "python.exe"
+    else:
+        python = VENV_DIR / "bin" / "python"
+
     # -------------------------------------------------------------------------
     # UPGRADE TOOLCHAIN (SAFE & REQUIRED)
     # -------------------------------------------------------------------------
-    print("⬆️ Upgrading pip / setuptools / wheel...")
-    run([str(pip), "install", "--upgrade", "pip", "setuptools", "wheel"])
+    print("⬆️ Upgrading setuptools / wheel (pip-safe)...")
+    run([str(python), "-m", "pip", "install", "--upgrade", "setuptools", "wheel"])
 
     # -------------------------------------------------------------------------
     # INSTALL PYTHON REQUIREMENTS

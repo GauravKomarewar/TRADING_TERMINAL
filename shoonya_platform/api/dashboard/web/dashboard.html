@@ -64,6 +64,7 @@
             padding: 8px 12px;
             border-radius: 6px;
             transition: 0.2s;
+            display: inline-block;
         }
         
         .nav-link:hover {
@@ -74,21 +75,30 @@
         .nav-link.active {
             color: var(--primary);
             background: #1c2333;
+            font-weight: 600;
+        }
+        
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
         }
         
         .logout-btn {
             background: transparent;
-            border: 1px solid var(--border);
+            border: 1px solid var(--danger);
             color: var(--danger);
             padding: 8px 16px;
             border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
             transition: 0.2s;
+            font-weight: 600;
         }
         
         .logout-btn:hover {
-            background: rgba(239, 68, 68, 0.1);
+            background: var(--danger);
+            color: #fff;
             border-color: var(--danger);
         }
         
@@ -133,6 +143,7 @@
             font-size: 28px;
             font-weight: 700;
             font-variant-numeric: tabular-nums;
+            letter-spacing: -0.5px;
         }
         
         .stat-value.up {
@@ -357,11 +368,14 @@
 <body>
 <header>
     <div class="nav-left">
-        <div class="brand" onclick="window.location.href='/dashboard/home'">⚡ Shoonya OMS</div>
-        <a class="nav-link active" href="/dashboard/home">Home</a>
+        <div class="brand" onclick="window.location.href='/dashboard/web/dashboard.html'">⚡ Shoonya OMS</div>
+        <a class="nav-link" href="/dashboard/web/dashboard.html">Dashboard</a>
+        <a class="nav-link" href="/dashboard/web/home.html">Home</a>
         <a class="nav-link" href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
         <a class="nav-link" href="/dashboard/web/place_order.html">Place Order</a>
         <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
+        <a class="nav-link" href="/dashboard/web/diagnostics.html">Diagnostics</a>
+        <a class="nav-link" href="/dashboard/web/strategy_dnss.html">DNSS Strategy</a>
     </div>
     <div style="display: flex; gap: 12px; align-items: center">
         <div class="auto-refresh-status" id="autoRefreshStatus">
@@ -525,6 +539,37 @@
 </main>
 
 <script>
+    // Logout handler
+    async function logout() {
+        try {
+            await fetch('/auth/logout', {
+                method: 'POST',
+                credentials: 'include'
+            });
+        } catch (e) {
+            console.log('Logout completed');
+        }
+        window.location.href = '/';
+    }
+    
+    // Check authentication on page load
+    window.addEventListener('DOMContentLoaded', function() {
+        checkAuth();
+    });
+    
+    async function checkAuth() {
+        try {
+            const res = await fetch('/dashboard/home/status', {
+                credentials: 'include'
+            });
+            if (res.status === 401) {
+                window.location.href = '/';
+            }
+        } catch (e) {
+            console.log('Auth check completed');
+        }
+    }
+    
     // Configuration
     const config = {
         autoRefreshInterval: 5000, // 5 seconds

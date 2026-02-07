@@ -220,20 +220,24 @@ class ShoonyaBot:
         # 📢 TELEGRAM (OPTIONAL, NON-BLOCKING)
         # -------------------------------------------------
         self.telegram_enabled = self.config.is_telegram_enabled()
+        self.telegram = None  # Initialize to None first
         if self.telegram_enabled:
             try:
                 telegram_config = self.config.get_telegram_config()
-                self.telegram = TelegramNotifier(
-                    telegram_config["bot_token"],
-                    telegram_config["chat_id"],
-                )
+                # Validate required fields are present and not None
+                bot_token = telegram_config.get("bot_token") if telegram_config else None
+                chat_id = telegram_config.get("chat_id") if telegram_config else None
+                
+                if not bot_token or not chat_id:
+                    raise ValueError("Telegram bot_token and chat_id must be configured")
+                
+                self.telegram = TelegramNotifier(bot_token, chat_id)
                 logger.info("Telegram integration enabled")
             except Exception as e:
                 logger.error(f"Failed to initialize Telegram: {e}")
                 self.telegram_enabled = False
                 self.telegram = None
         else:
-            self.telegram = None
             logger.warning("Telegram configuration missing - notifications disabled")
 
         # -------------------------------------------------
@@ -517,8 +521,11 @@ class ShoonyaBot:
                     "✅ LOGIN SUCCESS | service=signal_processor | session_active=True"
                 )
 
-                if self.telegram_enabled:
-                    self.telegram.send_login_success(self.config.user_id)
+                if self.telegram_enabled and self.telegram and self.config.user_id:
+                    try:
+                        self.telegram.send_login_success(self.config.user_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to send login success message: {e}")
 
                 return True
 
@@ -526,8 +533,11 @@ class ShoonyaBot:
                 "❌ LOGIN FAILED | service=signal_processor | reason=unknown"
             )
 
-            if self.telegram_enabled:
-                self.telegram.send_login_failed("Shoonya login failed")
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.telegram.send_login_failed("Shoonya login failed")
+                except Exception as e:
+                    logger.warning(f"Failed to send login failed message: {e}")
 
             return False
 
@@ -538,8 +548,11 @@ class ShoonyaBot:
                 "❌ LOGIN EXCEPTION | service=signal_processor | fatal=True"
             )
 
-            if self.telegram_enabled:
-                self.telegram.send_login_failed(str(e))
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.telegram.send_login_failed(str(e))
+                except Exception as tg_e:
+                    logger.warning(f"Failed to send login failed message: {tg_e}")
 
             return False
 
@@ -601,9 +614,12 @@ class ShoonyaBot:
             )
             raise RuntimeError("Broker session invalid and recovery failed")
 
-    
     def validate_webhook_signature(self, payload: str, signature: str) -> bool:
         """Validate webhook signature for security"""
+        # Validate webhook_secret is configured
+        if not self.config.webhook_secret:
+            logger.error("webhook_secret not configured - rejecting webhook")
+            return False
         return validate_webhook_signature(payload, signature, self.config.webhook_secret)
     
     def parse_alert_data(self, alert_data: Dict[str, Any]) -> AlertData:
@@ -686,7 +702,11 @@ class ShoonyaBot:
                 return True
 
         # Broker position (truth)
-        positions = self.api.get_positions()
+        try:
+            positions = self.api.get_positions()
+        except Exception:
+            positions = []
+
         for p in positions:
             if p.get("tsym") == symbol and int(p.get("netqty", 0)) != 0:
                 return True
@@ -751,7 +771,7 @@ class ShoonyaBot:
             return LegResult(
                 leg_data=leg_data,
                 order_result=OrderResult(success=True, order_id=fake_order_id),
-                order_params={"test_mode": True},
+                order_params=None,  # TEST MODE - no actual params
             )
 
         try:
@@ -818,15 +838,23 @@ class ShoonyaBot:
             # =================================================
             # TELEGRAM — INTENT REGISTERED
             # =================================================
-            if self.telegram_enabled:
-                self.telegram.send_order_placing(
-                    strategy_name=strategy_name,
-                    execution_type=execution_type,
-                    symbol=leg_data.tradingsymbol,
-                    direction=direction,
-                    quantity=leg_data.qty,
-                    price=cmd.price if cmd.order_type == "LIMIT" else "MARKET",
-                )
+            if self.telegram_enabled and self.telegram:
+                try:
+                    # Ensure price is a float, not None
+                    if cmd.order_type == "LIMIT" and cmd.price is not None:
+                        price = cmd.price
+                    else:
+                        price = 0.0
+                    self.telegram.send_order_placing(
+                        strategy_name=strategy_name,
+                        execution_type=execution_type,
+                        symbol=leg_data.tradingsymbol,
+                        direction=direction,
+                        quantity=leg_data.qty,
+                        price=price,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send order placing message: {e}")
 
             # =================================================
             # 🔒 REGISTER INTENT ONLY
@@ -845,17 +873,19 @@ class ShoonyaBot:
             return LegResult(
                 leg_data=leg_data,
                 order_result=OrderResult(success=True, order_id=None),
-                order_params=cmd.to_broker_params(),
             )
 
         except Exception as e:
             log_exception("process_leg", e)
 
-            if self.telegram_enabled:
-                self.telegram.send_error_message(
-                    title="ORDER INTENT ERROR",
-                    error=f"{leg_data.tradingsymbol}: {str(e)}",
-                )
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.telegram.send_error_message(
+                        title="ORDER INTENT ERROR",
+                        error=f"{leg_data.tradingsymbol}: {str(e)}",
+                    )
+                except Exception as tg_e:
+                    logger.warning(f"Failed to send error message: {tg_e}")
 
             return LegResult(
                 leg_data=leg_data,
@@ -895,18 +925,24 @@ class ShoonyaBot:
             # -------------------------------------------------
             # TELEGRAM — ALERT RECEIVED
             # -------------------------------------------------
-            if self.telegram_enabled:
-                self.telegram.send_alert_received(
-                    strategy_name=parsed.strategy_name,
-                    execution_type=execution_type,
-                    legs_count=len(parsed.legs),
-                    exchange=parsed.exchange,
-                )
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.telegram.send_alert_received(
+                        strategy_name=parsed.strategy_name,
+                        execution_type=execution_type,
+                        legs_count=len(parsed.legs),
+                        exchange=parsed.exchange,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send alert received message: {e}")
             # -------------------------------------------------
             # 🔁 EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
             # -------------------------------------------------
             if not parsed.test_mode:
-                positions = self.api.get_positions()
+                try:
+                    positions = self.api.get_positions()
+                except Exception:
+                    positions = []
 
                 # 🔒 Direction-aware broker map (ExecutionGuard v1.3 contract)
                 broker_map = {}
@@ -996,7 +1032,10 @@ class ShoonyaBot:
                     # -------------------------------------------------
                     # 🔒 BROKER-TRUTH EXIT DIRECTION
                     # -------------------------------------------------
-                    positions = self.api.get_positions()
+                    try:
+                        positions = self.api.get_positions()
+                    except Exception:
+                        positions = []
 
                     net_qty = 0
                     for p in positions:
@@ -1068,11 +1107,14 @@ class ShoonyaBot:
             if execution_type == "ENTRY" and success_count == 0:
                 self.execution_guard.force_close_strategy(parsed.strategy_name)
 
-                if self.telegram_enabled:
-                    self.telegram.send_error_message(
-                        title="🚨 ENTRY FAILED",
-                        error=f"{parsed.strategy_name} | All legs rejected",
-                    )
+                if self.telegram_enabled and self.telegram:
+                    try:
+                        self.telegram.send_error_message(
+                            title="🚨 ENTRY FAILED",
+                            error=f"{parsed.strategy_name} | All legs rejected",
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to send error message: {e}")
 
                 return {
                     "status": "FAILED",
@@ -1103,11 +1145,14 @@ class ShoonyaBot:
         except Exception as e:
             log_exception("process_alert", e)
 
-            if self.telegram_enabled:
-                self.telegram.send_error_message(
-                    "ALERT PROCESSING ERROR",
-                    str(e),
-                )
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.telegram.send_error_message(
+                        "ALERT PROCESSING ERROR",
+                        str(e),
+                    )
+                except Exception as tg_e:
+                    logger.warning(f"Failed to send error message: {tg_e}")
 
             return {
                 "status": "error",
@@ -1130,10 +1175,16 @@ class ShoonyaBot:
         market = market_cls(**market_config)
 
         # 2️⃣ Create strategy (CONFIG IS NOW RESOLVED)
+        # Get lot_qty from config or use default
+        lot_qty = getattr(universal_config, 'lot_qty', 1)
+        if hasattr(universal_config, 'to_dict') and isinstance(universal_config.to_dict(), dict):
+            lot_qty = universal_config.to_dict().get('lot_qty', lot_qty)
+        
         strategy = DeltaNeutralShortStrangleStrategy(
             exchange=universal_config.exchange,
             symbol=universal_config.symbol,
             expiry=market.expiry,
+            lot_qty=lot_qty,
             get_option_func=market.get_nearest_option,
             config=universal_config,   # 👈 important
         )
@@ -1151,7 +1202,7 @@ class ShoonyaBot:
             resolved_config=universal_config.to_dict(),
         )
 
-        # 5️⃣ Inject writer into strategy (READ-ONLY)
+        # 5️⃣ Store metadata on strategy object (FROZEN CONTRACT)
         strategy.run_id = run_id
         strategy.run_writer = writer
 
@@ -1219,8 +1270,8 @@ class ShoonyaBot:
                                 f"Reason: {result.error_message}\n"
                                 f"⚠️ Position still open - manual action may be needed"
                             )
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"Failed to send telegram notification for EXIT order rejection: {e}")
 
             return result
 
@@ -1233,8 +1284,8 @@ class ShoonyaBot:
             # ✅ FIX: Update database on exception
             try:
                 self.order_repo.update_status(command.command_id, "FAILED")
-            except:
-                pass
+            except Exception as db_error:
+                logger.warning(f"Failed to update command status in database: {db_error}")
             
             return OrderResult(
                 success=False,
@@ -1425,8 +1476,11 @@ class ShoonyaBot:
             
         except Exception as e:
             log_exception("send_status_report", e)
-            if self.telegram_enabled:
-                self.telegram.send_error_message("STATUS REPORT ERROR", str(e))
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.telegram.send_error_message("STATUS REPORT ERROR", str(e))
+                except Exception as tg_e:
+                    logger.warning(f"Failed to send error message: {tg_e}")
     
     def get_trade_history(self, limit: Optional[int] = None, 
                          date_filter: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1458,7 +1512,7 @@ class ShoonyaBot:
         return {
             'api_session': api_session,
             'telegram_enabled': self.telegram_enabled,
-            'telegram_connected': self.telegram.is_connected if self.telegram else False,
+            'telegram_connected': self.telegram.is_connected if (self.telegram and hasattr(self.telegram, 'is_connected')) else False,
             'trade_stats': {
                 'total_trades': bot_stats.total_trades,
                 'today_trades': bot_stats.today_trades,

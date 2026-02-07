@@ -17,6 +17,32 @@ from typing import Dict, Any, List, Optional, Callable, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+class UTF8ConsoleHandler(logging.StreamHandler):
+    """Custom handler that safely encodes output to console with UTF-8"""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            # Encode with 'replace' error handler to avoid crashes on Windows
+            if hasattr(stream, 'buffer'):
+                # Write directly to binary buffer and flush
+                stream.buffer.write((msg + '\n').encode('utf-8', errors='replace'))
+                stream.buffer.flush()
+            else:
+                # Fallback for streams without buffer (shouldn't happen normally)
+                try:
+                    stream.write(msg + '\n')
+                    stream.flush()
+                except UnicodeEncodeError:
+                    # Final fallback - replace unprintable chars
+                    stream.write(msg.encode('utf-8', errors='replace').decode('utf-8', errors='replace') + '\n')
+                    stream.flush()
+        except Exception:
+            # If all else fails, just skip this message instead of crashing
+            self.handleError(record)
+
+
 def setup_logging(log_file: str = 'webhook_bot.log',
                  log_level: str = 'INFO') -> logging.Logger:
     """
@@ -52,25 +78,25 @@ def setup_logging(log_file: str = 'webhook_bot.log',
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    # Rotating file handler
+    # Rotating file handler with UTF-8 encoding
     file_handler = RotatingFileHandler(
         log_path,
         maxBytes=10 * 1024 * 1024,  # 10 MB
-        backupCount=5
+        backupCount=5,
+        encoding='utf-8'  # Explicitly use UTF-8
     )
     file_handler.setLevel(numeric_level)
     file_handler.setFormatter(formatter)
 
-    # Console handler (wrap stdout to ensure UTF-8 with safe error handling)
+    # Console handler with UTF-8 encoding via custom handler
+    import io
     try:
-        import io
-        console_stream = io.TextIOWrapper(
-            sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
-        )
+        # Use custom UTF8ConsoleHandler that properly handles encoding
+        console_handler = UTF8ConsoleHandler(sys.stdout)
     except Exception:
-        console_stream = sys.stdout
-
-    console_handler = logging.StreamHandler(console_stream)
+        # Final fallback - use basic StreamHandler
+        console_handler = logging.StreamHandler(sys.stdout)
+    
     console_handler.setLevel(numeric_level)
     console_handler.setFormatter(formatter)
 

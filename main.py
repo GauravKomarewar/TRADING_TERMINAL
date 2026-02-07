@@ -1,107 +1,207 @@
 #!/usr/bin/env python3
 """
-EXECUTION SERVICE ENTRY POINT (PRODUCTION — FROZEN)
-===================================================
+EXECUTION SERVICE ENTRY POINT (PRODUCTION — FREEZE-READY)
+==========================================================
 
 Purpose:
 - Run TradingView webhook execution service
 - Enforce SupremeRiskManager + ExecutionGuard
 - Handle Telegram commands (read-only / safety)
 - Expose health & status endpoints
+- Co-host dashboard in same process (shared session)
 
 STRICT RULES:
-- NO dashboard
-- NO templates
-- NO dev server
+- NO separate broker login for dashboard
 - NO manual trading endpoints
-- NO UI logic
 - NO strategy logic here
+- SINGLE ShoonyaBot instance (shared memory)
 
-This file is SYSTEMD-MANAGED and MUST NOT be modified.
+ARCHITECTURAL NOTE:
+- Execution service (Waitress) has PRIORITY
+- Dashboard responsiveness may degrade under heavy webhook load
+- This is ACCEPTABLE and INTENTIONAL for execution safety
+
+PRODUCTION HARDENING:
+- Graceful shutdown coordination
+- Thread-safe uvicorn server
+- Proper signal handling
+- Dashboard auto-restart
+- Fail-fast on startup errors
 """
 
 import sys
+import os
 import signal
 import logging
+import threading
+import time
 from pathlib import Path
-
+from typing import Optional
 
 from waitress import serve
+import uvicorn
 
 from shoonya_platform.core.config import Config
-from shoonya_platform.execution.trading_bot import ShoonyaBot
+from shoonya_platform.execution.trading_bot import ShoonyaBot, set_global_bot
 from shoonya_platform.api.http.execution_app import ExecutionApp
+from shoonya_platform.api.dashboard.dashboard_app import create_dashboard_app
 from shoonya_platform.utils.utils import setup_logging, log_exception
 
 # ---------------------------------------------------------------------
-# GLOBALS (FOR SIGNAL HANDLING)
+# GLOBALS (FOR SIGNAL HANDLING & THREAD COORDINATION)
 # ---------------------------------------------------------------------
-bot_instance = None
-logger = None
+bot_instance: Optional[ShoonyaBot] = None
+logger: Optional[logging.Logger] = None
+dashboard_server: Optional[uvicorn.Server] = None
+dashboard_thread: Optional[threading.Thread] = None
+shutdown_event = threading.Event()
 
 
 # ---------------------------------------------------------------------
-# SIGNAL HANDLER (SYSTEMD SAFE)
+# GRACEFUL SHUTDOWN HANDLER (SYSTEMD SAFE)
 # ---------------------------------------------------------------------
 def signal_handler(signum, frame):
-    global bot_instance, logger
+    global bot_instance, logger, dashboard_server, shutdown_event
 
     if logger:
-        logger.warning(f"Received shutdown signal: {signum}")
+        logger.warning(f"🛑 Received shutdown signal: {signum}")
+        logger.info("Initiating graceful shutdown sequence...")
 
+    # 1️⃣ Global shutdown flag
+    shutdown_event.set()
+
+    # 2️⃣ Shutdown bot FIRST (owns feed, supervisor, watcher)
     if bot_instance:
         try:
+            logger.info("Shutting down trading bot...")
             bot_instance.shutdown()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Error shutting down bot: {e}")
 
-    sys.exit(0)
+    # 3️⃣ Stop dashboard server
+    if dashboard_server:
+        try:
+            logger.info("Stopping dashboard server...")
+            dashboard_server.should_exit = True
+        except Exception as e:
+            logger.error(f"Error stopping dashboard: {e}")
+
+    # 4️⃣ Wait for dashboard thread
+    if dashboard_thread and dashboard_thread.is_alive():
+        logger.info("Waiting for dashboard thread to terminate...")
+        dashboard_thread.join(timeout=5.0)
+
+    if logger:
+        logger.info("✅ Shutdown complete")
+
+# ---------------------------------------------------------------------
+# DASHBOARD RUNNER (THREAD-SAFE UVICORN WITH AUTO-RESTART)
+# ---------------------------------------------------------------------
+def run_dashboard():
+    """
+    Run dashboard using uvicorn.Server (NOT uvicorn.run).
+    This is thread-safe and doesn't hijack signal handlers.
+    
+    CRITICAL FIX: Auto-restart on crash (dashboard crashes don't kill execution)
+    """
+    global dashboard_server, logger, shutdown_event
+
+    while not shutdown_event.is_set():
+        try:
+            app = create_dashboard_app()
+
+            # Create Server instance (not run() helper)
+            config = uvicorn.Config(
+                app=app,
+                host="0.0.0.0",
+                port=8000,
+                log_level="info",
+                loop="asyncio",
+                lifespan="on",
+                access_log=True,
+            )
+
+            dashboard_server = uvicorn.Server(config)
+
+            logger.info(
+                f"📊 Dashboard starting | PID={os.getpid()} | Thread={threading.current_thread().name}"
+            )
+
+            # This will block until server.should_exit is set
+            dashboard_server.run()
+
+            logger.info("Dashboard server stopped")
+            
+            # If we exit cleanly (shutdown_event set), don't restart
+            if shutdown_event.is_set():
+                break
+
+        except Exception as exc:
+            if logger:
+                log_exception("dashboard_thread", exc)
+                logger.error(f"Dashboard crashed: {exc}")
+            
+            # Don't restart if shutting down
+            if shutdown_event.is_set():
+                break
+            
+            # Wait before restart to avoid rapid crash loops
+            logger.warning("Dashboard will restart in 5 seconds...")
+            time.sleep(5)
 
 
 # ---------------------------------------------------------------------
 # MAIN (PRODUCTION ONLY)
 # ---------------------------------------------------------------------
 def main():
-    global bot_instance, logger
+    global bot_instance, logger, dashboard_thread
 
     try:
         # -------------------------------------------------
-        # LOGGING
+        # LOGGING SETUP
         # -------------------------------------------------
         base_dir = Path(__file__).resolve().parent
         logs_dir = base_dir / "logs"
-
         logs_dir.mkdir(exist_ok=True)
 
         log_file = logs_dir / "execution_service.log"
         logger = setup_logging(str(log_file), "INFO")
 
         logger.info("=" * 70)
-        logger.info("🚀 STARTING EXECUTION SERVICE (PRODUCTION)")
+        logger.info("🚀 STARTING EXECUTION SERVICE (PRODUCTION — FREEZE-READY)")
         logger.info("=" * 70)
+        logger.info(f"PID: {os.getpid()}")
+        logger.info(f"Python: {sys.version}")
+        logger.info(f"CWD: {os.getcwd()}")
 
         # -------------------------------------------------
-        # CONFIG
+        # CONFIG LOADING
         # -------------------------------------------------
+        logger.info("Loading configuration...")
         config = Config()
+        server_cfg = config.get_server_config()
 
         # -------------------------------------------------
-        # BOT INITIALIZATION
+        # BOT INITIALIZATION (SINGLE INSTANCE)
         # -------------------------------------------------
-        logger.info("Initializing TradingService")
+        logger.info("Initializing ShoonyaBot (SINGLE INSTANCE)")
         bot_instance = ShoonyaBot(config)
+        
+        # CRITICAL: Set global bot for dashboard access
+        set_global_bot(bot_instance)
+        logger.info("✅ Global bot instance registered")
 
         # -------------------------------------------------
-        # SIGNALS
+        # SIGNAL HANDLERS (MUST BE IN MAIN THREAD)
         # -------------------------------------------------
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        logger.info("Signal handlers installed")
 
         # -------------------------------------------------
-        # TELEGRAM STARTUP MESSAGE
+        # TELEGRAM STARTUP NOTIFICATION
         # -------------------------------------------------
         if bot_instance.telegram_enabled:
-            server_cfg = config.get_server_config()
             bot_instance.telegram.send_startup_message(
                 host=server_cfg["host"],
                 port=server_cfg["port"],
@@ -109,22 +209,11 @@ def main():
             )
 
         # -------------------------------------------------
-        # INITIAL LOGIN (NON-BLOCKING)
+        # EXECUTION HTTP SERVICE (FLASK + WAITRESS)
         # -------------------------------------------------
-        logger.info("Attempting initial broker login")
-        if bot_instance.login():
-            logger.info("Broker login successful")
-        else:
-            logger.warning("Initial login failed — will retry on first execution")
-
-        # -------------------------------------------------
-        # EXECUTION-ONLY FLASK APP
-        # -------------------------------------------------
-        logger.info("Initializing execution HTTP service")
+        logger.info("Initializing execution HTTP service...")
         exec_app = ExecutionApp(bot_instance)
         flask_app = exec_app.get_app()
-
-        server_cfg = config.get_server_config()
 
         logger.info("Execution service configuration:")
         logger.info(f"  Host       : {server_cfg['host']}")
@@ -132,6 +221,35 @@ def main():
         logger.info(f"  Threads    : {server_cfg['threads']}")
         logger.info(f"  Telegram   : {'ENABLED' if bot_instance.telegram_enabled else 'DISABLED'}")
 
+        # -------------------------------------------------
+        # DASHBOARD SERVER (CO-HOSTED — SAME PROCESS)
+        # NOTE: Execution service has priority.
+        # Dashboard responsiveness may degrade under heavy webhook load.
+        # This is ACCEPTABLE and intentional.
+        # -------------------------------------------------
+        logger.info("Starting dashboard server...")
+        
+        # NON-DAEMON thread (allows graceful shutdown)
+        dashboard_thread = threading.Thread(
+            target=run_dashboard,
+            daemon=False,  # CRITICAL: Non-daemon for clean shutdown
+            name="DashboardThread",
+        )
+        dashboard_thread.start()
+
+        # Wait briefly to ensure dashboard started
+        time.sleep(2)
+
+        # CRITICAL FIX: Fail fast if dashboard dies immediately
+        if not dashboard_thread.is_alive():
+            logger.critical("❌ Dashboard thread died immediately — EXITING")
+            sys.exit(1)
+        
+        logger.info("✅ Dashboard started on port 8000 (shared session)")
+
+        # -------------------------------------------------
+        # TELEGRAM READY NOTIFICATION
+        # -------------------------------------------------
         if bot_instance.telegram_enabled:
             bot_instance.telegram.send_ready_message(
                 host=server_cfg["host"],
@@ -140,9 +258,11 @@ def main():
             )
 
         # -------------------------------------------------
-        # START WAITRESS (BLOCKING)
+        # START WAITRESS (BLOCKING — MAIN THREAD)
         # -------------------------------------------------
-        logger.info("✅ Execution service READY — accepting webhooks")
+        logger.info("=" * 70)
+        logger.info("✅ EXECUTION SERVICE READY — ACCEPTING WEBHOOKS")
+        logger.info("=" * 70)
 
         serve(
             flask_app,
@@ -155,30 +275,40 @@ def main():
             max_request_header_size=8192,
             max_request_body_size=1048576,  # 1 MB
             expose_tracebacks=False,
-            ident="Shoonya-Execution-Service",
+            ident="Shoonya-Execution-Service/2.0",
         )
+
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt")
+        shutdown_event.set()
 
     except Exception as exc:
         if logger:
             log_exception("execution_service.main", exc)
+            logger.critical(f"FATAL ERROR: {exc}", exc_info=True)
         else:
             print(f"CRITICAL ERROR: {exc}")
+            import traceback
+            traceback.print_exc()
 
         if bot_instance and bot_instance.telegram_enabled:
-            bot_instance.telegram.send_error_message(
-                "EXECUTION SERVICE CRASHED",
-                str(exc),
-            )
+            try:
+                bot_instance.telegram.send_error_message(
+                    "🚨 EXECUTION SERVICE CRASHED",
+                    str(exc),
+                )
+            except:
+                pass
 
         sys.exit(1)
 
     finally:
         if logger:
-            logger.info("Execution service stopped")
+            logger.info("🏁 Execution service stopped")
 
 
 # ---------------------------------------------------------------------
-# ENTRY
+# ENTRY POINT
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     main()

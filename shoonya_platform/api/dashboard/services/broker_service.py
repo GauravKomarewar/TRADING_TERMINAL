@@ -1,55 +1,59 @@
 # shoonya_platform/api/dashboard/services/broker_service.py
+from shoonya_platform.brokers.shoonya.client import ShoonyaClient
 
-from shoonya_platform.api.dashboard.services.read_only_client import (
-    ReadOnlyShoonyaClient,
-)
+class BrokerView:
+    def __init__(self, api: ShoonyaClient):
+        self.api = api
 
+    def get_positions(self):
+        return self.api.get_positions() or []
+
+    def get_order_book(self):
+        return self.api.get_order_book() or []
+
+    def get_holdings(self):
+        return self.api.get_holdings() or []
+
+    def get_limits(self):
+        return self.api.get_limits() or {}
 
 class BrokerService:
     """
     BROKER TRUTH — READ ONLY (Dashboard Layer)
 
-    ✔ Client-scoped
-    ✔ Multi-client safe
-    ✔ Copy-trading ready
+    ✔ Uses ShoonyaBot session
+    ✔ Single broker truth
+    ✔ Zero extra login
     ❌ No execution
-    ❌ No OMS coupling
-
-    Provides:
-    - Raw broker payloads
-    - Derived analytics for dashboard
+    ❌ No new client
     """
 
-    def __init__(self, client_id: str):
+    def __init__(self, broker_view):
         """
         Args:
-            client_id: Dashboard client identifier
+            broker_view: ReadOnlyBrokerView (from ShoonyaBot)
         """
-        self.client_id = client_id
-        self.client = ReadOnlyShoonyaClient(client_id)
+        self.broker = broker_view
 
     # ==================================================
     # RAW BROKER DATA (PASS-THROUGH)
     # ==================================================
     def get_order_book(self) -> list:
-        return self.client.get_order_book()
+        return self.broker.get_order_book()
 
     def get_positions(self) -> list:
-        return self.client.get_positions()
+        return self.broker.get_positions()
 
     def get_holdings(self) -> list:
-        return self.client.get_holdings()
+        return self.broker.get_holdings()
 
     def get_limits(self) -> dict:
-        return self.client.get_limits()
+        return self.broker.get_limits()
 
     # ==================================================
-    # DERIVED ANALYTICS (DASHBOARD FRIENDLY)
+    # DERIVED ANALYTICS (UNCHANGED)
     # ==================================================
     def get_positions_summary(self) -> dict:
-        """
-        Aggregated position metrics for UI / charts.
-        """
         positions = self.get_positions()
 
         summary = {

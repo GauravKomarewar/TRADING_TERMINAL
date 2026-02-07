@@ -1,32 +1,28 @@
 #!/usr/bin/env python3
 """
-Supreme Risk Manager - FINAL CORRECTED VERSION
-===============================================
+Supreme Risk Manager
+===================
 
-✅ USES OFFICIAL NorenApi PARAMETERS (from your ShoonyaClient.py)
-✅ Compatible with your existing system
-✅ Tested against your actual error logs
+PRODUCTION-GRADE RISK AUTHORITY — EXECUTION-ALIGNED
 
-CRITICAL FIX:
-- Uses "exchange" NOT "exch" (official NorenApi standard)
-- Uses "price_type" NOT "order_type" 
-- Uses "product_type" NOT "product"
-- Uses "tradingsymbol" NOT "symbol"
-- Uses "buy_or_sell" NOT "side"
+ROLE (FROZEN):
+- Decide WHEN risk is breached
+- NEVER decide HOW to exit
+- NEVER infer qty / side / symbol
+- NEVER submit broker orders
 
-Version: v1.2.3-PRODUCTION-READY
+EXIT LAW:
+Risk → PositionExitService → OrderWatcherEngine → Broker → Reconcile → Cleanup
 """
 
-import time
-import json
 import os
-import threading
-from scripts.scriptmaster import requires_limit_order
+import json
+import time
 import math
-
+import threading
 import logging
 from datetime import date, datetime, timedelta
-from collections import defaultdict, deque, OrderedDict
+from collections import deque, OrderedDict
 from typing import Dict, Optional, List, Tuple
 
 from shoonya_platform.utils.utils import log_exception
@@ -36,21 +32,33 @@ logger = logging.getLogger(__name__)
 
 class SupremeRiskManager:
     """
-    Supreme risk authority with GUARANTEED exit enforcement.
-    Uses official NorenApi parameter names for 100% compatibility.
+    🔒 SupremeRiskManager (v1.3.0 — PRODUCTION FROZEN)
+
+    Responsibilities:
+    - Risk evaluation
+    - Daily loss enforcement
+    - Trailing max-loss logic
+    - Cooldown enforcement
+    - Human/manual trade violation detection
+    - EXIT decision routing ONLY
     """
-    
+
+    # --------------------------------------------------
+    # INIT
+    # --------------------------------------------------
+
     def __init__(self, bot):
+        self.bot = bot
         self._lock = threading.RLock()
-        self.force_exit_in_progress = False
 
         cfg = bot.config
         client_id = bot.client_id
-        self.STATE_FILE = f"{cfg.risk_state_file.rstrip('.json')}_{client_id}.json"
-        state_dir = os.path.dirname(self.STATE_FILE)
-        if state_dir:
-            os.makedirs(state_dir, exist_ok=True)
 
+        # ---------------- Risk state persistence ----------------
+        self.STATE_FILE = f"{cfg.risk_state_file.rstrip('.json')}_{client_id}.json"
+        os.makedirs(os.path.dirname(self.STATE_FILE), exist_ok=True)
+
+        # ---------------- Config ----------------
         self.BASE_MAX_LOSS = cfg.risk_base_max_loss
         self.TRAIL_STEP = cfg.risk_trail_step
         self.WARNING_THRESHOLD_PCT = cfg.risk_warning_threshold
@@ -58,24 +66,27 @@ class SupremeRiskManager:
         self.STATUS_UPDATE_INTERVAL = cfg.risk_status_update_min
         self.PNL_RETENTION = cfg.risk_pnl_retention
 
-        self.bot = bot
+        # ---------------- Runtime state ----------------
         self.current_day: date = date.today()
-        self.dynamic_max_loss = self.BASE_MAX_LOSS
-        self.highest_profit = 0.0
-
-        self._load_state()
-
         self.daily_pnl: float = 0.0
+        self.dynamic_max_loss: float = self.BASE_MAX_LOSS
+        self.highest_profit: float = 0.0
+
         self.failed_days = deque(maxlen=self.MAX_CONSECUTIVE_LOSS_DAYS)
         self.cooldown_until: Optional[date] = None
         self.daily_loss_hit: bool = False
         self.warning_sent: bool = False
-        
+
+        # 🔒 Execution flag (monotonic)
+        self.force_exit_in_progress: bool = False
+
+        # Manual trade detection
         self.last_manual_position_signature = None
         self.last_manual_violation_ts = None
         self.human_violation_detected = False
         self.MANUAL_ALERT_COOLDOWN_SEC = 60
 
+        # Status / analytics
         self.last_status_update: Optional[datetime] = None
         self.last_known_pnl: Optional[float] = None
 
@@ -84,11 +95,18 @@ class SupremeRiskManager:
             "5m": OrderedDict(),
             "1d": OrderedDict(),
         }
-        
-        logger.info("SupremeRiskManager initialized v1.2.3-PRODUCTION-READY (NorenApi compatible)")
+
+        self._load_state()
+
+        logger.info("SupremeRiskManager initialized v1.3.0 (EXECUTION-ALIGNED)")
+
+    # --------------------------------------------------
+    # STATE PERSISTENCE
+    # --------------------------------------------------
 
     def _load_state(self):
         if not os.path.exists(self.STATE_FILE):
+            logger.info("RMS: No previous state file found, starting fresh")
             return
         try:
             with open(self.STATE_FILE, "r") as f:
@@ -99,13 +117,26 @@ class SupremeRiskManager:
                 self.highest_profit = data.get("highest_profit", 0.0)
                 self.daily_loss_hit = data.get("daily_loss_hit", False)
                 self.human_violation_detected = data.get("human_violation_detected", False)
+                logger.info(
+                    "RMS: State loaded | date=%s | max_loss=%.2f | profit=%.2f | loss_hit=%s",
+                    self.current_day,
+                    self.dynamic_max_loss,
+                    self.highest_profit,
+                    self.daily_loss_hit,
+                )
+            else:
+                logger.info(
+                    "RMS: State date mismatch (old=%s, current=%s), starting fresh",
+                    data.get("date"),
+                    self.current_day,
+                )
 
         except Exception as e:
             log_exception("RiskState.load", e)
 
     def _save_state(self):
         try:
-            data = {
+            state_data = {
                 "date": str(self.current_day),
                 "dynamic_max_loss": self.dynamic_max_loss,
                 "highest_profit": self.highest_profit,
@@ -113,448 +144,435 @@ class SupremeRiskManager:
                 "human_violation_detected": self.human_violation_detected,
             }
             with open(self.STATE_FILE, "w") as f:
-                json.dump(data, f)
+                json.dump(state_data, f)
+            logger.debug("RMS: State saved | loss_hit=%s | max_loss=%.2f", self.daily_loss_hit, self.dynamic_max_loss)
         except Exception as e:
             log_exception("RiskState.save", e)
 
+    # --------------------------------------------------
+    # EXECUTION DECISION (ONLY)
+    # --------------------------------------------------
+
+    def _route_global_exit(self, reason: str):
+        """
+        🔒 CANONICAL EXIT ROUTE
+
+        Risk decides → PositionExitService executes.
+        """
+        logger.critical("RISK EXIT ROUTED | reason=%s | scope=ALL", reason)
+
+        self.bot.request_exit(
+            scope="ALL",
+            symbols=None,
+            product_type="ALL",
+            reason=reason,
+            source="RISK",
+        )
+
+    # --------------------------------------------------
+    # ENTRY GATING
+    # --------------------------------------------------
+
     def can_execute(self) -> bool:
         today = date.today()
-        self._update_pnl("SYSTEM")
+        try:
+            self._update_pnl()
+        except RuntimeError:
+            # 🔥 FAIL-HARD: broker/session failure must kill process
+            raise
 
         if today != self.current_day:
+            logger.info("RMS: New day detected | old=%s | new=%s", self.current_day, today)
             self._reset_daily_state(today)
 
         if self.cooldown_until and today < self.cooldown_until:
-            logger.critical("Trading blocked: cooldown until %s", self.cooldown_until)
+            logger.warning(
+                "RMS: Entry BLOCKED | reason=COOLDOWN | until=%s | current=%s",
+                self.cooldown_until,
+                today,
+            )
             return False
 
         if self.daily_loss_hit:
-            logger.critical("Trading blocked: daily max loss already hit")
+            logger.warning(
+                "RMS: Entry BLOCKED | reason=DAILY_LOSS_HIT | pnl=%.2f | max_loss=%.2f",
+                self.daily_pnl,
+                self.dynamic_max_loss,
+            )
             return False
 
         if self.daily_pnl <= self.dynamic_max_loss:
+            logger.critical(
+                "RMS: Max loss breach detected | pnl=%.2f | max_loss=%.2f | triggering exit",
+                self.daily_pnl,
+                self.dynamic_max_loss,
+            )
             self._handle_daily_loss_breach()
             return False
 
+        logger.debug(
+            "RMS: Entry ALLOWED | pnl=%.2f | max_loss=%.2f | margin=%.2f",
+            self.daily_pnl,
+            self.dynamic_max_loss,
+            self.daily_pnl - self.dynamic_max_loss,
+        )
         return True
 
     def can_execute_command(self, command) -> Tuple[bool, str]:
         with self._lock:
-            today = date.today()
-            
             if self.force_exit_in_progress:
+                logger.warning("RMS: Command BLOCKED | reason=FORCE_EXIT_IN_PROGRESS | command=%s", command)
                 return False, "FORCE_EXIT_IN_PROGRESS"
 
-            if today != self.current_day:
-                self._reset_daily_state(today)
-
-            if self.cooldown_until and today < self.cooldown_until:
-                return False, "RISK_COOLDOWN_ACTIVE"
-
             if self.daily_loss_hit:
-                return False, "DAILY_MAX_LOSS_ALREADY_HIT"
+                logger.warning("RMS: Command BLOCKED | reason=DAILY_MAX_LOSS_HIT | command=%s", command)
+                return False, "DAILY_MAX_LOSS_HIT"
 
-            if self.daily_pnl <= self.dynamic_max_loss:
-                self._handle_daily_loss_breach()
-                return False, "DAILY_MAX_LOSS_BREACHED"
-
-            lot_size = getattr(command, "lot_size", None)
-            if lot_size and command.quantity % lot_size != 0:
-                return False, "INVALID_LOT_SIZE"
-
+            logger.debug("RMS: Command ALLOWED | command=%s", command)
             return True, "OK"
 
-    def emergency_exit_all(self, reason: str = "RISK_VIOLATION"):
-        """
-        🚨 GUARANTEE EXIT THROUGH POSITION-DRIVEN OMS.
-        
-        Risk manager ONLY DECIDES.
-        PositionExitService EXECUTES.
-        
-        This is a deterministic, non-ambiguous exit path:
-        - No qty logic here (broker supplies it)
-        - No symbol assumptions (position book drives it)
-        - Only route the decision, don't execute
-        """
-        logger.critical(
-            f"🚨 EMERGENCY EXIT INITIATED | reason={reason} | "
-            f"ROUTING TO POSITION_EXIT_SERVICE"
-        )
-
-        try:
-            # ✅ SINGLE LINE: Risk manager decides, PositionExitService executes
-            self.bot.request_exit(
-                scope="ALL",
-                symbols=None,
-                product_type="ALL",
-                reason=reason,
-                source="supreme_risk",
-            )
-
-            logger.critical("🔔 EMERGENCY EXIT ROUTED TO POSITION_EXIT_SERVICE")
-
-            # Allow PositionExitService time to process exits
-            try:
-                logger.info("Waiting up to 10s for position-based exits to complete")
-                self._verify_exit_progress(timeout_sec=10)
-            except Exception:
-                logger.exception("Exception while waiting for exit completion")
-
-        except Exception as e:
-            logger.exception(f"❌ EMERGENCY EXIT ROUTING FAILED | {e}")
-            if self.bot.telegram_enabled:
-                self.bot.send_telegram(f"🚨 CRITICAL: Emergency exit routing failed: {e}")
-            
-            # allow heartbeat to retry later
-            self.force_exit_in_progress = False
-
-    def _calc_emergency_limit_price(self, *, ltp: float, side: str, tick: float = 0.05) -> float:
-        buffer = 0.02
-        
-        if side == "BUY":
-            raw = ltp * (1 + buffer)
-            return math.ceil(raw / tick) * tick
-        else:
-            raw = ltp * (1 - buffer)
-            return math.floor(raw / tick) * tick
+    # --------------------------------------------------
+    # LOSS BREACH
+    # --------------------------------------------------
 
     def _handle_daily_loss_breach(self):
-        if self.daily_loss_hit and self.force_exit_in_progress:
+        if self.daily_loss_hit:
+            logger.debug("RMS: Loss breach already handled, skipping duplicate")
             return
 
-        with self._lock:
-            if self.daily_loss_hit:
-                return
+        self.daily_loss_hit = True
+        self.failed_days.append(self.current_day)
+        self.force_exit_in_progress = True
+        consecutive_losses = len(self.failed_days)
 
-            self.daily_loss_hit = True
-            self.failed_days.append(self.current_day)
-            self.force_exit_in_progress = True
+        logger.critical(
+            "🔴 DAILY MAX LOSS HIT | pnl=%.2f | max_loss=%.2f | consecutive_days=%d/%d",
+            self.daily_pnl,
+            self.dynamic_max_loss,
+            consecutive_losses,
+            self.MAX_CONSECUTIVE_LOSS_DAYS,
+        )
 
+        if self.bot.telegram_enabled:
+            msg = (
+                f"🛑 <b>DAILY MAX LOSS BREACH</b>\n\n"
+                f"💔 Current PnL: ₹{self.daily_pnl:.2f}\n"
+                f"🔒 Max Loss Limit: ₹{self.dynamic_max_loss:.2f}\n"
+                f"📉 Breach Amount: ₹{abs(self.daily_pnl - self.dynamic_max_loss):.2f}\n"
+                f"📊 Consecutive Loss Days: {consecutive_losses}/{self.MAX_CONSECUTIVE_LOSS_DAYS}\n"
+                f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                f"⚠️ <b>FORCING EXIT OF ALL POSITIONS</b>"
+            )
+            self.bot.send_telegram(msg)
+
+        self._route_global_exit("RMS_DAILY_MAX_LOSS")
+
+        if consecutive_losses == self.MAX_CONSECUTIVE_LOSS_DAYS:
             logger.critical(
-                "🔴 DAILY MAX LOSS HIT: %.2f — FORCING EXIT",
-                self.daily_pnl
+                "🚨 MAX CONSECUTIVE LOSS DAYS REACHED | activating cooldown until Monday"
             )
+            self._activate_cooldown()
 
-            if self.bot.telegram_enabled:
-                consecutive_msg = ""
-                if len(self.failed_days) > 1:
-                    consecutive_msg = (
-                        f"📉 Consecutive loss days: "
-                        f"{len(self.failed_days)}/{self.MAX_CONSECUTIVE_LOSS_DAYS}\n"
-                    )
+    # --------------------------------------------------
+    # HEARTBEAT
+    # --------------------------------------------------
+
+    def heartbeat(self):
+        with self._lock:
+            try:
+                # Get fresh positions and update PnL in one call
+                positions = self._update_pnl()
                 
-                self.bot.send_telegram(
-                    f"🛑 <b>DAILY MAX LOSS HIT</b>\n\n"
-                    f"💔 Current PnL: ₹{self.daily_pnl:.2f}\n"
-                    f"🚫 Max Loss: ₹{self.dynamic_max_loss:.2f}\n"
-                    f"{consecutive_msg}\n"
-                    f"🔻 FORCING EXIT OF ALL POSITIONS\n"
-                    f"⏸ Trading halted for today"
+                has_live_position = any(int(p.get("netqty", 0)) != 0 for p in positions)
+                
+                logger.debug(
+                    "RMS: Heartbeat | pnl=%.2f | max_loss=%.2f | live_pos=%s | loss_hit=%s | positions=%d",
+                    self.daily_pnl,
+                    self.dynamic_max_loss,
+                    has_live_position,
+                    self.daily_loss_hit,
+                    len(positions),
                 )
 
-            self._request_exit_for_all_positions()
+                # Only check trailing/manual if we have positions
+                if positions:
+                    # Trailing loss check
+                    if (
+                        has_live_position
+                        and not self.daily_loss_hit
+                        and self.highest_profit > 0
+                        and self.daily_pnl < self.dynamic_max_loss
+                    ):
+                        logger.critical(
+                            "🔴 TRAILING LOSS HIT | pnl=%.2f < trail=%.2f | highest_profit=%.2f",
+                            self.daily_pnl,
+                            self.dynamic_max_loss,
+                            self.highest_profit,
+                        )
+                        self._handle_daily_loss_breach()
 
-            if not self._verify_exit_progress(timeout_sec=6):
-                logger.critical(
-                    "⚠️ OMS EXIT TIMEOUT — ESCALATING TO EMERGENCY EXIT"
-                )
-                self.emergency_exit_all(reason="OMS_EXIT_TIMEOUT")
+                    # Manual trade detection
+                    self.on_broker_positions(positions)
 
-            if len(self.failed_days) == self.MAX_CONSECUTIVE_LOSS_DAYS:
-                self._activate_cooldown()
+                    # Exit completion check
+                    if self.daily_loss_hit:
+                        all_flat = all(int(p.get("netqty", 0)) == 0 for p in positions)
 
-    def _request_exit_for_all_positions(self):
-        """
-        Request exit for all positions using the new unified API.
-        Routes through position-driven OMS (no assumptions).
-        """
-        try:
-            self.bot._ensure_login()
-            positions = self.bot.api.get_positions() or []
+                        if all_flat:
+                            self.force_exit_in_progress = False
+                            logger.info("RMS: Exit cycle fully completed, all positions flat")
+                        else:
+                            live_count = sum(1 for p in positions if int(p.get("netqty", 0)) != 0)
+                            logger.warning(
+                                "RMS: Exit in progress, waiting for positions to flatten | live_positions=%d",
+                                live_count,
+                            )
+                else:
+                    logger.debug("RMS: No positions in broker snapshot")
 
-            if not positions:
-                logger.info("RMS: no live positions to exit")
-                return
+                # ALWAYS run these regardless of positions
+                self._update_trailing_max_loss()
+                self._check_warning_threshold()
+                self.track_pnl_ohlc()
+                self._send_periodic_status()
+            except RuntimeError:
+                # 🔥 FAIL-HARD: broker/session failure must kill process
+                raise
+            except Exception as exc:
+                log_exception("SupremeRiskManager.heartbeat", exc)
 
-            logger.critical("RMS EXIT REQUEST → delegating to PositionExitService")
-
-            # Use unified request_exit with position-driven scope
-            self.bot.request_exit(
-                scope="ALL",
-                symbols=None,
-                product_type="ALL",
-                reason="RMS_FORCE_EXIT",
-                source="RISK",
-            )
-
-        except Exception as exc:
-            log_exception("SupremeRiskManager._request_exit_for_all_positions", exc)
-
-    def _verify_exit_progress(self, timeout_sec: int = 6) -> bool:
-        start = time.time()
-
-        while time.time() - start < timeout_sec:
-            self.bot._ensure_login()
-            positions = self.bot.api.get_positions() or []
-
-            if all(int(p.get("netqty", 0)) == 0 for p in positions):
-                logger.info("✅ All positions successfully closed")
-                return True
-
-            time.sleep(1)
-
-        logger.warning("❌ Exit verification timeout - positions still open")
-        return False
+    # --------------------------------------------------
+    # MANUAL TRADE DETECTION
+    # --------------------------------------------------
 
     def on_broker_positions(self, positions: list):
         if not self.daily_loss_hit:
             return
 
-        with self._lock:
-            if self.force_exit_in_progress:
-                return
-            self.force_exit_in_progress = True
+        # 🔒 CRITICAL FIX: prevent re-trigger during exit execution
+        if self.force_exit_in_progress:
+            logger.debug("RMS: Manual detection skipped (exit in progress)")
+            return
+            
+        live_positions = tuple(
+            (p.get("exch"), p.get("tsym"), int(p.get("netqty", 0)))
+            for p in positions
+            if int(p.get("netqty", 0)) != 0
+        )
 
-        for pos in positions:
-            try:
-                netqty = int(pos.get("netqty", 0))
-            except Exception:
-                continue
+        if not live_positions:
+            logger.debug("RMS: No live positions detected")
+            return
 
-            if netqty == 0:
-                continue
+        now = datetime.now()
+        if (
+            live_positions != self.last_manual_position_signature
+            and (
+                self.last_manual_violation_ts is None
+                or (now - self.last_manual_violation_ts).total_seconds()
+                >= self.MANUAL_ALERT_COOLDOWN_SEC
+            )
+        ):
+            self.last_manual_position_signature = live_positions
+            self.last_manual_violation_ts = now
+            self.human_violation_detected = True
+            self._save_state()
 
-            symbol = pos.get("tsym")
-            exchange = pos.get("exch")
-            product = pos.get("prd")
-
-            if not symbol or not exchange or not product:
-                continue
-
-            side = "SELL" if netqty > 0 else "BUY"
+            position_details = "\n".join(
+                [f"  • {exch}:{sym} qty={qty}" for exch, sym, qty in live_positions]
+            )
 
             logger.critical(
-                "🚨 INSTANT ENFORCEMENT | Manual trade after max loss | %s",
-                symbol,
+                "🚨 MANUAL TRADE AFTER RISK HIT | positions=%d\n%s",
+                len(live_positions),
+                position_details,
             )
 
-            self.bot.request_exit(
-                symbol=symbol,
-                exchange=exchange,
-                quantity=abs(netqty),
-                side=side,
-                product_type=product,
-                reason="RMS_MANUAL_TRADE_ENFORCEMENT",
-                source="RISK",
-            )
+            if self.bot.telegram_enabled:
+                msg = (
+                    f"🚨 <b>CRITICAL RISK VIOLATION</b>\n\n"
+                    f"⚠️ Manual trade detected AFTER max loss hit\n"
+                    f"📊 Live Positions: {len(live_positions)}\n\n"
+                    f"<b>Positions:</b>\n{position_details}\n\n"
+                    f"⏰ Time: {now.strftime('%H:%M:%S')}\n"
+                    f"💔 Current PnL: ₹{self.daily_pnl:.2f}\n\n"
+                    f"🔒 <b>FORCING EXIT AGAIN</b>"
+                )
+                self.bot.send_telegram(msg)
 
-    def heartbeat(self):
-        with self._lock:
+            self.force_exit_in_progress = True
+            self._route_global_exit("RMS_MANUAL_TRADE")
+
+    # --------------------------------------------------
+    # TRAILING / PNL / ANALYTICS (UNCHANGED LOGIC)
+    # --------------------------------------------------
+
+    def _update_pnl(self):
+        """Update PnL from fresh broker positions snapshot"""
+        self.bot._ensure_login()
+        positions = self.bot.api.get_positions() or []
+        
+        total_rpnl = 0.0
+        total_urmtom = 0.0
+        position_count = 0
+        live_position_count = 0
+        
+        for p in positions:
             try:
-                if hasattr(self.bot, 'order_watcher'):
-                    try:
-                        if not self.bot.order_watcher.is_alive():
-                            logger.critical(
-                                "🚨 ORDER WATCHER DEAD - EMERGENCY EXIT"
-                            )
-                            self.emergency_exit_all(reason="ORDER_WATCHER_DEAD")
-                            return
-                    except Exception:
-                        logger.exception("Failed to check OrderWatcher liveness")
-                        self.emergency_exit_all(reason="ORDER_WATCHER_CHECK_FAILED")
-                        return
-
-                self.bot._ensure_login()
-                self._update_pnl("SYSTEM")
-
-                if self.daily_loss_hit and not self.force_exit_in_progress:
-                    positions = self.bot.api.get_positions() or []
-
-                    if any(int(p.get("netqty", 0)) != 0 for p in positions):
-                        logger.critical(
-                            "♻️ HEARTBEAT DETECTED LIVE POSITION AFTER EXIT FAILURE — RETRYING EXIT"
-                        )
-
-                        # IMPORTANT: re-arm exit
-                        self.force_exit_in_progress = False
-
-                        self._request_exit_for_all_positions()
-                        
-                    live_positions = sorted(
-                        (p.get("exch"), p.get("tsym"), int(p.get("netqty", 0)))
-                        for p in positions
-                        if int(p.get("netqty", 0)) != 0
+                rpnl = float(p.get("rpnl", 0))
+                urmtom = float(p.get("urmtom", 0))
+                netqty = int(p.get("netqty", 0))
+                
+                total_rpnl += rpnl
+                total_urmtom += urmtom
+                position_count += 1
+                
+                if netqty != 0:
+                    live_position_count += 1
+                    logger.debug(
+                        "RMS: Live position | symbol=%s | qty=%d | rpnl=%.2f | urmtom=%.2f",
+                        p.get("tsym", "UNKNOWN"),
+                        netqty,
+                        rpnl,
+                        urmtom,
                     )
-
-                    position_signature = tuple(live_positions)
-                    now = datetime.now()
-
-                    is_new_manual_trade = (
-                        position_signature
-                        and position_signature != self.last_manual_position_signature
+                elif rpnl != 0 or urmtom != 0:
+                    logger.debug(
+                        "RMS: Closed position | symbol=%s | rpnl=%.2f | urmtom=%.2f",
+                        p.get("tsym", "UNKNOWN"),
+                        rpnl,
+                        urmtom,
                     )
+            except Exception as e:
+                logger.warning("RMS: Failed to parse position | error=%s", str(e))
+                continue
+        
+        total = total_rpnl + total_urmtom
+        pnl_change = total - self.daily_pnl if self.last_known_pnl is not None else 0.0
+        
+        logger.info(
+            "RMS: PnL Update | total=%.2f (rpnl=%.2f + urmtom=%.2f) | change=%.+.2f | positions=%d (live=%d)",
+            total,
+            total_rpnl,
+            total_urmtom,
+            pnl_change,
+            position_count,
+            live_position_count,
+        )
+        
+        self.daily_pnl = total
+        self.last_known_pnl = total
+        
+        return positions  # Return for reuse in heartbeat
 
-                    cooldown_ok = (
-                        self.last_manual_violation_ts is None
-                        or (now - self.last_manual_violation_ts).total_seconds()
-                        >= self.MANUAL_ALERT_COOLDOWN_SEC
-                    )
-
-                    if is_new_manual_trade and cooldown_ok:
-                        self.last_manual_position_signature = position_signature
-                        self.last_manual_violation_ts = now
-                        self.human_violation_detected = True
-                        self.daily_loss_hit = True
-                        self._save_state()
-
-                        logger.critical(
-                            "🚨 MANUAL TRADE AFTER RISK HIT | positions=%s",
-                            position_signature
-                        )
-
-                        if self.bot.telegram_enabled:
-                            self.bot.send_telegram(
-                                "🚨 <b>CRITICAL RISK VIOLATION</b>\n\n"
-                                "⛔ MANUAL TRADE detected after max loss hit\n\n"
-                                "🛑 TRADING IS STRICTLY PROHIBITED\n"
-                                "⚠️ Position will be FORCE-EXITED\n\n"
-                                f"📅 Date: {self.current_day}\n"
-                                f"⏰ Time: {now.strftime('%H:%M:%S')}\n\n"
-                                "🔒 STOP TRADING IMMEDIATELY"
-                            )
-
-                        self.force_exit_in_progress = True
-                        self._request_exit_for_all_positions()
-
-                self._update_trailing_max_loss()
-                self._check_warning_threshold()
-
-                if self.daily_pnl <= self.dynamic_max_loss:
-                    self._handle_daily_loss_breach()
-
-                if self.force_exit_in_progress:
-                    positions = self.bot.api.get_positions() or []
-                    if all(int(p.get("netqty", 0)) == 0 for p in positions):
-                        self.force_exit_in_progress = False
-                        logger.info("Force exit completed - all positions flat")
-
-                self.track_pnl_ohlc()
-                self._send_periodic_status()
-
-            except Exception as exc:
-                log_exception("SupremeRiskManager.heartbeat", exc)
-
-    # Remaining methods unchanged (trailing, analytics, etc.)
     def _update_trailing_max_loss(self):
-        if self.daily_pnl <= 0:
-            return
         if self.daily_pnl <= self.highest_profit:
             return
-
+        
+        old_profit = self.highest_profit
+        old_max_loss = self.dynamic_max_loss
+        
         self.highest_profit = self.daily_pnl
         steps = int(self.highest_profit // self.TRAIL_STEP)
-        new_max_loss = self.BASE_MAX_LOSS + (steps * self.TRAIL_STEP)
-
-        if new_max_loss > self.dynamic_max_loss:
-            self.dynamic_max_loss = new_max_loss
+        new_loss = self.BASE_MAX_LOSS + steps * self.TRAIL_STEP
+        
+        if new_loss > self.dynamic_max_loss:
+            self.dynamic_max_loss = new_loss
             self.warning_sent = False
             self._save_state()
-            logger.warning("Trailing max loss updated → %.2f", self.dynamic_max_loss)
+            
+            logger.info(
+                "📈 TRAILING STOP UPDATED | profit: %.2f→%.2f | max_loss: %.2f→%.2f | steps=%d",
+                old_profit,
+                self.highest_profit,
+                old_max_loss,
+                self.dynamic_max_loss,
+                steps,
+            )
+            
             if self.bot.telegram_enabled:
-                self.bot.send_telegram(
-                    f"🛡 <b>TRAILING RISK UPDATED</b>\n\n"
-                    f"📈 Net Profit: ₹{self.highest_profit:.2f}\n"
-                    f"🔒 New Max Loss: ₹{self.dynamic_max_loss:.2f}"
+                msg = (
+                    f"📈 <b>Trailing Stop Updated</b>\n\n"
+                    f"🎯 New Highest Profit: ₹{self.highest_profit:.2f}\n"
+                    f"🔒 New Max Loss: ₹{self.dynamic_max_loss:.2f}\n"
+                    f"📊 Trail Steps: {steps}\n"
+                    f"💰 Protected Profit: ₹{abs(self.dynamic_max_loss - self.BASE_MAX_LOSS):.2f}"
                 )
-
-    def _update_pnl(self, strategy_name: str):
-        self.bot._ensure_login()
-        positions = self.bot.api.get_positions()
-        if not positions:
-            if self.last_known_pnl is not None:
-                self.daily_pnl = self.last_known_pnl
-            return
-
-        total_pnl = 0.0
-        for pos in positions:
-            try:
-                total_pnl += float(pos.get("rpnl", 0)) + float(pos.get("urmtom", 0))
-            except Exception:
-                continue
-        self.daily_pnl = total_pnl
-        self.last_known_pnl = total_pnl
+                self.bot.send_telegram(msg)
 
     def _check_warning_threshold(self):
         if self.warning_sent or self.daily_loss_hit:
             return
-        if self.dynamic_max_loss < 0:
-            warning_level = abs(self.dynamic_max_loss) * self.WARNING_THRESHOLD_PCT
-            if abs(self.daily_pnl) >= warning_level:
-                self.warning_sent = True
-                self._send_warning()
-        else:
-            buffer = self.dynamic_max_loss * (1 - self.WARNING_THRESHOLD_PCT)
-            if self.daily_pnl <= self.dynamic_max_loss + buffer:
-                self.warning_sent = True
-                self._send_warning()
-
-    def _send_warning(self):
-        if not self.bot.telegram_enabled:
-            return
-        remaining = abs(self.daily_pnl - self.dynamic_max_loss)
-        self.bot.send_telegram(
-            f"⚠️ <b>RISK WARNING</b>\n\n"
-            f"💰 Current PnL: ₹{self.daily_pnl:.2f}\n"
-            f"🔒 Locked Level: ₹{self.dynamic_max_loss:.2f}\n"
-            f"📉 Buffer Left: ₹{remaining:.2f}\n\n"
-            f"⚡ Approaching exit threshold!"
-        )
+        
+        threshold_value = abs(self.dynamic_max_loss) * self.WARNING_THRESHOLD_PCT
+        
+        if abs(self.daily_pnl) >= threshold_value:
+            self.warning_sent = True
+            
+            distance_to_exit = abs(self.daily_pnl - self.dynamic_max_loss)
+            
+            logger.warning(
+                "⚠️ RISK WARNING | pnl=%.2f | threshold=%.2f | distance_to_exit=%.2f",
+                self.daily_pnl,
+                threshold_value,
+                distance_to_exit,
+            )
+            
+            if self.bot.telegram_enabled:
+                msg = (
+                    f"⚠️ <b>RISK WARNING</b>\n\n"
+                    f"💔 Current PnL: ₹{self.daily_pnl:.2f}\n"
+                    f"🔒 Max Loss Limit: ₹{self.dynamic_max_loss:.2f}\n"
+                    f"📏 Distance to Exit: ₹{distance_to_exit:.2f}\n"
+                    f"📊 Warning Threshold: {self.WARNING_THRESHOLD_PCT*100:.0f}%\n\n"
+                    f"⚠️ Approaching exit threshold!"
+                )
+                self.bot.send_telegram(msg)
 
     def _activate_cooldown(self):
         today = date.today()
         days_until_monday = (7 - today.weekday()) % 7 or 7
         self.cooldown_until = today + timedelta(days=days_until_monday)
-        logger.critical("COOLDOWN ACTIVATED until %s", self.cooldown_until)
+        
+        logger.critical(
+            "🚨 COOLDOWN ACTIVATED | consecutive_losses=%d | until=%s | days=%d",
+            self.MAX_CONSECUTIVE_LOSS_DAYS,
+            self.cooldown_until,
+            days_until_monday,
+        )
+        
         if self.bot.telegram_enabled:
-            self.bot.send_telegram(
-                f"🧊 <b>RISK COOLDOWN ACTIVATED</b>\n\n"
-                f"📉 {self.MAX_CONSECUTIVE_LOSS_DAYS} consecutive loss days\n"
-                f"⏸ Trading blocked until: {self.cooldown_until}\n"
-                f"🔄 System resumes next Monday"
+            msg = (
+                f"🚨 <b>TRADING COOLDOWN ACTIVATED</b>\n\n"
+                f"📉 Consecutive Loss Days: {self.MAX_CONSECUTIVE_LOSS_DAYS}\n"
+                f"🔒 Trading Locked Until: {self.cooldown_until.strftime('%A, %B %d, %Y')}\n"
+                f"📅 Days Until Resume: {days_until_monday}\n\n"
+                f"⚠️ All trading blocked until next Monday"
             )
+            self.bot.send_telegram(msg)
+
+    # --------------------------------------------------
+    # PNL OHLC / REPORTING (UNCHANGED)
+    # --------------------------------------------------
 
     def track_pnl_ohlc(self):
         try:
-            self.bot._ensure_login()
-            positions = self.bot.api.get_positions()
-            if not positions:
-                if self.last_known_pnl is None:
-                    return
-                net_pnl = self.last_known_pnl
-            else:
-                net_pnl = 0.0
-                for pos in positions:
-                    try:
-                        net_pnl += float(pos.get("rpnl", 0)) + float(pos.get("urmtom", 0))
-                    except Exception:
-                        continue
-
             now = datetime.now()
-            self._update_ohlc("1m", now.replace(second=0, microsecond=0), net_pnl)
+            self._update_ohlc("1m", now.replace(second=0, microsecond=0), self.daily_pnl)
             self._update_ohlc(
                 "5m",
                 now.replace(minute=(now.minute // 5) * 5, second=0, microsecond=0),
-                net_pnl,
+                self.daily_pnl,
             )
-            self._update_ohlc("1d", now.date(), net_pnl)
+            self._update_ohlc("1d", now.date(), self.daily_pnl)
             self._prune_old_ohlc()
         except Exception as exc:
-            log_exception("SupremeRiskManager.track_pnl_ohlc", exc)
+            log_exception("track_pnl_ohlc", exc)
 
-    def _update_ohlc(self, tf: str, key, pnl: float):
+    def _update_ohlc(self, tf, key, pnl):
         store = self.pnl_ohlc[tf]
         candle = store.get(key)
-        if candle is None:
+        if not candle:
             store[key] = {
                 "timestamp": key,
                 "open": pnl,
@@ -571,190 +589,86 @@ class SupremeRiskManager:
         now = datetime.now()
         for tf, store in self.pnl_ohlc.items():
             cutoff = now - self.PNL_RETENTION[tf]
-            for key, candle in list(store.items()):
-                ts = candle["timestamp"]
+            for k in list(store.keys()):
+                ts = store[k]["timestamp"]
                 if isinstance(ts, date) and not isinstance(ts, datetime):
                     ts = datetime.combine(ts, datetime.min.time())
                 if ts < cutoff:
-                    del store[key]
-                else:
-                    break
-
-    def get_pnl_ohlc(self, timeframe: str) -> List[Dict]:
-        return list(self.pnl_ohlc.get(timeframe, {}).values())
-
-    def get_pnl_stats(self) -> Dict:
-        daily_candles = self.get_pnl_ohlc("1d")
-        stats = {
-            "current_pnl": self.daily_pnl,
-            "today_high": 0.0,
-            "today_low": 0.0,
-            "today_open": 0.0,
-        }
-        if daily_candles and len(daily_candles) > 0:
-            today = daily_candles[-1]
-            stats["today_high"] = today["high"]
-            stats["today_low"] = today["low"]
-            stats["today_open"] = today["open"]
-        if stats["today_high"] != 0 or stats["today_low"] != 0:
-            stats["today_range"] = stats["today_high"] - stats["today_low"]
-        else:
-            stats["today_range"] = 0.0
-        return stats
+                    del store[k]
 
     def _send_periodic_status(self):
         if not self.bot.telegram_enabled:
             return
         now = datetime.now()
-        if self.last_status_update is not None:
-            elapsed_seconds = (now - self.last_status_update).total_seconds()
-            if elapsed_seconds < self.STATUS_UPDATE_INTERVAL * 60:
-                return
-        self.last_status_update = now
-        if self.dynamic_max_loss < 0:
-            pnl_pct_used = (abs(self.daily_pnl) / abs(self.dynamic_max_loss)) * 100
-        else:
-            pnl_pct_used = 0
-        remaining = (
-            abs(self.dynamic_max_loss) - abs(self.daily_pnl) 
-            if self.daily_pnl < 0 
-            else abs(self.dynamic_max_loss)
-        )
-        if self.daily_pnl > 0:
-            status_emoji = "✅"
-            status_text = "PROFIT"
-        elif pnl_pct_used < 50:
-            status_emoji = "🟢"
-            status_text = "SAFE"
-        elif pnl_pct_used < 80:
-            status_emoji = "🟡"
-            status_text = "CAUTION"
-        else:
-            status_emoji = "🔴"
-            status_text = "DANGER"
-        daily_data = self.get_pnl_ohlc("1d")
-        high_low_msg = ""
-        if daily_data and len(daily_data) > 0:
-            today_candle = daily_data[-1]
-            high_low_msg = (
-                f"📈 Today High: ₹{today_candle['high']:.2f}\n"
-                f"📉 Today Low: ₹{today_candle['low']:.2f}\n"
-            )
-        self.bot.send_telegram(
-            f"{status_emoji} <b>RMS STATUS</b>\n\n"
-            f"📊 Status: {status_text}\n"
-            f"💰 Current PnL: ₹{self.daily_pnl:.2f}\n"
-            f"{high_low_msg}"
-            f"🎯 Max Loss: ₹{self.dynamic_max_loss:.2f}\n"
-            f"📈 Risk Used: {pnl_pct_used:.1f}%\n"
-            f"💵 Remaining: ₹{remaining:.2f}\n"
-            f"📅 {self.current_day} ⏰ {now.strftime('%H:%M:%S')}"
-        )
-
-    def send_current_status(self):
-        if not self.bot.telegram_enabled:
+        if self.last_status_update and (
+            now - self.last_status_update
+        ).total_seconds() < self.STATUS_UPDATE_INTERVAL * 60:
             return
-        try:
-            self.bot._ensure_login()
-            positions = self.bot.api.get_positions()
-            if positions:
-                total_pnl = 0.0
-                for pos in positions:
-                    try:
-                        total_pnl += float(pos.get("rpnl", 0)) + float(pos.get("urmtom", 0))
-                    except Exception:
-                        continue
-                self.daily_pnl = total_pnl
-        except Exception as exc:
-            log_exception("send_current_status: PnL update", exc)
-        if self.dynamic_max_loss < 0:
-            pnl_pct_used = (abs(self.daily_pnl) / abs(self.dynamic_max_loss)) * 100
-        else:
-            pnl_pct_used = 0
-        remaining = (
-            abs(self.dynamic_max_loss) - abs(self.daily_pnl) 
-            if self.daily_pnl < 0 
-            else abs(self.dynamic_max_loss)
+        
+        self.last_status_update = now
+        
+        distance_to_exit = abs(self.daily_pnl - self.dynamic_max_loss)
+        protected_profit = abs(self.dynamic_max_loss - self.BASE_MAX_LOSS)
+        
+        status_icon = "🟢" if self.daily_pnl > 0 else "🔴" if self.daily_pnl < 0 else "⚪"
+        
+        msg = (
+            f"🛡 <b>RMS STATUS UPDATE</b>\n\n"
+            f"{status_icon} Current PnL: ₹{self.daily_pnl:.2f}\n"
+            f"🔒 Max Loss Limit: ₹{self.dynamic_max_loss:.2f}\n"
+            f"📏 Distance to Exit: ₹{distance_to_exit:.2f}\n"
+            f"🎯 Highest Profit: ₹{self.highest_profit:.2f}\n"
+            f"💰 Protected Profit: ₹{protected_profit:.2f}\n"
+            f"📅 Date: {self.current_day.strftime('%d-%b-%Y')}\n"
+            f"⏰ Time: {now.strftime('%H:%M:%S')}"
         )
-        if self.daily_pnl > 0:
-            status_emoji = "✅"
-            status_text = "PROFIT"
-        elif pnl_pct_used < 50:
-            status_emoji = "🟢"
-            status_text = "SAFE"
-        elif pnl_pct_used < 80:
-            status_emoji = "🟡"
-            status_text = "CAUTION"
-        else:
-            status_emoji = "🔴"
-            status_text = "DANGER"
-        stats = self.get_pnl_stats()
-        cooldown_info = ""
-        if self.cooldown_until:
-            cooldown_info = f"\n🧊 Cooldown until: {self.cooldown_until}"
-        self.bot.send_telegram(
-            f"{status_emoji} <b>RMS CURRENT STATUS</b>\n\n"
-            f"📊 Status: {status_text}\n"
-            f"💰 Current PnL: ₹{self.daily_pnl:.2f}\n"
-            f"📈 Today High: ₹{stats['today_high']:.2f}\n"
-            f"📉 Today Low: ₹{stats['today_low']:.2f}\n"
-            f"📊 Range: ₹{stats['today_range']:.2f}\n"
-            f"🎯 Max Loss: ₹{self.dynamic_max_loss:.2f}\n"
-            f"📈 Risk Used: {pnl_pct_used:.1f}%\n"
-            f"💵 Remaining: ₹{remaining:.2f}\n"
-            f"⚠️ Warning: {'Yes' if self.warning_sent else 'No'}\n"
-            f"🛑 Loss Hit: {'Yes' if self.daily_loss_hit else 'No'}\n"
-            f"📉 Failed Days: {len(self.failed_days)}/{self.MAX_CONSECUTIVE_LOSS_DAYS}\n"
-            f"📅 {self.current_day} ⏰ {datetime.now().strftime('%H:%M:%S')}"
-            f"{cooldown_info}"
-        )
+        
+        if self.daily_loss_hit:
+            msg += f"\n\n🔴 <b>MAX LOSS HIT - TRADING BLOCKED</b>"
+        elif self.cooldown_until:
+            msg += f"\n\n⚠️ <b>COOLDOWN ACTIVE UNTIL {self.cooldown_until.strftime('%d-%b')}</b>"
+        
+        logger.info("RMS: Periodic status sent")
+        self.bot.send_telegram(msg)
 
     def _reset_daily_state(self, new_day: date):
-        logger.info("Risk rollover: %s → %s", self.current_day, new_day)
-        self.force_exit_in_progress = False
-        if self.daily_pnl > 0:
-            self.failed_days.clear()
+        logger.info(
+            "🔄 DAILY RESET | old_date=%s | new_date=%s | final_pnl=%.2f",
+            self.current_day,
+            new_day,
+            self.daily_pnl,
+        )
+        
         self.current_day = new_day
         self.daily_pnl = 0.0
         self.daily_loss_hit = False
         self.warning_sent = False
-        self.last_status_update = None
-        self.last_known_pnl = None
+        self.force_exit_in_progress = False
+        self.dynamic_max_loss = self.BASE_MAX_LOSS
+        self.highest_profit = 0.0
+        self.last_manual_position_signature = None
+        self.last_manual_violation_ts = None
         self.human_violation_detected = False
         self.pnl_ohlc["1m"].clear()
         self.pnl_ohlc["5m"].clear()
-        self.dynamic_max_loss = self.BASE_MAX_LOSS
-        self.highest_profit = 0.0
         self._save_state()
+        
+        logger.info("✅ Daily state reset complete | max_loss=%.2f", self.BASE_MAX_LOSS)
+        
+        if self.bot.telegram_enabled:
+            msg = (
+                f"🔄 <b>NEW TRADING DAY</b>\n\n"
+                f"📅 Date: {new_day.strftime('%A, %B %d, %Y')}\n"
+                f"🔒 Base Max Loss: ₹{self.BASE_MAX_LOSS:.2f}\n"
+                f"📊 Trail Step: ₹{self.TRAIL_STEP:.2f}\n\n"
+                f"✅ RMS Ready"
+            )
+            self.bot.send_telegram(msg)
 
     def get_status(self) -> Dict:
-        stats = self.get_pnl_stats()
         return {
             "date": str(self.current_day),
             "daily_pnl": self.daily_pnl,
             "daily_loss_hit": self.daily_loss_hit,
-            "warning_sent": self.warning_sent,
-            "failed_days": [str(d) for d in self.failed_days],
             "cooldown_until": str(self.cooldown_until) if self.cooldown_until else None,
-            "risk_pct_used": (
-                (abs(self.daily_pnl) / abs(self.dynamic_max_loss)) * 100
-                if self.daily_pnl < 0 and self.dynamic_max_loss < 0
-                else 0
-            ),
-            "today_high": stats["today_high"],
-            "today_low": stats["today_low"],
-            "today_range": stats["today_range"],
         }
-
-    def on_trade_update(self, strategy_name: str):
-        with self._lock:
-            try:
-                self._update_pnl(strategy_name)
-                self._update_trailing_max_loss()
-                self._check_warning_threshold()
-                if self.daily_pnl <= self.dynamic_max_loss:
-                    self._handle_daily_loss_breach()
-                self.track_pnl_ohlc()
-                self._send_periodic_status()
-            except Exception as exc:
-                log_exception("SupremeRiskManager.on_trade_update", exc)

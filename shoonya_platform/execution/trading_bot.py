@@ -6,7 +6,7 @@ Main trading bot logic with alert processing and trade management
 """
 # ======================================================================
 # 🔒 PRODUCTION FROZEN — BOT / OMS LAYER
-# Date: 2026-01-29
+# Date: 2026-2-03
 
 # This file is client-isolated by design.
 # Multi-client readiness depends ONLY on:
@@ -67,7 +67,6 @@ from notifications.telegram import TelegramNotifier
 
 # # ---------------- PERSISTENCE ----------------
 from shoonya_platform.persistence.repository import OrderRepository
-from shoonya_platform.persistence.models import OrderRecord
 
 # # ---------------- RECOVERY ----------------
 from shoonya_platform.services.recovery_service import RecoveryBootstrap
@@ -101,8 +100,33 @@ from shoonya_platform.utils.utils import (
     calculate_success_rate,
     log_exception,get_date_filter
 )
+#---------------------- dashboard session ----------------
+from shoonya_platform.api.dashboard.services.broker_service import BrokerView
+
+#---------------------- option data writer ----------------
+from shoonya_platform.market_data.option_chain.supervisor import OptionChainSupervisor
+from shoonya_platform.market_data.feeds.live_feed import start_live_feed
+
+#---------------------- strategies runner  ----------------
+from shoonya_platform.strategies.strategy_runner import StrategyRunner
+from shoonya_platform.strategies.strategy_run_writer import StrategyRunWriter
+from shoonya_platform.strategies.delta_neutral.delta_neutral_short_strategy import (
+    DeltaNeutralShortStrangleStrategy,
+)
 
 logger = logging.getLogger(__name__)
+
+# ---- module scope (TOP LEVEL) ----
+_GLOBAL_BOT = None
+
+def set_global_bot(bot):
+    global _GLOBAL_BOT
+    _GLOBAL_BOT = bot
+
+def get_global_bot():
+    if _GLOBAL_BOT is None:
+        raise RuntimeError("ShoonyaBot not initialized")
+    return _GLOBAL_BOT
 
 class ShoonyaBot:
     """Main trading bot class with integrated Telegram notifications"""
@@ -128,6 +152,42 @@ class ShoonyaBot:
         # -------------------------------------------------
         # 🔒 Login is enforced lazily via _ensure_login()
         self.api = ShoonyaClient(self.config)
+        # -------------------------------------------------
+        # 📢 TELEGRAM FLAGS (MUST EXIST BEFORE LOGIN)
+        # -------------------------------------------------
+        # 🔒 Prevent attribute errors during early login
+        self.telegram_enabled = False
+        self.telegram = None
+        # -------------------------------------------------
+        # 🔐 INITIAL LOGIN (ONCE, BLOCKING)
+        # -------------------------------------------------
+        try:
+            self.login()
+            if not start_live_feed(self.api):
+                logger.critical("❌ Failed to start live feed")
+                raise RuntimeError("Live feed startup failed")
+                time.sleep(10)
+        except Exception:
+            logger.critical("❌ Initial broker login failed — aborting startup")
+            raise
+        
+        #--------------------------------------------------
+        self.broker_view = BrokerView(self.api)
+        self.option_supervisor = OptionChainSupervisor(self.api)
+        self.option_supervisor.bootstrap_defaults()
+
+        def _start_option_supervisor():
+            try:
+                self.option_supervisor.run()
+            except Exception:
+                logger.exception("❌ OptionChainSupervisor crashed")
+
+        self._option_supervisor_thread = threading.Thread(
+            target=_start_option_supervisor,
+            name="OptionChainSupervisorThread",
+            daemon=False,   # 🔒 MUST be non-daemon
+        )
+        self._option_supervisor_thread.start()
 
         # -------------------------------------------------
         # 📦 PERSISTENCE (POSITION / ORDER SOURCE OF TRUTH)
@@ -140,6 +200,8 @@ class ShoonyaBot:
         # 🔒 ALL exits (risk / manual / dashboard / recovery)
         # 🔒 MUST flow through OrderWatcherEngine ONLY
         self.order_watcher = OrderWatcherEngine(self)
+        self.order_watcher.start()  # ✅ CRITICAL FIX: Actually start the thread!
+        logger.info("🧠 OrderWatcher thread started")
 
         # -------------------------------------------------
         # 🛡 EXECUTION & COMMAND LAYER
@@ -148,17 +210,11 @@ class ShoonyaBot:
 
         # ⚠️ CommandService DEPENDS on order_watcher
         self.command_service = CommandService(self)
-
+        self.pending_commands = []
         # -------------------------------------------------
         # 🧠 RISK MANAGER (INTENT ONLY – NO DIRECT ORDERS)
         # -------------------------------------------------
         self.risk_manager = SupremeRiskManager(self)
-
-        # -------------------------------------------------
-        # 🧾 COMMAND STATE
-        # -------------------------------------------------
-        self.pending_commands = []
-        self._cmd_lock = threading.Lock()
 
         # -------------------------------------------------
         # 📢 TELEGRAM (OPTIONAL, NON-BLOCKING)
@@ -195,6 +251,22 @@ class ShoonyaBot:
         # -------------------------------------------------
         self._shutdown_event = threading.Event()
         self.start_control_intent_consumers()
+
+        # -------------------------------------------------
+        # 📈 STRATEGY RUNNER (CLOCK + DISPATCHER ONLY)
+        # -------------------------------------------------
+        self.strategy_runner = StrategyRunner(
+            bot=self,
+            poll_interval=2.0,   # configurable later
+        )
+
+        logger.info("🧭 StrategyRunner initialized (clock-only)")
+
+        # -------------------------------------------------
+        # 🚀 START STRATEGY RUNNER
+        # -------------------------------------------------
+        self.strategy_runner.start()
+        logger.info("🚀 StrategyRunner started")
 
         # -------------------------------------------------
         # ⏱ SCHEDULER
@@ -354,11 +426,6 @@ class ShoonyaBot:
             source=source,
         )
 
-    def request_force_exit(self, strategy_name: str):
-        """Trigger an immediate force-exit for a registered strategy."""
-        # Alias to request_exit for now (strategy.force_exit is authoritative)
-        return self.request_exit(strategy_name)
-
     def send_telegram(self, message: str) -> bool:
         """Safe wrapper for sending Telegram messages"""
         if self.telegram_enabled and self.telegram:
@@ -389,7 +456,17 @@ class ShoonyaBot:
                 # Periodic PnL OHLC tracking (analytics only)
                 schedule.every(1).minutes.do(self.risk_manager.track_pnl_ohlc)
                 # 🔐 Supreme Risk Manager heartbeat (REAL-TIME RISK)
-                schedule.every(5).seconds.do(self.risk_manager.heartbeat)
+                # schedule.every(5).seconds.do(self.risk_manager.heartbeat)
+                def _rms_heartbeat_wrapper():
+                    try:
+                        self.risk_manager.heartbeat()
+                    except RuntimeError:
+                        # 🔥 FAIL-HARD: escape schedule
+                        raise
+                    except Exception as e:
+                        log_exception("RMS.heartbeat", e)
+
+                schedule.every(5).seconds.do(_rms_heartbeat_wrapper)
 
                 schedule.every(10).minutes.do(send_strategy_reports)
                 # 🧹 Weekly DB hygiene (safe, non-trading)
@@ -397,11 +474,17 @@ class ShoonyaBot:
                 
                 logger.info(f"Scheduler started - reports every {self.config.report_frequency} minutes")
                 
-                while True:
+                while not self._shutdown_event.is_set():
                     try:
                         schedule.run_pending()
+
+                    # 🔥 FAIL-HARD: broker/session failure must kill process
+                    except RuntimeError:
+                        raise
+
                     except Exception as e:
                         log_exception("scheduler.run_pending", e)
+
                     time.sleep(60)
 
                     
@@ -459,39 +542,64 @@ class ShoonyaBot:
                 self.telegram.send_login_failed(str(e))
 
             return False
+
+    # ============================================================
+    def is_healthy(self) -> bool:
+        """
+        Health check for monitoring.
+        
+        SAFE STUB: Returns True unless critical failures detected.
+        Do NOT add complex logic yet — this is for operational safety only.
+        
+        Returns:
+            bool: True if service is healthy, False if critical failure
+        """
+        # Minimal health checks (safe, no false alarms)
+        try:
+            # Check 1: Bot instance exists
+            if not hasattr(self, 'api'):
+                return False
+            
+            # Check 2: Not in a permanent error state
+            # (Add your own critical state checks here if needed)
+            
+            return True
+            
+        except Exception:
+            # If health check itself fails, assume healthy to avoid false alarms
+            return True
+    # ============================================================
+    # USAGE IN HEALTH MONITOR (OPTIONAL — CURRENTLY COMMENTED OUT)
+    # ============================================================
+    # 
+    # If you want to enable the health monitor in main.py, uncomment:
+    #
+    # health_thread = threading.Thread(
+    #     target=health_monitor,
+    #     daemon=True,
+    #     name="HealthMonitor",
+    # )
+    # health_thread.start()
+    # logger.info("Health monitor started")
+    #
+    # ============================================================
+
     # -------------------------------------------------
     # 🔐 BROKER SESSION GUARD (MANDATORY)
     # -------------------------------------------------
    
     def _ensure_login(self):
         """
-        Ensures Shoonya session is valid before any broker call.
+        🔒 SINGLE SOURCE OF TRUTH FOR SESSION VALIDITY
 
-        DO NOT remove.
-        This is required for long-running services.
+        Delegates session validation and recovery
+        entirely to ShoonyaClient.
         """
-        try:
-            if self.api.is_logged_in():
-                logger.debug(
-                    "🔐 SESSION OK | service=signal_processor | action=skip_login"
-                )
-                return
-
-            logger.warning(
-                "🔐 SESSION EXPIRED | service=signal_processor | action=relogin"
-            )
-
-            self.api.login()
-
+        if not self.api.ensure_session():
             logger.critical(
-                "✅ RELOGIN SUCCESS | service=signal_processor | session_restored=True"
+                "❌ BROKER SESSION INVALID | auto-recovery failed"
             )
-
-        except Exception as e:
-            logger.exception(
-                "❌ RELOGIN FAILED | service=signal_processor | action=abort"
-            )
-            raise
+            raise RuntimeError("Broker session invalid and recovery failed")
 
     
     def validate_webhook_signature(self, payload: str, signature: str) -> bool:
@@ -520,18 +628,6 @@ class ShoonyaBot:
         # Create AlertData object
         return AlertData.from_dict(normalized_data)
     
-  
-    def has_open_position(self, tradingsymbol: str) -> bool:
-        self._ensure_login()
-        positions = self.api.get_positions() or []
-        for p in positions:
-            if (
-                p.get("tsym") == tradingsymbol
-                and int(p.get("netqty", 0)) != 0
-            ):
-                return True
-        return False
-
     def start_control_intent_consumers(self):
         """
         Starts dashboard control intent consumers in background.
@@ -583,21 +679,14 @@ class ShoonyaBot:
         - open order exists (DB)
         - open broker position exists
         """
-
-        # 1️⃣ In-memory intents (fastest)
-        with self._cmd_lock:
-            for cmd in self.pending_commands:
-                if cmd.strategy_name == strategy_name and cmd.symbol == symbol:
-                    return True
-
-        # 2️⃣ Persistent orders (restart-safe)
+        # Persistent orders (restart-safe)
         open_orders = self.order_repo.get_open_orders_by_strategy(strategy_name)
         for o in open_orders:
             if o.symbol == symbol:
                 return True
 
-        # 3️⃣ Broker position (truth)
-        positions = self.api.get_positions() or []
+        # Broker position (truth)
+        positions = self.api.get_positions()
         for p in positions:
             if p.get("tsym") == symbol and int(p.get("netqty", 0)) != 0:
                 return True
@@ -629,15 +718,21 @@ class ShoonyaBot:
         is_duplicate: bool = False,
     ) -> LegResult:
         """
-        PURE EXECUTION ENGINE (PRODUCTION — FROZEN)
+        PURE INTENT REGISTRATION ENGINE (PRODUCTION — FROZEN)
+
+        🔒 RULE:
+        - NO broker execution
+        - NO DB writes
+        - Registers intent ONLY
+        - OrderWatcherEngine executes
         """
 
         # =================================================
-        # 🧪 TEST MODE — NO BROKER TOUCH
+        # 🧪 TEST MODE — NO BROKER, NO DB
         # =================================================
         if test_mode:
             fake_order_id = f"TEST_{strategy_name}_{leg_data.tradingsymbol}_{int(time.time()*1000)}"
-            logger.warning(f"🧪 TEST MODE EXECUTION | {leg_data.tradingsymbol}")
+            logger.warning(f"🧪 TEST MODE | {leg_data.tradingsymbol}")
 
             self.trade_records.append(
                 TradeRecord(
@@ -649,7 +744,7 @@ class ShoonyaBot:
                     quantity=leg_data.qty,
                     price=leg_data.price or 0.0,
                     order_id=fake_order_id,
-                    status="PLACED",
+                    status="INTENT_ONLY",
                 )
             )
 
@@ -670,7 +765,7 @@ class ShoonyaBot:
             direction = leg_data.direction.upper()
 
             # =================================================
-            # 🔒 BUILD CANONICAL INTENT (SINGLE SOURCE OF TRUTH)
+            # 🔒 BUILD CANONICAL INTENT
             # =================================================
             cmd = UniversalOrderCommand.from_order_params(
                 order_params={
@@ -679,11 +774,8 @@ class ShoonyaBot:
                     "side": direction,
                     "quantity": int(leg_data.qty),
                     "product": leg_data.product_type,
-
-                    # RAW VALUES ALLOWED HERE
                     "order_type": leg_data.order_type,
                     "price": leg_data.price,
-
                     "strategy_name": strategy_name,
                 },
                 source="STRATEGY",
@@ -691,7 +783,7 @@ class ShoonyaBot:
             )
 
             # =================================================
-            # 🔒HARD RULE AS PER INSTRUMENT TYPE — CANONICAL
+            # 🔒 CANONICAL INSTRUMENT RULE (ScriptMaster)
             # =================================================
             must_limit = requires_limit_order(
                 exchange=exchange,
@@ -724,7 +816,7 @@ class ShoonyaBot:
                 )
 
             # =================================================
-            # TELEGRAM — PRE ORDER
+            # TELEGRAM — INTENT REGISTERED
             # =================================================
             if self.telegram_enabled:
                 self.telegram.send_order_placing(
@@ -737,88 +829,22 @@ class ShoonyaBot:
                 )
 
             # =================================================
-            # 🚀 SINGLE BROKER TOUCHPOINT
+            # 🔒 REGISTER INTENT ONLY
             # =================================================
-            result = self.command_service.submit(cmd, execution_type=execution_type)
+            self.command_service.register(cmd)
 
             logger.info(
-                "ORDER_EXECUTED | %s | %s | %s | qty=%s | type=%s | success=%s",
+                "INTENT_REGISTERED | %s | %s | %s | qty=%s | type=%s",
                 exchange,
                 leg_data.tradingsymbol,
                 direction,
                 leg_data.qty,
                 cmd.order_type,
-                result.success,
             )
-
-            if result.success:
-                object.__setattr__(cmd, "broker_order_id", result.order_id)
-                with self._cmd_lock:
-                    self.pending_commands.append(cmd)
-
-                self.trade_records.append(
-                    TradeRecord(
-                        timestamp=datetime.now().isoformat(),
-                        strategy_name=strategy_name,
-                        execution_type=execution_type,
-                        symbol=leg_data.tradingsymbol,
-                        direction=direction,
-                        quantity=leg_data.qty,
-                        price=cmd.price or 0.0,
-                        order_id=result.order_id,
-                        status="PLACED",
-                    )
-                )
-
-                try:
-                    record = OrderRecord(
-                        # ---- Identity / audit ----
-                        command_id=cmd.command_id,
-                        source=cmd.source,
-                        user=cmd.user,
-                        strategy_name=strategy_name,
-
-                        # ---- Instrument ----
-                        exchange=exchange,
-                        symbol=leg_data.tradingsymbol,
-                        side=direction,
-                        quantity=int(leg_data.qty),
-                        product=cmd.product,
-
-                        # ---- Order ----
-                        order_type=cmd.order_type,
-                        price=cmd.price,
-
-                        # ---- Risk ----
-                        stop_loss=cmd.stop_loss,
-                        target=cmd.target,
-                        trailing_type=cmd.trailing_type,
-                        trailing_value=cmd.trailing_value,
-
-                        # ---- Broker ----
-                        broker_order_id=result.order_id,
-                        execution_type=execution_type,
-
-                        # ---- Lifecycle ----
-                        # CREATED = OMS intent only (no broker order_id)
-                        # SENT_TO_BROKER = broker accepted (order_id assigned)
-                        
-                        status="SENT_TO_BROKER",
-                        created_at=datetime.utcnow().isoformat(),
-                        updated_at=datetime.utcnow().isoformat(),
-                        tag=None,
-                    )
-
-                    self.order_repo.create(record)
-
-                except Exception as e:
-                    logger.error(
-                        f"ORDER_PERSISTENCE_FAILED | {result.order_id} | {e}"
-                    )
 
             return LegResult(
                 leg_data=leg_data,
-                order_result=result,
+                order_result=OrderResult(success=True, order_id=None),
                 order_params=cmd.to_broker_params(),
             )
 
@@ -827,7 +853,7 @@ class ShoonyaBot:
 
             if self.telegram_enabled:
                 self.telegram.send_error_message(
-                    title="ORDER ERROR",
+                    title="ORDER INTENT ERROR",
                     error=f"{leg_data.tradingsymbol}: {str(e)}",
                 )
 
@@ -835,13 +861,6 @@ class ShoonyaBot:
                 leg_data=leg_data,
                 order_result=OrderResult(success=False, error_message=str(e)),
             )
-
-    def mark_command_executed_by_broker_id(self, broker_order_id: str):
-        with self._cmd_lock:
-            self.pending_commands = [
-                c for c in self.pending_commands
-                if c.broker_order_id != broker_order_id
-            ]
 
     def process_alert(self, alert_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -887,11 +906,21 @@ class ShoonyaBot:
             # 🔁 EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
             # -------------------------------------------------
             if not parsed.test_mode:
-                positions = self.api.get_positions() or []
-                broker_map = {
-                    p.get("tsym"): int(p.get("netqty", 0))
-                    for p in positions
-                }
+                positions = self.api.get_positions()
+
+                # 🔒 Direction-aware broker map (ExecutionGuard v1.3 contract)
+                broker_map = {}
+                for p in positions:
+                    sym = p.get("tsym")
+                    net = int(p.get("netqty", 0))
+                    if not sym or net == 0:
+                        continue
+
+                    broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
+                    if net > 0:
+                        broker_map[sym]["BUY"] = net
+                    else:
+                        broker_map[sym]["SELL"] = abs(net)
 
                 self.execution_guard.reconcile_with_broker(
                     strategy_id=parsed.strategy_name,
@@ -967,7 +996,7 @@ class ShoonyaBot:
                     # -------------------------------------------------
                     # 🔒 BROKER-TRUTH EXIT DIRECTION
                     # -------------------------------------------------
-                    positions = self.api.get_positions() or []
+                    positions = self.api.get_positions()
 
                     net_qty = 0
                     for p in positions:
@@ -1033,14 +1062,6 @@ class ShoonyaBot:
                 if result.order_result.success:
                     success_count += 1
 
-                    if not parsed.test_mode and execution_type != "EXIT":
-                        self.execution_guard.confirm_execution(
-                            strategy_id=parsed.strategy_name,
-                            symbol=leg.tradingsymbol,
-                            direction=leg.direction,
-                            qty=leg.qty,
-                        )
-
             # -------------------------------------------------
             # ENTRY FAILURE — ROLLBACK
             # -------------------------------------------------
@@ -1061,12 +1082,6 @@ class ShoonyaBot:
                     "timestamp": datetime.now().isoformat(),
                 }
 
-            # -------------------------------------------------
-            # EXIT CLEANUP
-            # -------------------------------------------------
-            if execution_type == "EXIT" and not parsed.test_mode:
-                self.execution_guard.force_close_strategy(parsed.strategy_name)
-
             status = (
                 "COMPLETED SUCCESSFULLY"
                 if success_count == expected_legs
@@ -1082,7 +1097,9 @@ class ShoonyaBot:
                 "successful_legs": success_count,
                 "timestamp": datetime.now().isoformat(),
             }
-
+        except RuntimeError:
+            # 🔥 FAIL-HARD: broker/session blind
+            raise
         except Exception as e:
             log_exception("process_alert", e)
 
@@ -1098,6 +1115,57 @@ class ShoonyaBot:
                 "timestamp": datetime.now().isoformat(),
             }
 
+    def start_strategy(
+        self,
+        *,
+        strategy_name: str,
+        universal_config,
+        market_cls,
+        market_config,
+    ):
+        if strategy_name in self._live_strategies:
+            raise RuntimeError(f"Strategy already running: {strategy_name}")
+
+        # 1️⃣ Create market
+        market = market_cls(**market_config)
+
+        # 2️⃣ Create strategy (CONFIG IS NOW RESOLVED)
+        strategy = DeltaNeutralShortStrangleStrategy(
+            exchange=universal_config.exchange,
+            symbol=universal_config.symbol,
+            expiry=market.expiry,
+            get_option_func=market.get_nearest_option,
+            config=universal_config,   # 👈 important
+        )
+
+        # 3️⃣ Create run_id
+        run_id = f"{strategy_name}_{int(time.time())}"
+
+        # 4️⃣ Start DB audit
+        writer = StrategyRunWriter(
+            db_path="/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data/strategy_runs.db"
+        )
+
+        writer.start_run(
+            run_id=run_id,
+            resolved_config=universal_config.to_dict(),
+        )
+
+        # 5️⃣ Inject writer into strategy (READ-ONLY)
+        strategy.run_id = run_id
+        strategy.run_writer = writer
+
+        # 6️⃣ Register with runner (CLOCK)
+        self.strategy_runner.register(
+            name=strategy_name,
+            strategy=strategy,
+            market=market,
+        )
+
+        # 7️⃣ Reporting only
+        self.register_live_strategy(strategy_name, strategy, market)
+
+        logger.info(f"🚀 Strategy STARTED | {strategy_name} | run_id={run_id}")
 
     def execute_command(self, command, **kwargs):
         """
@@ -1105,8 +1173,13 @@ class ShoonyaBot:
 
         Accepts extra keyword args (trailing_engine, etc.)
         for forward compatibility.
+        
+        ✅ FIXED: Now updates database on broker failures
         """
-
+        # 🔒 HARD EXECUTION AUTHORITY (NON-NEGOTIABLE)
+        assert command.source == "ORDER_WATCHER", (
+            f"FORBIDDEN EXECUTION PATH: source={command.source}"
+        )
         try:
             self._ensure_login()
             # Convert canonical command → broker params
@@ -1128,11 +1201,41 @@ class ShoonyaBot:
                     f"ORDER_FAILED | {order_params.get('tradingsymbol')} | "
                     f"{result.error_message}"
                 )
+                
+                # ✅ FIX: Update database status to FAILED
+                try:
+                    self.order_repo.update_status(command.command_id, "FAILED")
+                    logger.info(f"Database updated: {command.command_id} → FAILED")
+                except Exception as db_err:
+                    logger.error(f"Failed to update DB status: {db_err}")
+                
+                # ✅ FIX: Send telegram alert for failed exits
+                if hasattr(command, 'execution_type') and command.execution_type == "EXIT":
+                    if self.telegram_enabled:
+                        try:
+                            self.send_telegram(
+                                f"🚨 EXIT ORDER REJECTED\n"
+                                f"Symbol: {command.symbol}\n"
+                                f"Reason: {result.error_message}\n"
+                                f"⚠️ Position still open - manual action may be needed"
+                            )
+                        except:
+                            pass
 
             return result
 
+        except RuntimeError:
+            # FAIL-HARD: broker/session failure must kill process
+            raise
         except Exception as e:
             log_exception("execute_command", e)
+            
+            # ✅ FIX: Update database on exception
+            try:
+                self.order_repo.update_status(command.command_id, "FAILED")
+            except:
+                pass
+            
             return OrderResult(
                 success=False,
                 error_message=str(e),
@@ -1155,9 +1258,11 @@ class ShoonyaBot:
 
             return AccountInfo.from_api_data(limits, positions, orders)
 
+        except RuntimeError:
+            # FAIL-HARD: broker/session blind
+            raise
         except Exception as e:
-            log_exception("get_account_info", e)
-            return None
+            raise RuntimeError(f"ACCOUNT_INFO_FAILED: {e}")
 
     
     def get_bot_stats(self) -> BotStats:
@@ -1236,23 +1341,25 @@ class ShoonyaBot:
     
     def send_status_report(self):
         """Send comprehensive status report"""
-        self.risk_manager.heartbeat()
+        try:
+            self.risk_manager.heartbeat()
+        except RuntimeError:
+            raise
+
         try:
             if not self.telegram_enabled:
                 return
             
             logger.info("Generating status report...")
-            
-            # Ensure we're logged in
-            if not self.api.is_logged_in():
-                if not self.api.login():
-                    return
+            try:
+                self._ensure_login()
+            except Exception:
+                return
 
-            
             account_info = self.get_account_info()
             bot_stats = self.get_bot_stats()
             risk_status = self.risk_manager.get_status()
-            
+                        
             # Format message
             message = f"📊 <b>BOT STATUS REPORT</b>\n"
             message += f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
@@ -1375,7 +1482,8 @@ class ShoonyaBot:
     def force_login(self) -> bool:
         """Force re-login to API"""
         self.api.logout()
-        return self.api.login()
+        self.api.ensure_session()
+        return True
 
     
     def shutdown(self):
@@ -1384,7 +1492,7 @@ class ShoonyaBot:
             logger.info("Shutting down bot...")
 
             # 🛑 STOP ORDER WATCHER FIRST
-            self.stop_order_watcher()
+            self.order_watcher.stop()
 
             self._shutdown_event.set()
 
@@ -1399,7 +1507,18 @@ class ShoonyaBot:
                     f"• Bot uptime: Until shutdown"
                 )
                 self.send_telegram(shutdown_msg)
-            
+
+            if hasattr(self, "option_supervisor"):
+                self.option_supervisor._stop_event.set()
+
+            # 🛑 STOP STRATEGY RUNNER (CLOCK ONLY)
+            if hasattr(self, "strategy_runner"):
+                try:
+                    self.strategy_runner.stop()
+                    logger.info("🛑 StrategyRunner stopped")
+                except Exception:
+                    logger.exception("Failed to stop StrategyRunner")
+  
             # Logout from API
             self.api.logout()
             
@@ -1407,65 +1526,3 @@ class ShoonyaBot:
             
         except Exception as e:
             log_exception("shutdown", e)
-
-    def force_exit_position(
-        self,
-        symbol: str,
-        exchange: str,
-        quantity: int,
-        direction: str,
-        product_type: str,
-    ):
-        """
-        🔒 EMERGENCY EXIT REQUEST
-        ❌ NO broker submission
-        ❌ NO order_type / price decision here
-        ✅ Registers EXIT intent only
-        ✅ Actual execution handled by OrderWatcherEngine
-        """
-        logger.critical(
-            f"EMERGENCY EXIT REQUEST | {symbol} | {direction} | qty={quantity}"
-        )
-
-        self.request_exit(
-            symbol=symbol,
-            exchange=exchange,
-            quantity=int(quantity),
-            side=direction.upper(),
-            product_type=product_type,
-            reason="RISK_FORCE_EXIT",
-            source="RISK",
-        )
-
-    def start_order_watcher(self):
-        self.order_watcher = OrderWatcherEngine(self)
-        self.order_watcher.start()
-
-
-    def stop_order_watcher(self):
-        if hasattr(self, "order_watcher"):
-            self.order_watcher.stop()
-
-
-    def get_open_commands(self):
-        # TEMPORARY: in-memory list
-        with self._cmd_lock:
-            return list(self.pending_commands)  # avoid mutation during iteration
-
-
-    def mark_command_executed(self, command_id):
-        with self._cmd_lock:
-            self.pending_commands = [
-                c for c in self.pending_commands if c.command_id != command_id
-            ]
-
-    def update_stop_loss(self, command_id, new_sl):
-        # Update DB
-        self.order_repo.update_stop_loss(command_id, new_sl)
-
-        # Update in-memory command
-        with self._cmd_lock:
-            for cmd in self.pending_commands:
-                if cmd.command_id == command_id:
-                    object.__setattr__(cmd, "stop_loss", new_sl)
-

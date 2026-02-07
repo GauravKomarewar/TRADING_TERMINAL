@@ -11,9 +11,10 @@ from shoonya_platform.core.config import Config
 # --------------------------------------------------
 # SYSTEM-WIDE (NON CLIENT-SCOPED) FILES
 # --------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
 OPTION_DATA_HEARTBEAT = (
-    Path(__file__).resolve().parents[3]
-    / "market_data/option_chain/data/.supervisor_heartbeat"
+    PROJECT_ROOT / "market_data/option_chain/data/.supervisor_heartbeat"
 )
 
 
@@ -36,7 +37,7 @@ class SystemTruthService:
             client_id: Dashboard client identifier
         """
         self.client_id = client_id
-        self.config = Config(client_id=client_id)
+        self.config = Config()
         self.order_repo = OrderRepository(client_id)
 
     # ==================================================

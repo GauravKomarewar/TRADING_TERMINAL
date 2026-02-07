@@ -189,6 +189,49 @@ class UniversalOrderCommand:
             comment=get("comment"),
         )
 
+    @classmethod
+    def from_record(
+        cls,
+        record: OrderRecord,
+        *,
+        order_type: str,
+        price: float,
+        source: str,
+    ) -> "UniversalOrderCommand":
+        """
+        Build UniversalOrderCommand from persisted OrderRecord.
+        Used ONLY by OrderWatcherEngine.
+        """
+
+        return cls(
+            # ---- identity ----
+            command_id=record.command_id,
+            created_at=datetime.utcnow(),
+            source=source,
+            user=record.user,
+
+            # ---- instrument ----
+            exchange=record.exchange,
+            symbol=record.symbol,
+            quantity=record.quantity,
+            side=record.side,
+            product=record.product,
+
+            # ---- execution ----
+            order_type=order_type,
+            price=price,
+
+            # ---- risk / trailing ----
+            stop_loss=record.stop_loss,
+            target=record.target,
+            trailing_type=record.trailing_type or "NONE",
+            trailing_value=record.trailing_value,
+            trail_step=None,
+
+            # ---- meta ----
+            strategy_name=record.strategy_name,
+            comment=None,
+        )
 
     def to_broker_params(self) -> dict:
         """

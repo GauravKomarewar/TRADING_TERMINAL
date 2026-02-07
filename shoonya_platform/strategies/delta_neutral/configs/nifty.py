@@ -21,8 +21,11 @@ CONFIG = StrategyConfig(
     delta_adjust_trigger=0.10,
     max_leg_delta=0.65,
     profit_step=1000.0,
-
+    lot_qty=65,
     cooldown_seconds=300,
+    # 🔒 OMS-native (strategy declares intent only)
+    order_type="LIMIT",
+    product="NRML",
 )
 
 ENGINE = {

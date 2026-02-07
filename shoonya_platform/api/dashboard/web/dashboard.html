@@ -5,135 +5,912 @@
     <title>Dashboard – Shoonya OMS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        :root{--bg:#0a0e13;--panel:#151b26;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444;--warning:#f59e0b}
-        *{box-sizing:border-box;margin:0;padding:0}
-        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
-        header{height:64px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;padding:0 24px;position:sticky;top:0;z-index:100}
-        .nav-left{display:flex;gap:24px;align-items:center}
-        .brand{font-weight:700;font-size:18px;color:var(--primary);cursor:pointer}
-        .nav-link{color:var(--muted);font-size:14px;text-decoration:none;padding:8px 12px;border-radius:6px;transition:0.2s}
-        .nav-link:hover{color:var(--text);background:#1c2333}
-        .nav-link.active{color:var(--primary);background:#1c2333}
-        .logout-btn{background:transparent;border:1px solid var(--border);color:var(--danger);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px}
-        main{max-width:1400px;margin:0 auto;padding:32px 24px}
-        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px;margin-bottom:32px}
-        .stat-card{background:var(--panel);border:1px solid var(--border);padding:24px;border-radius:16px;box-shadow:0 4px 6px rgba(0,0,0,0.3)}
-        .stat-label{font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;font-weight:600}
-        .stat-value{font-size:24px;font-weight:700}
-        .stat-value.up{color:var(--success)}
-        .stat-value.down{color:var(--danger)}
-        .grid-main{display:grid;grid-template-columns:2fr 1fr;gap:24px}
-        .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;overflow:hidden}
-        .card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-weight:700}
-        .table-wrap{overflow-x:auto}
-        table{width:100%;border-collapse:collapse;font-size:13px}
-        th{background:#1c2333;padding:12px;text-align:left;color:var(--muted)}
-        td{padding:12px;border-bottom:1px solid var(--border)}
-        .badge{padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
-        .badge.ok{background:rgba(16,185,129,0.1);color:var(--success)}
-        .badge.warn{background:rgba(245,158,11,0.1);color:var(--warning)}
-        @media (max-width:1024px){.grid-main{grid-template-columns:1fr}}
+        :root {
+            --bg: #0a0e13;
+            --panel: #151b26;
+            --border: #2d3548;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        
+        /* Header */
+        header {
+            height: 64px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-left {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+        
+        .brand {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--primary);
+            cursor: pointer;
+        }
+        
+        .nav-link {
+            color: var(--muted);
+            font-size: 14px;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            transition: 0.2s;
+        }
+        
+        .nav-link:hover {
+            color: var(--text);
+            background: #1c2333;
+        }
+        
+        .nav-link.active {
+            color: var(--primary);
+            background: #1c2333;
+        }
+        
+        .logout-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--danger);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+        
+        .logout-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: var(--danger);
+        }
+        
+        /* Main Content */
+        main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+        
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+        
+        .stat-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            transition: 0.2s;
+        }
+        
+        .stat-card:hover {
+            border-color: var(--primary);
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .stat-value.up {
+            color: var(--success);
+        }
+        
+        .stat-value.down {
+            color: var(--danger);
+        }
+        
+        .stat-value.neutral {
+            color: var(--text);
+        }
+        
+        /* Grid Layout */
+        .grid-main {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+        
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 700;
+            font-size: 15px;
+        }
+        
+        .refresh-indicator {
+            font-size: 11px;
+            color: var(--muted);
+            font-weight: 400;
+        }
+        
+        /* Tables */
+        .table-wrap {
+            overflow-x: auto;
+            max-height: 500px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        
+        th {
+            background: #1c2333;
+            padding: 12px;
+            text-align: left;
+            color: var(--muted);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        tr:hover {
+            background: #1c2333;
+        }
+        
+        /* Badges */
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        
+        .badge.ok {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+        
+        .badge.warn {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+        
+        .badge.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+        
+        /* Status Items */
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-label {
+            color: var(--muted);
+            font-size: 13px;
+        }
+        
+        .status-value {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        /* Error Banner */
+        .error-banner {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            display: none;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .error-banner.show {
+            display: block;
+        }
+        
+        /* Value Change Animation */
+        @keyframes valueChange {
+            0% { background-color: rgba(59, 130, 246, 0.2); }
+            100% { background-color: transparent; }
+        }
+        
+        .value-changed {
+            animation: valueChange 0.4s ease-out;
+        }
+        
+        /* Loading Spinner */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Auto-refresh indicator */
+        .auto-refresh-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--muted);
+        }
+        
+        .auto-refresh-status.active {
+            color: var(--success);
+        }
+        
+        .refresh-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--muted);
+        }
+        
+        .refresh-dot.active {
+            background: var(--success);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .grid-main {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
 <header>
     <div class="nav-left">
-        <div class="brand">⚡ Shoonya OMS</div>
+        <div class="brand" onclick="window.location.href='/dashboard/home'">⚡ Shoonya OMS</div>
         <a class="nav-link active" href="/dashboard/home">Home</a>
         <a class="nav-link" href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
         <a class="nav-link" href="/dashboard/web/place_order.html">Place Order</a>
         <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
     </div>
-    <button class="logout-btn" onclick="logout()">Logout</button>
+    <div style="display: flex; gap: 12px; align-items: center">
+        <div class="auto-refresh-status" id="autoRefreshStatus">
+            <span class="refresh-dot"></span>
+            <span>Auto-refresh: <span id="refreshInterval">5s</span></span>
+        </div>
+        <button onclick="manualRefresh()" style="background: var(--primary); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px">
+            <span id="refreshBtn">🔄 Refresh</span>
+        </button>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
 </header>
+
 <main>
+    <div id="errorBanner" class="error-banner"></div>
+    
+    <!-- Stats Cards -->
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-label">Net PnL</div>
-            <div id="netPnl" class="stat-value">₹0.00</div>
+            <div id="netPnl" class="stat-value neutral">₹0.00</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Open Positions</div>
-            <div id="openPositions" class="stat-value">0</div>
+            <div id="openPositions" class="stat-value neutral">0</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Pending Orders</div>
-            <div id="pendingOrders" class="stat-value">0</div>
+            <div id="pendingOrders" class="stat-value neutral">0</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">System Signal</div>
-            <div id="systemSignal" class="stat-value">IDLE</div>
+            <div id="systemSignal" class="stat-value neutral">IDLE</div>
         </div>
     </div>
+    
+    <!-- Main Grid -->
     <div class="grid-main">
-        <div class="card">
-            <div class="card-header">Active Positions</div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>Symbol</th><th>Qty</th><th>Avg Price</th><th>LTP</th><th>PnL</th></tr></thead>
-                    <tbody id="positionRows"></tbody>
-                </table>
+        <!-- Left Column -->
+        <div style="display: grid; grid-template-columns: 1fr; gap: 24px">
+            <!-- Positions Table -->
+            <div class="card">
+                <div class="card-header">
+                    <span>Active Positions</span>
+                    <span class="refresh-indicator" id="posRefresh">Updated just now</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Exchange</th>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Avg Price</th>
+                                <th>LTP</th>
+                                <th>Realized PnL</th>
+                                <th>Unrealized PnL</th>
+                                <th>Net PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionRows">
+                            <tr>
+                                <td colspan="9" class="empty-state">
+                                    <div class="empty-state-icon">📊</div>
+                                    Loading positions...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Holdings Table -->
+            <div class="card">
+                <div class="card-header">Holdings</div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Quantity</th>
+                                <th>Avg Price</th>
+                                <th>LTP</th>
+                                <th>PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="holdingsRows">
+                            <tr>
+                                <td colspan="5" class="empty-state">
+                                    <div class="empty-state-icon">📈</div>
+                                    Loading holdings...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-        <div class="card">
-            <div class="card-header">System Status</div>
-            <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
-                <div style="display:flex;justify-content:space-between">
-                    <span class="muted">Broker Login</span>
-                    <span id="loginStatus" class="badge ok">OK</span>
+        
+        <!-- Right Column -->
+        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; grid-template-rows: auto auto">
+            <!-- System Status -->
+            <div class="card">
+                <div class="card-header">System Status</div>
+                <div style="padding: 20px">
+                    <div class="status-item">
+                        <span class="status-label">Broker Connection</span>
+                        <span id="loginStatus" class="badge ok">CHECKING</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Last Heartbeat</span>
+                        <span id="heartbeatAge" class="status-value">--</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Risk Status</span>
+                        <span id="riskStatus" class="badge ok">SAFE</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Daily High</span>
+                        <span id="dailyHigh" class="status-value">₹0.00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Daily Low</span>
+                        <span id="dailyLow" class="status-value">₹0.00</span>
+                    </div>
+                    <div id="forceExitAlert" style="display: none; padding: 12px; background: rgba(239, 68, 68, 0.15); color: var(--danger); border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; margin-top: 16px; border: 1px solid rgba(239, 68, 68, 0.3)">
+                        ⚠️ FORCE EXIT IN PROGRESS
+                    </div>
                 </div>
-                <div style="display:flex;justify-content:space-between">
-                    <span class="muted">Heartbeat</span>
-                    <span id="heartbeatAge">0s ago</span>
-                </div>
-                <div style="display:flex;justify-content:space-between">
-                    <span class="muted">Risk Check</span>
-                    <span id="riskStatus" class="badge ok">Safe</span>
-                </div>
-                <div id="forceExitAlert" style="display:none;padding:12px;background:rgba(239,68,68,0.1);color:var(--danger);border-radius:8px;font-size:12px;font-weight:600;text-align:center">
-                    ⚠️ FORCE EXIT IN PROGRESS
+            </div>
+            
+            <!-- Account Limits -->
+            <div class="card">
+                <div class="card-header">Account Limits</div>
+                <div style="padding: 20px">
+                    <div class="status-item">
+                        <span class="status-label">Cash Available</span>
+                        <span id="cashAvail" class="status-value">₹0.00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Collateral</span>
+                        <span id="collateral" class="status-value">₹0.00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Used Margin</span>
+                        <span id="usedMargin" class="status-value">₹0.00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Available Margin</span>
+                        <span id="availMargin" class="status-value">₹0.00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Net Available</span>
+                        <span id="netAvail" class="status-value" style="font-weight: 700">₹0.00</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </main>
+
 <script>
-    async function logout(){await fetch('/auth/logout',{method:'POST'});window.location.href='/';}
-    async function updateDashboard(){
-        try{
-            const res = await fetch('/dashboard/home/status');
-            const data = await res.json();
-            const {broker, system} = data;
-            
-            // Stats
-            const pnl = broker.positions_summary.net_pnl || 0;
-            netPnl.textContent = `₹${pnl.toFixed(2)}`;
-            netPnl.className = `stat-value ${pnl>=0?'up':'down'}`;
-            openPositions.textContent = broker.positions_summary.open_count || 0;
-            pendingOrders.textContent = system.open_orders || 0;
-            systemSignal.textContent = system.signal.status || 'IDLE';
-            
-            // System
-            loginStatus.textContent = system.heartbeat.login;
-            heartbeatAge.textContent = `${system.heartbeat.age_sec}s ago`;
-            riskStatus.textContent = system.risk.daily_loss_hit ? 'LIMIT HIT' : 'SAFE';
-            riskStatus.className = `badge ${system.risk.daily_loss_hit?'warn':'ok'}`;
-            forceExitAlert.style.display = system.risk.force_exit_in_progress ? 'block' : 'none';
-            
-            // Positions
-            positionRows.innerHTML = broker.positions.map(p => `
-                <tr>
-                    <td style="font-weight:700">${p.tsym}</td>
-                    <td>${p.netqty}</td>
-                    <td>${parseFloat(p.avgprc).toFixed(2)}</td>
-                    <td>${parseFloat(p.lp).toFixed(2)}</td>
-                    <td style="color:${parseFloat(p.rpnl)>=0?'var(--success)':'var(--danger)'};font-weight:700">₹${parseFloat(p.rpnl).toFixed(2)}</td>
-                </tr>
-            `).join('') || '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--muted)">No open positions</td></tr>';
-        } catch(e) { console.error(e); }
+    // Configuration
+    const config = {
+        autoRefreshInterval: 5000, // 5 seconds
+        maxRetries: 3,
+        retryDelay: 2000
+    };
+    
+    // State
+    let lastUpdate = Date.now();
+    let autoRefreshTimer = null;
+    let isRefreshing = false;
+    let retryCount = 0;
+    
+    // Error Handling
+    function showError(msg) {
+        console.error('Dashboard Error:', msg);
+        const banner = document.getElementById('errorBanner');
+        banner.textContent = '⚠️ ' + msg;
+        banner.classList.add('show');
+        setTimeout(() => banner.classList.remove('show'), 5000);
     }
-    setInterval(updateDashboard, 3000);
-    updateDashboard();
+    
+    // Formatting Utilities
+    function formatCurrency(val) {
+        if (val === null || val === undefined || isNaN(val)) return '₹0.00';
+        return '₹' + parseFloat(val).toLocaleString('en-IN', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+        });
+    }
+    
+    function formatNumber(val, decimals = 0) {
+        if (val === null || val === undefined || isNaN(val)) return '0';
+        return parseFloat(val).toLocaleString('en-IN', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+    }
+    
+    function getTimeSince(seconds) {
+        if (!seconds || seconds < 0) return '--';
+        if (seconds < 60) return `${Math.floor(seconds)}s ago`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+        return `${Math.floor(seconds / 3600)}h ago`;
+    }
+    
+    // Cell Update with Animation
+    function updateCellValue(cell, newValue, isColored = false, decimals = 2) {
+        if (!cell) return;
+        
+        const formatted = typeof newValue === 'string' ? newValue : 
+                         (decimals === 0 ? formatNumber(newValue, 0) : formatCurrency(newValue));
+        
+        if (cell.textContent !== formatted) {
+            cell.textContent = formatted;
+            
+            // Flash animation
+            cell.classList.remove('value-changed');
+            void cell.offsetWidth; // Force reflow
+            cell.classList.add('value-changed');
+        }
+        
+        if (isColored) {
+            const value = parseFloat(newValue) || 0;
+            cell.style.color = value >= 0 ? 'var(--success)' : 'var(--danger)';
+        }
+    }
+    
+    // Stat Update with Animation
+    function updateStatValue(elementId, newValue, className = 'neutral') {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        
+        const formatted = typeof newValue === 'string' ? newValue : formatCurrency(newValue);
+        
+        if (el.textContent !== formatted) {
+            el.textContent = formatted;
+            el.classList.remove('value-changed');
+            void el.offsetWidth;
+            el.classList.add('value-changed');
+        }
+        
+        el.className = `stat-value ${className}`;
+    }
+    
+    // Logout
+    async function logout() {
+        try {
+            await fetch('/auth/logout', { 
+                method: 'POST', 
+                credentials: 'include' 
+            });
+            window.location.href = '/';
+        } catch (err) {
+            console.error('Logout failed:', err);
+            showError('Logout failed. Please try again.');
+        }
+    }
+    
+    // Manual Refresh
+    async function manualRefresh() {
+        await updateDashboard(false);
+    }
+    
+    // Main Dashboard Update
+    async function updateDashboard(isAutoRefresh = true) {
+        if (isRefreshing) return;
+        
+        isRefreshing = true;
+        const refreshBtn = document.getElementById('refreshBtn');
+        const originalText = refreshBtn.innerHTML;
+        refreshBtn.innerHTML = '<span class="spinner"></span> Refreshing...';
+        
+        try {
+            const res = await fetch('/dashboard/home/status', { 
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!res.ok) {
+                if (res.status === 401) {
+                    window.location.href = '/';
+                    return;
+                }
+                
+                let errorDetail = `HTTP ${res.status}`;
+                try {
+                    const errorData = await res.json();
+                    errorDetail = errorData.detail || errorDetail;
+                } catch (e) {
+                    // Response is not JSON
+                }
+                throw new Error(errorDetail);
+            }
+            
+            const data = await res.json();
+            console.log('Dashboard API Response:', data);
+            
+            // Extract data with fallbacks
+            const broker = data.broker || {};
+            const system = data.system || {};
+            
+            // Update Stats
+            updateStats(broker, system);
+            
+            // Update Tables
+            updatePositionsTable(broker.positions || []);
+            updateHoldingsTable(broker.holdings || []);
+            
+            // Update System Status
+            updateSystemStatus(system);
+            
+            // Update Limits
+            updateLimits(broker.limits || {});
+            
+            // Update refresh indicator
+            lastUpdate = Date.now();
+            document.getElementById('posRefresh').textContent = 'Updated just now';
+            
+            // Update auto-refresh status
+            const autoRefreshStatus = document.getElementById('autoRefreshStatus');
+            const refreshDot = autoRefreshStatus.querySelector('.refresh-dot');
+            autoRefreshStatus.classList.add('active');
+            refreshDot.classList.add('active');
+            
+            // Reset retry count on success
+            retryCount = 0;
+            
+        } catch (err) {
+            console.error('Dashboard update error:', err);
+            
+            if (!isAutoRefresh) {
+                showError('Failed to update dashboard: ' + err.message);
+            }
+            
+            // Retry logic for auto-refresh
+            if (isAutoRefresh && retryCount < config.maxRetries) {
+                retryCount++;
+                console.log(`Retry attempt ${retryCount}/${config.maxRetries}`);
+                setTimeout(() => updateDashboard(true), config.retryDelay);
+            }
+            
+        } finally {
+            isRefreshing = false;
+            refreshBtn.innerHTML = originalText;
+        }
+    }
+    
+    // Update Stats Cards
+    function updateStats(broker, system) {
+        const positionsSummary = broker.positions_summary || {};
+        const netPnl = parseFloat(positionsSummary.net_pnl || positionsSummary.rpnl || 0);
+        const netPnlClass = netPnl > 0 ? 'up' : netPnl < 0 ? 'down' : 'neutral';
+        updateStatValue('netPnl', netPnl, netPnlClass);
+        
+        const openPosCount = positionsSummary.open_count || (broker.positions || []).length || 0;
+        updateStatValue('openPositions', openPosCount, 'neutral');
+        
+        const pendingCount = system.open_orders || 0;
+        updateStatValue('pendingOrders', pendingCount, 'neutral');
+        
+        const signalStatus = (system.signal && system.signal.status) || 'IDLE';
+        updateStatValue('systemSignal', signalStatus, 'neutral');
+    }
+    
+    // Update Positions Table
+    function updatePositionsTable(positions) {
+        const tbody = document.getElementById('positionRows');
+        
+        if (!positions || positions.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        No open positions
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        // Check if we need full rebuild
+        const currentSymbols = Array.from(tbody.querySelectorAll('tr[data-symbol]')).map(tr => tr.dataset.symbol);
+        const newSymbols = positions.map(p => p.tsym || p.symbol || '');
+        const needsRebuild = currentSymbols.length !== newSymbols.length || 
+                             !newSymbols.every((s, i) => s === currentSymbols[i]);
+        
+        if (needsRebuild) {
+            // Full rebuild
+            tbody.innerHTML = positions.map(p => {
+                const netPnl = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
+                const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
+                const rpnlClass = parseFloat(p.rpnl || 0) >= 0 ? 'success' : 'danger';
+                const urmtomClass = parseFloat(p.urmtom || 0) >= 0 ? 'success' : 'danger';
+                
+                return `
+                    <tr data-symbol="${p.tsym || p.symbol || ''}">
+                        <td style="font-weight: 700">${p.tsym || p.symbol || '-'}</td>
+                        <td>${p.exch || p.exchange || '-'}</td>
+                        <td><span class="badge ok">${p.prd || p.product || '-'}</span></td>
+                        <td data-field="netqty">${p.netqty || 0}</td>
+                        <td data-field="avgprc">${formatCurrency(p.avgprc || p.avg_price || 0)}</td>
+                        <td data-field="ltp">${formatCurrency(p.lp || p.ltp || 0)}</td>
+                        <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(p.rpnl || 0)}</td>
+                        <td data-field="urmtom" style="color: var(--${urmtomClass})">${formatCurrency(p.urmtom || 0)}</td>
+                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            // Smart update
+            positions.forEach(p => {
+                const symbol = p.tsym || p.symbol || '';
+                const row = tbody.querySelector(`tr[data-symbol="${symbol}"]`);
+                if (!row) return;
+                
+                const netPnl = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
+                
+                updateCellValue(row.querySelector('[data-field="netqty"]'), p.netqty || 0, false, 0);
+                updateCellValue(row.querySelector('[data-field="avgprc"]'), p.avgprc || p.avg_price || 0);
+                updateCellValue(row.querySelector('[data-field="ltp"]'), p.lp || p.ltp || 0);
+                updateCellValue(row.querySelector('[data-field="rpnl"]'), p.rpnl || 0, true);
+                updateCellValue(row.querySelector('[data-field="urmtom"]'), p.urmtom || 0, true);
+                updateCellValue(row.querySelector('[data-field="netpnl"]'), netPnl, true);
+            });
+        }
+    }
+    
+    // Update Holdings Table
+    function updateHoldingsTable(holdings) {
+        const tbody = document.getElementById('holdingsRows');
+        
+        if (!holdings || holdings.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="empty-state">
+                        <div class="empty-state-icon">📈</div>
+                        No holdings
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = holdings.map(h => {
+            const pnl = (parseFloat(h.lp || h.ltp || 0) - parseFloat(h.upldprc || h.avg_price || 0)) * parseInt(h.holdqty || h.quantity || 0);
+            const pnlClass = pnl >= 0 ? 'success' : 'danger';
+            
+            return `
+                <tr>
+                    <td style="font-weight: 700">${h.tsym || h.symbol || '-'}</td>
+                    <td>${h.holdqty || h.quantity || 0}</td>
+                    <td>${formatCurrency(h.upldprc || h.avg_price || 0)}</td>
+                    <td>${formatCurrency(h.lp || h.ltp || 0)}</td>
+                    <td style="color: var(--${pnlClass}); font-weight: 700">${formatCurrency(pnl)}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+    
+    // Update System Status
+    function updateSystemStatus(system) {
+        const heartbeat = system.heartbeat || {};
+        const risk = system.risk || {};
+        
+        // Login Status
+        const loginEl = document.getElementById('loginStatus');
+        const loginStatus = heartbeat.login || heartbeat.status || 'UNKNOWN';
+        loginEl.textContent = loginStatus;
+        loginEl.className = `badge ${loginStatus === 'OK' || loginStatus === 'CONNECTED' ? 'ok' : 'error'}`;
+        
+        // Heartbeat Age
+        const heartbeatAge = heartbeat.age_sec || heartbeat.age || 0;
+        document.getElementById('heartbeatAge').textContent = getTimeSince(heartbeatAge);
+        
+        // Risk Status
+        const riskEl = document.getElementById('riskStatus');
+        if (risk.daily_loss_hit) {
+            riskEl.textContent = 'LIMIT HIT';
+            riskEl.className = 'badge error';
+        } else if (risk.cooldown_until) {
+            riskEl.textContent = 'COOLDOWN';
+            riskEl.className = 'badge warn';
+        } else {
+            riskEl.textContent = 'SAFE';
+            riskEl.className = 'badge ok';
+        }
+        
+        document.getElementById('dailyHigh').textContent = formatCurrency(risk.today_high || 0);
+        document.getElementById('dailyLow').textContent = formatCurrency(risk.today_low || 0);
+        
+        // Force Exit Alert
+        const forceExitAlert = document.getElementById('forceExitAlert');
+        forceExitAlert.style.display = risk.force_exit_in_progress ? 'block' : 'none';
+    }
+    
+    // Update Limits
+    function updateLimits(limits) {
+        document.getElementById('cashAvail').textContent = formatCurrency(limits.cash || limits.cashmrgnavail || 0);
+        document.getElementById('collateral').textContent = formatCurrency(limits.collateral || limits.collateralvalue || 0);
+        document.getElementById('usedMargin').textContent = formatCurrency(limits.marginused || limits.marginUsed || 0);
+        document.getElementById('availMargin').textContent = formatCurrency(limits.marginAvailable || limits.marginavailable || 0);
+        document.getElementById('netAvail').textContent = formatCurrency(limits.net || limits.payin || 0);
+    }
+    
+    // Start Auto-Refresh
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        autoRefreshTimer = setInterval(() => {
+            updateDashboard(true);
+        }, config.autoRefreshInterval);
+    }
+    
+    // Stop Auto-Refresh
+    function stopAutoRefresh() {
+        if (autoRefreshTimer) {
+            clearInterval(autoRefreshTimer);
+            autoRefreshTimer = null;
+        }
+    }
+    
+    // Update "last updated" text every second
+    setInterval(() => {
+        const seconds = Math.floor((Date.now() - lastUpdate) / 1000);
+        const posRefresh = document.getElementById('posRefresh');
+        
+        if (seconds === 0) {
+            posRefresh.textContent = 'Updated just now';
+        } else if (seconds < 60) {
+            posRefresh.textContent = `Updated ${seconds}s ago`;
+        } else {
+            posRefresh.textContent = `Updated ${Math.floor(seconds / 60)}m ago`;
+        }
+    }, 1000);
+    
+    // Initialize on load
+    window.addEventListener('load', () => {
+        updateDashboard(false);
+        startAutoRefresh();
+    });
+    
+    // Cleanup on unload
+    window.addEventListener('beforeunload', stopAutoRefresh);
 </script>
 </body>
 </html>

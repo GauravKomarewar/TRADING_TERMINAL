@@ -18,9 +18,10 @@ Dashboard strategy buttons == internal strategy lifecycle calls
 # 🔒 CODE FREEZE — PRODUCTION APPROVED
 #
 # Component : Strategy ControlIntentConsumer
-# Version   : v1.1.0
 # Status    : PRODUCTION FROZEN
-# Date      : 2026-01-27
+#Version    : v1.1.1
+# Date      : 2026-02-06
+
 #
 # Guarantees:
 # - Dashboard intents follow TradingView execution path
@@ -37,6 +38,35 @@ import time
 import logging
 import sqlite3
 from typing import Optional, Tuple
+
+from shoonya_platform.execution.db_market import DBBackedMarket
+from shoonya_platform.strategies.universal_config.universal_strategy_config import (
+    UniversalStrategyConfig
+)
+
+def build_universal_config(payload: dict) -> UniversalStrategyConfig:
+    return UniversalStrategyConfig(
+        strategy_name=payload["strategy_name"],
+        strategy_version=payload["strategy_version"],
+
+        exchange=payload["exchange"],
+        symbol=payload["symbol"],
+        instrument_type=payload["instrument_type"], 
+        #instrument_type will drive market_cls selection (OPTIDX/MCX/etc)
+
+
+        entry_time=time.fromisoformat(payload["entry_time"]),
+        exit_time=time.fromisoformat(payload["exit_time"]),
+
+        order_type=payload["order_type"],
+        product=payload["product"],
+
+        lot_qty=payload["lot_qty"],
+        params=payload["params"],
+
+        poll_interval=payload.get("poll_interval", 2.0),
+        cooldown_seconds=payload.get("cooldown_seconds", 0),
+    )
 
 logger = logging.getLogger("EXECUTION.CONTROL")
 
@@ -74,6 +104,11 @@ class StrategyControlConsumer:
                 processed = self._process_next_strategy_intent()
                 if not processed:
                     time.sleep(POLL_INTERVAL_SEC)
+
+            # 🔥 FAIL-HARD: broker / session failure must kill process
+            except RuntimeError:
+                raise
+
             except Exception:
                 logger.exception("❌ Strategy control loop error")
                 time.sleep(2)
@@ -92,6 +127,7 @@ class StrategyControlConsumer:
             payload = json.loads(payload_json)
 
             strategy_name = payload.get("strategy_name")
+
             action = payload.get("action")
 
             if not strategy_name or not action:
@@ -107,16 +143,44 @@ class StrategyControlConsumer:
             # STRATEGY LIFECYCLE DISPATCH
             # ----------------------------------------------
             if action == "ENTRY":
-                self.strategy_manager.request_entry(strategy_name)
+                universal_config = build_universal_config(payload)
+                if strategy_name != universal_config.strategy_name:
+                    raise RuntimeError("Strategy name mismatch in payload")
+                try:
+                    self.strategy_manager.start_strategy(
+                        strategy_name=universal_config.strategy_name,
+                        universal_config=universal_config,
+                        market_cls=DBBackedMarket,   # or FeedBackedMarket (explicit choice)
+                        market_config={
+                            "exchange": universal_config.exchange,
+                            "symbol": universal_config.symbol,
+                        },
+                    )
+                except RuntimeError as e:
+                    if "already running" in str(e):
+                        logger.info("Strategy already running — ENTRY treated as idempotent")
+                    else:
+                        raise
+
 
             elif action == "EXIT":
-                self.strategy_manager.request_exit(strategy_name)
-
-            elif action == "ADJUST":
-                self.strategy_manager.request_adjust(strategy_name)
+                self.strategy_manager.request_exit(
+                    scope="STRATEGY",
+                    symbols=None,
+                    product_type="ALL",
+                    reason="DASHBOARD_EXIT",
+                    source="STRATEGY_CONTROL",
+                )
 
             elif action == "FORCE_EXIT":
-                self.strategy_manager.request_force_exit(strategy_name)
+                self.strategy_manager.request_exit(
+                    scope="STRATEGY",
+                    symbols=None,
+                    product_type="ALL",
+                    reason="FORCE_EXIT",
+                    source="STRATEGY_CONTROL",
+                )
+
 
             else:
                 raise RuntimeError(f"Unknown strategy action: {action}")

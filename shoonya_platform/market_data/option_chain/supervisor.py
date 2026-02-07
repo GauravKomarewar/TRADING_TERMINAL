@@ -1,42 +1,11 @@
 #!/usr/bin/env python3
-"""
-OptionChainSupervisor v2.0 (Production Hardened)
-==================================================
-
-Single owner of ALL live option chains.
-
-🔥 VERSION 2.0 IMPROVEMENTS:
-- Heartbeat monitoring for external process supervision
-- Feed stall detection WITH automatic recovery
-- Chain startup retry with exponential backoff
-- Session validation in main loop
-- Chain health monitoring
-- Graceful degradation on failures
-- Periodic ScriptMaster refresh
-- Resource cleanup on errors
-- Safe database operations
-- Enhanced error recovery
-
-Responsibilities:
-- Start default option chains at market open
-- Resolve expiries using ScriptMaster helpers
-- Own WebSocket + live feeds (single owner)
-- Persist snapshots to SQLite (OptionChainStore)
-- Allow controlled dynamic addition of chains
-- Cleanup expired DBs
-- Monitor and recover from failures
-
-STRICT RULES:
-- ❌ Dashboard never starts feeds
-- ❌ Strategies never starts feeds
-- ✅ ONE supervisor process only
-"""
 # ======================================================================
-# 🔒 PRODUCTION FROZEN v2.0
+# 🔒 PRODUCTION FROZEN v3.0
 #
 # Component : OptionChainSupervisor
-# Version   : v2.0.0 (Production Hardened)
-# Date      : 2026-01-28
+# ROLE: Component (non-service)
+# OWNERSHIP: ShoonyaBot
+# DATE : 06-02-2026
 #
 # Guarantees:
 #   ✔ Single owner of WebSocket feed
@@ -49,7 +18,7 @@ STRICT RULES:
 #   ✔ Heartbeat for external monitoring
 #   ✔ Graceful degradation on failures
 #
-# v2.0 Changes:
+# v3.0 Changes:
 #   ✅ Fixed: Heartbeat file for process monitoring
 #   ✅ Fixed: Feed stall recovery (not just detection)
 #   ✅ Fixed: Chain startup retry with backoff
@@ -67,18 +36,17 @@ import threading
 import logging
 from pathlib import Path
 from typing import Dict, Tuple, Optional, List, Any
-from shoonya_platform.core.config import Config
-from shoonya_platform.brokers.shoonya.client import ShoonyaClient
+
 from shoonya_platform.market_data.option_chain.option_chain import live_option_chain
 from shoonya_platform.market_data.option_chain.store import OptionChainStore
 from scripts.scriptmaster import refresh_scriptmaster
+
 from shoonya_platform.market_data.feeds.live_feed import (
-    start_live_feed,
     restart_feed,
     check_feed_health,
 )
 from shoonya_platform.market_data.instruments.instruments import get_expiry
-import signal
+
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +59,7 @@ DB_BASE_DIR = (
 )
 
 SNAPSHOT_INTERVAL = 1.0          # seconds
-EXPIRIES_PER_SYMBOL = 2          # nearest N expiries
+EXPIRIES_PER_SYMBOL = 1          # nearest N expiries
 RETENTION_DAYS = 1               # cleanup policy
 
 # Feed monitoring
@@ -115,7 +83,7 @@ CHAIN_RETRY_BASE_DELAY = 2       # seconds
 DEFAULT_INSTRUMENTS = [
     {"exchange": "NFO", "symbol": "NIFTY"},
     {"exchange": "NFO", "symbol": "BANKNIFTY"},
-    {"exchange": "BFO", "symbol": "SENSEX"},
+    {"exchange": "MCX", "symbol": "CRUDEOILM"},
 ]
 
 
@@ -172,7 +140,7 @@ def cleanup_expired_option_chain_dbs(
 
 class OptionChainSupervisor:
     """
-    🔥 v2.0: Production-hardened central authority for live option-chain lifecycle.
+    🔥 v3.0: Production-hardened central authority for live option-chain lifecycle.
     
     New features:
     - Heartbeat monitoring
@@ -183,7 +151,7 @@ class OptionChainSupervisor:
     - Graceful degradation
     """
 
-    def __init__(self, api_client: ShoonyaClient):
+    def __init__(self, api_client):
         self.api_client = api_client
         self._last_snapshot_ts = None
 
@@ -238,6 +206,7 @@ class OptionChainSupervisor:
                         continue
 
                     if self._start_chain(exchange, symbol, expiry):
+                        time.sleep(0.5)  # 500ms between chain startups
                         successful += 1
                     else:
                         failed += 1
@@ -319,7 +288,7 @@ class OptionChainSupervisor:
                     exchange=exchange,
                     symbol=symbol,
                     expiry=expiry,
-                    auto_start_feed=False,  # Supervisor owns feed
+                    auto_start_feed=False,  # Feed is owned by ShoonyaBot
                 )
                 
                 # Success!
@@ -572,7 +541,7 @@ class OptionChainSupervisor:
         - Periodic ScriptMaster refresh
         - Graceful error handling
         """
-        logger.info("📡 OptionChainSupervisor v2.0 running")
+        logger.info("📡 OptionChainSupervisor v3.0 running")
 
         last_cleanup = 0.0
         last_session_check = 0.0
@@ -818,115 +787,3 @@ class OptionChainSupervisor:
         
         logger.info("✅ Shutdown complete")
 
-
-# =====================================================================
-# ENTRYPOINT (SYSTEM SERVICE)
-# =====================================================================
-
-def main():
-    """
-    🔥 IMPROVED: Main entry point with graceful degradation.
-    """
-    # Load environment + credentials ONCE
-    config = Config()
-
-    # Create authenticated Shoonya client
-    client = ShoonyaClient(config)
-
-    # Login explicitly (no retries / no hacks)
-    if not client.login():
-        logger.critical("❌ Initial login failed")
-        return 1
-
-    # Refresh ScriptMaster
-    try:
-        refresh_scriptmaster()
-    except Exception as e:
-        logger.error("ScriptMaster refresh failed: %s", e)
-        # 🔥 IMPROVED: Continue anyway (graceful degradation)
-
-    # 🔑 SINGLE websocket start
-    if not start_live_feed(client):
-        logger.critical("❌ Failed to start live feed")
-        # 🔥 IMPROVED: Attempt to continue (supervisor may recover)
-        logger.warning("⚠️ Supervisor will attempt to recover feed")
-
-    supervisor = OptionChainSupervisor(client)
-    
-    # Bootstrap chains (graceful degradation built-in)
-    supervisor.bootstrap_defaults()
-    
-    # 🔥 NEW: Signal handlers
-    def _handle_signal(signum, frame):
-        logger.warning("🛑 Signal %s received — shutting down supervisor", signum)
-        supervisor._stop_event.set()
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-
-    # Run supervisor
-    supervisor.run()
-    
-    return 0
-
-
-if __name__ == "__main__":
-    exit(main())
-
-
-# ===============================
-# 🔒 PRODUCTION NOTES v2.0
-# ===============================
-
-"""
-===============================================================================
-SUPERVISOR v2.0 - PRODUCTION HARDENING CHANGELOG
-===============================================================================
-
-✅ CRITICAL FIXES:
-    1. Heartbeat file for external process monitoring
-    2. Feed stall detection WITH automatic recovery
-    3. Chain startup retry with exponential backoff
-    4. Session validation in main loop (re-login on expire)
-    5. Chain health monitoring (detects stale/degraded chains)
-    6. Graceful degradation (continues with partial failures)
-    7. Periodic ScriptMaster refresh (prevents stale contracts)
-    8. Resource cleanup on errors (prevents leaks)
-    9. Safe DB operations (skips active DBs in cleanup)
-    
-✅ NEW FEATURES:
-    1. get_health_report() - Comprehensive supervisor health
-    2. get_chain_status(key) - Specific chain diagnostics
-    3. _recover_from_feed_stall() - Automatic feed recovery
-    4. _monitor_all_chains() - Continuous health monitoring
-    5. _write_heartbeat() - Process liveness tracking
-    
-✅ IMPROVEMENTS:
-    1. Better error logging with context
-    2. Exponential backoff on retries
-    3. Failure tracking with cooldowns
-    4. Enhanced shutdown cleanup
-    5. Graceful error handling throughout
-    
-✅ COMPATIBILITY:
-    - ✅ Compatible with client.py v2.0
-    - ✅ Compatible with live_feed.py v2.0
-    - ✅ Compatible with option_chain.py v5.0
-    - ✅ Compatible with config.py v2.0
-    - ✅ Backward compatible API
-    
-✅ MONITORING:
-    - Heartbeat file: .supervisor_heartbeat
-    - Format: timestamp, chain_count, login_status, last_snapshot, stall_count
-    - Update interval: 5 seconds
-    - Monitoring script can check file age + content
-    
-🔒 PRODUCTION STATUS:
-    ✅ Process-safe (heartbeat monitoring)
-    ✅ Session-safe (auto re-login)
-    ✅ Feed-safe (automatic recovery)
-    ✅ Resource-safe (proper cleanup)
-    ✅ Production ready
-    
-===============================================================================
-"""

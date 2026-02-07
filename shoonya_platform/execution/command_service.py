@@ -47,8 +47,6 @@ class CommandService:
         self.bot = bot
         self.position_exit_service = PositionExitService(
             broker_client=bot.api,
-            order_watcher=bot.order_watcher,
-            execution_guard=bot.execution_guard,
             order_repo=bot.order_repo,
             client_id=bot.client_id,
         )
@@ -57,6 +55,9 @@ class CommandService:
         """
         Register EXIT intent only (NO execution).
         """
+        # 🔒 FIX: Make EXIT intent explicit & authoritative
+        cmd = cmd.with_intent("EXIT")
+            
         validate_order(cmd)
 
         record = OrderRecord(
@@ -94,7 +95,14 @@ class CommandService:
         """
         Validate, persist ONCE, and submit ENTRY / ADJUST commands.
         """
-
+        # --------------------------------------------------
+        # 🔒 HARD EXECUTION AUTHORITY CHECK (NON-NEGOTIABLE)
+        # --------------------------------------------------
+        if cmd.source != "ORDER_WATCHER":
+            raise RuntimeError(
+                f"FORBIDDEN EXECUTION PATH: source={cmd.source}. "
+                "Only OrderWatcherEngine may execute broker orders."
+            )
         # 🔒 HARD BLOCK EXIT
         if execution_type == "EXIT" or cmd.intent == "EXIT":
             raise RuntimeError(
@@ -183,20 +191,6 @@ class CommandService:
             trailing_engine=trailing_engine,
         )
 
-    def exit_registered(self, symbol: str) -> bool:
-        """
-        TEST HELPER: Check if an exit was registered for a symbol.
-        """
-        try:
-            # Query for any exit command matching the symbol
-            all_orders = self.bot.order_repo.get_all(limit=1000)
-            for order in all_orders:
-                if order.symbol == symbol and order.tag == "EXIT":
-                    return True
-            return False
-        except Exception:
-            return False
-
     def handle_exit_intent(
         self,
         *,
@@ -218,34 +212,3 @@ class CommandService:
             reason=reason,
             source=source,
         )
-
-    def register_exit_intent(self, *, broker_order_id, reason, source):
-        """
-        DEPRECATED: Use handle_exit_intent() instead.
-        
-        This method exists for backward compatibility with generic_control_consumer.
-        Broker-level cancellations should be handled by broker API directly.
-        """
-        logger.warning(
-            "register_exit_intent() is deprecated | broker_order_id=%s | reason=%s",
-            broker_order_id,
-            reason,
-        )
-        # For now, this is a no-op. Broker order cancellation is handled by dashboard API.
-        pass
-
-    def register_modify_intent(
-        self, *, broker_order_id, order_type, price, quantity, source, intent_id
-    ):
-        """
-        DEPRECATED: Broker-level modify operations should use broker API directly.
-        
-        This method exists for backward compatibility.
-        """
-        logger.warning(
-            "register_modify_intent() is deprecated | broker_order_id=%s | intent_id=%s",
-            broker_order_id,
-            intent_id,
-        )
-        # For now, this is a no-op. Broker order modifications are handled by broker API.
-        pass

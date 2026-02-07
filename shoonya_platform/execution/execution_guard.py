@@ -128,6 +128,41 @@ class ExecutionGuard:
                             f"{dir_} exists, attempted {i.direction}"
                         )
 
+    def _validate_broker_contract(
+        self,
+        broker_positions: Dict[str, Dict[str, int]],
+    ):
+        """
+        Enforce direction-aware broker contract.
+
+        Expected:
+            {
+                "SYMBOL": {
+                    "BUY": int,
+                    "SELL": int
+                }
+            }
+        """
+        if not isinstance(broker_positions, dict):
+            raise RuntimeError("Broker positions must be a dict")
+
+        for symbol, dir_map in broker_positions.items():
+            if not isinstance(dir_map, dict):
+                raise RuntimeError(
+                    f"Invalid broker contract for {symbol}: "
+                    f"expected dict[direction, qty], got {type(dir_map)}"
+                )
+
+            for direction, qty in dir_map.items():
+                if direction not in ("BUY", "SELL"):
+                    raise RuntimeError(
+                        f"Invalid direction {direction} for symbol {symbol}"
+                    )
+
+                if not isinstance(qty, int) or qty < 0:
+                    raise RuntimeError(
+                        f"Invalid qty {qty} for {symbol} {direction}"
+                    )
     # -----------------------------------------------------
     # RULE A — DUPLICATE & DELTA EXECUTION
     # -----------------------------------------------------
@@ -212,6 +247,9 @@ class ExecutionGuard:
 
         return exit_intents
 
+    def has_strategy(self, strategy_id: str) -> bool:
+        return strategy_id in self._strategy_positions
+
     def reconcile_with_broker(
         self,
         strategy_id: str,
@@ -224,23 +262,55 @@ class ExecutionGuard:
             broker_positions: Dict[symbol, Dict[direction, qty]]
             Example:
                 {
-                  "NIFTY25JAN18000CE": {"BUY": 50, "SELL": 0},
-                  "NIFTY25JAN18200PE": {"BUY": 0, "SELL": 50}
+                "NIFTY25JAN18000CE": {"BUY": 50, "SELL": 0},
+                "NIFTY25JAN18200PE": {"BUY": 0, "SELL": 50}
                 }
 
-        This is direction-aware and REQUIRED for correct reconciliation.
-        Callers: trading_bot.py (line ~844) builds this format from broker netqty.
-
-        Reconcile guard state with broker truth. Removes or updates
-        positions when broker shows reduced/cleared quantities.
+        This method:
+        - ADDS missing positions from broker truth
+        - UPDATES reduced quantities
+        - REMOVES cleared positions
         """
+
+        # 🔒 HARD CONTRACT ENFORCEMENT
+        self._validate_broker_contract(broker_positions)
+
         with self._lock:
-            existing = self._strategy_positions.get(strategy_id, {})
+            # -------------------------------------------------
+            # Ensure strategy container exists
+            # -------------------------------------------------
+            existing = self._strategy_positions.get(strategy_id)
+            if existing is None:
+                existing = {}
+                self._strategy_positions[strategy_id] = existing
 
-            if not existing:
-                logger.debug(f"ExecutionGuard: no positions for strategy {strategy_id}")
-                return
+            # -------------------------------------------------
+            # STEP 1: ADD missing positions from broker truth
+            # -------------------------------------------------
+            for symbol, dir_map in broker_positions.items():
+                for direction, broker_qty in dir_map.items():
+                    if broker_qty <= 0:
+                        continue
 
+                    if symbol not in existing:
+                        existing[symbol] = Position(
+                            symbol=symbol,
+                            direction=direction,
+                            qty=broker_qty,
+                        )
+
+                        self._global_positions.setdefault(symbol, {})
+                        self._global_positions[symbol][direction] = broker_qty
+
+                        logger.warning(
+                            f"ExecutionGuard: added missing position | "
+                            f"strategy={strategy_id} symbol={symbol} "
+                            f"direction={direction} qty={broker_qty}"
+                        )
+
+            # -------------------------------------------------
+            # STEP 2: Detect removals & reductions
+            # -------------------------------------------------
             to_remove = []
             to_update = []
 
@@ -252,7 +322,9 @@ class ExecutionGuard:
                 elif broker_qty < pos.qty:
                     to_update.append((symbol, broker_qty))
 
-            # Apply removals
+            # -------------------------------------------------
+            # STEP 3: Apply removals
+            # -------------------------------------------------
             for symbol in to_remove:
                 pos = existing.pop(symbol)
 
@@ -271,7 +343,9 @@ class ExecutionGuard:
                     f"strategy={strategy_id} symbol={symbol} qty={pos.qty}"
                 )
 
-            # Apply updates
+            # -------------------------------------------------
+            # STEP 4: Apply quantity reductions
+            # -------------------------------------------------
             for symbol, new_qty in to_update:
                 old_pos = existing[symbol]
                 qty_delta = old_pos.qty - new_qty
@@ -279,7 +353,7 @@ class ExecutionGuard:
                 existing[symbol] = Position(
                     symbol=symbol,
                     direction=old_pos.direction,
-                    qty=new_qty
+                    qty=new_qty,
                 )
 
                 if symbol in self._global_positions:
@@ -292,6 +366,9 @@ class ExecutionGuard:
                     f"{old_pos.qty} → {new_qty}"
                 )
 
+            # -------------------------------------------------
+            # STEP 5: Cleanup empty strategy
+            # -------------------------------------------------
             if not existing:
                 self._strategy_positions.pop(strategy_id, None)
                 logger.info(
@@ -304,7 +381,6 @@ class ExecutionGuard:
                     f"ExecutionGuard reconciled | strategy={strategy_id} | "
                     f"cleared={len(to_remove)} updated={len(to_update)}"
                 )
-
 
     # -----------------------------------------------------
     # STATE MANAGEMENT
@@ -373,34 +449,3 @@ class ExecutionGuard:
                     f"ExecutionGuard: cleared symbol {symbol} from strategy {strategy_id} "
                     f"({len(positions)} symbols remaining)"
                 )
-
-    def confirm_execution(
-        self,
-        strategy_id: str,
-        symbol: str,
-        direction: str,
-        qty: int,
-    ):
-        if qty <= 0:
-            return
-
-        if direction == "EXIT":
-            # EXIT confirmation must be resolved by trading_bot
-            return
-
-        with self._lock:
-            self._strategy_positions.setdefault(strategy_id, {})
-
-            existing = self._strategy_positions[strategy_id].get(symbol)
-            new_qty = existing.qty + qty if existing else qty
-
-            self._strategy_positions[strategy_id][symbol] = Position(
-                symbol=symbol,
-                direction=direction,
-                qty=new_qty,
-            )
-
-            self._global_positions.setdefault(symbol, {})
-            self._global_positions[symbol].setdefault(direction, 0)
-            self._global_positions[symbol][direction] += qty
-

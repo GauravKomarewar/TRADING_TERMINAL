@@ -16,7 +16,7 @@
 ## NOTE: sqlite3 & time used only by option-chain endpoint
 # DO NOT MODIFY WITHOUT FULL OMS + CONSUMER RE-AUDIT
 # ======================================================================
-
+from functools import lru_cache
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status
 from typing import List, Optional
 import logging
@@ -31,7 +31,9 @@ from shoonya_platform.api.dashboard.services.system_service import SystemTruthSe
 from shoonya_platform.api.dashboard.services.symbols_utility import DashboardSymbolService
 from shoonya_platform.api.dashboard.services.intent_utility import DashboardIntentService
 from shoonya_platform.api.dashboard.services.supervisor_service import SupervisorService
-
+from shoonya_platform.api.dashboard.services.option_chain_service import (
+    get_active_expiries,
+)
 from shoonya_platform.api.dashboard.api.schemas import (
     StrategyIntentRequest,
     StrategyAction,
@@ -42,6 +44,7 @@ from shoonya_platform.api.dashboard.api.schemas import (
     AdvancedIntentRequest,
     IntentResponse,
     BasketIntentRequest,
+    StrategyEntryRequest,
 )
 
 # 🔒 Single canonical storage location
@@ -56,52 +59,43 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 # ==================================================
 # DEPENDENCY FACTORIES (CLIENT-SCOPED)
 # ==================================================
-
 def get_broker(ctx=Depends(require_dashboard_auth)):
-    return BrokerService(client_id=ctx.client_id)
+    return BrokerService(ctx["bot"].broker_view)
 
 def get_system(ctx=Depends(require_dashboard_auth)):
-    return SystemTruthService(client_id=ctx.client_id)
+    return SystemTruthService(client_id=ctx["client_id"])
 
 # ==================================================
 # DEPENDENCY
 # ==================================================
 def get_intent(ctx=Depends(require_dashboard_auth)):
     return DashboardIntentService(
-        client_id=ctx.client_id,
-        parent_client_id=ctx.parent_client_id,
+        client_id=ctx["client_id"],
+        parent_client_id=ctx.get("parent_client_id"),
     )
 
-_symbols_instance: Optional[DashboardSymbolService] = None
-_supervisor_instance: Optional[SupervisorService] = None
-
+@lru_cache(maxsize=1)
 def get_symbols() -> DashboardSymbolService:
-    global _symbols_instance
-    if _symbols_instance is None:
-        _symbols_instance = DashboardSymbolService()
-    return _symbols_instance
+    return DashboardSymbolService()
 
-
+@lru_cache(maxsize=1)
 def get_supervisor() -> SupervisorService:
-    global _supervisor_instance
-    if _supervisor_instance is None:
-        _supervisor_instance = SupervisorService()
-    return _supervisor_instance
+    return SupervisorService()
 
 # ==================================================
 # 🔎 SYMBOL DISCOVERY
 # ==================================================
 
 @router.get("/symbols/search", response_model=List[SymbolSearchResult])
-def search_symbols(q: str = Query(..., min_length=1)):
+def search_symbols(q: str = Query(..., min_length=1),ctx=Depends(require_dashboard_auth)):
     return get_symbols().search(q)
 
 @router.get("/symbols/expiries", response_model=List[ExpiryView])
-def list_expiries(exchange: str, symbol: str):
+def list_expiries(exchange: str, symbol: str, ctx=Depends(require_dashboard_auth)):
     return [{"expiry": e} for e in get_symbols().get_expiries(exchange, symbol)]
 
 @router.get("/symbols/contracts", response_model=List[ContractView])
-def list_contracts(exchange: str, symbol: str, expiry: str):
+def list_contracts(exchange: str, symbol: str, expiry: str, ctx=Depends(require_dashboard_auth)):
     return get_symbols().get_contracts(exchange, symbol, expiry)
 
 # ==================================================
@@ -149,6 +143,80 @@ def force_exit_strategy(
     )
     return intent.submit_strategy_intent(req)
 
+@router.post("/orders/cancel/system")
+def cancel_system_order(
+    payload: dict = Body(...),
+    intent: DashboardIntentService = Depends(get_intent),
+):
+    """
+    Cancel a SYSTEM (intent-layer) order.
+    Intent-only. Execution decided by consumer.
+    """
+    command_id = payload.get("order_id")
+    if not command_id:
+        raise HTTPException(status_code=400, detail="order_id required")
+
+    intent.submit_raw_intent(
+        intent_id=f"DASH-CANCEL-SYS-{command_id}",
+        intent_type="CANCEL_SYSTEM_ORDER",
+        payload={
+            "command_id": command_id,
+            "reason": "DASHBOARD_CANCEL",
+        },
+    )
+
+    return {"accepted": True}
+
+@router.post("/orders/modify/system")
+def modify_system_order(
+    payload: dict = Body(...),
+    intent: DashboardIntentService = Depends(get_intent),
+):
+    """
+    Modify a SYSTEM (intent-layer) order.
+    Intent-only. No execution logic.
+    """
+    command_id = payload.get("order_id")
+    if not command_id:
+        raise HTTPException(status_code=400, detail="order_id required")
+
+    intent.submit_raw_intent(
+        intent_id=f"DASH-MODIFY-SYS-{command_id}",
+        intent_type="MODIFY_SYSTEM_ORDER",
+        payload={
+            "command_id": command_id,
+            "order_type": payload.get("order_type"),
+            "price": payload.get("price"),
+            "quantity": payload.get("quantity"),
+            "reason": "DASHBOARD_MODIFY",
+        },
+    )
+
+    return {"accepted": True}
+
+@router.post("/orders/cancel/system/all")
+def cancel_all_system_orders(
+    intent: DashboardIntentService = Depends(get_intent),
+):
+    """
+    Cancel ALL pending SYSTEM orders for client.
+    Consumer decides exact scope.
+    """
+    intent_id = f"DASH-CANCEL-SYS-ALL-{uuid4().hex[:8]}"
+
+    intent.submit_raw_intent(
+        intent_id=intent_id,
+        intent_type="CANCEL_ALL_SYSTEM_ORDERS",
+        payload={
+            "reason": "DASHBOARD_CANCEL_ALL",
+        },
+    )
+
+    return {
+        "accepted": True,
+        "intent_id": intent_id,
+    }
+
 # ==================================================
 # 🛑 BROKER ORDER CONTROLS (INTENT ONLY)
 # ==================================================
@@ -158,7 +226,7 @@ def cancel_broker_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
 ):
-    intent._insert_intent(
+    intent.submit_raw_intent(
         intent_id=f"DASH-CANCEL-{payload['order_id']}",
         intent_type="CANCEL_BROKER_ORDER",
         payload={
@@ -173,7 +241,7 @@ def modify_broker_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
 ):
-    intent._insert_intent(
+    intent.submit_raw_intent(
         intent_id=f"DASH-MODIFY-{payload['order_id']}",
         intent_type="MODIFY_BROKER_ORDER",
         payload={
@@ -226,6 +294,23 @@ def stop_strategy(
     except Exception as e:
         logger.exception("Strategy stop failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post(
+    "/intent/strategy/entry",
+    response_model=IntentResponse,
+)
+def submit_strategy_entry(
+    req: StrategyEntryRequest,
+    service: DashboardIntentService = Depends(get_intent),
+):
+    return service.submit_raw_intent(
+        intent_id=f"DASH-STRAT-ENTRY-{uuid4().hex[:8]}",
+        intent_type="STRATEGY",
+        payload={
+            **req.dict(),
+            "action": "ENTRY",
+        },
+    )
 
 # ==================================================
 # 🏠 DASHBOARD SNAPSHOT (HOME)
@@ -312,7 +397,7 @@ def submit_advanced_intent(
             "tag": req.reason or "WEB_ADVANCED",
         }
 
-        service._insert_intent(
+        service.submit_raw_intent(
             intent_id=intent_id,
             intent_type="ADVANCED",
             payload=payload,
@@ -347,6 +432,35 @@ def submit_basket_intent(
         logger.exception("Basket intent failed")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==================================================
+# 📅 OPTION CHAIN — ACTIVE EXPIRIES (SUPERVISOR TRUTH)
+# ==================================================
+
+@router.get("/option-chain/active-expiries", response_model=List[str])
+def list_active_option_chain_expiries(
+    exchange: str = Query(..., description="NFO / BFO"),
+    symbol: str = Query(..., description="NIFTY / BANKNIFTY / SENSEX"),
+):
+    """
+    Active option-chain expiries derived from supervisor DB files.
+
+    Guarantees:
+    - ✅ Supervisor-authoritative
+    - ✅ Process-safe
+    - ✅ Restart-safe
+    - ❌ No ScriptMaster access
+    - ❌ No live feed access
+    - ❌ No DB reads (filenames only)
+    """
+    expiries = get_active_expiries(exchange, symbol)
+
+    if not expiries:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active option chains for {exchange}:{symbol}",
+        )
+
+    return expiries
 
 @router.get("/option-chain")
 def get_option_chain(
@@ -377,7 +491,7 @@ def get_option_chain(
             detail=f"Option chain DB not found for {exchange}:{symbol}:{expiry}",
         )
 
-    conn = sqlite3.connect(db_file)
+    conn = sqlite3.connect(db_file, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 

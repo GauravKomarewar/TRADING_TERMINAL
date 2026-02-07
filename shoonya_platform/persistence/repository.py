@@ -145,6 +145,28 @@ class OrderRepository:
         )
         conn.commit()
 
+    def update_broker_id(self, command_id: str, broker_order_id: str):
+        """
+        Persist broker order ID after broker acceptance.
+        PRODUCTION SAFE — compatibility alias.
+        """
+        conn = get_connection()
+        conn.execute(
+            """
+            UPDATE orders
+            SET broker_order_id = ?, status = ?, updated_at = ?
+            WHERE command_id = ?
+            AND client_id = ?
+            """,
+            (
+                broker_order_id,
+                "SENT_TO_BROKER",
+                datetime.utcnow().isoformat(),
+                command_id,
+                self.client_id,
+            ),
+        )
+        conn.commit()
     # -----------------------------
     # READ
     # -----------------------------

@@ -1,12 +1,24 @@
-# shoonya_platform/execution/position_exit_service.py
+#!/usr/bin/env python3
+"""
+PositionExitService
+===================
 
-from typing import Literal, List, Optional
-from datetime import datetime
+PRODUCTION-GRADE POSITION-DRIVEN EXIT SERVICE
+
+Invariants:
+- Broker position book is the ONLY source of truth
+- NO qty / side inference from internal state
+- NO ExecutionGuard mutation
+- NO broker execution
+- EXIT = intent registration ONLY
+- OrderWatcherEngine is the sole executor & cleanup authority
+"""
+
 import logging
-import uuid
+from typing import Literal, List, Optional
+from datetime import datetime, timedelta
 
 from shoonya_platform.brokers.shoonya.client import ShoonyaClient
-from shoonya_platform.execution.execution_guard import ExecutionGuard
 from shoonya_platform.persistence.repository import OrderRepository
 from shoonya_platform.persistence.models import OrderRecord
 
@@ -15,29 +27,29 @@ logger = logging.getLogger(__name__)
 
 class PositionExitService:
     """
-    Position-driven exit service.
+    Position-driven EXIT intent service.
 
-    HARD GUARANTEES:
-    - Broker position book is the only source of truth
-    - No qty / side / product inference from internal state
-    - Every exit (strategy / RMS / manual / API / recovery) goes through here
-    - Orders registered via OrderRepository (OrderWatcher will execute)
+    Responsibilities:
+    - Read broker position book
+    - Determine EXIT side + qty (broker truth)
+    - Register EXIT intents in OrderRepository
+    - Prevent duplicate EXIT spam
     """
 
     def __init__(
         self,
         *,
         broker_client: ShoonyaClient,
-        order_watcher,  # OrderWatcherEngine (type hint avoided for circular imports)
-        execution_guard: ExecutionGuard,
-        order_repo: Optional[OrderRepository] = None,
-        client_id: Optional[str] = None,
+        order_repo: OrderRepository,
+        client_id: str,
     ):
         self.client = broker_client
-        self.order_watcher = order_watcher
-        self.execution_guard = execution_guard
-        self.order_repo = order_repo
+        self.repo = order_repo
         self.client_id = client_id
+
+    # --------------------------------------------------
+    # Public API
+    # --------------------------------------------------
 
     def exit_positions(
         self,
@@ -47,16 +59,15 @@ class PositionExitService:
         product_scope: Literal["MIS", "NRML", "ALL"],
         reason: str,
         source: str,
+        strategy_name: Optional[str] = None,
     ) -> None:
         """
-        Exit positions using broker position book as source of truth.
-        
-        Registers EXIT orders via OrderRepository.
-        OrderWatcher will execute them with LMT-as-MKT rules and ScriptMaster compliance.
-        """
+        Register EXIT intents using broker position book as truth.
 
-        logger.warning(
-            "EXIT REQUEST RECEIVED | scope=%s symbols=%s product_scope=%s reason=%s source=%s",
+        NO execution happens here.
+        """
+        logger.critical(
+            "EXIT REQUEST | scope=%s symbols=%s product=%s reason=%s source=%s",
             scope,
             symbols,
             product_scope,
@@ -64,16 +75,14 @@ class PositionExitService:
             source,
         )
 
-        positions = self.client.get_positions() or []
-
+        positions = self.client.get_positions()
         if not positions:
-            logger.warning("No broker positions found — nothing to exit")
+            logger.warning("EXIT: no broker positions (confirmed flat)")
             return
 
         exit_legs = []
 
         for row in positions:
-            # ---- Basic sanity ----
             net_qty = int(row.get("netqty", 0))
             if net_qty == 0:
                 continue
@@ -82,84 +91,92 @@ class PositionExitService:
             exchange = row.get("exch")
             product = row.get("prd")  # MIS / NRML / CNC
 
-            # ---- CNC holdings protection ----
-            # Never touch CNC holdings
+            # -------------------------------
+            # CNC protection
+            # -------------------------------
             if product == "CNC":
-                logger.warning("SKIP CNC HOLDING | %s", tradingsymbol)
+                logger.warning("EXIT SKIPPED (CNC) | %s", tradingsymbol)
                 continue
 
-            # ---- Product scope enforcement ----
+            # -------------------------------
+            # Product scope filter
+            # -------------------------------
             if product_scope != "ALL" and product != product_scope:
-                logger.warning(
-                    "SKIP PRODUCT MISMATCH | %s | requested=%s actual=%s",
-                    tradingsymbol,
-                    product_scope,
-                    product,
-                )
                 continue
 
-            # ---- Symbol scope enforcement ----
+            # -------------------------------
+            # Symbol scope filter
+            # -------------------------------
             if scope == "SYMBOLS":
                 if not symbols or tradingsymbol not in symbols:
-                    logger.warning(
-                        "SKIP SYMBOL OUT OF SCOPE | %s",
-                        tradingsymbol,
-                    )
                     continue
 
-            # ---- Resolve exit side & quantity (broker truth) ----
-            quantity = abs(net_qty)
             side = "SELL" if net_qty > 0 else "BUY"
-
-            logger.warning(
-                "EXIT LEG COLLECTED | %s | %s | qty=%s | product=%s",
-                tradingsymbol,
-                side,
-                quantity,
-                product,
-            )
+            qty = abs(net_qty)
 
             exit_legs.append(
                 {
                     "exchange": exchange,
                     "symbol": tradingsymbol,
                     "product": product,
-                    "quantity": quantity,
                     "side": side,
-                    "reason": reason,
-                    "source": source,
+                    "quantity": qty,
                 }
             )
 
         if not exit_legs:
-            logger.warning("No eligible positions after filtering — nothing to exit")
+            logger.warning("EXIT: no eligible positions after filtering")
             return
 
-        logger.critical("REGISTERING %d EXIT ORDERS (POSITION-DRIVEN)", len(exit_legs))
+        logger.critical(
+            "EXIT INTENTS REGISTERING | count=%d",
+            len(exit_legs),
+        )
 
-        # Register all exit orders via OrderRepository
-        # OrderWatcher will execute them
         for leg in exit_legs:
-            self._register_exit_order(leg)
+            self._register_exit_intent(
+                leg=leg,
+                reason=reason,
+                source=source,
+                strategy_name=strategy_name,
+            )
 
-    def _register_exit_order(self, leg: dict) -> None:
+    # --------------------------------------------------
+    # Internal helpers
+    # --------------------------------------------------
+
+    def _register_exit_intent(
+        self,
+        *,
+        leg: dict,
+        reason: str,
+        source: str,
+        strategy_name: Optional[str],
+    ) -> None:
         """
-        Register a single exit order in the repository.
-        OrderWatcher monitors and executes these orders.
+        Register a single EXIT intent (idempotent).
         """
         try:
-            # Create unique command ID for this exit
-            command_id = f"EXIT_{leg['source']}_{leg['symbol']}_{int(datetime.utcnow().timestamp()*1000)}"
+            if self._recent_exit_exists(leg["symbol"]):
+                logger.warning(
+                    "EXIT DUPLICATE SKIPPED | %s",
+                    leg["symbol"],
+                )
+                return
 
-            # Create OrderRecord for exit
+            command_id = (
+                f"EXIT_{source}_{leg['symbol']}_"
+                f"{int(datetime.utcnow().timestamp() * 1000)}"
+            )
+
             record = OrderRecord(
                 command_id=command_id,
                 broker_order_id=None,
                 execution_type="EXIT",
 
-                source=leg["source"],
+                source=source,
                 user="SYSTEM",
-                strategy_name="__SYSTEM__",  # Canonical system strategy
+                strategy_name=strategy_name or "__SYSTEM__",
 
                 exchange=leg["exchange"],
                 symbol=leg["symbol"],
@@ -167,8 +184,8 @@ class PositionExitService:
                 quantity=leg["quantity"],
                 product=leg["product"],
 
-                order_type="MARKET",
-                price=0.0,  # MARKET orders don't use price
+                order_type="MARKET",   # ScriptMaster may override
+                price=0.0,
 
                 stop_loss=None,
                 target=None,
@@ -181,19 +198,35 @@ class PositionExitService:
                 tag="EXIT",
             )
 
-            # Persist to repository
-            if self.order_repo:
-                self.order_repo.create(record)
-                logger.warning(
-                    "EXIT ORDER REGISTERED | %s | %s %s qty=%s | reason=%s",
-                    leg["exchange"],
-                    leg["symbol"],
-                    leg["side"],
-                    leg["quantity"],
-                    leg["reason"],
-                )
-            else:
-                logger.error("ORDER REPOSITORY NOT AVAILABLE — exit order NOT registered")
+            self.repo.create(record)
 
-        except Exception as e:
-            logger.exception(f"FAILED TO REGISTER EXIT ORDER | {leg['symbol']} | {e}")
+            logger.warning(
+                "EXIT INTENT REGISTERED | %s | %s qty=%s | reason=%s",
+                leg["symbol"],
+                leg["side"],
+                leg["quantity"],
+                reason,
+            )
+
+        except Exception:
+            logger.exception(
+                "FAILED TO REGISTER EXIT INTENT | %s",
+                leg.get("symbol"),
+            )
+
+    def _recent_exit_exists(self, symbol: str) -> bool:
+        """
+        Prevent duplicate EXIT intents for the same symbol.
+
+        Uses ONLY OrderRepository public API (PRODUCTION FROZEN).
+        """
+        open_orders = self.repo.get_open_orders()
+
+        for order in open_orders:
+            if (
+                order.execution_type == "EXIT"
+                and order.symbol == symbol
+            ):
+                return True
+
+        return False

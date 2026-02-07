@@ -1,70 +1,29 @@
+#!/usr/bin/env python3
 """
-OrderWatcherEngine — EXIT Execution Authority (PRODUCTION FROZEN)
-================================================================
+OrderWatcherEngine
+==================
 
-ROLE:
------
-This engine is the *sole executor* of all non-strategy exits.
+PRODUCTION-GRADE EXECUTION ENGINE
+Aligned with ScriptMaster v2.0 (PRODUCTION FROZEN)
 
-It handles:
-- STOP LOSS exits
-- TRAILING STOP exits
-- RISK / MANUAL violation exits
-- Post-restart recovery exits
-
-WHAT IT DOES:
--------------
-• Monitors live LTP
-• Converts EXIT intents into broker-safe orders
-• Enforces canonical LIMIT / MARKET rules via ScriptMaster
-• Executes exits safely without strategy or UI involvement
-• Reconciles broker truth → DB → memory
-
-WHAT IT NEVER DOES:
--------------------
-❌ Submits ENTRY orders
-❌ Fixes or modifies strategy orders
-❌ Accepts raw broker commands
-❌ Decides position sizing or direction
-❌ Performs strategy logic
-OMS + OrderWatcher + DB + Scheduler
-
+Invariants:
+- Broker is the ONLY source of EXECUTED truth
+- EXIT execution is idempotent and persistent
+- Order type rules enforced ONLY via ScriptMaster
+- OrderWatcher executes intents, never decides them
+- ExecutionGuard is reconciled ONLY from broker truth
 """
-# ======================================================================
-# 🔒 CODE FREEZE — OMS VERIFIED
-# Component     : OrderWatcherEngine
-# Status        : ✅ PRODUCTION APPROVED
-# Audit         : ✅ ALL TESTS PASS
-# Safety        : ✅ NO SEMANTIC DRIFT
-# ISOLATION     : ✅ CLIENT-SAFE
-# DB MODEL      : ✅ SHARED DB, HARD-SCOPED
-# RISK          : ✅ RMS-COMPATIBLE
-# RESTART       : ✅ SAFE
-# COPY-TRADING  : ✅ READY
 
-# FIXES APPLIED:
-# - FIX #1: _check_stop_loss now accepts OrderRecord (type-safe)
-# - FIX #2: Trailing logic uses DB record consistently
-# - FIX #3: EXIT intent explicitly tagged
-# - FIX #4: _fire_exit uses record for DB truth
-# ======================================================================
-
-import threading
 import time
 import logging
-import math
-from datetime import datetime
+import threading
+from typing import Dict
 
-from shoonya_platform.execution.intent import UniversalOrderCommand
-from shoonya_platform.execution.trailing import TrailingEngine
 from shoonya_platform.persistence.repository import OrderRepository
-from shoonya_platform.persistence.models import OrderRecord
+from shoonya_platform.execution.intent import UniversalOrderCommand
 from scripts.scriptmaster import requires_limit_order
 
 logger = logging.getLogger(__name__)
-
-ENGINE_SOURCE = "ENGINE"
-MANUAL_SOURCE = "MANUAL"
 
 
 class OrderWatcherEngine(threading.Thread):
@@ -72,10 +31,10 @@ class OrderWatcherEngine(threading.Thread):
     OrderWatcherEngine
 
     Responsibilities:
-    - Monitor LTP
-    - Trigger EXIT / SL / TRAILING EXIT
-    - NEVER submit ENTRY
-    - NEVER resubmit original command
+    - Poll broker order book
+    - Persist EXECUTED / FAILED truth
+    - Execute OPEN intents mechanically
+    - Reconcile ExecutionGuard AFTER broker confirmation
     """
 
     def __init__(self, bot, poll_interval: float = 1.0):
@@ -83,286 +42,231 @@ class OrderWatcherEngine(threading.Thread):
         self.bot = bot
         self.poll_interval = poll_interval
         self._running = True
-        self.order_repo = OrderRepository(bot.client_id)
-        # 🔒 Prevent orphan log flooding
-        self._seen_orphan_broker_orders = set()
+        self.repo = OrderRepository(bot.client_id)
 
-    # -------------------------------------------------
-    # BROKER → DB RECONCILIATION (CRITICAL)
-    # -------------------------------------------------
-    def _reconcile_broker_orders(self):
-        """
-        Reconcile broker order book with local DB.
+    # --------------------------------------------------
+    # Thread lifecycle
+    # --------------------------------------------------
 
-        STRICT RULES:
-        - NEVER create OrderRecord here
-        - ONLY update existing orders
-        - Broker is source of truth for status
-        """
-        try:
-            broker_orders = self.bot.api.get_order_book() or []
-        except Exception:
-            logger.exception("OrderWatcher: failed to fetch broker order book")
-            return
-
-        for o in broker_orders:
-            broker_id = o.get("norenordno")
-            status = (o.get("status") or "").upper()
-
-            if not broker_id or not status:
-                continue
-
-            record = self.order_repo.get_by_broker_id(broker_id)
-
-            if record is None:
-                # 🔕 Log orphan broker orders ONLY ONCE per runtime
-                if broker_id not in self._seen_orphan_broker_orders:
-                    logger.warning(
-                        "OrderWatcher: orphan broker order ignored | broker_id=%s status=%s",
-                        broker_id,
-                        status,
-                    )
-                    self._seen_orphan_broker_orders.add(broker_id)
-                continue
-
-
-            # 🔴 Terminal failure states
-            if status in ("CANCELLED", "REJECTED", "EXPIRED"):
-                self.order_repo.update_status_by_broker_id(
-                    broker_id,
-                    "FAILED",
-                )
-
-                self.bot.execution_guard.force_clear_symbol(
-                    strategy_id=record.strategy_name,
-                    symbol=record.symbol,
-                )
-
-            # 🟢 Successful execution
-            elif status == "COMPLETE":
-                self.order_repo.update_status_by_broker_id(
-                    broker_id,
-                    "EXECUTED",
-                )
-
-                self.bot.mark_command_executed_by_broker_id(broker_id)
-
-                logger.info(
-                    "OrderWatcher: order executed | broker_id=%s",
-                    broker_id,
-                )
-
-    # -------------------------------------------------
-    # CORE LOOP
-    # -------------------------------------------------
     def stop(self):
         self._running = False
 
     def run(self):
-        logger.info("🧠 OrderWatcherEngine started")
+        logger.info("🧠 OrderWatcherEngine started (ScriptMaster v2.0 compliant)")
 
         while self._running:
-            try:
-                self._reconcile_broker_orders()
-                self._process_orders()
-            except Exception:
-                logger.exception("❌ OrderWatcherEngine fatal error")
+            self.bot._ensure_login()
+            self._reconcile_broker_orders()
+            self._process_open_intents()
             time.sleep(self.poll_interval)
 
-    # -------------------------------------------------
-    # PROCESS EXIT CONDITIONS
-    # -------------------------------------------------
-    def _process_orders(self):
-        """
-        Process orders for SL/Trailing conditions.
-        
-        CRITICAL: Uses DB as source of truth to prevent state drift.
-        """
-        self.bot._ensure_login()
+    # --------------------------------------------------
+    # Broker reconciliation (EXECUTED truth ONLY here)
+    # --------------------------------------------------
 
-        orders = self.bot.get_open_commands()
-        if not orders:
-            orders = self.order_repo.get_open_orders()
+    def _reconcile_broker_orders(self):
+        broker_orders = self.bot.api.get_order_book()
+        for bo in broker_orders:
+            broker_id = bo.get("norenordno")
+            status = (bo.get("status") or "").upper()
 
-        for cmd in orders:
-            execution_type = getattr(cmd, "execution_type", None)
-            intent = getattr(cmd, "intent", None)
-
-            # -----------------------------------------
-            # 🔒 PROCESS ONLY ENTRY FOR SL / TRAILING
-            # -----------------------------------------
-            if execution_type != "ENTRY" and intent != "ENTRY":
+            if not broker_id or not status:
                 continue
 
-            # Prevent duplicate firing (memory-only)
-            if getattr(cmd, "_exit_fired", False):
+            record = self.repo.get_by_broker_id(broker_id)
+            if not record:
+                continue
+            # 🔒 Skip already reconciled orders (idempotency)
+            if record.status == "EXECUTED":
+                continue
+            # -------------------------------
+            # Broker FAILURE
+            # -------------------------------
+            if status in ("REJECTED", "CANCELLED", "EXPIRED"):
+                self.repo.update_status(record.command_id, "FAILED")
+
+                # 🔒 FIX: Clear guard state for failed leg
+                try:
+                    self.bot.execution_guard.force_clear_symbol(
+                        strategy_id=record.strategy_name,
+                        symbol=record.symbol,
+                    )
+                except Exception:
+                    logger.exception(
+                        "OrderWatcher: failed to clear guard state | strategy=%s symbol=%s",
+                        record.strategy_name,
+                        record.symbol,
+                    )
+
+                logger.error(
+                    "OrderWatcher: broker failure | cmd_id=%s broker_id=%s status=%s",
+                    record.command_id,
+                    broker_id,
+                    status,
+                )
                 continue
 
-            symbol = getattr(cmd, "symbol", None)
-            ltp = self.bot.api.get_ltp(cmd.exchange, symbol)
+            # -------------------------------
+            # Broker EXECUTED (FINAL TRUTH)
+            # -------------------------------
+            if status == "COMPLETE":
+                self.repo.update_status(record.command_id, "EXECUTED")
 
-            if not ltp:
-                logger.error(f"⚠️ LTP unavailable | {symbol} — deferring SL check")
-                continue
+                logger.info(
+                    "OrderWatcher: EXECUTED | cmd_id=%s broker_id=%s",
+                    record.command_id,
+                    broker_id,
+                )
 
-            # 🔑 SOURCE OF TRUTH: DB RECORD (FIX #1 & #4)
-            record = self.order_repo.get_by_id(cmd.command_id)
-            if not record or record.stop_loss is None:
-                continue
+                # 🔒 BROKER-TRUTH CONVERGENCE POINT
+                self._reconcile_execution_guard(record.strategy_name)
 
-            # 🔴 STOP LOSS (FIX #1: Pass record, not cmd)
-            if self._check_stop_loss(record, ltp):
-                self._fire_exit(record, reason="STOP_LOSS")
-                # Mark in memory to prevent duplicate triggers this cycle
-                object.__setattr__(cmd, "_exit_fired", True)
-                continue
+    # --------------------------------------------------
+    # ExecutionGuard reconciliation (BROKER-DRIVEN ONLY)
+    # --------------------------------------------------
 
-            # 🔁 TRAILING STOP (FIX #2: Pass record, not cmd)
-            self._check_trailing(record, ltp)
-
-    # -------------------------------------------------
-    # CONDITIONS (FIX #1: Accept OrderRecord explicitly)
-    # -------------------------------------------------
-    def _check_stop_loss(self, record: OrderRecord, ltp: float) -> bool:
+    def _reconcile_execution_guard(self, strategy_name: str) -> None:
         """
-        Check if stop loss is triggered.
-        
-        Args:
-            record: OrderRecord from DB (source of truth)
-            ltp: Current last traded price
-            
-        Returns:
-            True if stop loss triggered
+        Reconcile ExecutionGuard AFTER broker EXECUTED confirmation.
+
+        This is the ONLY legal place where:
+        - Guard reconciliation occurs
+        - Strategy cleanup is allowed
         """
-        if record.stop_loss is None:
-            return False
-
-        if record.side == "BUY" and ltp <= record.stop_loss:
-            return True
-
-        if record.side == "SELL" and ltp >= record.stop_loss:
-            return True
-
-        return False
-
-    # -------------------------------------------------
-    # TRAILING LOGIC (FIX #2: Use DB record consistently)
-    # -------------------------------------------------
-    def _check_trailing(self, record: OrderRecord, ltp: float):
-        """
-        Check and update trailing stop loss.
-        
-        Args:
-            record: OrderRecord from DB (source of truth)
-            ltp: Current last traded price
-        """
-        if record.trailing_type == "NONE":
-            return
-
-        # 🔧 Create engine from record (not command)
-        # If TrailingEngine.from_record() doesn't exist, this needs to be added
-        # For now, assuming it exists or create from record attributes
         try:
-            # Try using from_record if available
-            engine = TrailingEngine.from_record(record)
-        except AttributeError:
-            # Fallback: create from command-like object if from_record doesn't exist
-            # This preserves backward compatibility
-            logger.warning(
-                "TrailingEngine.from_record() not available, using from_command() as fallback"
-            )
-            engine = TrailingEngine.from_command(record)
+            broker_map = self._build_broker_map()
 
-        new_sl = engine.compute_new_sl(ltp, record.stop_loss)
-
-        if new_sl != record.stop_loss:
-            # 🔑 Update DB directly (source of truth)
-            self.order_repo.update_stop_loss(record.command_id, new_sl)
-            logger.info(
-                f"🔁 Trailing SL updated | {record.symbol} | {record.stop_loss} → {new_sl}"
+            self.bot.execution_guard.reconcile_with_broker(
+                strategy_id=strategy_name,
+                broker_positions=broker_map,
             )
 
-    # -------------------------------------------------
-    # UTIL
-    # -------------------------------------------------
-    def _round_to_tick(self, price: float, side: str, tick: float = 0.05) -> float:
-        """Round price to tick size based on order side."""
-        if side == "BUY":
-            return math.ceil(price / tick) * tick
-        return math.floor(price / tick) * tick
+            # If strategy is fully flat after reconciliation,
+            # cleanup is now LEGALLY allowed.
+            # if strategy_name not in self.bot.execution_guard._strategy_positions:
+            if not self.bot.execution_guard.has_strategy(strategy_name):
+                self.bot.execution_guard.force_close_strategy(strategy_name)
 
-    # -------------------------------------------------
-    # EXIT EXECUTION (FIX #3 & #4: Use record, tag EXIT)
-    # -------------------------------------------------
-    def _fire_exit(self, record: OrderRecord, reason: str):
+                logger.info(
+                    "OrderWatcher: strategy fully closed | strategy=%s",
+                    strategy_name,
+                )
+
+        except Exception as e:
+            logger.exception(
+                "OrderWatcher: guard reconciliation failed | strategy=%s | %s",
+                strategy_name,
+                e,
+            )
+
+    # --------------------------------------------------
+    # Direction-aware broker map (ExecutionGuard v1.3)
+    # --------------------------------------------------
+
+    def _build_broker_map(self) -> Dict[str, Dict[str, int]]:
         """
-        Execute exit order based on DB record.
-        
-        Args:
-            record: OrderRecord from DB (source of truth)
-            reason: Exit reason (STOP_LOSS, TRAILING, etc.)
+        Build direction-aware broker map.
+
+        Contract:
+            {
+              "SYMBOL": {
+                "BUY": qty,
+                "SELL": qty
+              }
+            }
         """
-        self.bot._ensure_login()
+        positions = self.bot.api.get_positions()
+        broker_map: Dict[str, Dict[str, int]] = {}
 
-        logger.warning(
-            f"🚨 EXIT TRIGGERED | {reason} | {record.symbol} {record.side}"
-        )
+        for p in positions:
+            sym = p.get("tsym")
+            net = int(p.get("netqty", 0))
 
-        exit_side = "BUY" if record.side == "SELL" else "SELL"
+            if not sym or net == 0:
+                continue
 
-        ltp = self.bot.api.get_ltp(record.exchange, record.symbol)
-        if not ltp:
-            logger.critical(
-                f"❌ EXIT ABORTED | LTP unavailable | {record.symbol}"
-            )
+            broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
+
+            if net > 0:
+                broker_map[sym]["BUY"] = net
+            else:
+                broker_map[sym]["SELL"] = abs(net)
+
+        return broker_map
+
+    # --------------------------------------------------
+    # Intent execution (MECHANICAL ONLY)
+    # --------------------------------------------------
+
+    def _process_open_intents(self):
+        intents = self.repo.get_open_orders()
+        if not intents:
             return
 
-        # Instrument-safe buffer
-        PRICE_BUFFER = max(0.02, 2 * 0.05)
+        for record in intents:
+            # 🔒 Idempotency — already submitted
+            if record.broker_order_id:
+                continue
 
-        raw_price = (
-            ltp * (1 + PRICE_BUFFER)
-            if exit_side == "BUY"
-            else ltp * (1 - PRICE_BUFFER)
-        )
+            # --------------------------------------------------
+            # ScriptMaster — order type LAW
+            # --------------------------------------------------
+            must_use_limit = requires_limit_order(
+                exchange=record.exchange,
+                tradingsymbol=record.symbol,
+            )
 
-        limit_price = self._round_to_tick(raw_price, exit_side)
+            order_type = "LIMIT" if must_use_limit else "MARKET"
+            price = 0.0
 
-        must_limit = requires_limit_order(
-            exchange=record.exchange,
-            tradingsymbol=record.symbol,
-        )
+            if must_use_limit:
+                ltp = self.bot.api.get_ltp(record.exchange, record.symbol)
+                if not ltp:
+                    continue
 
-        order_type = "LIMIT" if must_limit else "MARKET"
-        price = limit_price if must_limit else None
+                # Aggressive but legal (LMT-as-MKT)
+                price = float(ltp)
 
-        logger.warning(
-            f"🚨 EXIT ORDER | {record.symbol} | side={exit_side} "
-            f"| type={order_type} | price={price}"
-        )
+            # --------------------------------------------------
+            # Build canonical execution command
+            # --------------------------------------------------
+            cmd = UniversalOrderCommand.from_record(
+                record,
+                order_type=order_type,
+                price=price,
+                source="ORDER_WATCHER",
+            )
 
-        order_params = {
-            "exchange": record.exchange,
-            "symbol": record.symbol,
-            "quantity": record.quantity,
-            "side": exit_side,
-            "product": record.product,
-            "order_type": order_type,
-            "price": price,
-        }
+            # --------------------------------------------------
+            # Submit (SINGLE broker path)
+            # --------------------------------------------------
+            try:
+                result = self.bot.execute_command(cmd)
+            except Exception:
+                logger.exception(
+                    "OrderWatcher: execution crash | cmd_id=%s",
+                    record.command_id,
+                )
+                continue
 
-        exit_cmd = UniversalOrderCommand.from_order_params(
-            order_params=order_params,
-            source=ENGINE_SOURCE,
-            user=record.user,
-        )
-        # 🔒 FIX #1: preserve strategy ownership for EXIT
-        object.__setattr__(exit_cmd, "strategy_name", record.strategy_name)
-        # 🔧 FIX #3: Explicitly tag EXIT intent
-        object.__setattr__(exit_cmd, "intent", "EXIT")
+            if not result.success:
+                self.repo.update_status(record.command_id, "FAILED")
 
-        # Register exit command
-        self.bot.command_service.register(exit_cmd)
+                logger.error(
+                    "OrderWatcher: submission failed | cmd_id=%s error=%s",
+                    record.command_id,
+                    result.error_message,
+                )
+                continue
 
-        # Clear original intent from memory only
-        self.bot.mark_command_executed(record.command_id)
+            # --------------------------------------------------
+            # Persist submission (NOT executed yet)
+            # --------------------------------------------------
+            self.repo.update_broker_id(record.command_id, result.order_id)
+
+            logger.info(
+                "OrderWatcher: SENT_TO_BROKER | cmd_id=%s broker_id=%s type=%s",
+                record.command_id,
+                result.order_id,
+                order_type,
+            )

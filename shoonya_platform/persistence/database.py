@@ -1,3 +1,15 @@
+#===================================================================
+# database.py is PRODUCTION FROZEN.
+
+# - Orders schema preserved
+# - Legacy migrations handled
+# - Dashboard control_intents schema aligned
+# - No execution-path impact
+# - Restart-safe, concurrency-safe
+
+# Any future modification requires full OMS + consumer re-audit.
+#===================================================================
+
 import sqlite3
 import threading
 import os
@@ -140,20 +152,94 @@ def get_connection():
 
             # Ensure control_intents table exists (dashboard control plane)
             try:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS control_intents (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        type TEXT NOT NULL,
-                        payload TEXT NOT NULL,
-                        status TEXT NOT NULL DEFAULT 'PENDING',
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                cur = conn.cursor()
+
+                # Check existing columns
+                cols = cur.execute(
+                    "PRAGMA table_info(control_intents)"
+                ).fetchall()
+                col_names = {c[1] for c in cols}
+
+                required_cols = {
+                    "id",
+                    "client_id",
+                    "parent_client_id",
+                    "type",
+                    "payload",
+                    "source",
+                    "status",
+                    "created_at",
+                }
+
+                if not cols:
+                    # Fresh DB → create correct schema
+                    cur.execute(
+                        """
+                        CREATE TABLE control_intents (
+                            id TEXT PRIMARY KEY,
+
+                            client_id TEXT NOT NULL,
+                            parent_client_id TEXT,
+
+                            type TEXT NOT NULL,
+                            payload TEXT NOT NULL,
+                            source TEXT NOT NULL,
+                            status TEXT NOT NULL,
+                            created_at TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
-                conn.commit()
+                    conn.commit()
+
+                elif not required_cols.issubset(col_names):
+                    # Legacy schema → migrate
+                    conn.execute("BEGIN")
+
+                    cur.execute("ALTER TABLE control_intents RENAME TO control_intents_old")
+
+                    cur.execute(
+                        """
+                        CREATE TABLE control_intents (
+                            id TEXT PRIMARY KEY,
+
+                            client_id TEXT NOT NULL,
+                            parent_client_id TEXT,
+
+                            type TEXT NOT NULL,
+                            payload TEXT NOT NULL,
+                            source TEXT NOT NULL,
+                            status TEXT NOT NULL,
+                            created_at TEXT NOT NULL
+                        )
+                        """
+                    )
+
+                    # Best-effort copy (legacy rows get client_id='LEGACY')
+                    cur.execute(
+                        """
+                        INSERT INTO control_intents (
+                            id, client_id, parent_client_id,
+                            type, payload, source, status, created_at
+                        )
+                        SELECT
+                            COALESCE(id, hex(randomblob(16))),
+                            'LEGACY',
+                            NULL,
+                            type,
+                            payload,
+                            'LEGACY',
+                            status,
+                            created_at
+                        FROM control_intents_old
+                        """
+                    )
+
+                    cur.execute("DROP TABLE control_intents_old")
+                    conn.commit()
+
             except Exception:
                 conn.rollback()
+
                 
         except Exception:
             # Best-effort: if schema creation fails, tests will report error

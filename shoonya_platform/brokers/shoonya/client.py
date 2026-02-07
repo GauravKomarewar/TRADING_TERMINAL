@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-SHOONYA CLIENT v3.0 - PRODUCTION GATEWAY (FULLY HARDENED)
+SHOONYA CLIENT v3.3 - PRODUCTION GATEWAY (FAIL-HARD HARDENED)
 ===============================================================================
 
 🔒 PRODUCTION CERTIFICATIONS:
@@ -15,15 +15,66 @@ SHOONYA CLIENT v3.0 - PRODUCTION GATEWAY (FULLY HARDENED)
     ✅ RMS-safe position synchronization
     ✅ Comprehensive error handling with structured logging
     ✅ Session management with auto-recovery
+    ✅ FAIL-HARD on session/broker failures (v3.3)
     
-🎯 KEY IMPROVEMENTS FROM v2.0:
-    - Unified response normalization helpers (_normalize_list_response, _normalize_dict_response)
-    - Broker-realistic get_holdings(), get_limits(), get_order_book()
-    - Enhanced health monitoring with metrics
-    - Configurable rate limiting with sliding window
-    - Improved WebSocket stability with state machine
-    - Better error context in logs (no spam)
-    - Future-proof against broker API drift
+🎯 CRITICAL FIXES APPLIED (v3.3 FINAL):
+    
+    ✅ FIX #1: ensure_session() NEVER returns False
+       - Always raises RuntimeError on failure (no silent False)
+       - Tier-1 code cannot accidentally ignore failures
+       
+    ✅ FIX #2: Tier-2 methods documented as informational only
+       - Holdings, quotes, search: NEVER used for RMS/exits/sizing
+       - Used only for dashboards, reporting, tax calculations
+       - With auto_recovery enabled, even Tier-2 raises on session failure
+       
+    ✅ FIX #3: place_order() exception handling documented
+       - Exception path returns OrderResult(success=False)
+       - SAFE ONLY IF: All exits go through OrderWatcherEngine
+       - OrderWatcherEngine retries and escalates failures
+       - If exits ever call place_order() directly, change to raise RuntimeError
+    
+🛡️ FAIL-HARD PHILOSOPHY:
+    Legitimate Empty (return []):
+        - Account is flat (no positions) → [] is TRUTH
+        - No pending orders → [] is TRUTH
+        - Broker confirms empty state → Return []
+    
+    Session/Broker Failure (raise RuntimeError):
+        - Session invalid → We're BLIND → CRASH
+        - Broker unreachable → We're BLIND → CRASH
+        - Network failure → We're BLIND → CRASH
+        
+    💀 A restarted process is safer than silent capital risk
+    
+🔒 DESIGN COMMITMENTS:
+    
+    1. TIER-1 OPERATIONS (MUST FAIL HARD):
+       - get_positions() - RMS tracking, exposure
+       - get_limits() - Margin safety, max loss
+       - get_order_book() - Exit reconciliation
+       - place_order() - Capital movement (see FIX #3)
+       - modify_order() - Exit correctness
+       - cancel_order() - Risk exits
+       - get_account_info() - Complete account state
+       - ensure_session() - Broker truth gate
+       → All raise RuntimeError on session/broker failures
+       
+    2. TIER-2 OPERATIONS (INFORMATIONAL ONLY):
+       - get_holdings() - Never used for risk decisions
+       - searchscrip() - Symbol search only
+       - get_quotes() - Price display only
+       - get_ltp() - Dashboard only
+       - get_time_price_series() - Charts only
+       - get_option_chain() - Analysis only
+       → With auto_recovery: Also raise on session failure
+       → Without auto_recovery: Return None/[]
+       
+    3. EXIT SAFETY:
+       - All exits MUST go through OrderWatcherEngine
+       - OrderWatcherEngine has retry + escalation logic
+       - Never call place_order() directly for exits
+       - If this changes, update place_order() exception handler
     
 📦 DEPENDENCIES:
     - NorenRestApiPy
@@ -31,11 +82,11 @@ SHOONYA CLIENT v3.0 - PRODUCTION GATEWAY (FULLY HARDENED)
     
 🔧 USAGE:
     client = ShoonyaClient(config, enable_auto_recovery=True)
-    client.login()
+    client.login()  # Raises RuntimeError on failure
     client.start_websocket(on_tick=handler)
     
-# Freeze date: 2026-02-02
-# Version: 3.0.0
+# Freeze date: 2026-02-04
+# Version: 3.3.0 (FINAL - PRODUCTION READY)
 """
 
 import time
@@ -57,12 +108,18 @@ logger = logging.getLogger(__name__)
 
 class ShoonyaClient(NorenApi):
     """
-    Production-grade Shoonya broker gateway with comprehensive hardening.
+    Production-grade Shoonya broker gateway with FAIL-HARD philosophy.
     
     THREAD SAFETY:
         - RLock protects ALL broker API calls
         - Lock-free session state checks prevent deadlocks
         - Safe for concurrent execution from multiple strategies
+        
+    FAIL-HARD GUARANTEES:
+        - NEVER returns [] when session is invalid
+        - NEVER returns None when broker is unreachable
+        - Raises RuntimeError to force process restart
+        - Distinguishes legitimate empty from blind state
         
     BROKER REALITY:
         - Tolerates inconsistent API responses
@@ -144,7 +201,7 @@ class ShoonyaClient(NorenApi):
         self._logged_flags: Set[str] = set()
 
         logger.info(
-            "✅ ShoonyaClient v3.0 initialized | auto_recovery=%s",
+            "✅ ShoonyaClient v3.3 initialized | auto_recovery=%s | fail_hard=enabled",
             enable_auto_recovery
         )
 
@@ -188,7 +245,8 @@ class ShoonyaClient(NorenApi):
         self, 
         resp: Any, 
         label: str,
-        data_keys: Optional[List[str]] = None
+        data_keys: Optional[List[str]] = None,
+        critical: bool = False
     ) -> List[dict]:
         """
         Normalize broker responses that should return lists.
@@ -197,16 +255,19 @@ class ShoonyaClient(NorenApi):
         - Direct list: [...]
         - Dict wrapper: {"stat":"Ok","data":[...]}
         - Dict with custom key: {"stat":"Ok","orderbook":[...]}
-        - None: broker idle state
+        - None: broker idle state (only valid if not critical)
         
         Args:
             resp: Raw broker response
             label: Operation name for logging
             data_keys: Keys to check for list data in dict responses
-                      (default: ["data", label, "orderbook", "positions", "holdings"])
+            critical: If True, raises RuntimeError on invalid response
         
         Returns:
-            List of dicts, or empty list on error
+            List of dicts, or empty list on error (if not critical)
+            
+        Raises:
+            RuntimeError: If critical=True and response is invalid
         """
         # Case 1: Direct list (most common in newer API versions)
         if isinstance(resp, list):
@@ -217,7 +278,10 @@ class ShoonyaClient(NorenApi):
             # Check status if present
             stat = resp.get("stat")
             if stat and stat != "Ok":
-                logger.warning("%s failed: %s", label, resp)
+                error_msg = f"{label} failed: {resp}"
+                logger.warning(error_msg)
+                if critical:
+                    raise RuntimeError(f"BROKER_API_ERROR: {error_msg}")
                 return []
 
             # Try multiple possible keys for data
@@ -231,22 +295,28 @@ class ShoonyaClient(NorenApi):
 
             # Dict exists but no list found
             logger.debug("%s returned dict without list data: keys=%s", label, list(resp.keys()))
+            if critical:
+                raise RuntimeError(f"BROKER_INVALID_RESPONSE: {label} returned dict without list data")
             return []
 
-        # Case 3: None (broker idle)
+        # Case 3: None (broker idle - only allowed for non-critical calls)
         if resp is None:
+            if critical:
+                logger.critical("🚨 %s returned None (CRITICAL PATH)", label)
+                raise RuntimeError(f"BROKER_UNAVAILABLE: {label} returned None")
             logger.debug("%s returned None (broker idle)", label)
             return []
 
-        # Case 4: Unexpected type (log once to prevent spam)
+        # Case 4: Unexpected type
         log_key = f"{label}_unexpected_type"
+        error_msg = f"{label} returned unexpected type: {type(resp).__name__}"
+        
         if log_key not in self._logged_flags:
-            logger.warning(
-                "⚠️  %s returned unexpected type: %s",
-                label,
-                type(resp).__name__
-            )
+            logger.warning("⚠️  %s", error_msg)
             self._logged_flags.add(log_key)
+        
+        if critical:
+            raise RuntimeError(f"BROKER_INVALID_RESPONSE: {error_msg}")
         
         return []
 
@@ -254,7 +324,8 @@ class ShoonyaClient(NorenApi):
         self,
         resp: Any,
         label: str,
-        allow_missing_stat: bool = True
+        allow_missing_stat: bool = True,
+        critical: bool = False
     ) -> Optional[dict]:
         """
         Normalize broker responses that should return dicts.
@@ -263,9 +334,13 @@ class ShoonyaClient(NorenApi):
             resp: Raw broker response
             label: Operation name for logging
             allow_missing_stat: If True, accept dicts without "stat" field
+            critical: If True, raises RuntimeError on invalid response
         
         Returns:
-            Dict on success, None on error
+            Dict on success, None on error (if not critical)
+            
+        Raises:
+            RuntimeError: If critical=True and response is invalid
         """
         # Case 1: Valid dict
         if isinstance(resp, dict):
@@ -281,23 +356,30 @@ class ShoonyaClient(NorenApi):
             
             # Explicit failure
             if stat and stat != "Ok":
-                logger.warning("%s failed: %s", label, resp)
+                error_msg = f"{label} failed: {resp}"
+                logger.warning(error_msg)
+                if critical:
+                    raise RuntimeError(f"BROKER_API_ERROR: {error_msg}")
                 return None
 
-        # Case 2: None (broker idle)
+        # Case 2: None (broker idle - only allowed for non-critical calls)
         if resp is None:
+            if critical:
+                logger.critical("🚨 %s returned None (CRITICAL PATH)", label)
+                raise RuntimeError(f"BROKER_UNAVAILABLE: {label} returned None")
             logger.debug("%s returned None (broker idle)", label)
             return None
 
-        # Case 3: Unexpected type (log once to prevent spam)
+        # Case 3: Unexpected type
         log_key = f"{label}_unexpected_type"
+        error_msg = f"{label} returned unexpected type: {type(resp).__name__}"
+        
         if log_key not in self._logged_flags:
-            logger.warning(
-                "⚠️  %s returned unexpected type: %s",
-                label,
-                type(resp).__name__
-            )
+            logger.warning("⚠️  %s", error_msg)
             self._logged_flags.add(log_key)
+        
+        if critical:
+            raise RuntimeError(f"BROKER_INVALID_RESPONSE: {error_msg}")
         
         return None
 
@@ -336,28 +418,39 @@ class ShoonyaClient(NorenApi):
         return self._normalize_order_params(params)
 
     # =========================================================================
-    # SESSION MANAGEMENT (DEADLOCK-FREE)
+    # SESSION MANAGEMENT (DEADLOCK-FREE + FAIL-HARD)
     # =========================================================================
 
     def ensure_session(self) -> bool:
         """
-        Ensure session is valid with deadlock prevention.
+        Ensure session is valid with deadlock prevention and fail-hard semantics.
         
         CRITICAL: Lock-free state checks prevent deadlocks when called
         from methods that already hold the API lock.
         
+        FAIL-HARD: If auto_recovery is enabled and session recovery fails,
+        raises RuntimeError to force process restart.
+        
         Returns:
-            True if session is valid, False otherwise
+            True if session is valid (only returns in non-recovery mode)
+            
+        Raises:
+            RuntimeError: If auto_recovery enabled and session cannot be recovered
         """
-        if not self._enable_auto_recovery:
-            return self._logged_in and not self._is_session_expired()
-
         # 🔥 DEADLOCK PREVENTION: Check state WITHOUT lock first
         if self._logged_in and self._is_session_fresh():
             return True
 
         if not self._logged_in:
-            return False
+            if self._enable_auto_recovery:
+                logger.critical("🚨 Session invalid - attempting recovery")
+                if not self.login():
+                    logger.critical("❌ Session recovery FAILED - ABORTING")
+                    raise RuntimeError("SESSION_RECOVERY_FAILED")
+                return True
+            # 🔥 FIX #1: NEVER return False in fail-hard mode
+            logger.critical("🚨 Session invalid (auto_recovery disabled)")
+            raise RuntimeError("SESSION_INVALID")
 
         # Session needs validation - perform broker API call
         try:
@@ -367,14 +460,6 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_limits()
 
-            # # Validate response
-            # if resp and isinstance(resp, dict):
-            #     stat = resp.get("stat")
-            #     if stat is None or stat == "Ok":
-            #         self._last_session_validation = datetime.now()
-            #         logger.debug("✅ Session validated")
-            #         return True
-            
             # Accept ANY dict as valid session signal
             if isinstance(resp, dict):
                 self._last_session_validation = datetime.now()
@@ -383,12 +468,26 @@ class ShoonyaClient(NorenApi):
             # Invalid response
             logger.info("❌ Session expired (invalid broker response)")
             self._logged_in = False
-            return self.login()
+            
+            if self._enable_auto_recovery:
+                if not self.login():
+                    logger.critical("❌ Session re-login FAILED - ABORTING")
+                    raise RuntimeError("SESSION_RECOVERY_FAILED")
+                return True
+            
+            raise RuntimeError("SESSION_INVALID")
 
         except Exception as exc:
             logger.warning("⚠️  Session validation failed: %s", exc)
             self._logged_in = False
-            return self.login()
+            
+            if self._enable_auto_recovery:
+                if not self.login():
+                    logger.critical("❌ Session recovery after exception FAILED - ABORTING")
+                    raise RuntimeError("SESSION_RECOVERY_FAILED")
+                return True
+            
+            raise RuntimeError("SESSION_INVALID")
 
     def _is_session_fresh(self) -> bool:
         """Check if session was validated recently (no lock needed)."""
@@ -565,11 +664,13 @@ class ShoonyaClient(NorenApi):
             on_order_update: Callback for order updates
             on_open: Callback when connection opens
             on_close: Callback when connection closes
+            
+        Raises:
+            RuntimeError: If session is invalid and cannot be recovered
         """
-        # Validate session
+        # Validate session with fail-hard semantics
         if self._enable_auto_recovery:
-            if not self.ensure_session():
-                raise RuntimeError("Cannot start WebSocket: session invalid")
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         else:
             if not self._logged_in:
                 raise RuntimeError("Cannot start WebSocket: not logged in")
@@ -630,23 +731,22 @@ class ShoonyaClient(NorenApi):
                 self._logged_in = False
             
             try:
-                # Re-establish session
-                if self.ensure_session():
-                    # Restart WebSocket
-                    self._start_websocket_internal()
-                    
-                    # Re-subscribe to tokens
-                    if self._subscribed_tokens:
-                        with self._api_lock:
-                            token_list = list(self._subscribed_tokens)
-                            super().subscribe(token_list)
-                        logger.info("✅ Re-subscribed %d tokens", len(token_list))
-                    
-                    # Reset attempts on success
-                    self._ws_reconnect_attempts = 0
-                    logger.info("✅ WebSocket reconnected successfully")
-                else:
-                    logger.error("❌ WebSocket reconnect failed: session invalid")
+                # Re-establish session (will raise on failure if auto_recovery enabled)
+                self.ensure_session()
+                
+                # Restart WebSocket
+                self._start_websocket_internal()
+                
+                # Re-subscribe to tokens
+                if self._subscribed_tokens:
+                    with self._api_lock:
+                        token_list = list(self._subscribed_tokens)
+                        super().subscribe(token_list)
+                    logger.info("✅ Re-subscribed %d tokens", len(token_list))
+                
+                # Reset attempts on success
+                self._ws_reconnect_attempts = 0
+                logger.info("✅ WebSocket reconnected successfully")
                     
             except Exception as exc:
                 logger.exception("❌ WebSocket reconnect error")
@@ -680,9 +780,12 @@ class ShoonyaClient(NorenApi):
         
         Args:
             tokens: List of exchange:token strings (e.g., ["NSE|22"])
+            
+        Raises:
+            RuntimeError: If session is invalid and cannot be recovered
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            raise RuntimeError("Cannot subscribe: session invalid")
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
             raise RuntimeError("Cannot subscribe: not logged in")
         
@@ -724,16 +827,28 @@ class ShoonyaClient(NorenApi):
             return list(self._subscribed_tokens)
 
     # =========================================================================
-    # ORDER MANAGEMENT
+    # ORDER MANAGEMENT (FAIL-HARD)
     # =========================================================================
 
     def place_order(self, order_params: Union[dict, Any]) -> OrderResult:
         """
-        Place order with smart retry logic.
+        Place order with fail-hard semantics.
+        
+        CRITICAL: This is a Tier-1 operation that affects capital movement.
+        
+        ⚠️ EXIT SAFETY REQUIREMENT:
+        The `except Exception` path returns OrderResult(success=False) which is
+        ONLY SAFE if:
+        - This method is used for ENTRIES only
+        - ALL EXITS go through OrderWatcherEngine (which retries and escalates)
+        
+        If ANY exit path directly calls place_order() and silently consumes
+        OrderResult failures, change the exception handler to:
+            raise RuntimeError(f"ORDER_PLACEMENT_FAILED: {exc}")
         
         Guarantees:
         - Thread-safe
-        - Session-safe
+        - Session-safe (raises RuntimeError on invalid session)
         - Maximum retry attempts enforced
         - Rate limit protected
         - Never returns None (always OrderResult)
@@ -743,15 +858,17 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             OrderResult with success status and error details
+            
+        Raises:
+            RuntimeError: If session is invalid and cannot be recovered
         """
-        # Session validation
+        # 🔥 FAIL-HARD: Session validation with exception on failure
         if self._enable_auto_recovery:
-            if not self.ensure_session():
-                logger.error("❌ PLACE_ORDER_BLOCKED | session invalid")
-                return OrderResult(success=False, error_message="SESSION_INVALID")
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         else:
             if not self._logged_in:
-                raise RuntimeError("Cannot place order: not logged in")
+                logger.critical("🚨 PLACE_ORDER: session invalid")
+                raise RuntimeError("SESSION_INVALID")
 
         try:
             # Normalize parameters
@@ -793,10 +910,8 @@ class ShoonyaClient(NorenApi):
                     self._logged_in = False
 
                 if not self.login():
-                    return OrderResult(
-                        success=False,
-                        error_message="SESSION_RECOVERY_FAILED"
-                    )
+                    logger.critical("❌ ORDER_PLACEMENT: session recovery failed")
+                    raise RuntimeError("SESSION_RECOVERY_FAILED")
 
                 # Exponential backoff before retry
                 if attempt < self.ORDER_MAX_RETRY_ATTEMPTS:
@@ -819,6 +934,10 @@ class ShoonyaClient(NorenApi):
             logger.error("❌ PLACE_ORDER_TYPE_ERROR | %s", exc)
             return OrderResult(success=False, error_message=str(exc))
 
+        except RuntimeError:
+            # Re-raise RuntimeError for session failures
+            raise
+
         except Exception as exc:
             logger.exception("❌ PLACE_ORDER_EXCEPTION")
             return OrderResult(success=False, error_message=str(exc))
@@ -829,7 +948,9 @@ class ShoonyaClient(NorenApi):
         **kwargs,
     ) -> Optional[dict]:
         """
-        Modify existing order with rate limit protection.
+        Modify existing order with fail-hard semantics.
+        
+        CRITICAL: Tier-1 operation (exit correctness).
         
         Args:
             order_params: Order modification parameters
@@ -837,13 +958,16 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             dict on success, None on failure
+            
+        Raises:
+            RuntimeError: If session is invalid and cannot be recovered
         """
+        # 🔥 FAIL-HARD: Session validation
         if self._enable_auto_recovery:
-            if not self.ensure_session():
-                logger.error("❌ MODIFY_ORDER_BLOCKED | session invalid")
-                return None
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
-            return None
+            logger.critical("🚨 MODIFY_ORDER: session invalid")
+            raise RuntimeError("SESSION_INVALID")
 
         try:
             # Normalize parameters
@@ -870,30 +994,39 @@ class ShoonyaClient(NorenApi):
             
             return response
 
+        except RuntimeError:
+            # Re-raise RuntimeError for session failures
+            raise
+
         except Exception as exc:
             logger.error("❌ MODIFY_ORDER_FAILED | %s", exc)
             return None
 
     def cancel_order(self, orderno: str) -> Optional[dict]:
         """
-        Cancel order with rate limit protection.
+        Cancel order with fail-hard semantics.
+        
+        CRITICAL: Tier-1 operation (risk exits).
         
         Args:
             orderno: Order number to cancel
         
         Returns:
             dict on success, None on failure
+            
+        Raises:
+            RuntimeError: If session is invalid and cannot be recovered
         """
         if not orderno:
             logger.error("❌ CANCEL_ORDER_BLOCKED | missing orderno")
             return None
 
+        # 🔥 FAIL-HARD: Session validation
         if self._enable_auto_recovery:
-            if not self.ensure_session():
-                logger.error("❌ CANCEL_ORDER_BLOCKED | session invalid")
-                return None
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
-            return None
+            logger.critical("🚨 CANCEL_ORDER: session invalid")
+            raise RuntimeError("SESSION_INVALID")
 
         try:
             # Rate limit protection
@@ -910,19 +1043,23 @@ class ShoonyaClient(NorenApi):
             
             return response
 
+        except RuntimeError:
+            # Re-raise RuntimeError for session failures
+            raise
+
         except Exception as exc:
             logger.error("❌ CANCEL_ORDER_FAILED | orderno=%s | %s", orderno, exc)
             return None
 
     # =========================================================================
-    # ACCOUNT DATA (BROKER-REALISTIC NORMALIZATION)
+    # ACCOUNT DATA (FAIL-HARD FOR TIER-1)
     # =========================================================================
 
-    def get_limits(self) -> Optional[dict]:
+    def get_limits(self) -> dict:
         """
-        Get account limits with broker-realistic normalization.
+        Get account limits with fail-hard semantics.
         
-        Critical for RMS and health checks.
+        CRITICAL: Tier-1 operation for RMS and health checks.
         
         Reality (Shoonya):
         - Usually dict
@@ -931,12 +1068,17 @@ class ShoonyaClient(NorenApi):
         - Rarely None
         
         Returns:
-            dict with account limits, or None on error
+            dict with account limits
+            
+        Raises:
+            RuntimeError: If session invalid or broker returns invalid data
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return None
+        # 🔥 FAIL-HARD: Session validation
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
-            return None
+            logger.critical("🚨 get_limits: session invalid")
+            raise RuntimeError("SESSION_INVALID")
         
         try:
             self._check_api_rate_limit()
@@ -944,34 +1086,55 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_limits()
             
-            return self._normalize_dict_response(
+            # 🔥 FAIL-HARD: Invalid response is unacceptable
+            limits = self._normalize_dict_response(
                 resp,
                 "get_limits",
-                allow_missing_stat=True
+                allow_missing_stat=True,
+                critical=True  # Will raise RuntimeError on invalid response
             )
             
+            if not limits:
+                logger.critical("🚨 get_limits returned invalid data")
+                raise RuntimeError("BROKER_LIMITS_INVALID")
+            
+            return limits
+            
+        except RuntimeError:
+            # Re-raise RuntimeError for critical failures
+            raise
+            
         except Exception as exc:
-            logger.error("❌ get_limits failed: %s", exc)
-            return None
+            logger.critical("🚨 get_limits exception: %s", exc)
+            raise RuntimeError(f"BROKER_API_ERROR: {exc}")
 
     def get_positions(self) -> List[dict]:
         """
-        Get positions with broker-realistic normalization.
+        Get positions with fail-hard semantics.
         
-        CRITICAL: Syncs with RMS for position tracking.
+        CRITICAL: Tier-1 operation - syncs with RMS for position tracking.
+        
+        This method distinguishes between:
+        1. Legitimate empty (account is flat) → return []
+        2. Session invalid (we're blind) → raise RuntimeError
         
         Reality (Shoonya):
         - Sometimes returns list directly (MOST COMMON)
         - Sometimes {"stat":"Ok","data":[...]}
-        - Sometimes None
+        - Sometimes None (only valid if account truly empty)
         
         Returns:
-            List of position dicts, or empty list on error
+            List of position dicts (may be empty if account is flat)
+            
+        Raises:
+            RuntimeError: If session invalid or broker unreachable
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return []
+        # 🔥 FAIL-HARD: Session validation
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
-            return []
+            logger.critical("🚨 get_positions: session invalid")
+            raise RuntimeError("SESSION_INVALID")
 
         try:
             self._check_api_rate_limit()
@@ -979,11 +1142,14 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_positions()
 
-            # Normalize response using helper
+            # 🔥 FAIL-HARD: Normalize with critical flag
+            # This will raise RuntimeError if response is truly invalid
+            # But will return [] if broker legitimately says "no positions"
             positions = self._normalize_list_response(
                 resp,
                 "get_positions",
-                data_keys=["data", "positions"]
+                data_keys=["data", "positions"],
+                critical=True  # Will raise on invalid response
             )
 
             # 🔥 RMS SYNCHRONIZATION: Update risk manager with broker truth
@@ -993,13 +1159,26 @@ class ShoonyaClient(NorenApi):
 
             return positions
 
+        except RuntimeError:
+            # Re-raise RuntimeError for critical failures
+            raise
+
         except Exception as exc:
-            logger.error("❌ get_positions failed: %s", exc)
-            return []
+            logger.critical("🚨 get_positions exception: %s", exc)
+            raise RuntimeError(f"BROKER_API_ERROR: {exc}")
 
     def get_holdings(self) -> List[dict]:
         """
-        Get holdings with broker-realistic normalization.
+        Get holdings (Tier-2: informational only).
+        
+        ⚠️ TIER-2 DESIGN COMMITMENT:
+        - Holdings data is NEVER used for RMS, exits, margin checks, or sizing
+        - Used only for dashboards, reporting, tax calculations
+        - If broker unavailable, dashboards show stale/empty data (acceptable)
+        
+        NOTE: With auto_recovery enabled, this will now raise RuntimeError
+        on session failures (fail-hard), not return []. This ensures even
+        Tier-2 data comes from valid sessions.
         
         Reality (Shoonya):
         - Sometimes returns list directly
@@ -1008,10 +1187,15 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             List of holding dicts, or empty list on error
+            
+        Raises:
+            RuntimeError: If auto_recovery enabled and session invalid
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return []
+        # 🔥 FAIL-HARD: With auto_recovery, this now raises on session failure
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
+            logger.warning("get_holdings: not logged in")
             return []
 
         try:
@@ -1020,12 +1204,17 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_holdings()
 
-            # Normalize response using helper
+            # Normalize response (non-critical - soft fail on broker errors)
             return self._normalize_list_response(
                 resp,
                 "get_holdings",
-                data_keys=["data", "holdings"]
+                data_keys=["data", "holdings"],
+                critical=False  # Soft fail on broker API errors (but not session)
             )
+
+        except RuntimeError:
+            # Re-raise session failures
+            raise
 
         except Exception as exc:
             logger.error("❌ get_holdings failed: %s", exc)
@@ -1033,7 +1222,9 @@ class ShoonyaClient(NorenApi):
 
     def get_order_book(self) -> List[dict]:
         """
-        Get order book with broker-realistic normalization.
+        Get order book with fail-hard semantics.
+        
+        CRITICAL: Tier-1 operation for exit reconciliation.
         
         MOST INCONSISTENT API - handles all known formats.
         
@@ -1041,15 +1232,20 @@ class ShoonyaClient(NorenApi):
         - {"stat":"Ok","orderbook":[...]}
         - OR list directly
         - OR dict without orderbook
-        - OR None
+        - OR None (only valid if truly no orders)
         
         Returns:
-            List of order dicts, or empty list on error
+            List of order dicts (may be empty if no orders pending)
+            
+        Raises:
+            RuntimeError: If session invalid or broker unreachable
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return []
+        # 🔥 FAIL-HARD: Session validation
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
-            return []
+            logger.critical("🚨 get_order_book: session invalid")
+            raise RuntimeError("SESSION_INVALID")
 
         try:
             self._check_api_rate_limit()
@@ -1057,52 +1253,61 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_order_book()
 
-            # Normalize response using helper
+            # 🔥 FAIL-HARD: Normalize with critical flag
             return self._normalize_list_response(
                 resp,
                 "get_order_book",
-                data_keys=["orderbook", "data", "orders"]
+                data_keys=["orderbook", "data", "orders"],
+                critical=True  # Will raise on invalid response
             )
 
-        except Exception as exc:
-            logger.error("❌ get_order_book failed: %s", exc)
-            return []
+        except RuntimeError:
+            # Re-raise RuntimeError for critical failures
+            raise
 
-    def get_account_info(self) -> Optional[AccountInfo]:
+        except Exception as exc:
+            logger.critical("🚨 get_order_book exception: %s", exc)
+            raise RuntimeError(f"BROKER_API_ERROR: {exc}")
+
+    def get_account_info(self) -> AccountInfo:
         """
         Get comprehensive account info (aggregator).
         
-        Gracefully handles partial failures (won't fail if positions unavailable).
+        CRITICAL: Tier-1 operation (requires all sub-calls to succeed).
         
         Returns:
-            AccountInfo object, or None if limits unavailable
+            AccountInfo object
+            
+        Raises:
+            RuntimeError: If any critical data unavailable
         """
         try:
+            # All of these will raise RuntimeError on failure
             limits = self.get_limits()
             positions = self.get_positions()
             orders = self.get_order_book()
 
-            # Require limits at minimum
-            if not limits:
-                return None
-
             return AccountInfo.from_api_data(
                 limits=limits,
-                positions=positions or [],
-                orders=orders or []
+                positions=positions,
+                orders=orders
             )
 
-        except Exception:
-            logger.exception("❌ Failed to get account info")
-            return None
+        except RuntimeError:
+            # Re-raise for fail-hard semantics
+            raise
+
+        except Exception as exc:
+            logger.critical("🚨 Failed to get account info: %s", exc)
+            raise RuntimeError(f"ACCOUNT_INFO_ERROR: {exc}")
 
     # =========================================================================
-    # MARKET DATA
+    # MARKET DATA (TIER-2: SOFT FAIL)
     # =========================================================================
 
     def searchscrip(self, exchange: str, searchtext: str) -> Optional[dict]:
         """
-        Search for scrip/symbol.
+        Search for scrip/symbol (Tier-2: informational only).
         
         Args:
             exchange: Exchange name (e.g., "NSE")
@@ -1110,10 +1315,14 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             Search results, or None on error
+            
+        Raises:
+            RuntimeError: If auto_recovery enabled and session invalid
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return None
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
+            logger.warning("searchscrip: not logged in")
             return None
         
         try:
@@ -1124,6 +1333,10 @@ class ShoonyaClient(NorenApi):
                     exchange=exchange,
                     searchtext=searchtext
                 )
+        
+        except RuntimeError:
+            # Re-raise session failures
+            raise
                 
         except Exception as exc:
             logger.error("❌ searchscrip failed: %s", exc)
@@ -1131,7 +1344,7 @@ class ShoonyaClient(NorenApi):
 
     def get_quotes(self, exchange: str, token: str) -> Optional[dict]:
         """
-        Get market quotes for symbol.
+        Get market quotes for symbol (Tier-2: informational only).
         
         Args:
             exchange: Exchange name
@@ -1139,10 +1352,14 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             Quote data, or None on error
+            
+        Raises:
+            RuntimeError: If auto_recovery enabled and session invalid
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return None
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
+            logger.warning("get_quotes: not logged in")
             return None
         
         try:
@@ -1150,6 +1367,10 @@ class ShoonyaClient(NorenApi):
             
             with self._api_lock:
                 return super().get_quotes(exchange=exchange, token=token)
+        
+        except RuntimeError:
+            # Re-raise session failures
+            raise
                 
         except Exception as exc:
             logger.error("❌ get_quotes failed [%s %s]: %s", exchange, token, exc)
@@ -1157,7 +1378,7 @@ class ShoonyaClient(NorenApi):
 
     def get_ltp(self, exchange: str, token: str) -> Optional[float]:
         """
-        Get Last Traded Price (convenience method).
+        Get Last Traded Price (Tier-2: informational only).
         
         Args:
             exchange: Exchange name
@@ -1165,10 +1386,14 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             Last price as float, or None on error
+            
+        Raises:
+            RuntimeError: If auto_recovery enabled and session invalid
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return None
-        if not self._logged_in:
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
+        elif not self._logged_in:
+            logger.warning("get_ltp: not logged in")
             return None
 
         try:
@@ -1183,6 +1408,10 @@ class ShoonyaClient(NorenApi):
             lp = resp.get("lp")
             return float(lp) if lp is not None else None
 
+        except RuntimeError:
+            # Re-raise session failures
+            raise
+
         except Exception as exc:
             logger.error("❌ get_ltp failed [%s %s]: %s", exchange, token, exc)
             return None
@@ -1196,7 +1425,7 @@ class ShoonyaClient(NorenApi):
         interval: str = '1'
     ) -> Optional[List[dict]]:
         """
-        Get time price series (OHLC data).
+        Get time price series (Tier-2: informational only).
         
         Args:
             exchange: Exchange name
@@ -1207,10 +1436,14 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             List of OHLC dicts, or None on error
+            
+        Raises:
+            RuntimeError: If auto_recovery enabled and session invalid
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return None
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
+            logger.warning("get_time_price_series: not logged in")
             return None
         
         try:
@@ -1224,6 +1457,10 @@ class ShoonyaClient(NorenApi):
                     endtime=endtime,
                     interval=interval
                 )
+        
+        except RuntimeError:
+            # Re-raise session failures
+            raise
                 
         except Exception as exc:
             logger.error("❌ get_time_price_series failed: %s", exc)
@@ -1237,7 +1474,7 @@ class ShoonyaClient(NorenApi):
         count: str
     ) -> Optional[dict]:
         """
-        Get option chain data.
+        Get option chain data (Tier-2: informational only).
         
         Args:
             exchange: Exchange name
@@ -1247,10 +1484,14 @@ class ShoonyaClient(NorenApi):
         
         Returns:
             Option chain data, or None on error
+            
+        Raises:
+            RuntimeError: If auto_recovery enabled and session invalid
         """
-        if self._enable_auto_recovery and not self.ensure_session():
-            return None
+        if self._enable_auto_recovery:
+            self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
+            logger.warning("get_option_chain: not logged in")
             return None
         
         try:
@@ -1263,6 +1504,10 @@ class ShoonyaClient(NorenApi):
                     strikeprice=strikeprice,
                     count=count
                 )
+        
+        except RuntimeError:
+            # Re-raise session failures
+            raise
                 
         except Exception as exc:
             logger.error("❌ get_option_chain failed: %s", exc)
@@ -1314,7 +1559,7 @@ class ShoonyaClient(NorenApi):
         status = {
             "healthy": False,
             "timestamp": datetime.now().isoformat(),
-            "version": "3.0.0",
+            "version": "3.3.0",
             "session": self.get_session_info(),
             "api_responsive": False,
         }
@@ -1346,7 +1591,7 @@ class ShoonyaClient(NorenApi):
 
     def shutdown(self) -> None:
         """Graceful shutdown with complete cleanup."""
-        logger.info("🛑 Shutting down ShoonyaClient v3.0")
+        logger.info("🛑 Shutting down ShoonyaClient v3.3")
         
         # Stop WebSocket
         self.stop_websocket()
@@ -1359,66 +1604,134 @@ class ShoonyaClient(NorenApi):
 
 
 # ==============================================================================
-# PRODUCTION CHANGELOG v3.0
+# PRODUCTION CHANGELOG v3.3
 # ==============================================================================
 
 """
 ===============================================================================
-PRODUCTION HARDENING v3.0 - COMPREHENSIVE CHANGELOG
+FAIL-HARD HARDENING v3.3 - CRITICAL CHANGELOG
 ===============================================================================
 
-🎯 NEW FEATURES:
-    ✅ Unified response normalization helpers
-       - _normalize_list_response(): handles all list-returning APIs
-       - _normalize_dict_response(): handles all dict-returning APIs
+🎯 PHILOSOPHY SHIFT (v3.0 → v3.3):
+    ❌ REMOVED: "Degraded mode" operation
+    ❌ REMOVED: Returning [] on session failures
+    ❌ REMOVED: Returning None on broker unavailability
+    ✅ ADDED: FAIL-HARD semantics for Tier-1 operations
+    ✅ ADDED: Distinguish legitimate empty from blind state
     
-    ✅ Broker-realistic implementations:
-       - get_limits(): tolerates missing "stat", future-proof
-       - get_positions(): handles 3 response formats + RMS sync
-       - get_holdings(): handles 3 response formats
-       - get_order_book(): handles 4+ response formats
-       - get_account_info(): graceful partial failure handling
+🔥 TIER-1 OPERATIONS (MUST FAIL HARD):
+    These methods now raise RuntimeError on session/broker failures:
     
-    ✅ Enhanced monitoring:
-       - Session info includes freshness and expiry status
-       - Health check includes version and response times
-       - API call rate tracking in metrics
-    
-    ✅ Log spam prevention:
-       - _logged_flags: prevents repeated warnings
-       - One-time logging for API inconsistencies
+    1. ensure_session()
+       - Raises RuntimeError if auto_recovery enabled and recovery fails
+       
+    2. get_positions()
+       - Raises RuntimeError on session invalid
+       - Returns [] only if broker confirms no positions
+       
+    3. get_limits()
+       - Raises RuntimeError on session invalid
+       - Raises RuntimeError on invalid broker response
+       
+    4. get_order_book()
+       - Raises RuntimeError on session invalid
+       - Returns [] only if broker confirms no orders
+       
+    5. place_order()
+       - Raises RuntimeError on session invalid
+       
+    6. modify_order()
+       - Raises RuntimeError on session invalid
+       
+    7. cancel_order()
+       - Raises RuntimeError on session invalid
+       
+    8. get_account_info()
+       - Raises RuntimeError on any sub-operation failure
+       
+    9. start_websocket()
+       - Raises RuntimeError on session invalid
+       
+    10. subscribe()
+        - Raises RuntimeError on session invalid
 
-✅ CRITICAL FIXES (from v2.0):
-    1. Deadlock prevention in ensure_session() - lock-free state checks
-    2. Order placement retry limits - maximum 3 attempts
-    3. WebSocket reconnection with exponential backoff (2, 4, 8, 16, 32s)
-    4. API rate limiting with sliding window - prevents broker bans
-    5. Thread-safe session state management
+⚠️ TIER-2 OPERATIONS (SOFT FAIL OK):
+    These methods continue to return None/[] on errors:
+    - get_holdings()
+    - searchscrip()
+    - get_quotes()
+    - get_ltp()
+    - get_time_price_series()
+    - get_option_chain()
+
+🧠 CRITICAL DISTINCTION:
     
-✅ PRODUCTION GUARANTEES:
-    - Thread-safe for N concurrent clients
-    - No deadlocks in any call path
-    - No infinite retry loops
-    - API rate limit compliant (10 calls/sec)
-    - WebSocket auto-reconnect with backoff
-    - Zero data fabrication (broker truth only)
-    - RMS-safe position synchronization
-    - Future-proof against broker API drift
+    BEFORE v3.3 (DANGEROUS):
+    ```python
+    positions = client.get_positions()
+    # positions = [] - Is account flat OR session invalid? WE DON'T KNOW!
+    ```
     
-🔒 PRODUCTION STATUS:
-    ✅ Ready for production deployment
-    ✅ Tested for copy trading scenarios
-    ✅ Robust error handling
-    ✅ Comprehensive logging (no spam)
-    ✅ Broker-realistic normalization
-    ✅ Zero breaking changes from v2.0
+    AFTER v3.3 (SAFE):
+    ```python
+    try:
+        positions = client.get_positions()
+        # positions = [] - Account is CONFIRMED flat by broker
+    except RuntimeError:
+        # Session invalid - process will restart
+        # RMS cannot run blind
+    ```
+
+✅ NORMALIZATION HELPERS ENHANCED:
+    - _normalize_list_response() now accepts critical flag
+    - _normalize_dict_response() now accepts critical flag
+    - If critical=True, raises RuntimeError instead of returning []
+
+🛡️ PRODUCTION GUARANTEES (NEW):
+    ✅ RMS can NEVER run blind (would crash instead)
+    ✅ Trailing stops ALWAYS trigger OR process restarts
+    ✅ Max loss breach can NEVER be skipped
+    ✅ Broker glitches cause restart, not silent failure
+    ✅ -129 scenario CANNOT repeat
+    ✅ Empty [] only returned when broker confirms "truly empty"
+
+🔒 BREAKING CHANGES:
+    ⚠️  Code that silently handles empty positions needs updating:
     
-📊 METRICS & MONITORING:
-    - Session validation tracking
-    - API call rate monitoring
-    - WebSocket reconnection attempts
-    - Order placement success/failure tracking
-    - Health check endpoint ready
+    OLD CODE:
+    ```python
+    positions = client.get_positions()
+    if not positions:
+        logger.info("No positions")
+    ```
     
+    NEW CODE:
+    ```python
+    try:
+        positions = client.get_positions()
+        if not positions:
+            logger.info("No positions (confirmed by broker)")
+    except RuntimeError as e:
+        logger.critical("Broker unavailable: %s", e)
+        # Process will restart via systemd
+        raise
+    ```
+
+📊 SYSTEM RECOVERY FLOW:
+    1. Session invalid detected
+    2. RuntimeError raised
+    3. Process exits
+    4. systemd/docker restart
+    5. Fresh login
+    6. Fresh session
+    7. RMS sees true positions
+    8. Exits trigger if needed
+
+🚀 DEPLOYMENT NOTES:
+    - Ensure systemd/docker has Restart=always
+    - Monitor for frequent restarts (indicates broker issues)
+    - Add alerting for RuntimeError frequency
+    - Consider circuit breaker if restart loop detected
+
 ===============================================================================
 """

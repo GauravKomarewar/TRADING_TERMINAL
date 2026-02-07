@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
 Dashboard Authentication Router (PRODUCTION FROZEN)
-# NOTE:
-# Dashboard authentication is OPERATOR-LEVEL.
-# Client scoping is applied at request level via session["client_id"].
+
+NOTE:
+- Dashboard authentication is OPERATOR-LEVEL
+- Client identity is resolved ONLY via Config.get_client_identity()
+- Dashboard NEVER invents or derives client_id
 
 AUTH CONTRACT (DO NOT CHANGE):
 POST   /auth/login
@@ -23,32 +25,30 @@ import os
 import secrets
 import logging
 
-#=======================================
+from shoonya_platform.core.config import Config
+
+# --------------------------------------------------
+# SESSION STORE (IN-MEMORY)
 # session_id -> session_data
-#=======================================
+# --------------------------------------------------
 active_sessions: Dict[str, dict] = {}
 
-#=======================================
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # --------------------------------------------------
-# CONFIG (REQUIRED)
+# REQUIRED ENV
 # --------------------------------------------------
-
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD")
 if not DASHBOARD_PASSWORD:
     raise RuntimeError("DASHBOARD_PASSWORD not set in environment")
 
-
 # --------------------------------------------------
 # MODELS
 # --------------------------------------------------
-
 class LoginResponse(BaseModel):
     authenticated: bool
-
 
 # --------------------------------------------------
 # ROUTES
@@ -60,22 +60,31 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
 ):
     """
-    Authenticate dashboard user.
+    Authenticate dashboard operator.
 
     Rules:
     - Username is ignored
     - Password must match DASHBOARD_PASSWORD
     - Session is cookie-based
+    - Client identity comes ONLY from Config
     """
     if form_data.password != DASHBOARD_PASSWORD:
         logger.warning("❌ Dashboard login failed")
         raise HTTPException(status_code=401, detail="Invalid password")
+
+    # 🔒 Resolve canonical identity at REQUEST time
+    identity = Config().get_client_identity()
 
     session_id = secrets.token_urlsafe(32)
 
     active_sessions[session_id] = {
         "authenticated": True,
         "username": "dashboard",
+
+        # 🔒 Canonical client identity
+        "client_id": identity["client_id"],
+        "user_id": identity["user_id"],
+        "user_name": identity["user_name"],
     }
 
     response.set_cookie(
@@ -88,7 +97,10 @@ async def login(
         path="/",
     )
 
-    logger.info("✅ Dashboard login success")
+    logger.info(
+        "✅ Dashboard login success | client_id=%s",
+        identity["client_id"],
+    )
 
     return {"authenticated": True}
 

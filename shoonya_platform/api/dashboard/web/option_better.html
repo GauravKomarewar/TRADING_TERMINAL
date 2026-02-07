@@ -16,6 +16,12 @@
             --danger: #ef4444;
             --warning: #f59e0b;
             --atm: #f59e0b;
+            --itm-call: rgba(16, 185, 129, 0.08);
+            --itm-put: rgba(239, 68, 68, 0.08);
+            --otm-call: rgba(16, 185, 129, 0.03);
+            --otm-put: rgba(239, 68, 68, 0.03);
+            --call-bg: rgba(16, 185, 129, 0.02);
+            --put-bg: rgba(239, 68, 68, 0.02);
         }
         
         * {
@@ -109,53 +115,6 @@
             min-width: 120px;
         }
         
-        .column-selector {
-            position: relative;
-        }
-        
-        .column-dropdown {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            margin-top: 4px;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 8px;
-            min-width: 200px;
-            display: none;
-            z-index: 100;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
-        
-        .column-dropdown.show {
-            display: block;
-        }
-        
-        .column-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 8px;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: background 0.2s;
-        }
-        
-        .column-option:hover {
-            background: rgba(59, 130, 246, 0.1);
-        }
-        
-        .column-option input[type="checkbox"] {
-            cursor: pointer;
-        }
-        
-        .column-option label {
-            cursor: pointer;
-            flex: 1;
-            font-size: 12px;
-        }
-        
         /* Info Bar */
         .info-bar {
             background: var(--panel);
@@ -207,6 +166,14 @@
             overflow: hidden;
         }
         
+        .chain-header {
+            position: sticky;
+            top: 0;
+            background: #1c2333;
+            z-index: 50;
+            border-bottom: 1px solid var(--border);
+        }
+        
         .table-wrapper {
             overflow-x: auto;
             max-height: calc(100vh - 220px);
@@ -221,7 +188,7 @@
         }
         
         .option-table th {
-            padding: 8px 6px;
+            padding: 8px 4px;
             text-align: center;
             font-weight: 700;
             color: var(--muted);
@@ -233,29 +200,27 @@
             position: sticky;
             top: 0;
             z-index: 20;
-            white-space: nowrap;
         }
         
         .option-table th.section-header {
             background: var(--panel);
             color: var(--text);
-            font-size: 12px;
-            padding: 10px 6px;
-            font-weight: 800;
+            font-size: 11px;
+            padding: 8px 4px;
         }
         
         .option-table th.calls-header {
-            background: linear-gradient(to bottom, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
+            background: linear-gradient(to bottom, rgba(16, 185, 129, 0.1), transparent);
             color: var(--success);
         }
         
         .option-table th.puts-header {
-            background: linear-gradient(to bottom, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+            background: linear-gradient(to bottom, rgba(239, 68, 68, 0.1), transparent);
             color: var(--danger);
         }
         
         .option-table td {
-            padding: 6px 6px;
+            padding: 6px 4px;
             text-align: center;
             border-bottom: 1px solid rgba(45, 53, 72, 0.3);
             font-variant-numeric: tabular-nums;
@@ -269,42 +234,35 @@
         }
         
         .option-table tbody tr:hover {
-            background: rgba(59, 130, 246, 0.08);
+            background: rgba(59, 130, 246, 0.05);
         }
         
-        /* ATM Row - Enhanced Orange Highlighting */
+        /* ATM Row */
         .atm-row {
-            background: rgba(245, 158, 11, 0.2) !important;
+            background: rgba(245, 158, 11, 0.15) !important;
             border-top: 2px solid var(--atm);
             border-bottom: 2px solid var(--atm);
         }
         
-        .atm-row td {
-            border-top: 2px solid rgba(245, 158, 11, 0.5);
-            border-bottom: 2px solid rgba(245, 158, 11, 0.5);
-        }
-        
         .atm-row .strike-cell {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+            background: var(--atm) !important;
             color: #000;
             font-weight: 900;
             position: relative;
             border-left: 2px solid var(--atm);
             border-right: 2px solid var(--atm);
-            box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
         }
         
         .atm-row .strike-cell::before {
             content: "ATM";
             position: absolute;
-            top: 3px;
-            right: 6px;
+            top: 2px;
+            right: 4px;
             font-size: 8px;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 2px 5px;
-            border-radius: 3px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1px 4px;
+            border-radius: 2px;
             font-weight: 700;
-            letter-spacing: 0.5px;
         }
         
         /* Strike Cell */
@@ -314,40 +272,27 @@
             color: var(--primary);
             border-left: 1px solid var(--border);
             border-right: 1px solid var(--border);
-            min-width: 80px;
+            min-width: 70px;
             position: sticky;
             left: 0;
             z-index: 10;
-            font-size: 12px;
         }
         
-        /* ITM/OTM Styling - Enhanced Gradients */
+        /* ITM/OTM Styling */
         .call-itm {
-            background: linear-gradient(90deg, 
-                rgba(16, 185, 129, 0.18) 0%, 
-                rgba(16, 185, 129, 0.12) 50%, 
-                rgba(16, 185, 129, 0.05) 100%);
+            background: linear-gradient(90deg, var(--itm-call), transparent 70%);
         }
         
         .call-otm {
-            background: linear-gradient(90deg, 
-                rgba(16, 185, 129, 0.06) 0%, 
-                rgba(16, 185, 129, 0.03) 50%, 
-                transparent 100%);
+            background: linear-gradient(90deg, var(--otm-call), transparent 70%);
         }
         
         .put-itm {
-            background: linear-gradient(270deg, 
-                rgba(239, 68, 68, 0.18) 0%, 
-                rgba(239, 68, 68, 0.12) 50%, 
-                rgba(239, 68, 68, 0.05) 100%);
+            background: linear-gradient(270deg, var(--itm-put), transparent 70%);
         }
         
         .put-otm {
-            background: linear-gradient(270deg, 
-                rgba(239, 68, 68, 0.06) 0%, 
-                rgba(239, 68, 68, 0.03) 50%, 
-                transparent 100%);
+            background: linear-gradient(270deg, var(--otm-put), transparent 70%);
         }
         
         /* LTP Cells */
@@ -358,12 +303,11 @@
             transition: all 0.2s;
             border-radius: 3px;
             padding: 4px 0;
-            min-width: 70px;
+            min-width: 65px;
         }
         
         .ltp-cell:hover {
-            background: rgba(59, 130, 246, 0.25);
-            transform: scale(1.05);
+            background: rgba(59, 130, 246, 0.2);
         }
         
         .positive {
@@ -377,18 +321,17 @@
         /* Bar Indicators */
         .bar-container {
             position: relative;
-            height: 22px;
+            height: 20px;
             margin: 2px 0;
-            border-radius: 3px;
+            border-radius: 2px;
             overflow: hidden;
-            background: rgba(0, 0, 0, 0.2);
         }
         
         .bar-fill {
             position: absolute;
             top: 0;
             bottom: 0;
-            opacity: 0.25;
+            opacity: 0.15;
             transition: width 0.3s ease;
         }
         
@@ -396,7 +339,7 @@
             position: relative;
             z-index: 1;
             font-weight: 600;
-            line-height: 22px;
+            line-height: 20px;
         }
         
         .bar-call {
@@ -409,24 +352,17 @@
             right: 0;
         }
         
-        /* Hidden columns */
-        .col-hidden {
-            display: none;
-        }
-        
         /* Basket */
         .basket-indicator {
             position: relative;
             cursor: pointer;
-            padding: 6px 12px;
+            padding: 4px 8px;
             border-radius: 4px;
             transition: background 0.2s;
-            background: rgba(59, 130, 246, 0.1);
-            border: 1px solid var(--border);
         }
         
         .basket-indicator:hover {
-            background: rgba(59, 130, 246, 0.2);
+            background: #1c2333;
         }
         
         .basket-count {
@@ -437,9 +373,9 @@
             color: white;
             font-size: 10px;
             font-weight: 700;
-            padding: 2px 6px;
+            padding: 1px 5px;
             border-radius: 10px;
-            min-width: 18px;
+            min-width: 16px;
             text-align: center;
             display: none;
         }
@@ -475,7 +411,7 @@
         
         /* Value change animation */
         @keyframes valueChange {
-            0% { background-color: rgba(59, 130, 246, 0.4); }
+            0% { background-color: rgba(59, 130, 246, 0.3); }
             100% { background-color: transparent; }
         }
         
@@ -483,7 +419,7 @@
             animation: valueChange 0.5s ease-out;
         }
         
-        /* Modal Styles */
+        /* Modal Styles (for basket) */
         .modal {
             display: none;
             position: fixed;
@@ -618,10 +554,6 @@
             background: #2563eb;
         }
         
-        button {
-            cursor: pointer;
-        }
-        
         /* Responsive */
         @media (max-width: 768px) {
             main {
@@ -672,49 +604,9 @@
             <option>Loading...</option>
         </select>
         
-        <div class="column-selector">
-            <button id="columnSelectorBtn" style="padding: 6px 12px; background: #1c2333; border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 12px; height: 32px; cursor: pointer;">
-                📊 Columns
-            </button>
-            <div id="columnDropdown" class="column-dropdown">
-                <div class="column-option">
-                    <input type="checkbox" id="col-oi" checked>
-                    <label for="col-oi">Open Interest (OI)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-volume" checked>
-                    <label for="col-volume">Volume</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-iv" checked>
-                    <label for="col-iv">IV%</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-delta" checked>
-                    <label for="col-delta">Delta (Δ)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-gamma" checked>
-                    <label for="col-gamma">Gamma (Γ)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-theta" checked>
-                    <label for="col-theta">Theta (Θ)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-vega" checked>
-                    <label for="col-vega">Vega (ν)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-change" checked>
-                    <label for="col-change">Change %</label>
-                </div>
-            </div>
-        </div>
-        
         <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
             <div class="basket-indicator" onclick="openBasketModal()">
-                🛒 Basket
+                🛒
                 <span id="basketCount" class="basket-count"></span>
             </div>
         </div>
@@ -824,8 +716,8 @@
                 <div id="basketItems"></div>
             </div>
             <div class="modal-footer">
-                <button onclick="closeBasketModal()" style="background:var(--muted);padding:8px 16px;border:none;border-radius:4px;color:white;font-size:12px">Cancel</button>
-                <button id="confirmBasketBtn" onclick="placeBasketOrders()" style="background:var(--success);padding:8px 16px;border:none;border-radius:4px;color:white;font-size:12px">Confirm & Place Orders</button>
+                <button onclick="closeBasketModal()" style="background:var(--muted)">Cancel</button>
+                <button id="confirmBasketBtn" onclick="placeBasketOrders()" style="background:var(--success)">Confirm & Place Orders</button>
             </div>
         </div>
     </div>
@@ -834,20 +726,8 @@
 <script>
     // Configuration
     const config = {
-        autoRefreshInterval: 100,
+        autoRefreshInterval: 100, // 0.1 second = 100ms
         lastChainData: {}
-    };
-    
-    // Column visibility state
-    const columnVisibility = {
-        oi: true,
-        volume: true,
-        iv: true,
-        delta: true,
-        gamma: true,
-        theta: true,
-        vega: true,
-        change: true
     };
     
     // State
@@ -891,9 +771,7 @@
         orderProductNRML: document.getElementById('orderProductNRML'),
         orderPriceTypeMKT: document.getElementById('orderPriceTypeMKT'),
         orderPriceTypeLMT: document.getElementById('orderPriceTypeLMT'),
-        orderPriceGroup: document.getElementById('orderPriceGroup'),
-        columnSelectorBtn: document.getElementById('columnSelectorBtn'),
-        columnDropdown: document.getElementById('columnDropdown')
+        orderPriceGroup: document.getElementById('orderPriceGroup')
     };
     
     // Current order entry
@@ -930,33 +808,11 @@
             startAutoRefresh();
         });
         
-        // Column selector
-        elements.columnSelectorBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            elements.columnDropdown.classList.toggle('show');
-        });
-        
-        // Column checkboxes
-        Object.keys(columnVisibility).forEach(col => {
-            const checkbox = document.getElementById(`col-${col}`);
-            if (checkbox) {
-                checkbox.addEventListener('change', () => {
-                    columnVisibility[col] = checkbox.checked;
-                    renderTable();
-                });
-            }
-        });
-        
-        // Close dropdowns when clicking outside
+        // Close modals when clicking outside
         document.addEventListener('click', (e) => {
-            if (!elements.columnDropdown.contains(e.target) && e.target !== elements.columnSelectorBtn) {
-                elements.columnDropdown.classList.remove('show');
-            }
-            
             if (e.target === elements.basketModal) {
                 closeBasketModal();
             }
-            
             const popup = document.getElementById('orderPopup');
             if (popup.classList.contains('show') && !popup.contains(e.target)) {
                 closeOrderPopup();
@@ -964,13 +820,13 @@
         });
     }
     
-    // Auto Refresh
+    // Auto Refresh (100ms = 0.1 second)
     function startAutoRefresh() {
         stopAutoRefresh();
         
         autoRefreshTimer = setInterval(() => {
             if (elements.symbol.value && elements.expiry.value) {
-                loadOptionChain(true);
+                loadOptionChain(true); // true = auto-refresh mode
             }
         }, config.autoRefreshInterval);
     }
@@ -991,7 +847,7 @@
         }, 5000);
     }
     
-    // Load Expiries
+    // Load Expiries from Supervisor endpoint
     async function loadExpiries() {
         try {
             elements.expiry.innerHTML = '<option>Loading...</option>';
@@ -1019,9 +875,12 @@
             
             elements.expiry.disabled = false;
             
+            // Auto-select nearest expiry (first element)
             if (expiries.length > 0) {
                 const firstExpiry = typeof expiries[0] === 'string' ? expiries[0] : expiries[0].expiry;
                 elements.expiry.value = firstExpiry;
+                
+                // Load chain for selected expiry
                 await loadOptionChain();
             }
             
@@ -1053,17 +912,21 @@
                 return;
             }
             
+            // Store raw numeric values for diffing
             const newStrikes = Object.keys(processChainData(data.rows)).map(Number).sort((a, b) => a - b);
             const strikeListChanged = JSON.stringify(newStrikes) !== JSON.stringify(currentStrikes);
             
             if (strikeListChanged || isFirstLoad) {
+                // Full rebuild needed
                 isFirstLoad = false;
                 currentStrikes = newStrikes;
                 renderTable();
             } else {
+                // Smart update - only values
                 smartUpdateValues(data.rows);
             }
             
+            // Update info bar with proper LTP values
             updateInfoBar(data.meta || {});
             
         } catch (error) {
@@ -1086,6 +949,7 @@
             }
             
             const prefix = row.option_type === 'CE' ? 'ce' : 'pe';
+            // Store raw numeric values for diffing
             strikeMap[strike][`${prefix}_ltp`] = parseFloat(row.ltp) || 0;
             strikeMap[strike][`${prefix}_change_pct`] = parseFloat(row.change_pct) || 0;
             strikeMap[strike][`${prefix}_volume`] = parseFloat(row.volume) || 0;
@@ -1104,8 +968,10 @@
             }
         });
         
+        // Update global chainData with raw values
         chainData = strikeMap;
         
+        // Calculate stats
         elements.ceOi.textContent = formatNumber(totalCeOi, 0);
         elements.peOi.textContent = formatNumber(totalPeOi, 0);
         elements.totalOI.textContent = formatNumber(totalCeOi + totalPeOi, 0);
@@ -1114,6 +980,7 @@
         return strikeMap;
     }
     
+    // Smart value update with correct diffing
     function smartUpdateValues(rows) {
         const newStrikeMap = {};
         
@@ -1124,6 +991,7 @@
             }
             
             const prefix = row.option_type === 'CE' ? 'ce' : 'pe';
+            // Convert to numbers for proper comparison
             newStrikeMap[strike][`${prefix}_ltp`] = parseFloat(row.ltp) || 0;
             newStrikeMap[strike][`${prefix}_change_pct`] = parseFloat(row.change_pct) || 0;
             newStrikeMap[strike][`${prefix}_volume`] = parseFloat(row.volume) || 0;
@@ -1135,11 +1003,15 @@
             newStrikeMap[strike][`${prefix}_vega`] = parseFloat(row.vega) || 0;
         });
         
+        // Update table cells with diffing
         Object.keys(newStrikeMap).forEach(strike => {
             const newData = newStrikeMap[strike];
             const oldData = chainData[strike] || {};
             
+            // Update each value with proper diffing
             updateStrikeRow(strike, newData, oldData);
+            
+            // Update chainData with new raw values
             chainData[strike] = { ...chainData[strike], ...newData };
         });
     }
@@ -1148,77 +1020,72 @@
         const row = document.querySelector(`tr[data-strike="${strike}"]`);
         if (!row) return;
         
+        // Update call cells (all columns)
         updateCellGroup(row, newData, oldData, 'ce');
+        
+        // Update put cells (all columns)
         updateCellGroup(row, newData, oldData, 'pe');
     }
     
     function updateCellGroup(row, newData, oldData, prefix) {
+        // Update LTP
         const ltpCell = row.querySelector(`.${prefix}-ltp-cell`);
         if (ltpCell) {
             updateCellValue(ltpCell, newData[`${prefix}_ltp`], oldData[`${prefix}_ltp`], 'ltp');
         }
         
-        if (columnVisibility.change) {
-            const changeCell = row.querySelector(`.${prefix}-change-cell`);
-            if (changeCell) {
-                updateCellValue(changeCell, newData[`${prefix}_change_pct`], oldData[`${prefix}_change_pct`], 'change');
-            }
+        // Update % Change
+        const changeCell = row.querySelector(`.${prefix}-change-cell`);
+        if (changeCell) {
+            updateCellValue(changeCell, newData[`${prefix}_change_pct`], oldData[`${prefix}_change_pct`], 'change');
         }
         
-        if (columnVisibility.oi) {
-            const oiCell = row.querySelector(`.${prefix}-oi-cell`);
-            if (oiCell) {
-                updateOiCell(oiCell, newData[`${prefix}_oi`], oldData[`${prefix}_oi`]);
-            }
+        // Update OI
+        const oiCell = row.querySelector(`.${prefix}-oi-cell`);
+        if (oiCell) {
+            updateOiCell(oiCell, newData[`${prefix}_oi`], oldData[`${prefix}_oi`]);
         }
         
-        if (columnVisibility.volume) {
-            const volumeCell = row.querySelector(`.${prefix}-volume-cell`);
-            if (volumeCell) {
-                updateCellValue(volumeCell, newData[`${prefix}_volume`], oldData[`${prefix}_volume`], 'volume');
-            }
+        // Update Volume
+        const volumeCell = row.querySelector(`.${prefix}-volume-cell`);
+        if (volumeCell) {
+            updateCellValue(volumeCell, newData[`${prefix}_volume`], oldData[`${prefix}_volume`], 'volume');
         }
         
-        if (columnVisibility.iv) {
-            const ivCell = row.querySelector(`.${prefix}-iv-cell`);
-            if (ivCell) {
-                updateCellValue(ivCell, newData[`${prefix}_iv`], oldData[`${prefix}_iv`], 'iv');
-            }
+        // Update IV
+        const ivCell = row.querySelector(`.${prefix}-iv-cell`);
+        if (ivCell) {
+            updateCellValue(ivCell, newData[`${prefix}_iv`], oldData[`${prefix}_iv`], 'iv');
         }
         
-        if (columnVisibility.delta) {
-            const deltaCell = row.querySelector(`.${prefix}-delta-cell`);
-            if (deltaCell) {
-                updateCellValue(deltaCell, newData[`${prefix}_delta`], oldData[`${prefix}_delta`], 'delta');
-            }
+        // Update Greeks
+        const deltaCell = row.querySelector(`.${prefix}-delta-cell`);
+        if (deltaCell) {
+            updateCellValue(deltaCell, newData[`${prefix}_delta`], oldData[`${prefix}_delta`], 'delta');
         }
         
-        if (columnVisibility.gamma) {
-            const gammaCell = row.querySelector(`.${prefix}-gamma-cell`);
-            if (gammaCell) {
-                updateCellValue(gammaCell, newData[`${prefix}_gamma`], oldData[`${prefix}_gamma`], 'gamma');
-            }
+        const gammaCell = row.querySelector(`.${prefix}-gamma-cell`);
+        if (gammaCell) {
+            updateCellValue(gammaCell, newData[`${prefix}_gamma`], oldData[`${prefix}_gamma`], 'gamma');
         }
         
-        if (columnVisibility.theta) {
-            const thetaCell = row.querySelector(`.${prefix}-theta-cell`);
-            if (thetaCell) {
-                updateCellValue(thetaCell, newData[`${prefix}_theta`], oldData[`${prefix}_theta`], 'theta');
-            }
+        const thetaCell = row.querySelector(`.${prefix}-theta-cell`);
+        if (thetaCell) {
+            updateCellValue(thetaCell, newData[`${prefix}_theta`], oldData[`${prefix}_theta`], 'theta');
         }
         
-        if (columnVisibility.vega) {
-            const vegaCell = row.querySelector(`.${prefix}-vega-cell`);
-            if (vegaCell) {
-                updateCellValue(vegaCell, newData[`${prefix}_vega`], oldData[`${prefix}_vega`], 'vega');
-            }
+        const vegaCell = row.querySelector(`.${prefix}-vega-cell`);
+        if (vegaCell) {
+            updateCellValue(vegaCell, newData[`${prefix}_vega`], oldData[`${prefix}_vega`], 'vega');
         }
     }
     
     function updateCellValue(cell, newValue, oldValue, column) {
+        // Compare raw numeric values with tolerance
         const hasChanged = Math.abs((newValue || 0) - (oldValue || 0)) > 0.0001;
         
         if (hasChanged) {
+            // Format and update display
             let displayValue;
             if (column === 'change') {
                 const changeClass = newValue >= 0 ? 'positive' : 'negative';
@@ -1234,8 +1101,9 @@
                 cell.textContent = formatNumber(newValue, 2);
             }
             
+            // Trigger animation
             cell.classList.remove('value-changed');
-            void cell.offsetWidth;
+            void cell.offsetWidth; // Trigger reflow
             cell.classList.add('value-changed');
         }
     }
@@ -1244,31 +1112,37 @@
         const hasChanged = Math.abs((newValue || 0) - (oldValue || 0)) > 0.0001;
         
         if (hasChanged) {
+            const barFill = cell.querySelector('.bar-fill');
             const barText = cell.querySelector('.bar-text');
             
             if (barText) {
                 barText.textContent = formatNumber(newValue, 0);
             }
             
+            // Trigger animation
             cell.classList.remove('value-changed');
             void cell.offsetWidth;
             cell.classList.add('value-changed');
         }
     }
     
+    // Update info bar with proper LTP values
     function updateInfoBar(meta) {
+        // Store spot and future LTP from meta
         currentSpotPrice = parseFloat(meta.spot_price) || parseFloat(meta.spot_ltp) || 0;
         currentFuturePrice = parseFloat(meta.future_price) || parseFloat(meta.fut_ltp) || 0;
         
         elements.spotPrice.textContent = `₹${formatNumber(currentSpotPrice, 2)}`;
         elements.futurePrice.textContent = `₹${formatNumber(currentFuturePrice, 2)}`;
         
+        // Find ATM strike based on spot price
         const strikes = Object.keys(chainData).map(Number).sort((a, b) => a - b);
         if (strikes.length > 0 && currentSpotPrice > 0) {
             atmStrike = findATMStrike(strikes, currentSpotPrice);
             elements.atmStrikeEl.textContent = atmStrike;
         }
         
+        // Update timestamp
         elements.lastUpdated.textContent = new Date().toLocaleTimeString('en-IN', {
             hour12: false,
             hour: '2-digit',
@@ -1293,40 +1167,48 @@
     function renderTableHeaders() {
         const columnLabels = {
             oi: 'OI',
-            volume: 'Volume',
+            volume: 'VOL',
             iv: 'IV%',
-            delta: 'Delta',
-            gamma: 'Gamma',
-            theta: 'Theta',
-            vega: 'Vega',
-            change: 'Change%',
+            delta: 'Δ',
+            gamma: 'Γ',
+            theta: 'Θ',
+            vega: 'ν',
+            change: 'CHG%',
             ltp: 'LTP'
         };
         
-        const visibleColumns = Object.keys(columnVisibility).filter(col => columnVisibility[col]);
-        const colCount = visibleColumns.length + 1; // +1 for LTP
-        
         let headerHTML = '';
         
-        headerHTML += `<th colspan="${colCount}" class="section-header calls-header">CALLS</th>`;
+        // Calls header (all 9 columns + LTP)
+        headerHTML += `<th colspan="10" class="section-header calls-header">CALLS</th>`;
         headerHTML += `<th class="section-header">STRIKE</th>`;
-        headerHTML += `<th colspan="${colCount}" class="section-header puts-header">PUTS</th>`;
+        headerHTML += `<th colspan="10" class="section-header puts-header">PUTS</th>`;
         headerHTML = `<tr>${headerHTML}</tr><tr>`;
         
-        // Call columns
-        visibleColumns.forEach(col => {
-            headerHTML += `<th>${columnLabels[col]}</th>`;
-        });
+        // Call columns (all columns in order)
+        headerHTML += `<th>${columnLabels.oi}</th>`;
+        headerHTML += `<th>${columnLabels.volume}</th>`;
+        headerHTML += `<th>${columnLabels.iv}</th>`;
+        headerHTML += `<th>${columnLabels.delta}</th>`;
+        headerHTML += `<th>${columnLabels.gamma}</th>`;
+        headerHTML += `<th>${columnLabels.theta}</th>`;
+        headerHTML += `<th>${columnLabels.vega}</th>`;
+        headerHTML += `<th>${columnLabels.change}</th>`;
         headerHTML += `<th>${columnLabels.ltp}</th>`;
         
-        // Strike
+        // Strike column
         headerHTML += `<th>STRIKE</th>`;
         
-        // Put columns (reverse order)
+        // Put columns (in reverse order)
         headerHTML += `<th>${columnLabels.ltp}</th>`;
-        visibleColumns.slice().reverse().forEach(col => {
-            headerHTML += `<th>${columnLabels[col]}</th>`;
-        });
+        headerHTML += `<th>${columnLabels.change}</th>`;
+        headerHTML += `<th>${columnLabels.vega}</th>`;
+        headerHTML += `<th>${columnLabels.theta}</th>`;
+        headerHTML += `<th>${columnLabels.gamma}</th>`;
+        headerHTML += `<th>${columnLabels.delta}</th>`;
+        headerHTML += `<th>${columnLabels.iv}</th>`;
+        headerHTML += `<th>${columnLabels.volume}</th>`;
+        headerHTML += `<th>${columnLabels.oi}</th>`;
         
         headerHTML += '</tr>';
         elements.tableHeader.innerHTML = headerHTML;
@@ -1336,6 +1218,7 @@
         const strikes = Object.keys(chainData).map(Number).sort((a, b) => a - b);
         let maxOI = 0;
         
+        // Find max OI for bar scaling
         strikes.forEach(strike => {
             maxOI = Math.max(maxOI, chainData[strike].ce_oi || 0, chainData[strike].pe_oi || 0);
         });
@@ -1345,61 +1228,52 @@
         strikes.forEach(strike => {
             const data = chainData[strike];
             const isATM = strike === atmStrike;
-            const callItm = strike < currentSpotPrice;
-            const putItm = strike > currentSpotPrice;
+            const callItm = strike <= currentSpotPrice;
+            const putItm = strike >= currentSpotPrice;
             
-            bodyHTML += `<tr class="${isATM ? 'atm-row' : ''}" data-strike="${strike}">`;
+            bodyHTML += `<tr class="${isATM ? 'atm-row' : ''}" data-strike="${strike}" onclick="selectStrike(${strike})">`;
             
-            // Call columns
-            if (columnVisibility.oi) {
-                const ceOiPct = maxOI > 0 ? ((data.ce_oi || 0) / maxOI) * 100 : 0;
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-oi-cell">
-                    <div class="bar-container">
-                        <div class="bar-fill bar-call" style="width: ${ceOiPct}%"></div>
-                        <div class="bar-text">${formatNumber(data.ce_oi, 0)}</div>
-                    </div>
-                </td>`;
-            }
+            // Call columns (all 9 columns)
+            // OI
+            const ceOiPct = maxOI > 0 ? ((data.ce_oi || 0) / maxOI) * 100 : 0;
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-oi-cell">
+                <div class="bar-container">
+                    <div class="bar-fill bar-call" style="width: ${ceOiPct}%"></div>
+                    <div class="bar-text">${formatNumber(data.ce_oi, 0)}</div>
+                </div>
+            </td>`;
             
-            if (columnVisibility.volume) {
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-volume-cell">${formatNumber(data.ce_volume, 0)}</td>`;
-            }
+            // Volume
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-volume-cell">${formatNumber(data.ce_volume, 0)}</td>`;
             
-            if (columnVisibility.iv) {
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-iv-cell">${formatNumber(data.ce_iv, 1)}%</td>`;
-            }
+            // IV
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-iv-cell">${formatNumber(data.ce_iv, 1)}%</td>`;
             
-            if (columnVisibility.delta) {
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-delta-cell">${formatNumber(data.ce_delta, 3)}</td>`;
-            }
+            // Delta
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-delta-cell">${formatNumber(data.ce_delta, 3)}</td>`;
             
-            if (columnVisibility.gamma) {
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-gamma-cell">${formatNumber(data.ce_gamma, 4)}</td>`;
-            }
+            // Gamma
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-gamma-cell">${formatNumber(data.ce_gamma, 4)}</td>`;
             
-            if (columnVisibility.theta) {
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-theta-cell">${formatNumber(data.ce_theta, 3)}</td>`;
-            }
+            // Theta
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-theta-cell">${formatNumber(data.ce_theta, 3)}</td>`;
             
-            if (columnVisibility.vega) {
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-vega-cell">${formatNumber(data.ce_vega, 3)}</td>`;
-            }
+            // Vega
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-vega-cell">${formatNumber(data.ce_vega, 3)}</td>`;
             
-            if (columnVisibility.change) {
-                const ceChangeClass = getChangeClass(data.ce_change_pct);
-                bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-change-cell ${ceChangeClass}">
-                    ${data.ce_change_pct >= 0 ? '+' : ''}${formatNumber(data.ce_change_pct, 2)}%
-                </td>`;
-            }
-            
-            // Call LTP
+            // % Change
             const ceChangeClass = getChangeClass(data.ce_change_pct);
+            bodyHTML += `<td class="call-${callItm ? 'itm' : 'otm'} ce-change-cell ${ceChangeClass}">
+                ${data.ce_change_pct >= 0 ? '+' : ''}${formatNumber(data.ce_change_pct, 2)}%
+            </td>`;
+            
+            // LTP
             bodyHTML += `<td class="ltp-cell call-${callItm ? 'itm' : 'otm'} ce-ltp-cell ${ceChangeClass}" 
                            onclick="openOrderEntry(${strike}, 'CE', ${data.ce_ltp || 0}, '${data.ce_trading_symbol || ''}', event)">
                            ${formatNumber(data.ce_ltp, 2)}
                        </td>`;
             
-            // Strike
+            // Strike cell
             bodyHTML += `<td class="strike-cell">${formatNumber(strike, 0)}</td>`;
             
             // Put LTP
@@ -1409,46 +1283,37 @@
                            ${formatNumber(data.pe_ltp, 2)}
                        </td>`;
             
-            // Put columns (reverse order)
-            if (columnVisibility.change) {
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-change-cell ${peChangeClass}">
-                    ${data.pe_change_pct >= 0 ? '+' : ''}${formatNumber(data.pe_change_pct, 2)}%
-                </td>`;
-            }
+            // Put % Change
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-change-cell ${peChangeClass}">
+                ${data.pe_change_pct >= 0 ? '+' : ''}${formatNumber(data.pe_change_pct, 2)}%
+            </td>`;
             
-            if (columnVisibility.vega) {
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-vega-cell">${formatNumber(data.pe_vega, 3)}</td>`;
-            }
+            // Put Vega
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-vega-cell">${formatNumber(data.pe_vega, 3)}</td>`;
             
-            if (columnVisibility.theta) {
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-theta-cell">${formatNumber(data.pe_theta, 3)}</td>`;
-            }
+            // Put Theta
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-theta-cell">${formatNumber(data.pe_theta, 3)}</td>`;
             
-            if (columnVisibility.gamma) {
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-gamma-cell">${formatNumber(data.pe_gamma, 4)}</td>`;
-            }
+            // Put Gamma
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-gamma-cell">${formatNumber(data.pe_gamma, 4)}</td>`;
             
-            if (columnVisibility.delta) {
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-delta-cell">${formatNumber(data.pe_delta, 3)}</td>`;
-            }
+            // Put Delta
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-delta-cell">${formatNumber(data.pe_delta, 3)}</td>`;
             
-            if (columnVisibility.iv) {
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-iv-cell">${formatNumber(data.pe_iv, 1)}%</td>`;
-            }
+            // Put IV
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-iv-cell">${formatNumber(data.pe_iv, 1)}%</td>`;
             
-            if (columnVisibility.volume) {
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-volume-cell">${formatNumber(data.pe_volume, 0)}</td>`;
-            }
+            // Put Volume
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-volume-cell">${formatNumber(data.pe_volume, 0)}</td>`;
             
-            if (columnVisibility.oi) {
-                const peOiPct = maxOI > 0 ? ((data.pe_oi || 0) / maxOI) * 100 : 0;
-                bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-oi-cell">
-                    <div class="bar-container">
-                        <div class="bar-fill bar-put" style="width: ${peOiPct}%"></div>
-                        <div class="bar-text">${formatNumber(data.pe_oi, 0)}</div>
-                    </div>
-                </td>`;
-            }
+            // Put OI
+            const peOiPct = maxOI > 0 ? ((data.pe_oi || 0) / maxOI) * 100 : 0;
+            bodyHTML += `<td class="put-${putItm ? 'itm' : 'otm'} pe-oi-cell">
+                <div class="bar-container">
+                    <div class="bar-fill bar-put" style="width: ${peOiPct}%"></div>
+                    <div class="bar-text">${formatNumber(data.pe_oi, 0)}</div>
+                </div>
+            </td>`;
             
             bodyHTML += '</tr>';
         });
@@ -1471,7 +1336,11 @@
         return change >= 0 ? 'positive' : 'negative';
     }
     
-    // Order Entry Functions
+    function selectStrike(strike) {
+        selectedStrike = selectedStrike === strike ? null : strike;
+    }
+    
+    // Order Entry Functions (unchanged)
     function openOrderEntry(strike, optionType, ltp, tradingSymbol, event) {
         event.stopPropagation();
         
@@ -1568,7 +1437,7 @@
         closeOrderPopup();
     }
     
-    // Basket Functions
+    // Basket Functions (unchanged)
     function addToBasket(strike, optionType, ltp, tradingSymbol, side, qty, product, orderType, price) {
         const exists = basket.find(item => item.strike === strike && item.optionType === optionType);
         
@@ -1654,7 +1523,7 @@
             <div class="basket-item" style="background: #1c2333; padding: 12px; border-radius: 6px; margin-bottom: 8px; border: 1px solid var(--border)">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px">
                     <span style="font-weight: 700; font-size: 13px">${item.tradingSymbol}</span>
-                    <button onclick="removeFromBasket(${idx})" style="background: var(--danger); padding: 3px 8px; font-size: 10px; border: none; border-radius: 3px; color: white; cursor: pointer">
+                    <button onclick="removeFromBasket(${idx})" style="background: var(--danger); padding: 3px 6px; font-size: 10px; border: none; border-radius: 3px; color: white; cursor: pointer">
                         Remove
                     </button>
                 </div>
@@ -1706,6 +1575,7 @@
         }
     }
     
+    // Initialize on load
     window.addEventListener('load', init);
 </script>
 </body>

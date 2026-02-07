@@ -255,6 +255,24 @@ class DashboardIntentService:
             logger.exception("❌ DASHBOARD INTENT INSERT FAILED")
             raise RuntimeError("Unable to queue dashboard intent")
 
+    def submit_raw_intent(
+        self,
+        *,
+        intent_id: str,
+        intent_type: str,
+        payload: dict,
+    ):
+        """
+        PUBLIC, STABLE INTENT INSERT API
+
+        Dashboard-safe wrapper over internal insert logic.
+        Consumer behavior MUST remain unchanged.
+        """
+        return self._insert_intent(
+            intent_id=intent_id,
+            intent_type=intent_type,
+            payload=payload,
+        )
     # ==================================================
     # BASKET CONTROL INTENT
     # ==================================================

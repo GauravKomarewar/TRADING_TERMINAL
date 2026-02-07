@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DNSS Strategy Control – Shoonya OMS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+/* === SAME THEME AS place_order.html (trimmed, unchanged semantics) === */
+:root{--bg:#0a0e13;--panel:#151b26;--panel-2:#1c2333;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui;background:var(--bg);color:var(--text)}
+header{height:64px;background:var(--panel);display:flex;align-items:center;padding:0 24px;border-bottom:1px solid var(--border)}
+.brand{font-weight:700;color:var(--primary);cursor:pointer}
+main{max-width:1200px;margin:auto;padding:32px}
+h1{margin-bottom:8px}
+h2{margin:32px 0 16px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:24px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.field{display:flex;flex-direction:column}
+label{font-size:12px;color:var(--muted);margin-bottom:6px}
+input,select{padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text)}
+button{padding:12px;border-radius:10px;border:none;font-weight:600;cursor:pointer}
+.primary{background:var(--primary);color:#fff}
+.danger{background:var(--danger);color:#fff}
+.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.result{margin-top:12px;font-size:13px;padding:10px;border-radius:8px}
+.ok{background:#10b98122;color:var(--success)}
+.bad{background:#ef444422;color:var(--danger)}
+.status-box{background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:13px;margin-bottom:8px}
+.muted{color:var(--muted)}
+</style>
+</head>
+
+<body>
+<header>
+  <div class="brand" onclick="location.href='/dashboard/web/home.html'">⚡ Shoonya OMS</div>
+</header>
+
+<main>
+
+<h1>Delta Neutral Short Strangle (DNSS)</h1>
+<p class="muted">Unified Strategy Control · Intent-only · Production Safe</p>
+
+<!-- ================================================= -->
+<!-- 1️⃣ STRATEGY ENTRY -->
+<!-- ================================================= -->
+<h2>🚀 DNSS Strategy Entry</h2>
+<div class="card">
+
+  <div class="row">
+    <div class="field"><label>Strategy Name</label><input id="strategy_name" value="NIFTY_DNSS"></div>
+    <div class="field"><label>Version</label><input id="strategy_version" value="1.1.0"></div>
+  </div>
+
+  <div class="row">
+    <div class="field"><label>Entry Time (HH:MM:SS)</label><input id="entry_time" value="09:18:00"></div>
+    <div class="field"><label>Exit Time (HH:MM:SS)</label><input id="exit_time" value="15:28:00"></div>
+  </div>
+
+  <div class="row">
+    <div class="field"><label>Lot Qty</label><input id="lot_qty" value="50"></div>
+    <div class="field"><label>Cooldown (sec)</label><input id="cooldown" value="300"></div>
+  </div>
+
+  <h3>DNSS Parameters</h3>
+  <div class="row">
+    <div class="field"><label>Target Entry Delta</label><input id="target_delta" value="0.40"></div>
+    <div class="field"><label>Adjust Trigger</label><input id="adjust_trigger" value="0.10"></div>
+  </div>
+
+  <div class="row">
+    <div class="field"><label>Max Leg Delta</label><input id="max_leg_delta" value="0.65"></div>
+    <div class="field"><label>Profit Step</label><input id="profit_step" value="1000"></div>
+  </div>
+
+  <button class="primary" onclick="submitEntry()">Start Strategy</button>
+  <div id="entryResult" class="result"></div>
+</div>
+
+<!-- ================================================= -->
+<!-- 2️⃣ EXIT / FORCE EXIT -->
+<!-- ================================================= -->
+<h2>🛑 DNSS Exit Controls</h2>
+<div class="card">
+
+  <div class="row">
+    <button class="secondary" onclick="sendStrategyAction('EXIT')">Normal Exit</button>
+    <button class="danger" onclick="sendStrategyAction('FORCE_EXIT')">Force Exit</button>
+  </div>
+
+  <div id="exitResult" class="result"></div>
+</div>
+
+<!-- ================================================= -->
+<!-- 3️⃣ RUNTIME STATUS -->
+<!-- ================================================= -->
+<h2>📊 Strategy Runtime Status</h2>
+<div class="card">
+  <button class="secondary" onclick="refreshStatus()">Refresh Status</button>
+
+  <div id="statusArea" style="margin-top:16px"></div>
+</div>
+
+</main>
+
+<script>
+async function submitEntry(){
+  const payload = {
+    strategy_name: strategy_name.value,
+    strategy_version: strategy_version.value,
+    exchange: "NFO",
+    symbol: "NIFTY",
+    instrument_type: "OPTIDX",
+    entry_time: entry_time.value,
+    exit_time: exit_time.value,
+    order_type: "LIMIT",
+    product: "NRML",
+    lot_qty: Number(lot_qty.value),
+    params: {
+      target_entry_delta: Number(target_delta.value),
+      delta_adjust_trigger: Number(adjust_trigger.value),
+      max_leg_delta: Number(max_leg_delta.value),
+      profit_step: Number(profit_step.value),
+      cooldown_seconds: Number(cooldown.value)
+    },
+    poll_interval: 2.0,
+    cooldown_seconds: Number(cooldown.value)
+  };
+
+  try{
+    const res = await fetch("/dashboard/intent/strategy/entry",{
+      method:"POST",
+      credentials:"include",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    entryResult.className="result ok";
+    entryResult.innerText=`✔ Queued (${data.intent_id})`;
+  }catch{
+    entryResult.className="result bad";
+    entryResult.innerText="✖ Failed";
+  }
+}
+
+async function sendStrategyAction(action){
+  try{
+    const res = await fetch("/dashboard/intent/strategy",{
+      method:"POST",
+      credentials:"include",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({
+        strategy_name: strategy_name.value,
+        action,
+        reason: "DNSS_DASHBOARD"
+      })
+    });
+    const data = await res.json();
+    exitResult.className="result ok";
+    exitResult.innerText=`✔ ${action} queued`;
+  }catch{
+    exitResult.className="result bad";
+    exitResult.innerText="✖ Failed";
+  }
+}
+
+async function refreshStatus(){
+  statusArea.innerHTML="Loading...";
+  try{
+    const res = await fetch("/dashboard/home/status",{credentials:"include"});
+    const data = await res.json();
+
+    statusArea.innerHTML = `
+      <div class="status-box"><b>Risk</b>: ${JSON.stringify(data.system.risk)}</div>
+      <div class="status-box"><b>Heartbeat</b>: ${JSON.stringify(data.system.heartbeat)}</div>
+      <div class="status-box"><b>Signals</b>: ${JSON.stringify(data.system.signal)}</div>
+      <div class="status-box"><b>Open Orders</b>: ${data.system.open_orders.length}</div>
+    `;
+  }catch{
+    statusArea.innerHTML="<div class='status-box'>Failed to load status</div>";
+  }
+}
+</script>
+
+</body>
+</html>

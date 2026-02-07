@@ -12,29 +12,14 @@ Responsibilities:
 CRITICAL:
 - Environment variables MUST be loaded BEFORE importing auth/deps modules
 """
+
 # ======================================================================
 # 🔒 CODE FREEZE — PRODUCTION APPROVED
 #
 # Component : Dashboard FastAPI App
-# Version   : v1.1.2
+# Version   : v1.1.3
 # Status    : PRODUCTION FROZEN
 # Scope     : Dashboard Control Plane
-# Canonical Files:
-# - api/dashboard/api/router.py
-# - api/dashboard/api/schemas.py
-# - api/dashboard/dashboard_app.py
-
-# Guarantees:
-# - Intent-only control plane
-# - Client-scoped
-# - Execution-safe
-# - OMS-consumer compatible
-
-# Notes:
-# - Added dashboard home route
-# - Routers consolidated
-# - Auth/session preserved
-# - Intent-only control plane
 # ======================================================================
 
 # ==================================================
@@ -44,12 +29,24 @@ CRITICAL:
 import os
 from pathlib import Path
 
-# Absolute, production-safe env path
-ENV_FILE = Path(__file__).resolve().parents[3] / "config_env" / "primary.env"
+# --------------------------------------------------
+# ENV SELECTION (systemd controls this)
+# --------------------------------------------------
+env_name = os.environ.get("DASHBOARD_ENV", "primary")
+
+ENV_FILE = (
+    Path(__file__).resolve().parents[3]
+    / "config_env"
+    / f"{env_name}.env"
+)
 
 if not ENV_FILE.exists():
-    raise RuntimeError(f"ENV file not found: {ENV_FILE}")
+    raise RuntimeError(
+        f"DASHBOARD ENV file not found: {ENV_FILE} "
+        f"(DASHBOARD_ENV={env_name})"
+    )
 
+# Load env vars ONLY if not already set
 with ENV_FILE.open() as f:
     for line in f:
         line = line.strip()
@@ -59,7 +56,7 @@ with ENV_FILE.open() as f:
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip())
 
-# Fail fast if critical secret missing
+# Fail fast on required secret
 if "DASHBOARD_PASSWORD" not in os.environ:
     raise RuntimeError("DASHBOARD_PASSWORD not set after env bootstrap")
 
@@ -75,15 +72,10 @@ from fastapi.staticfiles import StaticFiles
 # ==================================================
 # INTERNAL DASHBOARD IMPORTS
 # ==================================================
-from shoonya_platform.api.dashboard.auth import (
-    router as auth_router,
-)
-from shoonya_platform.api.dashboard.deps import (
-    require_dashboard_auth,
-)
-from shoonya_platform.api.dashboard.api.router import (
-    router as dashboard_router,
-)
+
+from shoonya_platform.api.dashboard.auth import router as auth_router
+from shoonya_platform.api.dashboard.deps import require_dashboard_auth
+from shoonya_platform.api.dashboard.api.router import router as dashboard_router
 
 from scripts.scriptmaster import refresh_scriptmaster
 
@@ -104,14 +96,17 @@ def create_dashboard_app() -> FastAPI:
     """
     app = FastAPI(
         title="Shoonya OMS Dashboard",
-        version="1.1.2",
+        version="1.1.3",
         description="OMS Control Console (Intent-Only)",
     )
 
     # --------------------------------------------------
-    # 🔧 ScriptMaster bootstrap (ONCE, dashboard-wide)
+    # 🔧 ScriptMaster bootstrap (ONCE per process)
     # --------------------------------------------------
-    logger.info("🔄 Initializing ScriptMaster...")
+    logger.info(
+        "🔄 Initializing ScriptMaster (dashboard) | env=%s",
+        env_name,
+    )
     refresh_scriptmaster()
     logger.info("✅ ScriptMaster initialized")
 
@@ -120,7 +115,6 @@ def create_dashboard_app() -> FastAPI:
     # --------------------------------------------------
     @app.get("/")
     def home():
-        """Serve dashboard login page"""
         return FileResponse(WEB_DIR / "login.html")
 
     # --------------------------------------------------
@@ -128,8 +122,7 @@ def create_dashboard_app() -> FastAPI:
     # --------------------------------------------------
     @app.get("/health")
     def health():
-        """Basic liveness probe"""
-        return {"status": "ok"}
+        return {"status": "ok", "env": env_name}
 
     # --------------------------------------------------
     # 📊 DASHBOARD HOME PAGE (PROTECTED)
@@ -138,10 +131,9 @@ def create_dashboard_app() -> FastAPI:
     async def dashboard_home(
         session: dict = Depends(require_dashboard_auth),
     ):
-        """Serve main dashboard page (authenticated)"""
         dashboard_file = WEB_DIR / "dashboard.html"
         if not dashboard_file.exists():
-            logger.error(f"Dashboard file not found: {dashboard_file}")
+            logger.error("Dashboard file not found: %s", dashboard_file)
             return {"error": "Dashboard page not found"}
         return FileResponse(dashboard_file)
 
@@ -152,11 +144,11 @@ def create_dashboard_app() -> FastAPI:
     async def dashboard_status(
         session: dict = Depends(require_dashboard_auth),
     ):
-        """Authenticated dashboard status"""
         return {
             "authenticated": True,
             "username": session.get("username", "dashboard"),
             "status": "active",
+            "env": env_name,
         }
 
     # --------------------------------------------------
@@ -166,13 +158,14 @@ def create_dashboard_app() -> FastAPI:
     logger.info("✅ Auth router mounted")
 
     # --------------------------------------------------
-    # 🔒 DASHBOARD API ROUTES (PROTECTED, CANONICAL)
+    # 🔒 DASHBOARD API ROUTES (PROTECTED)
     # --------------------------------------------------
     app.include_router(
         dashboard_router,
         dependencies=[Depends(require_dashboard_auth)],
     )
     logger.info("✅ Dashboard API router mounted")
+
     # --------------------------------------------------
     # 🎨 STATIC WEB ASSETS
     # --------------------------------------------------
@@ -181,13 +174,17 @@ def create_dashboard_app() -> FastAPI:
         StaticFiles(directory=WEB_DIR),
         name="dashboard-web",
     )
-    logger.info(f"✅ Static files mounted from {WEB_DIR}")
+    logger.info("✅ Static files mounted from %s", WEB_DIR)
 
-    logger.info("🚀 Dashboard application initialized successfully")
+    logger.info(
+        "🚀 Dashboard initialized | env=%s | pid=%s",
+        env_name,
+        os.getpid(),
+    )
     return app
 
 # ==================================================
-# ENTRYPOINT (UVICORN)
+# ASGI APPLICATION (NO RUN LOOP)
 # ==================================================
 
 app = create_dashboard_app()

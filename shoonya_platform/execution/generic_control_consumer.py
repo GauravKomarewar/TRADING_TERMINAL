@@ -5,9 +5,10 @@ Execution-side Generic consumer for DASHBOARD control intents
 
 ROLE:
 - Consume dashboard-generated control intents
-- Convert them into TradingView-style alerts
-- Route through process_alert() ONLY
-- Never touch broker or CommandService.submit() directly
+- Execute OMS-level system order mutations
+- Convert generic intents into TradingView-style alerts
+- Route execution intents via process_alert() ONLY
+- Never place broker orders directly
 
 This guarantees:
 Dashboard == TradingView == Strategy alerts
@@ -77,6 +78,11 @@ class GenericControlIntentConsumer:
                 processed = self._process_next_intent()
                 if not processed:
                     time.sleep(POLL_INTERVAL_SEC)
+
+            # 🔥 FAIL-HARD: broker / session failure must kill process
+            except RuntimeError:
+                raise
+
             except Exception:
                 logger.exception("❌ Control intent loop error")
                 time.sleep(2)
@@ -257,17 +263,55 @@ class GenericControlIntentConsumer:
                 return True
 
             # ==================================================
-            # BROKER CONTROL INTENTS (NEW)
+            # SYSTEM ORDER CONTROL (OMS-LEVEL)
             # ==================================================
-            if intent_type in ("CANCEL_BROKER_ORDER", "MODIFY_BROKER_ORDER"):
+            if intent_type == "CANCEL_SYSTEM_ORDER":
+                command_id = payload.get("command_id")
+                if not command_id:
+                    raise RuntimeError("Missing command_id")
+
+                logger.critical(
+                    "🛑 SYSTEM ORDER CANCEL | command_id=%s | intent=%s",
+                    command_id,
+                    intent_id,
+                )
+
+                self._cancel_system_order(command_id)
+                result = "ACCEPTED"
+
+            elif intent_type == "MODIFY_SYSTEM_ORDER":
+                logger.critical(
+                    "✏️ SYSTEM ORDER MODIFY | intent=%s | payload=%s",
+                    intent_id,
+                    payload,
+                )
+
+                self._modify_system_order(payload)
+                result = "ACCEPTED"
+
+            elif intent_type == "CANCEL_ALL_SYSTEM_ORDERS":
+                logger.critical(
+                    "🛑 SYSTEM ORDER CANCEL ALL | intent=%s",
+                    intent_id,
+                )
+
+                self._cancel_all_system_orders()
+                result = "ACCEPTED"
+
+            # ==================================================
+            # BROKER CONTROL (WATCHER-ONLY)
+            # ==================================================
+            elif intent_type in ("CANCEL_BROKER_ORDER", "MODIFY_BROKER_ORDER"):
                 result = self._handle_broker_control_intent(
                     intent_type, payload, intent_id
                 )
+
+            # ==================================================
+            # GENERIC ORDER (TradingView-style)
+            # ==================================================
             else:
-                # ==================================================
-                # GENERIC INTENT — TRADINGVIEW-COMPATIBLE
-                # ==================================================
                 result = self._execute_generic_payload(payload, intent_id)
+
 
 
             if result == "ACCEPTED":
@@ -291,6 +335,104 @@ class GenericControlIntentConsumer:
 
         return True
 
+    def _cancel_system_order(self, command_id: str):
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            UPDATE orders
+            SET status = 'FAILED',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE command_id = ?
+            AND client_id = ?
+            AND status = 'CREATED'
+            AND source = 'MANUAL'
+            """,
+            (command_id, self.bot.config.client_id),
+        )
+
+        if cur.rowcount == 0:
+            logger.warning(
+                "⚠️ SYSTEM CANCEL NO-OP | command_id=%s",
+                command_id,
+            )
+
+        conn.commit()
+        conn.close()
+
+    def _modify_system_order(self, payload: dict):
+        command_id = payload["command_id"]
+
+        fields = []
+        values = []
+
+        if payload.get("price") is not None:
+            fields.append("price = ?")
+            values.append(payload["price"])
+
+        if payload.get("quantity") is not None:
+            fields.append("quantity = ?")
+            values.append(payload["quantity"])
+
+        if payload.get("order_type") is not None:
+            fields.append("order_type = ?")
+            values.append(payload["order_type"])
+
+        if not fields:
+            logger.warning("⚠️ SYSTEM MODIFY EMPTY | %s", command_id)
+            return
+
+        fields.append("updated_at = CURRENT_TIMESTAMP")
+        values.extend([command_id, self.bot.config.client_id])
+
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        cur = conn.cursor()
+
+        cur.execute(
+            f"""
+            UPDATE orders
+            SET {", ".join(fields)}
+            WHERE command_id = ?
+            AND client_id = ?
+            AND status = 'CREATED'
+            AND source = 'MANUAL'
+            """,
+            values,
+        )
+
+        if cur.rowcount == 0:
+            logger.warning(
+                "⚠️ SYSTEM MODIFY NO-OP | command_id=%s",
+                command_id,
+            )
+
+        conn.commit()
+        conn.close()
+
+    def _cancel_all_system_orders(self):
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            UPDATE orders
+            SET status = 'FAILED',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'CREATED'
+            AND source = 'MANUAL'
+            AND client_id = ?
+            """,
+            (self.bot.config.client_id,),
+        )
+
+        logger.critical(
+            "🛑 SYSTEM CANCEL ALL | affected=%d",
+            cur.rowcount,
+        )
+
+        conn.commit()
+        conn.close()
 
     # ==================================================
     # CLAIM NEXT INTENT (ATOMIC)

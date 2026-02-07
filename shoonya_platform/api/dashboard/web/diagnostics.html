@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>API Diagnostics - Shoonya OMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root{--bg:#0a0e13;--panel:#151b26;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:monospace;background:var(--bg);color:var(--text);padding:20px;line-height:1.6}
+        h1{color:var(--primary);margin-bottom:20px}
+        .section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:20px}
+        button{background:var(--primary);color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;margin:5px}
+        button:hover{background:#2563eb}
+        pre{background:#0a0e13;padding:15px;border-radius:6px;overflow-x:auto;border:1px solid var(--border)}
+        .error{color:var(--danger)}
+        .success{color:var(--success)}
+    </style>
+</head>
+<body>
+    <h1>🔍 API Diagnostics Tool</h1>
+    
+    <div class="section">
+        <h2>Test Dashboard Status API</h2>
+        <button onclick="testDashboard()">Test /dashboard/home/status</button>
+        <pre id="dashboardResult">Click button to test...</pre>
+    </div>
+
+    <div class="section">
+        <h2>Test Expiries API</h2>
+        <select id="symbolSelect">
+            <option>NIFTY</option>
+            <option>BANKNIFTY</option>
+            <option>FINNIFTY</option>
+        </select>
+        <button onclick="testExpiries()">Test /dashboard/symbols/expiries</button>
+        <pre id="expiriesResult">Click button to test...</pre>
+    </div>
+
+    <div class="section">
+        <h2>Test Option Chain API</h2>
+        <input id="expiryInput" placeholder="e.g., 27-FEB-2025" style="padding:8px;background:#1c2333;border:1px solid var(--border);color:#fff;border-radius:6px">
+        <button onclick="testOptionChain()">Test /dashboard/option-chain</button>
+        <pre id="optionChainResult">Click button to test...</pre>
+    </div>
+
+<script>
+async function testDashboard() {
+    const result = document.getElementById('dashboardResult');
+    try {
+        result.textContent = 'Loading...';
+        const res = await fetch('/dashboard/home/status', { credentials: 'include' });
+        
+        result.innerHTML = `
+<span class="success">Status: ${res.status} ${res.statusText}</span>
+
+Response:
+${JSON.stringify(await res.json(), null, 2)}
+        `;
+    } catch (err) {
+        result.innerHTML = `<span class="error">Error: ${err.message}</span>\n\n${err.stack}`;
+    }
+}
+
+async function testExpiries() {
+    const result = document.getElementById('expiriesResult');
+    const symbol = document.getElementById('symbolSelect').value;
+    try {
+        result.textContent = 'Loading...';
+        const res = await fetch(`/dashboard/symbols/expiries?exchange=NFO&symbol=${symbol}`, { credentials: 'include' });
+        
+        const data = await res.json();
+        result.innerHTML = `
+<span class="success">Status: ${res.status} ${res.statusText}</span>
+
+Response Type: ${Array.isArray(data) ? 'Array' : typeof data}
+Length: ${data.length}
+
+First Item Type: ${typeof data[0]}
+First Item: ${JSON.stringify(data[0], null, 2)}
+
+Full Response:
+${JSON.stringify(data, null, 2)}
+        `;
+    } catch (err) {
+        result.innerHTML = `<span class="error">Error: ${err.message}</span>\n\n${err.stack}`;
+    }
+}
+
+async function testOptionChain() {
+    const result = document.getElementById('optionChainResult');
+    const symbol = document.getElementById('symbolSelect').value;
+    const expiry = document.getElementById('expiryInput').value;
+    
+    if (!expiry) {
+        result.textContent = 'Please enter an expiry date (e.g., 27-FEB-2025)';
+        return;
+    }
+    
+    try {
+        result.textContent = 'Loading...';
+        const res = await fetch(`/dashboard/option-chain?exchange=NFO&symbol=${symbol}&expiry=${expiry}&max_age=10`, { credentials: 'include' });
+        
+        const data = await res.json();
+        result.innerHTML = `
+<span class="success">Status: ${res.status} ${res.statusText}</span>
+
+Meta: ${JSON.stringify(data.meta, null, 2)}
+
+Rows Count: ${data.rows ? data.rows.length : 0}
+First Row: ${data.rows && data.rows[0] ? JSON.stringify(data.rows[0], null, 2) : 'N/A'}
+
+Sample strikes:
+${data.rows ? data.rows.slice(0, 5).map(r => `  ${r.strike} ${r.option_type}: ${r.ltp}`).join('\n') : 'N/A'}
+        `;
+    } catch (err) {
+        result.innerHTML = `<span class="error">Error: ${err.message}</span>\n\n${err.stack}`;
+    }
+}
+</script>
+</body>
+</html>

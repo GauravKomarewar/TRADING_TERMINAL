@@ -14,13 +14,18 @@ This file contains TWO categories of schemas:
    - NOT read by execution or OMS
    - Safe to evolve with dashboard features
 
+schemas.py
+Version: v1.1.0
+Status: PRODUCTION FROZEN
+Scope: Dashboard → Control Queue Execution Contract
+
 IMPORTANT:
 Only schemas explicitly marked as EXECUTION CONTRACT
 are subject to freeze guarantees.
 """
 #==============================================
 # File        : schemas.py
-# Status      : PRODUCTION FROZEN V.1.0
+# Status      : PRODUCTION FROZEN V.1.1.0
 # Action :
 # EXECUTION CONTRACT — CLOSED (do not modify without OMS + consumer audit)
 # DASHBOARD VIEW SCHEMAS — EVOLVABLE
@@ -37,7 +42,7 @@ are subject to freeze guarantees.
 # at execution time. Schema intentionally does NOT hardcode exchange rules.
 
 #==============================================
-
+from datetime import time
 from enum import Enum
 from typing import Optional, Literal, List
 from pydantic import BaseModel, Field, model_validator
@@ -172,6 +177,67 @@ class StrategyIntentRequest(BaseModel):
     )
 
     reason: Optional[str] = "DASHBOARD_STRATEGY"
+
+class StrategyEntryRequest(BaseModel):
+    strategy_name: str
+    strategy_version: str
+
+    exchange: Exchange
+    symbol: str
+    instrument_type: str   # OPTIDX / OPTSTK / FUT / MCX
+
+    entry_time: str        # ISO time
+    exit_time: str
+
+    order_type: OrderType
+    product: Product
+
+    lot_qty: int
+    params: dict
+
+    poll_interval: Optional[float] = 2.0
+    cooldown_seconds: Optional[int] = 0
+
+    @model_validator(mode="after")
+    def validate_time_fields(self):
+        try:
+            time.fromisoformat(self.entry_time)
+            time.fromisoformat(self.exit_time)
+        except Exception:
+            raise ValueError(
+                "entry_time and exit_time must be ISO time only (HH:MM:SS)"
+            )
+        return self
+        
+    @model_validator(mode="after")
+    def normalize_cooldown(self):
+        if "cooldown_seconds" in self.params:
+            self.cooldown_seconds = self.params["cooldown_seconds"]
+        return self
+
+    @model_validator(mode="after")
+    def validate_dnss_contract(self):
+        if self.instrument_type == "OPTIDX":
+            required = [
+                "target_entry_delta",
+                "delta_adjust_trigger",
+                "max_leg_delta",
+                "profit_step",
+                "cooldown_seconds",
+            ]
+            for k in required:
+                if k not in self.params:
+                    raise ValueError(f"Missing DNSS param: {k}")
+        return self
+
+    @model_validator(mode="after")
+    def validate_instrument_type(self):
+        allowed = {"OPTIDX", "OPTSTK", "FUT", "MCX"}
+        if self.instrument_type not in allowed:
+            raise ValueError(
+                f"instrument_type must be one of {sorted(allowed)}"
+            )
+        return self
 
 
 # ============================================================

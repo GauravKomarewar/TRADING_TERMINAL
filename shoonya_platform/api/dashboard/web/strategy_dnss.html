@@ -82,8 +82,11 @@ button{padding:12px;border-radius:10px;border:none;font-weight:600;cursor:pointe
     <div class="field"><label>Profit Step</label><input id="profit_step" value="1000"></div>
   </div>
 
-  <button class="primary" onclick="submitEntry()">Start Strategy</button>
-  <div id="entryResult" class="result"></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="primary" onclick="submitEntry()">Start Strategy (Intent)</button>
+    <button class="secondary" onclick="startProcess()">Start Strategy (Process)</button>
+    <div id="entryResult" class="result" style="margin-left:12px"></div>
+  </div>
 </div>
 
 <!-- ================================================= -->
@@ -178,6 +181,34 @@ async function submitEntry(){
   }catch{
     entryResult.className="result bad";
     entryResult.innerText="✖ Failed";
+  }
+}
+
+async function startProcess(){
+  // Starts a detached strategy process via SupervisorService
+  const payload = {
+    config_path: 'delta_neutral.configs.nifty'
+  };
+
+  try{
+    const res = await fetch('/dashboard/strategy/start',{
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if(!res.ok){
+      const err = await res.json();
+      throw new Error(err.detail || 'Server error');
+    }
+
+    const data = await res.json();
+    entryResult.className = 'result ok';
+    entryResult.innerText = `✔ Process started (pid=${data.pid})`;
+  }catch(e){
+    entryResult.className = 'result bad';
+    entryResult.innerText = `✖ ${e.message}`;
   }
 }
 

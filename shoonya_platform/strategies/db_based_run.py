@@ -31,7 +31,7 @@ from shoonya_platform.execution.broker import Broker
 from shoonya_platform.brokers.shoonya.client import ShoonyaClient
 from shoonya_platform.market_data.instruments.instruments import get_fno_details
 from scripts.scriptmaster import refresh_scriptmaster, options_expiry
-from shoonya_platform.strategies.delta_neutral.delta_neutral_short_strategy import (
+from shoonya_platform.strategies.delta_neutral.dnss import (
     DeltaNeutralShortStrangleStrategy,
 )
 from shoonya_platform.execution.trading_bot import ShoonyaBot

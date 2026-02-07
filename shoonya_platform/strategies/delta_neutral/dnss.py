@@ -349,6 +349,12 @@ class DeltaNeutralShortStrangleStrategy:
         
         # ENTRY FILLS - STRICT PARTIAL FILL DETECTION
         if self.state.entry_sent and not self.state.active:
+            # Defensive: require delta in entry fills (broker must provide greeks)
+            if delta is None:
+                logger.critical("❌ Entry fill missing delta - forcing safe exit")
+                self.state.failed = True
+                return self._force_exit("MISSING_FILL_DELTA")
+
             return self._handle_entry_fill(symbol, side, price, qty, delta)
         
         # ADJUSTMENT FILLS - EXPLICIT PHASE ROUTING

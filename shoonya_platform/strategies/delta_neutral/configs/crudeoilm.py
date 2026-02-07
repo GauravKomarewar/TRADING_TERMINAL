@@ -4,7 +4,7 @@ CONFIG ONLY
 """
 
 from datetime import time
-from shoonya_platform.strategies.delta_neutral.delta_neutral_short_strategy import StrategyConfig
+from shoonya_platform.strategies.delta_neutral.dnss import StrategyConfig
 
 STRATEGY_NAME = "CRUDEOIL_DELTA_AUTO_ADJUST"
 

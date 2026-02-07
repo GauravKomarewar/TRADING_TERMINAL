@@ -110,7 +110,7 @@ from shoonya_platform.market_data.feeds.live_feed import start_live_feed
 #---------------------- strategies runner  ----------------
 from shoonya_platform.strategies.strategy_runner import StrategyRunner
 from shoonya_platform.strategies.strategy_run_writer import StrategyRunWriter
-from shoonya_platform.strategies.delta_neutral.delta_neutral_short_strategy import (
+from shoonya_platform.strategies.delta_neutral.dnss import (
     DeltaNeutralShortStrangleStrategy,
 )
 
@@ -1180,14 +1180,50 @@ class ShoonyaBot:
         if hasattr(universal_config, 'to_dict') and isinstance(universal_config.to_dict(), dict):
             lot_qty = universal_config.to_dict().get('lot_qty', lot_qty)
         
-        strategy = DeltaNeutralShortStrangleStrategy(
-            exchange=universal_config.exchange,
-            symbol=universal_config.symbol,
-            expiry=market.expiry,
-            lot_qty=lot_qty,
-            get_option_func=market.get_nearest_option,
-            config=universal_config,   # 👈 important
-        )
+        # Adapt UniversalStrategyConfig -> strategy-specific StrategyConfig
+        try:
+            from shoonya_platform.strategies.delta_neutral.dnss import (
+                DeltaNeutralShortStrangleStrategy,
+                StrategyConfig as DnssStrategyConfig,
+            )
+
+            params = getattr(universal_config, "params", {}) or {}
+
+            strategy_config = DnssStrategyConfig(
+                entry_time=universal_config.entry_time,
+                exit_time=universal_config.exit_time,
+
+                target_entry_delta=float(params.get("target_entry_delta")),
+                delta_adjust_trigger=float(params.get("delta_adjust_trigger")),
+                max_leg_delta=float(params.get("max_leg_delta")),
+
+                profit_step=float(params.get("profit_step")),
+                cooldown_seconds=int(params.get("cooldown_seconds", 0)),
+                lot_qty=int(params.get("lot_qty", lot_qty)),
+
+                # OMS execution parameters
+                order_type=params.get("order_type", getattr(universal_config, "order_type", "LIMIT")),
+                product=params.get("product", getattr(universal_config, "product", "NRML")),
+            )
+
+            strategy = DeltaNeutralShortStrangleStrategy(
+                exchange=universal_config.exchange,
+                symbol=universal_config.symbol,
+                expiry=market.expiry,
+                get_option_func=market.get_nearest_option,
+                config=strategy_config,
+            )
+
+        except Exception:
+            # Fallback: try to construct from older module if dnss import fails
+            strategy = DeltaNeutralShortStrangleStrategy(
+                exchange=universal_config.exchange,
+                symbol=universal_config.symbol,
+                expiry=market.expiry,
+                lot_qty=lot_qty,
+                get_option_func=market.get_nearest_option,
+                config=universal_config,
+            )
 
         # 3️⃣ Create run_id
         run_id = f"{strategy_name}_{int(time.time())}"

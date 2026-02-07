@@ -51,12 +51,12 @@ class TestCompleteEntryToExitFlow:
         
         # Step 1: Entry via webhook
         bot.process_alert.return_value = {"status": "entry_executed", "order_id": "BRK-001"}
-        entry_result = bot.process_alert({
+        _entry_result = bot.process_alert({
             "execution_type": "entry",
             "symbol": "NIFTY50"
         })
         
-        assert entry_result["status"] == "entry_executed"
+        assert _entry_result["status"] == "entry_executed"
         
         # Step 2: OrderWatcher registers order
         bot.order_watcher.register.return_value = None
@@ -85,17 +85,17 @@ class TestCompleteEntryToExitFlow:
         bot = trading_bot_full_setup
         
         # Entry persisted, consumed by GenericControlIntentConsumer
-        entry_intent = {"id": "DASH-GEN-001", "type": "GENERIC"}
+        _entry_intent = {"id": "DASH-GEN-001", "type": "GENERIC"}
         
         # After processing
         bot.process_alert.return_value = {"status": "entry_executed"}
-        result = bot.process_alert({"execution_type": "entry"})
+        _result = bot.process_alert({"execution_type": "entry"})
         
         # Exit when target reached
         bot.api.get_ltp.return_value = 110.5
         target_reached = 110.5 >= 110.0
         
-        assert target_reached == True
+        assert target_reached
 
     def test_strategy_entry_to_trailing_exit(self, trading_bot_full_setup):
         """Test complete: strategy entry → trailing stop → exit"""
@@ -149,7 +149,7 @@ class TestRaceConditions:
 
     def test_simultaneous_entry_webhook_and_dashboard(self):
         """Test webhook and dashboard entry for same symbol (should block)"""
-        bot = Mock(spec=ShoonyaBot)
+        _bot = Mock(spec=ShoonyaBot)
         bot.execution_guard = Mock()
         
         # Both try to enter NIFTY50
@@ -177,19 +177,19 @@ class TestRaceConditions:
         bot = Mock(spec=ShoonyaBot)
         
         # Entry in progress
-        entry_state = {"status": "SENT_TO_BROKER"}
+        _entry_state = {"status": "SENT_TO_BROKER"}
         
         # Exit signal arrives (should queue)
         exit_state = {"queued": True, "status": "PENDING"}
         
-        assert exit_state["queued"] == True
+        assert exit_state["queued"]
 
     def test_force_exit_while_sl_processing(self):
         """Test risk manager force exit overrides SL processing"""
-        watcher = Mock(spec=OrderWatcherEngine)
+        _watcher = Mock(spec=OrderWatcherEngine)
         
         # SL breach detected and about to fire
-        sl_fire = Mock()
+        _sl_fire = Mock()
         
         # Risk manager force exit arrives (should supersede)
         force_exit = Mock()

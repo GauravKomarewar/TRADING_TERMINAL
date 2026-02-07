@@ -42,7 +42,7 @@ class TestRiskManagerDailyLimits:
         
         within_limit = daily_pnl >= risk_manager.daily_loss_limit
         
-        assert within_limit == True
+        assert within_limit
 
     def test_block_order_at_loss_limit(self, risk_manager):
         """Test order blocked when daily PnL at loss limit"""
@@ -52,7 +52,7 @@ class TestRiskManagerDailyLimits:
         
         within_limit = daily_pnl > risk_manager.daily_loss_limit
         
-        assert within_limit == False
+        assert not within_limit
 
     def test_block_order_exceeding_loss_limit(self, risk_manager):
         """Test order blocked when daily PnL exceeds loss limit"""
@@ -62,7 +62,7 @@ class TestRiskManagerDailyLimits:
         
         within_limit = daily_pnl >= risk_manager.daily_loss_limit
         
-        assert within_limit == False
+        assert not within_limit
 
     def test_force_exit_triggers_at_loss_limit(self, risk_manager):
         """Test force exit triggered when loss limit breached"""
@@ -108,7 +108,7 @@ class TestRiskManagerPositionLimits:
         total = current_position + new_order_notional
         within_limit = total <= position_limit
         
-        assert within_limit == True
+        assert within_limit
 
     def test_block_entry_exceeding_position_limit(self, risk_manager):
         """Test entry blocked when position limit exceeded"""
@@ -119,7 +119,7 @@ class TestRiskManagerPositionLimits:
         total = current_position + new_order_notional
         within_limit = total <= position_limit
         
-        assert within_limit == False
+        assert not within_limit
 
     def test_position_calculation_all_symbols(self, risk_manager):
         """Test position limit accounts for all open orders"""
@@ -140,7 +140,7 @@ class TestRiskManagerPositionLimits:
         
         can_add_order = open_orders < max_orders
         
-        assert can_add_order == False
+        assert not can_add_order
 
     def test_open_orders_count_includes_pending(self, risk_manager):
         """Test open orders count includes SENT_TO_BROKER status"""
@@ -166,7 +166,7 @@ class TestInputValidationEntryOrders:
         
         valid = order["symbol"] is not None
         
-        assert valid == False
+        assert not valid
 
     def test_symbol_format_validation(self):
         """Test symbol format validation"""
@@ -186,7 +186,7 @@ class TestInputValidationEntryOrders:
         
         valid = order["qty"] is not None
         
-        assert valid == False
+        assert not valid
 
     def test_quantity_must_be_positive(self):
         """Test quantity must be positive"""
@@ -202,7 +202,7 @@ class TestInputValidationEntryOrders:
         
         valid = order["side"] is not None
         
-        assert valid == False
+        assert not valid
 
     def test_side_valid_values(self):
         """Test side only accepts BUY or SELL"""
@@ -218,7 +218,7 @@ class TestInputValidationEntryOrders:
         
         valid = order["order_type"] is not None
         
-        assert valid == False
+        assert not valid
 
     def test_order_type_valid_values(self):
         """Test order_type valid values"""
@@ -234,7 +234,7 @@ class TestInputValidationEntryOrders:
         
         valid = order["order_type"] != "LIMIT" or order["price"] is not None
         
-        assert valid == False
+        assert not valid
 
     def test_price_optional_for_market_order(self):
         """Test price optional for MARKET orders"""
@@ -242,7 +242,7 @@ class TestInputValidationEntryOrders:
         
         valid = True  # Market orders don't need price
         
-        assert valid == True
+        assert valid
 
     def test_product_required(self):
         """Test product (MIS/CNC) is required"""
@@ -250,7 +250,7 @@ class TestInputValidationEntryOrders:
         
         valid = order["product"] is not None
         
-        assert valid == False
+        assert not valid
 
     def test_product_valid_values(self):
         """Test product valid values"""
@@ -292,7 +292,7 @@ class TestInputValidationExitOrders:
         exit_symbol = "FINNIFTY"
         exists = any(o["symbol"] == exit_symbol for o in open_orders)
         
-        assert exists == False
+        assert not exists
 
     def test_exit_quantity_cannot_exceed_open(self):
         """Test exit quantity can't exceed open quantity"""
@@ -301,7 +301,7 @@ class TestInputValidationExitOrders:
         
         valid = exit_qty <= open_qty
         
-        assert valid == False
+        assert not valid
 
     def test_exit_sl_must_be_valid_price(self):
         """Test SL price must be valid"""
@@ -309,7 +309,7 @@ class TestInputValidationExitOrders:
         
         valid = sl_price > 0
         
-        assert valid == False
+        assert not valid
 
     def test_exit_target_must_be_valid_price(self):
         """Test target price must be valid"""
@@ -317,7 +317,7 @@ class TestInputValidationExitOrders:
         
         valid = target_price > 0
         
-        assert valid == False
+        assert not valid
 
     def test_exit_sl_should_be_below_entry_for_long(self):
         """Test SL below entry for LONG positions"""
@@ -326,7 +326,7 @@ class TestInputValidationExitOrders:
         
         valid_sl = sl_price < entry_price
         
-        assert valid_sl == True
+        assert valid_sl
 
     def test_exit_sl_should_be_above_entry_for_short(self):
         """Test SL above entry for SHORT positions"""
@@ -335,7 +335,7 @@ class TestInputValidationExitOrders:
         
         valid_sl = sl_price > entry_price
         
-        assert valid_sl == True
+        assert valid_sl
 
     def test_exit_target_should_be_above_entry_for_long(self):
         """Test target above entry for LONG positions"""
@@ -344,7 +344,7 @@ class TestInputValidationExitOrders:
         
         valid_target = target_price > entry_price
         
-        assert valid_target == True
+        assert valid_target
 
     def test_exit_target_should_be_below_entry_for_short(self):
         """Test target below entry for SHORT positions"""
@@ -353,7 +353,7 @@ class TestInputValidationExitOrders:
         
         valid_target = target_price < entry_price
         
-        assert valid_target == True
+        assert valid_target
 
     def test_trailing_stop_requires_trailing_type(self):
         """Test trailing stop requires type"""
@@ -364,7 +364,7 @@ class TestInputValidationExitOrders:
         
         valid = order["trailing_type"] is not None
         
-        assert valid == False
+        assert not valid
 
     def test_trailing_type_valid_values(self):
         """Test trailing type valid values"""

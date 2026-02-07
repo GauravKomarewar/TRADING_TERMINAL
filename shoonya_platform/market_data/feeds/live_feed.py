@@ -41,6 +41,7 @@ class FeedConfig:
     """Configuration for live feed manager."""
     LOG_TICK_INTERVAL = 100  # Log every Nth tick to reduce verbosity
     HEARTBEAT_TIMEOUT = 30  # Seconds without ticks = stale warning
+    # Keep configuration minimal for freeze-safe behavior
     
 config = FeedConfig()
 
@@ -48,6 +49,7 @@ config = FeedConfig()
 # 🔌 State (SIMPLIFIED - No Callbacks)
 # ===============================
 
+# Global State (Thread-Safe)
 # Global State (Thread-Safe)
 tick_data_store: Dict[str, Dict[str, Any]] = defaultdict(dict)
 subscribed_tokens: set = set()
@@ -108,6 +110,7 @@ def normalize_tick(raw_tick: dict) -> dict:
             # Check if timestamp is in milliseconds (13 digits)
             if timestamp > 10**12:
                 timestamp = timestamp / 1000
+            # Preserve original local/naive datetime semantics (freeze-safe)
             normalized["tt"] = datetime.fromtimestamp(timestamp)
         else:
             normalized["tt"] = datetime.now()
@@ -176,12 +179,13 @@ def event_handler_feed_update(tick_data: dict) -> None:
             logger.debug("Received tick without token")
             return
 
-        # Strip exchange prefix if present (NFO|xxxxx)
-        token = _extract_token(raw_token)
-        
-        # Normalize and update store (THAT'S IT - single source of truth)
+        # Normalize token for consistent internal keys
+        token = _normalize_token_key(raw_token)
+
+        # Normalize tick
         normalized = normalize_tick(tick_data)
-        
+
+        # Normalize and update store under global lock (single-source-of-truth)
         with _state_lock:
             tick_data_store[token].update(normalized)
         
@@ -279,6 +283,8 @@ def start_live_feed(
         
         # Give WebSocket time to connect
         time.sleep(timeout)
+
+        # No background janitor started in freeze-safe v3.0
         
         # 🔥 PRODUCTION FIX: Verify ticks are actually flowing (not just login state)
         if _last_tick_time and (time.time() - _last_tick_time) < timeout:
@@ -540,6 +546,9 @@ def get_tick_data_batch(tokens: List[str]) -> Dict[str, Dict[str, Any]]:
             if key in tick_data_store:
                 out[key] = tick_data_store[key].copy()
         return out
+
+
+
 
 
 def is_feed_connected() -> bool:

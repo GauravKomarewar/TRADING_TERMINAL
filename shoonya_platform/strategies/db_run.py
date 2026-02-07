@@ -27,7 +27,7 @@ from shoonya_platform.execution.db_market import DBBackedMarket
 from shoonya_platform.execution.broker import Broker
 from shoonya_platform.execution.trading_bot import get_global_bot
 
-from shoonya_platform.strategies.delta_neutral.delta_neutral_short_strategy import (
+from shoonya_platform.strategies.delta_neutral.dnss import (
     DeltaNeutralShortStrangleStrategy,
 )
 

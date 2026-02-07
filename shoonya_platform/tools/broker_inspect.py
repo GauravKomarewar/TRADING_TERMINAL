@@ -2,7 +2,6 @@ from shoonya_platform.brokers.shoonya.client import ShoonyaClient
 from shoonya_platform.utils.utils import safe_api_call
 
 import pandas as pd
-import time
 from tabulate import tabulate
 import logging
 from typing import Optional
@@ -13,6 +12,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
 
 # Function to fetch and display limits
 def limit(api_client: ShoonyaClient):

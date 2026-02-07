@@ -26,7 +26,7 @@
 
 ```bash
 # Clone the repo
-git clone https://github.com/GauravKomarewar/TRADING_TERMINAL.git
+git clone https://github.com/GauravKomarewar/TRADING_TERMINAL.git shoonya_platform
 cd shoonya_platform
 
 # Create virtual environment

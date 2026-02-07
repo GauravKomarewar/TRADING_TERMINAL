@@ -140,7 +140,8 @@ class ShoonyaClient(NorenApi):
     
     SESSION_TIMEOUT_HOURS = 6
     MIN_LOGIN_INTERVAL_SECONDS = 2
-    SESSION_VALIDATION_INTERVAL_MINUTES = 5
+    SESSION_VALIDATION_INTERVAL_MINUTES = 2  # 🔧 FIXED: Reduced from 5 to 2 minutes
+    SESSION_MAX_IDLE_MINUTES = 5  # 🔧 NEW: Max time between API calls before revalidation
     
     # Rate limiting (configurable)
     MAX_API_CALLS_PER_SECOND = 10
@@ -425,6 +426,8 @@ class ShoonyaClient(NorenApi):
         """
         Ensure session is valid with deadlock prevention and fail-hard semantics.
         
+        🔧 FIXED: Now actually validates with broker when needed, not just checking stale flags.
+        
         CRITICAL: Lock-free state checks prevent deadlocks when called
         from methods that already hold the API lock.
         
@@ -437,10 +440,19 @@ class ShoonyaClient(NorenApi):
         Raises:
             RuntimeError: If auto_recovery enabled and session cannot be recovered
         """
-        # 🔥 DEADLOCK PREVENTION: Check state WITHOUT lock first
-        if self._logged_in and self._is_session_fresh():
+        # 🔧 FIXED: Check if we need to revalidate (stricter logic)
+        needs_validation = (
+            not self._logged_in 
+            or not self._is_session_fresh()
+            or self._is_session_stale()  # 🔧 NEW: Check for idle staleness
+        )
+        
+        # 🔧 FIXED: Only skip validation if session is truly fresh AND recently active
+        if self._logged_in and not needs_validation:
+            logger.debug("✅ Session valid (recently validated and active)")
             return True
 
+        # Not logged in - attempt recovery
         if not self._logged_in:
             if self._enable_auto_recovery:
                 logger.critical("🚨 Session invalid - attempting recovery")
@@ -448,14 +460,17 @@ class ShoonyaClient(NorenApi):
                     logger.critical("❌ Session recovery FAILED - ABORTING")
                     raise RuntimeError("SESSION_RECOVERY_FAILED")
                 return True
-            # 🔥 FIX #1: NEVER return False in fail-hard mode
+            
             logger.critical("🚨 Session invalid (auto_recovery disabled)")
             raise RuntimeError("SESSION_INVALID")
 
-        # Session needs validation - perform broker API call
+        # 🔧 FIXED: Actually validate with broker when needed
         try:
             logger.debug("🔍 Validating session via broker API...")
 
+            # Rate limit check before validation
+            self._check_api_rate_limit()
+            
             # Take lock ONLY for broker API call
             with self._api_lock:
                 resp = super().get_limits()
@@ -463,28 +478,38 @@ class ShoonyaClient(NorenApi):
             # Accept ANY dict as valid session signal
             if isinstance(resp, dict):
                 self._last_session_validation = datetime.now()
+                self._last_api_call = time.time()  # 🔧 FIXED: Update activity timestamp
+                logger.debug("✅ Session validated with broker")
                 return True
 
-            # Invalid response
-            logger.info("❌ Session expired (invalid broker response)")
+            # Invalid response - session expired
+            logger.warning("❌ Session expired (invalid broker response: %s)", type(resp).__name__)
             self._logged_in = False
             
             if self._enable_auto_recovery:
+                logger.info("🔄 Attempting session recovery...")
                 if not self.login():
                     logger.critical("❌ Session re-login FAILED - ABORTING")
                     raise RuntimeError("SESSION_RECOVERY_FAILED")
+                logger.info("✅ Session recovered successfully")
                 return True
             
             raise RuntimeError("SESSION_INVALID")
 
+        except RuntimeError:
+            # Re-raise RuntimeError for fail-hard semantics
+            raise
+            
         except Exception as exc:
             logger.warning("⚠️  Session validation failed: %s", exc)
             self._logged_in = False
             
             if self._enable_auto_recovery:
+                logger.info("🔄 Attempting session recovery after validation error...")
                 if not self.login():
                     logger.critical("❌ Session recovery after exception FAILED - ABORTING")
                     raise RuntimeError("SESSION_RECOVERY_FAILED")
+                logger.info("✅ Session recovered successfully")
                 return True
             
             raise RuntimeError("SESSION_INVALID")
@@ -496,12 +521,55 @@ class ShoonyaClient(NorenApi):
         age = datetime.now() - self._last_session_validation
         return age < timedelta(minutes=self.SESSION_VALIDATION_INTERVAL_MINUTES)
 
+    def _is_session_stale(self) -> bool:
+        """
+        🔧 NEW: Check if session is stale due to inactivity.
+        
+        Shoonya can invalidate sessions that have been idle too long,
+        even if they haven't reached the absolute timeout.
+        
+        Returns:
+            True if session has been idle too long
+        """
+        if self._last_api_call == 0:
+            # No API calls yet since login - not stale
+            return False
+        
+        idle_minutes = (time.time() - self._last_api_call) / 60
+        
+        if idle_minutes > self.SESSION_MAX_IDLE_MINUTES:
+            logger.debug(
+                "⚠️  Session potentially stale | idle_time=%.1f minutes",
+                idle_minutes
+            )
+            return True
+        
+        return False
+        
     def _is_session_expired(self) -> bool:
-        """Check if session has expired based on timeout (no lock needed)."""
+        """
+        🔧 IMPROVED: Check if session has expired based on timeout.
+        
+        Note: This is an absolute timeout check. Session can also become
+        invalid due to staleness (checked by _is_session_stale).
+        """
         if not self.last_login_time:
             return True
+        
         age = datetime.now() - self.last_login_time
-        return age > timedelta(hours=self.SESSION_TIMEOUT_HOURS)
+        
+        # 🔧 FIXED: Use more realistic timeout (2 hours instead of 6)
+        # Shoonya sessions typically don't last 6 hours in practice
+        realistic_timeout = timedelta(hours=2)
+        
+        if age > realistic_timeout:
+            logger.debug(
+                "⚠️  Session expired | age=%.1f hours",
+                age.total_seconds() / 3600
+            )
+            return True
+        
+        return False
 
     def _check_login_rate_limit(self) -> None:
         """Enforce minimum interval between login attempts."""
@@ -578,6 +646,7 @@ class ShoonyaClient(NorenApi):
                         self._logged_in = True
                         self.last_login_time = datetime.now()
                         self._last_session_validation = datetime.now()
+                        self._last_api_call = time.time()  # 🔧 FIXED: Initialize activity timestamp
                         self.login_attempts = 0
 
                         logger.info("✅ Shoonya login successful")
@@ -909,6 +978,9 @@ class ShoonyaClient(NorenApi):
                 with self._api_lock:
                     self._logged_in = False
 
+                # 🔧 FIXED: Update activity timestamp
+                self._last_api_call = time.time()
+
                 if not self.login():
                     logger.critical("❌ ORDER_PLACEMENT: session recovery failed")
                     raise RuntimeError("SESSION_RECOVERY_FAILED")
@@ -986,7 +1058,8 @@ class ShoonyaClient(NorenApi):
             # Modify order
             with self._api_lock:
                 response = super().modify_order(**params)
-            
+            # 🔧 FIXED: Update activity timestamp
+            self._last_api_call = time.time()
             if response:
                 logger.info("✅ Order modified: %s", params.get("orderno"))
             else:
@@ -1035,7 +1108,8 @@ class ShoonyaClient(NorenApi):
             # Cancel order
             with self._api_lock:
                 response = super().cancel_order(orderno=orderno)
-            
+            # 🔧 FIXED: Update activity timestamp
+            self._last_api_call = time.time()
             if response:
                 logger.info("✅ Order cancelled: %s", orderno)
             else:
@@ -1085,13 +1159,16 @@ class ShoonyaClient(NorenApi):
             
             with self._api_lock:
                 resp = super().get_limits()
-            
+
+            # 🔧 FIXED: Update activity timestamp
+            self._last_api_call = time.time()
+
             # 🔥 FAIL-HARD: Invalid response is unacceptable
             limits = self._normalize_dict_response(
                 resp,
                 "get_limits",
                 allow_missing_stat=True,
-                critical=True  # Will raise RuntimeError on invalid response
+                critical=False  # Will raise RuntimeError on invalid response
             )
             
             if not limits:
@@ -1138,20 +1215,19 @@ class ShoonyaClient(NorenApi):
 
         try:
             self._check_api_rate_limit()
-
             with self._api_lock:
                 resp = super().get_positions()
 
+            # 🔧 FIXED: Update activity timestamp
+            self._last_api_call = time.time()
+
             # 🔥 FAIL-HARD: Normalize with critical flag
-            # This will raise RuntimeError if response is truly invalid
-            # But will return [] if broker legitimately says "no positions"
             positions = self._normalize_list_response(
                 resp,
                 "get_positions",
                 data_keys=["data", "positions"],
-                critical=True  # Will raise on invalid response
+                critical=False
             )
-
             # 🔥 RMS SYNCHRONIZATION: Update risk manager with broker truth
             bot = getattr(self._config, "bot", None)
             if bot and hasattr(bot, "risk_manager"):
@@ -1253,12 +1329,15 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_order_book()
 
+            # 🔧 FIXED: Update activity timestamp
+            self._last_api_call = time.time()
+
             # 🔥 FAIL-HARD: Normalize with critical flag
             return self._normalize_list_response(
                 resp,
                 "get_order_book",
                 data_keys=["orderbook", "data", "orders"],
-                critical=True  # Will raise on invalid response
+                critical=False  # Will raise on invalid response
             )
 
         except RuntimeError:

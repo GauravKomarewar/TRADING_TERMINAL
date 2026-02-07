@@ -15,8 +15,20 @@ import threading
 import os
 from pathlib import Path
 
+# ======================================================
+# DATABASE PATH (EC2 / WINDOWS / DOCKER SAFE)
+# ======================================================
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DB_LOCK = threading.Lock()
-_DB_PATH = "/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data/orders.db"
+
+_DB_PATH = (
+    _PROJECT_ROOT
+    / "shoonya_platform"
+    / "persistence"
+    / "data"
+    / "orders.db"
+)
 
 # Ensure parent directory exists
 db_parent = Path(_DB_PATH).parent

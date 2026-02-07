@@ -1,7 +1,11 @@
 # ===============================
 # Runtime logs & caches
 # ===============================
-logs/
+logs/*
+!logs/.gitkeep
+!logs/recovery/.gitkeep
+!logs/risk/.gitkeep
+
 .pytest_cache/
 __pycache__/
 

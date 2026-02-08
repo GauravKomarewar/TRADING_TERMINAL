@@ -452,7 +452,7 @@ class SupremeRiskManager:
         pnl_change = total - self.daily_pnl if self.last_known_pnl is not None else 0.0
         
         logger.info(
-            "RMS: PnL Update | total=%.2f (rpnl=%.2f + urmtom=%.2f) | change=%.+.2f | positions=%d (live=%d)",
+            "RMS: PnL Update | total=%.2f (rpnl=%.2f + urmtom=%.2f) | change=%+.2f | positions=%d (live=%d)",
             total,
             total_rpnl,
             total_urmtom,

@@ -34,7 +34,7 @@ import logging
 import threading
 import time
 from enum import Enum
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional, Callable, Union
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -46,6 +46,7 @@ class ServiceStatus(Enum):
     STOPPED = "stopped"
     STARTING = "starting"
     RUNNING = "running"
+    STOPPING = "stopping"
     ERROR = "error"
     RECOVERING = "recovering"
 
@@ -299,7 +300,7 @@ class ServiceManager:
         """Get health status of all services."""
         return {name: service.health for name, service in self.services.items()}
     
-    def get_status_summary(self) -> Dict[str, str]:
+    def get_status_summary(self) -> Dict[str, Dict[str, Union[str, int, None]]]:
         """Get simple status summary for monitoring."""
         return {
             name: {

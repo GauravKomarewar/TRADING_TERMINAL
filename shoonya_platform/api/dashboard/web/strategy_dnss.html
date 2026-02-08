@@ -107,8 +107,8 @@ button{padding:12px;border-radius:10px;border:none;font-weight:600;cursor:pointe
 <!-- 3️⃣ RUNTIME STATUS -->
 <!-- ================================================= -->
 <h2>📊 Strategy Runtime Status</h2>
-<div class="card">
-  <button class="secondary" onclick="refreshStatus()">Refresh Status</button>
+  <div class="card">
+  <div style="display:flex;align-items:center;gap:12px;"><span class="muted">Auto-refreshing status every 2s</span></div>
 
   <div id="statusArea" style="margin-top:16px"></div>
 </div>
@@ -128,8 +128,11 @@ async function logout() {
     window.location.href = '/';
 }
 
+let dnssAutoTimer = null;
 window.addEventListener('DOMContentLoaded', function() {
-    checkAuth();
+  checkAuth();
+  try{ refreshStatus(); }catch(e){}
+  dnssAutoTimer = setInterval(() => { try{ refreshStatus(); }catch(e){} }, 2000);
 });
 
 async function checkAuth() {

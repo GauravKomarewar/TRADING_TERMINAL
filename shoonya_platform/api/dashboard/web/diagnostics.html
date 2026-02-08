@@ -70,8 +70,8 @@
     
     <div class="section">
         <h2>Test Dashboard Status API</h2>
-        <button onclick="testDashboard()">Test /dashboard/home/status</button>
-        <pre id="dashboardResult">Click button to test...</pre>
+        <div style="margin-bottom:8px;color:#94a3b8">Auto-refreshing status every 2s</div>
+        <pre id="dashboardResult">Initializing...</pre>
     </div>
 
     <div class="section">
@@ -180,6 +180,13 @@ async function logout() {
 
 window.addEventListener('DOMContentLoaded', function() {
     checkAuth();
+});
+
+// Auto-refresh dashboard status every 2s
+let diagnosticsAutoTimer = null;
+window.addEventListener('DOMContentLoaded', function() {
+    try { testDashboard(); } catch (e) {}
+    diagnosticsAutoTimer = setInterval(() => { try { testDashboard(); } catch (e) {} }, 2000);
 });
 
 async function checkAuth() {

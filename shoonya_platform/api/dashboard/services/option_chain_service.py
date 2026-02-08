@@ -1,6 +1,11 @@
 from pathlib import Path
 from datetime import datetime
 from typing import List
+import time
+import sqlite3
+from typing import Dict, Any, Optional
+
+from shoonya_platform.market_data.option_chain.db_access import OptionChainDBReader
 
 OPTION_CHAIN_DATA_DIR = (
     Path(__file__).resolve().parents[3]
@@ -32,3 +37,52 @@ def get_active_expiries(exchange: str, symbol: str) -> List[str]:
 
     expiries = sorted(set(expiries), key=parse_expiry)
     return expiries
+
+
+def find_nearest_option(
+    db_path: str,
+    *,
+    target: float,
+    metric: str = "ltp",
+    option_type: Optional[str] = None,
+    max_age: float = 5.0,
+) -> Dict[str, Any]:
+    """
+    Find the nearest option contract in a snapshot DB by a target value.
+
+    Args:
+        db_path: Path to option-chain sqlite DB
+        target: numeric target to match (price or greek)
+        metric: which column to use for distance ('ltp', 'iv', 'delta', etc.)
+        option_type: 'CE' or 'PE' to filter, or None for both
+        max_age: maximum allowed snapshot age in seconds
+
+    Returns:
+        A single row dict representing the nearest contract.
+    """
+
+    reader = OptionChainDBReader(str(db_path))
+    meta, rows = reader.read(max_age=max_age)
+
+    best = None
+    best_dist = None
+
+    for r in rows:
+        if option_type and r.get("option_type") != option_type:
+            continue
+        val = r.get(metric)
+        if val is None:
+            continue
+        try:
+            dist = abs(float(val) - float(target))
+        except Exception:
+            continue
+
+        if best is None or dist < best_dist:
+            best = r
+            best_dist = dist
+
+    if best is None:
+        raise RuntimeError("No matching option found")
+
+    return best

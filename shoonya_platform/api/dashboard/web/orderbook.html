@@ -26,6 +26,23 @@ window.addEventListener('DOMContentLoaded', function() {
     checkAuth();
 });
 
+// Auto-refresh orderbook every 2s
+let _orderbookAutoTimer = null;
+function startOrderbookAutoRefresh() {
+    if (_orderbookAutoTimer) return;
+    loadOrderbook();
+    _orderbookAutoTimer = setInterval(() => loadOrderbook(), 2000);
+}
+function stopOrderbookAutoRefresh() {
+    if (!_orderbookAutoTimer) return;
+    clearInterval(_orderbookAutoTimer);
+    _orderbookAutoTimer = null;
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    startOrderbookAutoRefresh();
+});
+
 async function checkAuth() {
     try {
         const res = await fetch('/dashboard/home/status', {
@@ -57,7 +74,7 @@ async function checkAuth() {
         <div class="section-header">
             <div class="section-title">⚡ Order Pipeline Status</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button class="action-btn" onclick="loadOrderbook()">🔄 Refresh</button>
+                <span style="display:inline-block;color:var(--muted);font-size:13px">Auto-refresh</span>
                 <button class="action-btn" onclick="showDiagnostics()">🔍 Diagnostics</button>
                 <span class="badge live">● LIVE</span>
             </div>
@@ -87,7 +104,7 @@ async function checkAuth() {
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="action-btn danger-btn" onclick="cancelAllSystem()">🚫 Cancel All Pending</button>
                 <button class="action-btn" onclick="exportSystemCSV()">📥 Export CSV</button>
-                <button class="action-btn" onclick="loadOrderbook()">🔄 Refresh</button>
+                <span style="display:inline-block;color:var(--muted);font-size:13px">Auto-refresh</span>
                 <span class="badge live">● LIVE</span>
                 <span class="badge" id="systemCount">0 Orders</span>
             </div>
@@ -130,7 +147,7 @@ async function checkAuth() {
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="action-btn danger-btn" onclick="cancelAllBroker()">🚫 Cancel All Pending</button>
                 <button class="action-btn" onclick="exportBrokerCSV()">📥 Export CSV</button>
-                <button class="action-btn" onclick="loadOrderbook()">🔄 Refresh</button>
+                <span style="display:inline-block;color:var(--muted);font-size:13px">Auto-refresh</span>
                 <span class="badge live">● LIVE</span>
                 <span class="badge" id="brokerCount">0 Orders</span>
             </div>

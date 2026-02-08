@@ -380,11 +380,8 @@
     <div style="display: flex; gap: 12px; align-items: center">
         <div class="auto-refresh-status" id="autoRefreshStatus">
             <span class="refresh-dot"></span>
-            <span>Auto-refresh: <span id="refreshInterval">5s</span></span>
+            <span>Auto-refresh: <span id="refreshInterval">2s</span></span>
         </div>
-        <button onclick="manualRefresh()" style="background: var(--primary); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px">
-            <span id="refreshBtn">🔄 Refresh</span>
-        </button>
         <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
 </header>
@@ -553,10 +550,14 @@
     }
     
     // Check authentication on page load
-    window.addEventListener('DOMContentLoaded', function() {
+    window.addEventListener('DOMContentLoaded', function(){
         checkAuth();
+        try { g_exchange.value = 'NFO'; g_symbol.value = 'NIFTY'; } catch(e){}
+        // Start auto-refresh on load
+        startAutoRefresh();
+        // Initial immediate update
+        updateDashboard(false);
     });
-    
     async function checkAuth() {
         try {
             const res = await fetch('/dashboard/home/status', {
@@ -572,7 +573,7 @@
     
     // Configuration
     const config = {
-        autoRefreshInterval: 5000, // 5 seconds
+        autoRefreshInterval: 2000, // 2 seconds (aggressive)
         maxRetries: 3,
         retryDelay: 2000
     };
@@ -669,9 +670,30 @@
         }
     }
     
-    // Manual Refresh
-    async function manualRefresh() {
-        await updateDashboard(false);
+    // Auto-refresh control
+    let autoRefreshTimer = null;
+    function startAutoRefresh() {
+        if (autoRefreshTimer) return;
+        autoRefreshTimer = setInterval(() => updateDashboard(true), config.autoRefreshInterval);
+        const autoRefreshStatus = document.getElementById('autoRefreshStatus');
+        if (autoRefreshStatus) {
+            autoRefreshStatus.classList.add('active');
+            const dot = autoRefreshStatus.querySelector('.refresh-dot');
+            if (dot) dot.classList.add('active');
+            const ri = document.getElementById('refreshInterval'); if (ri) ri.textContent = (config.autoRefreshInterval/1000)+'s';
+        }
+    }
+
+    function stopAutoRefresh() {
+        if (!autoRefreshTimer) return;
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+        const autoRefreshStatus = document.getElementById('autoRefreshStatus');
+        if (autoRefreshStatus) {
+            autoRefreshStatus.classList.remove('active');
+            const dot = autoRefreshStatus.querySelector('.refresh-dot');
+            if (dot) dot.classList.remove('active');
+        }
     }
     
     // Main Dashboard Update

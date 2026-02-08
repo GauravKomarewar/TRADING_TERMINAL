@@ -29,31 +29,341 @@
             <span class="badge">Manual Intent</span>
             <span class="badge">OMS Validated</span>
             <span class="badge">Real-time</span>
-        </div>
-    </div>
-    <div class="grid">
-        <div class="card">
-            <div class="card-title">Manual Order</div>
-            <div class="row">
-                <div class="field">
-                    <label>Exchange</label>
-                    <select id="g_exchange"><option>NFO</option><option>NSE</option><option>BSE</option><option>BFO</option><option>MCX</option><option>CDS</option></select>
-                </div>
-                <div class="field autocomplete-wrap">
-                    <label>Symbol</label>
-                    <input id="g_symbol" placeholder="Type..." autocomplete="off" oninput="onSymbolType()">
-                    <div id="symbolDropdown" class="autocomplete-list" style="display:none;"></div>
-                </div>
-            </div>
-            <div class="row">
-                <div class="field">
-                    <label>Side</label>
-                    <select id="g_side"><option>BUY</option><option>SELL</option></select>
-                </div>
-                <div class="field">
-                    <label>Execution</label>
-                    <select id="g_execution_mode">
-                        <option value="ENTRY">ENTRY</option><option value="EXIT">EXIT</option>
+        </main>
+        <script>
+        // Refactored frontend JS for place_order.html
+        (() => {
+            // State
+            const state = {
+                basket: [],
+                advLegs: [],
+                nextLegId: 1,
+                advDebouncers: {},
+                advSymbolTimers: {}
+            };
+
+            // Helpers
+            function qs(id) { return document.getElementById(id); }
+            function go(path){ window.location.href = path; }
+
+            async function logout(){
+                try { await fetch('/auth/logout', { method: 'POST', credentials: 'include' }); } catch(e) {}
+                window.location.href = '/';
+            }
+
+            // -----------------------
+            // Symbol autocomplete (main)
+            // -----------------------
+            let symbolTimer = null;
+            function onSymbolType(){
+                const q = qs('g_symbol').value.trim();
+                if (q.length < 2) { hideMainDropdown(); return; }
+                clearTimeout(symbolTimer);
+                symbolTimer = setTimeout(()=> fetchSymbols(q), 250);
+            }
+
+            async function fetchSymbols(q){
+                try{
+                    const res = await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`, { credentials: 'include' });
+                    if (!res.ok) return;
+                    const items = await res.json();
+                    renderMainDropdown(items);
+                }catch(e){ hideMainDropdown(); }
+            }
+
+            function renderMainDropdown(items){
+                const dd = qs('symbolDropdown'); dd.innerHTML = '';
+                if (!items || items.length === 0){ hideMainDropdown(); return; }
+                items.slice(0,20).forEach(it => {
+                    const sym = it.tradingsymbol || it.symbol;
+                    const lot = it.lot_size || null;
+                    const div = document.createElement('div');
+                    div.className = 'autocomplete-item';
+                    div.innerHTML = `<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;
+                    div.onclick = () => { qs('g_symbol').value = sym; if (lot) qs('g_qty').value = lot; hideMainDropdown(); };
+                    dd.appendChild(div);
+                });
+                dd.style.display = 'block';
+            }
+            function hideMainDropdown(){ setTimeout(()=> { const dd = qs('symbolDropdown'); if(dd) dd.style.display='none'; }, 120); }
+
+            // -----------------------
+            // Generic / Basket orders
+            // -----------------------
+            function addToBasket(){
+                const execution_type = normalizeExecution(qs('g_execution_mode').value);
+                const item = {
+                    exchange: qs('g_exchange').value,
+                    symbol: qs('g_symbol').value,
+                    execution_type,
+                    side: qs('g_side').value,
+                    qty: Number(qs('g_qty').value) || 1,
+                    product: qs('g_product').value,
+                    order_type: qs('g_order_type').value,
+                    price: qs('g_order_type').value === 'LIMIT' ? Number(qs('g_price').value) : null
+                };
+                state.basket.push(item);
+                renderBasket();
+            }
+
+            function normalizeExecution(mode){
+                if (!mode) return 'ENTRY';
+                if (!mode.startsWith('TEST_')) return mode;
+                return mode.includes('ENTRY') ? 'ENTRY' : 'EXIT';
+            }
+
+            function renderBasket(){
+                const container = qs('basketItems');
+                const countEl = qs('basketCount');
+                if (state.basket.length === 0){ container.innerHTML = '<div class="basket-empty">No orders yet</div>'; countEl.textContent='0'; return; }
+                container.innerHTML = state.basket.map((o,idx) => `
+                    <div class="basket-item">
+                        <div class="basket-info">
+                            <div class="basket-symbol">${o.exchange} ${o.symbol} ${o.side}</div>
+                            <div class="basket-details">${o.execution_type} · ${o.qty} · ${o.order_type}${o.price? ' @ '+o.price : ''}</div>
+                        </div>
+                        <button class="basket-remove" onclick="(function(i){return function(){window.__placeOrder.removeFromBasket(i)}}(idx))()">Remove</button>
+                    </div>
+                `).join('');
+                countEl.textContent = String(state.basket.length);
+            }
+
+            // Expose removeFromBasket globally for inline handlers
+            window.__placeOrder = window.__placeOrder || {};
+            window.__placeOrder.removeFromBasket = function(idx){ state.basket.splice(idx,1); renderBasket(); };
+
+            async function submitBasket(){
+                if (state.basket.length === 0) return;
+                try{
+                    const res = await fetch('/dashboard/intent/basket', { method: 'POST', credentials: 'include', headers: { 'Content-Type':'application/json'}, body: JSON.stringify({ orders: state.basket, reason: 'WEB_BASKET' }) });
+                    const data = await res.json();
+                    qs('basketResult').className='result ok';
+                    qs('basketResult').innerText = `✔ Submitted (${data.intent_id})`;
+                    state.basket = [];
+                    renderBasket();
+                }catch(e){ qs('basketResult').className='result bad'; qs('basketResult').innerText='✖ Failed'; }
+            }
+
+            async function submitGeneric(){
+                if (!qs('g_symbol').value.trim()){ qs('genericResult').className='result bad'; qs('genericResult').innerText='✖ Symbol required'; return; }
+                if (!Number(qs('g_qty').value) || Number(qs('g_qty').value) <= 0){ qs('genericResult').className='result bad'; qs('genericResult').innerText='✖ Qty must be > 0'; return; }
+                if (qs('g_order_type').value === 'LIMIT' && !qs('g_price').value){ qs('genericResult').className='result bad'; qs('genericResult').innerText='✖ LIMIT orders require price'; return; }
+
+                const execution_raw = qs('g_execution_mode').value;
+                const execution_type = normalizeExecution(execution_raw);
+
+                const payload = {
+                    exchange: qs('g_exchange').value,
+                    symbol: qs('g_symbol').value,
+                    execution_type,
+                    side: qs('g_side').value,
+                    qty: Number(qs('g_qty').value),
+                    product: qs('g_product').value,
+                    order_type: qs('g_order_type').value,
+                    price: qs('g_order_type').value === 'LIMIT' ? Number(qs('g_price').value) : null,
+                    reason: 'WEB_MANUAL'
+                };
+
+                qs('genericResult').className='result'; qs('genericResult').innerText='Processing...';
+                try{
+                    const res = await fetch('/dashboard/intent/generic', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+                    if(!res.ok){ const err = await res.json().catch(()=>({detail:'Server error'})); throw new Error(err.detail||'Server error'); }
+                    const data = await res.json(); qs('genericResult').className='result ok'; qs('genericResult').innerText = `✔ Queued (${data.intent_id})`;
+                }catch(e){ qs('genericResult').className='result bad'; qs('genericResult').innerText = `✖ ${e.message}`.substring(0,80); }
+            }
+
+            // -----------------------
+            // Advanced legs: DOM builder + nearest-option wiring
+            // -----------------------
+            function addAdvancedLeg(){
+                const id = state.nextLegId++;
+                state.advLegs.push(id);
+                renderAdvancedLegs();
+            }
+
+            function removeAdvLeg(id){ state.advLegs = state.advLegs.filter(x=>x!==id); renderAdvancedLegs(); }
+
+            function renderAdvancedLegs(){
+                const container = qs('advLegsContainer'); container.innerHTML = '';
+                state.advLegs.forEach((id, idx) => {
+                    const el = document.createElement('div'); el.className = 'leg-container';
+
+                    el.innerHTML = `
+                        <div class="leg-header">
+                            <div class="leg-title">Leg ${idx+1}</div>
+                            <button class="leg-remove" data-id="${id}">Remove</button>
+                        </div>
+                        <div class="row">
+                            <div class="field">
+                                <label>Exchange</label>
+                                <select id="adv_ex_${id}"><option>NSE</option><option>BSE</option><option>NFO</option><option>BFO</option><option>MCX</option><option>CDS</option></select>
+                            </div>
+                            <div class="field autocomplete-wrap">
+                                <label>Symbol</label>
+                                <input id="adv_sym_${id}" placeholder="Symbol" autocomplete="off">
+                                <div id="advDropdown_${id}" class="autocomplete-list" style="display:none;"></div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="field">
+                                <label>Side</label>
+                                <select id="adv_side_${id}"><option>BUY</option><option>SELL</option></select>
+                            </div>
+                            <div class="field">
+                                <label>Execution</label>
+                                <select id="adv_exec_${id}"><option value="ENTRY">ENTRY</option><option value="EXIT">EXIT</option><option value="TEST_ENTRY_SUCCESS">TEST ENTRY (S)</option><option value="TEST_ENTRY_FAILURE">TEST ENTRY (F)</option><option value="TEST_EXIT_SUCCESS">TEST EXIT (S)</option><option value="TEST_EXIT_FAILURE">TEST EXIT (F)</option></select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="field"><label>Qty</label><input id="adv_qty_${id}" type="number" value="1" min="1"></div>
+                            <div class="field"><label>Target Type</label>
+                                <select id="adv_tgt_type_${id}"><option>DELTA</option><option>THETA</option><option>GAMMA</option><option>VEGA</option><option>PRICE</option><option>PREMIUM</option></select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="field"><label>Target Value</label><input id="adv_tgt_val_${id}" type="number" step="0.01" placeholder="Value"></div>
+                            <div class="field"><label>Product</label>
+                                <select id="adv_prod_${id}"><option value="MIS">MIS</option><option value="NRML">NRML</option><option value="CNC">CNC</option></select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="field"><label>Order Type</label><select id="adv_ord_${id}"><option>MARKET</option><option>LIMIT</option></select></div>
+                            <div class="field"><label>Price</label><input id="adv_price_${id}" type="number" step="0.05" placeholder="0.00"></div>
+                        </div>
+                    `;
+
+                    container.appendChild(el);
+
+                    // Bind remove
+                    el.querySelector('.leg-remove').addEventListener('click', () => removeAdvLeg(id));
+
+                    // Bind symbol autocomplete
+                    const symEl = qs(`adv_sym_${id}`);
+                    symEl.addEventListener('input', () => onAdvSymbolType(id));
+
+                    // Bind target fields to trigger nearest-option lookup
+                    const tgtTypeEl = qs(`adv_tgt_type_${id}`);
+                    const tgtValEl = qs(`adv_tgt_val_${id}`);
+                    tgtTypeEl.addEventListener('change', () => onAdvTargetChange(id));
+                    tgtValEl.addEventListener('input', () => onAdvTargetChange(id));
+                });
+            }
+
+            // Advanced autocomplete and helpers
+            function onAdvSymbolType(id){
+                const input = qs(`adv_sym_${id}`);
+                const q = input.value.trim();
+                if (q.length < 2){ hideAdvDropdown(id); return; }
+                clearTimeout(state.advSymbolTimers[id]);
+                state.advSymbolTimers[id] = setTimeout(()=> fetchAdvSymbols(id, q), 250);
+            }
+
+            async function fetchAdvSymbols(id, q){
+                try{
+                    const res = await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`, { credentials: 'include' });
+                    if (!res.ok) return;
+                    const items = await res.json(); renderAdvDropdown(id, items);
+                }catch(e){ hideAdvDropdown(id); }
+            }
+
+            function renderAdvDropdown(id, items){
+                const dd = qs(`advDropdown_${id}`); if(!dd) return; dd.innerHTML = '';
+                if (!items || items.length === 0){ hideAdvDropdown(id); return; }
+                items.slice(0,20).forEach(it => {
+                    const sym = it.tradingsymbol || it.symbol; const lot = it.lot_size || null;
+                    const div = document.createElement('div'); div.className='autocomplete-item';
+                    div.innerHTML = `<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;
+                    div.onclick = () => { qs(`adv_sym_${id}`).value = sym; if (lot) qs(`adv_qty_${id}`).value = lot; hideAdvDropdown(id); };
+                    dd.appendChild(div);
+                }); dd.style.display = 'block';
+            }
+            function hideAdvDropdown(id){ setTimeout(()=>{ const dd = qs(`advDropdown_${id}`); if(dd) dd.style.display='none'; }, 120); }
+
+            // Nearest-option lookup (debounced per leg)
+            function onAdvTargetChange(id){
+                clearTimeout(state.advDebouncers[id]);
+                state.advDebouncers[id] = setTimeout(()=> resolveNearestForLeg(id), 300);
+            }
+
+            async function resolveNearestForLeg(id){
+                try{
+                    const tgtType = qs(`adv_tgt_type_${id}`).value;
+                    const tgtVal = Number(qs(`adv_tgt_val_${id}`).value);
+                    if (!Number.isFinite(tgtVal)) return;
+
+                    const exchange = qs(`adv_ex_${id}`).value || qs('g_exchange').value || 'NFO';
+                    const symbol = qs(`adv_sym_${id}`).value || qs('g_symbol').value || 'NIFTY';
+
+                    // Map metric
+                    let metric = 'ltp';
+                    if (['DELTA','THETA','GAMMA','VEGA'].includes(tgtType)) metric = tgtType.toLowerCase();
+
+                    // Get first active expiry
+                    const expiriesRes = await fetch(`/dashboard/option-chain/active-expiries?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(symbol)}`, { credentials: 'include' });
+                    if (!expiriesRes.ok) return;
+                    const expiries = await expiriesRes.json(); if (!Array.isArray(expiries) || expiries.length===0) return;
+                    const expiry = typeof expiries[0] === 'string' ? expiries[0] : expiries[0].expiry;
+
+                    const nearestRes = await fetch(`/dashboard/option-chain/nearest?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(symbol)}&expiry=${encodeURIComponent(expiry)}&target=${encodeURIComponent(tgtVal)}&metric=${encodeURIComponent(metric)}`, { credentials: 'include' });
+                    if (!nearestRes.ok) return;
+                    const row = await nearestRes.json();
+
+                    if (row.trading_symbol) qs(`adv_sym_${id}`).value = row.trading_symbol;
+                    if (row.ltp) qs(`adv_price_${id}`).value = row.ltp;
+                    if (row.lot_size) qs(`adv_qty_${id}`).value = row.lot_size;
+
+                }catch(e){ console.debug('Nearest lookup failed', e); }
+            }
+
+            // Build payload and submit advanced order
+            async function submitAdvancedOrder(){
+                const legs = state.advLegs.map(id => {
+                    const execRaw = qs(`adv_exec_${id}`).value;
+                    const execution_type = normalizeExecution(execRaw);
+                    return {
+                        exchange: qs(`adv_ex_${id}`).value,
+                        symbol: qs(`adv_sym_${id}`).value,
+                        side: qs(`adv_side_${id}`).value,
+                        execution_type,
+                        qty: Number(qs(`adv_qty_${id}`).value) || 1,
+                        target_type: qs(`adv_tgt_type_${id}`).value,
+                        target_value: Number(qs(`adv_tgt_val_${id}`).value) || null,
+                        product: qs(`adv_prod_${id}`).value,
+                        order_type: qs(`adv_ord_${id}`).value,
+                        price: qs(`adv_ord_${id}`).value === 'LIMIT' ? Number(qs(`adv_price_${id}`).value) : null
+                    };
+                });
+
+                try{
+                    const res = await fetch('/dashboard/intent/advanced', { method: 'POST', credentials: 'include', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ legs, reason: 'WEB_ADVANCED' }) });
+                    const data = await res.json(); qs('advancedResult').className='result ok'; qs('advancedResult').innerText = `✔ Submitted (${data.intent_id})`;
+                    state.advLegs = []; state.nextLegId = 1; renderAdvancedLegs();
+                }catch(e){ qs('advancedResult').className='result bad'; qs('advancedResult').innerText='✖ Failed'; }
+            }
+
+            // -----------------------
+            // Initialization
+            // -----------------------
+            function bindUI(){
+                // expose some functions referenced inline
+                window.go = go; window.logout = logout; window.addToBasket = addToBasket; window.submitGeneric = submitGeneric; window.submitBasket = submitBasket; window.addAdvancedLeg = addAdvancedLeg; window.submitAdvancedOrder = submitAdvancedOrder;
+
+                // symbol input
+                const mainSym = qs('g_symbol'); if (mainSym) mainSym.addEventListener('input', onSymbolType);
+
+                // set defaults
+                try{ qs('g_exchange').value = 'NFO'; qs('g_symbol').value = 'NIFTY'; } catch(e){}
+
+                renderBasket();
+            }
+
+            // Start
+            window.addEventListener('DOMContentLoaded', () => { bindUI(); });
+
+        })();
+        </script>
+        </body>
+        </html>
                         <option value="TEST_ENTRY_SUCCESS">TEST ENTRY (S)</option><option value="TEST_ENTRY_FAILURE">TEST ENTRY (F)</option>
                         <option value="TEST_EXIT_SUCCESS">TEST EXIT (S)</option><option value="TEST_EXIT_FAILURE">TEST EXIT (F)</option>
                     </select>

@@ -33,6 +33,7 @@ from shoonya_platform.api.dashboard.services.intent_utility import DashboardInte
 from shoonya_platform.api.dashboard.services.supervisor_service import SupervisorService
 from shoonya_platform.api.dashboard.services.option_chain_service import (
     get_active_expiries,
+    find_nearest_option,
 )
 from shoonya_platform.api.dashboard.api.schemas import (
     StrategyIntentRequest,
@@ -559,6 +560,31 @@ def get_option_chain(
         "meta": meta,
         "rows": [dict(r) for r in rows],
     }
+
+
+@router.get("/option-chain/nearest")
+def get_nearest_option(
+    exchange: str = Query(..., description="NFO / BFO / MCX"),
+    symbol: str = Query(..., description="NIFTY / BANKNIFTY / SENSEX"),
+    expiry: str = Query(..., description="24-FEB-2026"),
+    target: float = Query(..., description="Target value to match (price or greek)"),
+    metric: str = Query("ltp", description="Column to match: ltp, iv, delta, etc."),
+    option_type: Optional[str] = Query(None, description="CE / PE or None"),
+    max_age: float = Query(5.0, description="Max allowed snapshot age in seconds"),
+):
+    db_file = DATA_DIR / f"{exchange}_{symbol}_{expiry}.sqlite"
+
+    if not db_file.exists():
+        raise HTTPException(status_code=404, detail="Option chain DB not found")
+
+    try:
+        row = find_nearest_option(str(db_file), target=target, metric=metric, option_type=option_type, max_age=max_age)
+        return row
+    except RuntimeError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("Nearest option lookup failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==================================================
 # 🔍 DIAGNOSTICS — ORDER PIPELINE TRACKING

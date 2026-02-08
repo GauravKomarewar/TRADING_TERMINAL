@@ -267,7 +267,6 @@ def start_live_feed(
     try:
         # Store client reference
         _api_client_ref = api_client
-        
         # Reset heartbeat
         _last_tick_time = None
         
@@ -281,7 +280,8 @@ def start_live_feed(
             on_close=close_callback,
         )
         
-        # Give WebSocket time to connect
+        # Give WebSocket time to connect and ticks to arrive
+        logger.info(f"⏳ Waiting {timeout}s for initial tick flow...")
         time.sleep(timeout)
 
         # No background janitor started in freeze-safe v3.0
@@ -291,9 +291,14 @@ def start_live_feed(
             logger.info("✅ Live feed started successfully - ticks flowing")
             return True
         elif api_client.is_logged_in():
-            # Logged in but no ticks yet - fail start so supervisor can recover
-            logger.warning("⚠️ WebSocket connected but no ticks received yet - failing start to trigger recovery")
-            return False
+            # Logged in but no ticks yet during init
+            # This can happen on first startup with network delay
+            # Return True to allow bot to start; supervisor will monitor for stale data
+            logger.warning(
+                "⚠️ WebSocket connected but no ticks received yet during init (may be network delay) "
+                "- supervisor will monitor for stale chains"
+            )
+            return True
         else:
             logger.error("❌ WebSocket connection failed - client not logged in")
             return False

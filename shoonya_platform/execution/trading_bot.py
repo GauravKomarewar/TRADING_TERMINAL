@@ -254,10 +254,23 @@ class ShoonyaBot:
         # -------------------------------------------------
         try:
             self.login()
-            if not start_live_feed(self.api_proxy):
-                logger.critical("❌ Failed to start live feed")
-                raise RuntimeError("Live feed startup failed")
-                time.sleep(10)
+            
+            # 🔥 FIX: Retry feed startup (EC2 may have network delay)
+            max_feed_attempts = 3
+            for attempt in range(1, max_feed_attempts + 1):
+                timeout = 15.0 + (attempt - 1) * 5.0  # 15s, 20s, 25s
+                logger.info(f"🔄 Feed startup attempt {attempt}/{max_feed_attempts} (timeout={timeout}s)")
+                
+                if start_live_feed(self.api_proxy, timeout=timeout):
+                    logger.info("✅ Live feed initialized successfully")
+                    break
+                
+                if attempt < max_feed_attempts:
+                    logger.warning(f"⚠️ Feed attempt {attempt} failed, retrying...")
+                    time.sleep(2)
+                else:
+                    logger.critical("❌ Failed to start live feed after 3 attempts")
+                    raise RuntimeError("Live feed startup failed")
         except Exception:
             logger.critical("❌ Initial broker login failed — aborting startup")
             raise

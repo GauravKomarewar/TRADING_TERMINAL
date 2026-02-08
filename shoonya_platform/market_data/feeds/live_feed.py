@@ -291,9 +291,9 @@ def start_live_feed(
             logger.info("✅ Live feed started successfully - ticks flowing")
             return True
         elif api_client.is_logged_in():
-            # Logged in but no ticks yet - may need subscriptions first
-            logger.warning("⚠️ WebSocket connected but no ticks received yet")
-            return True
+            # Logged in but no ticks yet - fail start so supervisor can recover
+            logger.warning("⚠️ WebSocket connected but no ticks received yet - failing start to trigger recovery")
+            return False
         else:
             logger.error("❌ WebSocket connection failed - client not logged in")
             return False

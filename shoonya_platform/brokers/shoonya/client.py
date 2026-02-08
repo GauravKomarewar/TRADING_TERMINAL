@@ -475,15 +475,22 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_limits()
 
-            # Accept ANY dict as valid session signal
-            if isinstance(resp, dict):
+            # 🔧 STRONGER VALIDATION: require broker response to be a valid dict
+            valid = self._normalize_dict_response(
+                resp,
+                "ensure_session",
+                allow_missing_stat=False,
+                critical=False,
+            )
+
+            if isinstance(valid, dict):
                 self._last_session_validation = datetime.now()
                 self._last_api_call = time.time()  # 🔧 FIXED: Update activity timestamp
                 logger.debug("✅ Session validated with broker")
                 return True
 
-            # Invalid response - session expired
-            logger.warning("❌ Session expired (invalid broker response: %s)", type(resp).__name__)
+            # Invalid response - session expired or not-ok
+            logger.warning("❌ Session expired or invalid broker response: %s", resp)
             self._logged_in = False
             
             if self._enable_auto_recovery:
@@ -1170,11 +1177,27 @@ class ShoonyaClient(NorenApi):
                 allow_missing_stat=True,
                 critical=False  # Will raise RuntimeError on invalid response
             )
-            
+
+            # If broker returned invalid data, attempt one recovery+retry when enabled
             if not limits:
+                logger.warning("🚨 get_limits returned invalid data, attempting recovery if enabled")
+                if self._enable_auto_recovery:
+                    logger.info("🔄 Attempting session recovery before failing get_limits")
+                    try:
+                        if self.login():
+                            with self._api_lock:
+                                resp2 = super().get_limits()
+                            self._last_api_call = time.time()
+                            limits = self._normalize_dict_response(resp2, "get_limits", allow_missing_stat=True, critical=False)
+                            if limits:
+                                logger.info("✅ get_limits succeeded after recovery")
+                                return limits
+                    except Exception as e:
+                        logger.warning("Session recovery attempt failed: %s", e)
+
                 logger.critical("🚨 get_limits returned invalid data")
                 raise RuntimeError("BROKER_LIMITS_INVALID")
-            
+
             return limits
             
         except RuntimeError:

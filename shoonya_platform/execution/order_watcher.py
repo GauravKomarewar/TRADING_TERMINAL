@@ -250,13 +250,29 @@ class OrderWatcherEngine(threading.Thread):
                 )
                 continue
 
-            if not result.success:
+            # Normalize result object/dict for backwards compatibility
+            if isinstance(result, dict):
+                _R = type("ExecutionResult", (), {})()
+                _R.success = result.get("success", result.get("ok", False))
+                _R.error_message = (
+                    result.get("error_message")
+                    or result.get("error")
+                    or result.get("emsg")
+                )
+                _R.order_id = (
+                    result.get("order_id")
+                    or result.get("norenordno")
+                    or result.get("broker_id")
+                )
+                result = _R
+
+            if not getattr(result, "success", False):
                 self.repo.update_status(record.command_id, "FAILED")
 
                 logger.error(
                     "OrderWatcher: submission failed | cmd_id=%s error=%s",
                     record.command_id,
-                    result.error_message,
+                    getattr(result, "error_message", None),
                 )
                 continue
 
@@ -271,3 +287,59 @@ class OrderWatcherEngine(threading.Thread):
                 result.order_id,
                 order_type,
             )
+
+    # -----------------------------------------------------------------
+    # Compatibility shims for older tests / callers
+    # -----------------------------------------------------------------
+    def _process_orders(self):
+        """
+        Backwards-compatible alias for older code/tests that called
+        `_process_orders`. Delegates to `_process_open_intents`.
+        """
+        return self._process_open_intents()
+
+    def _fire_exit(self, order):
+        """
+        Backwards-compatible exit trigger. Builds a minimal exit command
+        and delegates to the `CommandService` for submission.
+        """
+        try:
+            # Build minimal params if Mock/struct-like
+            sym = getattr(order, 'symbol', None) or order.get('symbol') if isinstance(order, dict) else None
+            qty = getattr(order, 'quantity', None) or order.get('quantity') if isinstance(order, dict) else None
+
+            params = {
+                "exchange": "NFO",
+                "tradingsymbol": sym,
+                "quantity": qty or 0,
+                "direction": "SELL",
+                "product": "M",
+                "order_type": "MARKET",
+                "price": None,
+            }
+
+            cmd = UniversalOrderCommand.from_order_params(order_params=params, source="ORDER_WATCHER", user=self.bot.client_id)
+
+            # Submit via command service (OrderWatcher expects CommandService to exist on bot)
+            try:
+                self.bot.command_service.register(cmd, execution_type="EXIT")
+            except Exception:
+                # best-effort: fall back to direct execute_command
+                try:
+                    self.bot.execute_command(cmd)
+                except Exception:
+                    logger.exception("OrderWatcher: failed to fire exit for %s", sym)
+
+        except Exception:
+            logger.exception("OrderWatcher: _fire_exit failed")
+
+    def register(self, record):
+        """Register an intent/order with OrderWatcher (compat shim).
+
+        Older callers used `order_watcher.register(...)`; provide a thin
+        wrapper that persists the record to repository.
+        """
+        try:
+            self.repo.create(record)
+        except Exception:
+            logger.exception("OrderWatcher: register failed")

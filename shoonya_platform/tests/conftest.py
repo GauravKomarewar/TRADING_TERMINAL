@@ -68,6 +68,20 @@ class FakeBot:
         return getattr(self, "pending_commands", [])
 
     # -------------------------------
+    # Compatibility: exit helpers used in tests
+    # -------------------------------
+    def request_exit(self, scope="ALL", symbols=None, product_type="ALL", reason=None, source=None):
+        # Record last requested exit for test assertions
+        self._last_requested_exit = {
+            "scope": scope,
+            "symbols": symbols,
+            "product_type": product_type,
+            "reason": reason,
+            "source": source,
+        }
+        return True
+
+    # -------------------------------
     # Test helper
     # -------------------------------
     def create_test_command(

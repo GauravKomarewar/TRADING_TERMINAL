@@ -150,16 +150,16 @@ class TestRaceConditions:
     def test_simultaneous_entry_webhook_and_dashboard(self):
         """Test webhook and dashboard entry for same symbol (should block)"""
         _bot = Mock(spec=ShoonyaBot)
-        bot.execution_guard = Mock()
+        _bot.execution_guard = Mock()
         
         # Both try to enter NIFTY50
-        bot.execution_guard.validate_and_prepare.side_effect = [
+        _bot.execution_guard.validate_and_prepare.side_effect = [
             [Mock(symbol="NIFTY50")],  # First succeeds
             RuntimeError("Duplicate detected")  # Second blocked
         ]
         
         # First call succeeds
-        result1 = bot.execution_guard.validate_and_prepare(
+        result1 = _bot.execution_guard.validate_and_prepare(
             intents=[],
             execution_type="ENTRY"
         )
@@ -167,7 +167,7 @@ class TestRaceConditions:
         
         # Second call blocked
         with pytest.raises(RuntimeError):
-            bot.execution_guard.validate_and_prepare(
+            _bot.execution_guard.validate_and_prepare(
                 intents=[],
                 execution_type="ENTRY"
             )

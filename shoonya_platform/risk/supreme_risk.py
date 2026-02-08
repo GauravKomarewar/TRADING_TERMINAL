@@ -25,9 +25,10 @@ from datetime import date, datetime, timedelta
 from collections import deque, OrderedDict
 from typing import Dict, Optional, List, Tuple
 
+from shoonya_platform.logging.logger_config import get_component_logger
 from shoonya_platform.utils.utils import log_exception
 
-logger = logging.getLogger(__name__)
+logger = get_component_logger('risk_manager')
 
 
 class SupremeRiskManager:

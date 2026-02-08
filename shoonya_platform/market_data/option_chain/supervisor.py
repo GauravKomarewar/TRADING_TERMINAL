@@ -564,11 +564,12 @@ class OptionChainSupervisor:
                 # --------------------------------------------------
                 if now - last_session_check > SESSION_CHECK_INTERVAL:
                     try:
-                        if not self.api_client.is_logged_in():
-                            logger.warning("🔐 Session expired — re-login")
-                            self.api_client.login()
+                        # Validate session via centralized API proxy; avoid calling
+                        # login() directly from supervisors. `ensure_session()` will
+                        # raise on unrecoverable failures and is safe to call.
+                        self.api_client.ensure_session()
                     except Exception as e:
-                        logger.exception("Session check failed: %s", e)
+                        logger.exception("Session validation failed: %s", e)
                     last_session_check = now
 
                 # --------------------------------------------------

@@ -27,7 +27,7 @@ from __future__ import annotations
 import io
 import zipfile
 import json
-import logging
+from shoonya_platform.logging.logger_config import get_component_logger
 import requests
 import re
 from pathlib import Path
@@ -36,7 +36,7 @@ from typing import Dict, Any, Optional
 
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+logger = get_component_logger('execution_service')
 
 # =============================================================================
 # VERSION (FREEZE CONTRACT)
@@ -535,5 +535,6 @@ def requires_limit_order(
 # =============================================================================
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from shoonya_platform.logging.logger_config import setup_application_logging
+    setup_application_logging()
     refresh_scriptmaster(force=True)

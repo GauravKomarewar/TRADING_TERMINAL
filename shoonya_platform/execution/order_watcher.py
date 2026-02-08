@@ -19,11 +19,12 @@ import logging
 import threading
 from typing import Dict
 
+from shoonya_platform.logging.logger_config import get_component_logger
 from shoonya_platform.persistence.repository import OrderRepository
 from shoonya_platform.execution.intent import UniversalOrderCommand
 from scripts.scriptmaster import requires_limit_order
 
-logger = logging.getLogger(__name__)
+logger = get_component_logger('order_watcher')
 
 
 class OrderWatcherEngine(threading.Thread):

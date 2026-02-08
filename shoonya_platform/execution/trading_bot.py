@@ -62,6 +62,9 @@ from scripts.scriptmaster import requires_limit_order
 from shoonya_platform.core.config import Config
 from shoonya_platform.brokers.shoonya.client import ShoonyaClient
 
+# ---------------- LOGGING ----------------
+from shoonya_platform.logging.logger_config import get_component_logger
+
 # ---------------- NOTIFICATIONS ----------------
 from notifications.telegram import TelegramNotifier
 
@@ -114,7 +117,93 @@ from shoonya_platform.strategies.delta_neutral.dnss import (
     DeltaNeutralShortStrangleStrategy,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_component_logger('trading_bot')
+
+
+class ShoonyaApiProxy:
+    """Thin, thread-safe proxy around ShoonyaClient.
+
+    - Serializes all API calls with a single lock to avoid concurrent hits
+    - Enforces session validation for Tier-1 operations
+    - Delegates unknown attributes to the underlying client
+    """
+
+    TIER1_METHODS = {
+        'get_positions',
+        'get_limits',
+        'get_order_book',
+        'get_orderbook',
+        'place_order',
+        'modify_order',
+        'cancel_order',
+        'get_account_info',
+        'ensure_session',
+    }
+
+    def __init__(self, client: ShoonyaClient):
+        self._client = client
+        self._lock = threading.RLock()
+        self._logger = get_component_logger('trading_bot')
+
+    def _call(self, name: str, *args, **kwargs):
+        with self._lock:
+            # Enforce session for Tier-1 operations
+            try:
+                if name in self.TIER1_METHODS:
+                    # ensure_session raises on unrecoverable error (fail-hard)
+                    self._client.ensure_session()
+            except Exception as e:
+                self._logger.error("Session validation failed before %s: %s", name, e)
+                raise
+
+            func = getattr(self._client, name)
+            try:
+                return func(*args, **kwargs)
+            except Exception:
+                # Log full context and re-raise to preserve fail-hard semantics
+                self._logger.exception("API call failed: %s", name)
+                raise
+
+    # Explicit wrappers for commonly used methods (improves clarity)
+    def login(self, *args, **kwargs):
+        return self._call('login', *args, **kwargs)
+
+    def is_logged_in(self):
+        # lightweight check - call without forcing revalidation
+        return getattr(self._client, '_logged_in', False)
+
+    def start_websocket(self, *args, **kwargs):
+        return self._call('start_websocket', *args, **kwargs)
+
+    def get_positions(self, *args, **kwargs):
+        return self._call('get_positions', *args, **kwargs)
+
+    def get_order_book(self, *args, **kwargs):
+        # accept either name
+        if hasattr(self._client, 'get_order_book'):
+            return self._call('get_order_book', *args, **kwargs)
+        return self._call('get_orderbook', *args, **kwargs)
+
+    def get_limits(self, *args, **kwargs):
+        return self._call('get_limits', *args, **kwargs)
+
+    def get_holdings(self, *args, **kwargs):
+        # Tier-2: still serialized but informational
+        return self._call('get_holdings', *args, **kwargs)
+
+    def place_order(self, *args, **kwargs):
+        return self._call('place_order', *args, **kwargs)
+
+    # Fallback: delegate any other attribute access to underlying client
+    def __getattr__(self, item):
+        # For attribute access, return a callable that performs the locked call
+        if hasattr(self._client, item) and callable(getattr(self._client, item)):
+            def _wrapped(*args, **kwargs):
+                return self._call(item, *args, **kwargs)
+            return _wrapped
+        # Non-callable attributes are returned directly
+        return getattr(self._client, item)
+
 
 # ---- module scope (TOP LEVEL) ----
 _GLOBAL_BOT = None
@@ -152,6 +241,8 @@ class ShoonyaBot:
         # -------------------------------------------------
         # 🔒 Login is enforced lazily via _ensure_login()
         self.api = ShoonyaClient(self.config)
+        # Public proxy that serializes and centralizes all API calls
+        self.api_proxy = ShoonyaApiProxy(self.api)
         # -------------------------------------------------
         # 📢 TELEGRAM FLAGS (MUST EXIST BEFORE LOGIN)
         # -------------------------------------------------
@@ -163,7 +254,7 @@ class ShoonyaBot:
         # -------------------------------------------------
         try:
             self.login()
-            if not start_live_feed(self.api):
+            if not start_live_feed(self.api_proxy):
                 logger.critical("❌ Failed to start live feed")
                 raise RuntimeError("Live feed startup failed")
                 time.sleep(10)
@@ -172,8 +263,8 @@ class ShoonyaBot:
             raise
         
         #--------------------------------------------------
-        self.broker_view = BrokerView(self.api)
-        self.option_supervisor = OptionChainSupervisor(self.api)
+        self.broker_view = BrokerView(self.api_proxy)
+        self.option_supervisor = OptionChainSupervisor(self.api_proxy)
         self.option_supervisor.bootstrap_defaults()
 
         def _start_option_supervisor():

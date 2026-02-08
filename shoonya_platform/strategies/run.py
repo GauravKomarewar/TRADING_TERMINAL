@@ -18,7 +18,7 @@ STRATEGY ENTRYPOINT — FINAL (FROZEN)
 
 import sys
 import time
-import logging
+from shoonya_platform.logging.logger_config import get_component_logger
 import importlib
 from datetime import datetime, date
 
@@ -28,7 +28,7 @@ from shoonya_platform.core.config import Config
 from shoonya_platform.execution.engine import Engine
 from shoonya_platform.execution.market import LiveMarket
 from shoonya_platform.execution.broker import Broker
-from shoonya_platform.brokers.shoonya.client import ShoonyaClient
+# Broker client is provided by the ShoonyaBot (bot.api_proxy)
 from shoonya_platform.market_data.instruments.instruments import get_fno_details
 from shoonya_platform.market_data.option_chain.option_chain import live_option_chain, get_nearest_greek_option
 from scripts.scriptmaster import refresh_scriptmaster,options_expiry
@@ -37,19 +37,15 @@ from shoonya_platform.execution.trading_bot import ShoonyaBot
 bot = ShoonyaBot()
 
 # ------------------------------------------------------------------
-# LOGGING
+# LOGGING (use centralized per-component logger)
 # ------------------------------------------------------------------
-logger = logging.getLogger("STRATEGY_RUNNER")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
+logger = get_component_logger('execution_service')
 
 
 # ------------------------------------------------------------------
 # MAIN
 # ------------------------------------------------------------------
-def main(config_path: str):
+def main(config_path: str, api_client=None):
     # -------------------------------------------------
     # LOAD CONFIG
     # -------------------------------------------------
@@ -63,11 +59,9 @@ def main(config_path: str):
     ENGINE_CFG = cfg.ENGINE
 
     # -------------------------------------------------
-    # BOOTSTRAP (ONCE)
+    # BOOTSTRAP (ONCE) - use injected api_client or bot.api_proxy
     # -------------------------------------------------
-    sys_cfg = Config()
-    api = ShoonyaClient(sys_cfg)
-    api.login()
+    api = api_client or bot.api_proxy
 
     # -------------------------------------------------
     # SCRIPTMASTER (AUTHORITATIVE)

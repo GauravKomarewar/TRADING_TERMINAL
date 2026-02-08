@@ -15,6 +15,7 @@
 import logging
 from datetime import datetime
 
+from shoonya_platform.logging.logger_config import get_component_logger
 from shoonya_platform.persistence.models import OrderRecord
 
 from shoonya_platform.execution.intent import UniversalOrderCommand
@@ -29,7 +30,7 @@ from shoonya_platform.execution.trailing import (
 from shoonya_platform.execution.position_exit_service import PositionExitService
 
 
-logger = logging.getLogger(__name__)
+logger = get_component_logger('command_service')
 
 
 class CommandService:

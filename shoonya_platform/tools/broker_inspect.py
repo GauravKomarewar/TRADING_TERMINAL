@@ -3,15 +3,10 @@ from shoonya_platform.utils.utils import safe_api_call
 
 import pandas as pd
 from tabulate import tabulate
-import logging
+from shoonya_platform.logging.logger_config import get_component_logger
 from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-)
-
-logger = logging.getLogger(__name__)
+logger = get_component_logger('execution_service')
 
 
 # Function to fetch and display limits

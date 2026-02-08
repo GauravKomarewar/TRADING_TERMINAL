@@ -1,0 +1,55 @@
+[Unit]
+Description=Shoonya Signal Processor - Webhook Execution Service
+Documentation=file:///opt/shoonya/README.txt
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shoonya
+Group=shoonya
+WorkingDirectory=/opt/shoonya
+
+# Environment variables
+Environment="PATH=/opt/shoonya/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="LOG_LEVEL=INFO"
+
+# Service startup
+ExecStart=/opt/shoonya/venv/bin/python /opt/shoonya/main.py
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=3
+
+# Resource limits
+MemoryLimit=2G
+CPUQuota=80%
+
+# Process isolation
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# Security hardening
+SecureRandom=yes
+OOMScoreAdjust=-100  # Prevent OOM killer
+LimitNOFILE=65536
+LimitNPROC=8192
+
+# Logging to systemd journal (in addition to file logs)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shoonya-signal-processor
+
+[Install]
+WantedBy=multi-user.target

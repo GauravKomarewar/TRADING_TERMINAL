@@ -58,7 +58,8 @@ from shoonya_platform.core.config import Config
 from shoonya_platform.execution.trading_bot import ShoonyaBot, set_global_bot
 from shoonya_platform.api.http.execution_app import ExecutionApp
 from shoonya_platform.api.dashboard.dashboard_app import create_dashboard_app
-from shoonya_platform.utils.utils import setup_logging, log_exception
+from shoonya_platform.logging.logger_config import setup_application_logging, get_component_logger
+from shoonya_platform.utils.utils import log_exception
 
 # ---------------------------------------------------------------------
 # GLOBALS (FOR SIGNAL HANDLING & THREAD COORDINATION)
@@ -179,14 +180,23 @@ def main():
 
     try:
         # -------------------------------------------------
-        # LOGGING SETUP
+        # LOGGING SETUP (CENTRALIZED WITH LOG ROTATION)
         # -------------------------------------------------
+        # Setup application-wide logging with per-component rotating handlers
+        # Each service gets its own log file with 50MB rotation and 10 backups
         base_dir = Path(__file__).resolve().parent
         logs_dir = base_dir / "logs"
-        logs_dir.mkdir(exist_ok=True)
-
-        log_file = logs_dir / "execution_service.log"
-        logger = setup_logging(str(log_file), "INFO")
+        
+        setup_application_logging(
+            log_dir=str(logs_dir),
+            level="INFO",
+            max_bytes=50 * 1024 * 1024,  # 50 MB per file
+            backup_count=10,  # Keep 10 backups
+            quiet_uvicorn=True
+        )
+        
+        # Get the execution service logger
+        logger = get_component_logger('execution_service')
 
         logger.info("=" * 70)
         logger.info("🚀 STARTING EXECUTION SERVICE (PRODUCTION — FREEZE-READY)")
@@ -194,6 +204,14 @@ def main():
         logger.info(f"PID: {os.getpid()}")
         logger.info(f"Python: {sys.version}")
         logger.info(f"CWD: {os.getcwd()}")
+        logger.info("📋 Log files (rotating, 50MB max, 10 backups):")
+        logger.info("   - execution_service.log (main service)")
+        logger.info("   - trading_bot.log (bot logic)")
+        logger.info("   - command_service.log (command execution)")
+        logger.info("   - order_watcher.log (order tracking)")
+        logger.info("   - risk_manager.log (risk management)")
+        logger.info("   - execution_guard.log (trade guard)")
+        logger.info("   - dashboard.log (dashboard API)")
 
         # -------------------------------------------------
         # CONFIG LOADING

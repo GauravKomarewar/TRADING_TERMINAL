@@ -19,7 +19,9 @@ from typing import Dict, List
 from threading import Lock
 import logging
 
-logger = logging.getLogger(__name__)
+from shoonya_platform.logging.logger_config import get_component_logger
+
+logger = get_component_logger('execution_guard')
 
 # ---------------------------------------------------------
 # DATA MODELS

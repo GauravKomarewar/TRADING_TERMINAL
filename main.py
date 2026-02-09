@@ -76,42 +76,54 @@ shutdown_event = threading.Event()
 # ---------------------------------------------------------------------
 def signal_handler(signum, frame):
     global bot_instance, logger, dashboard_server, shutdown_event
+    
+    shutdown_start = time.time()
 
     if logger:
         logger.warning(f"🛑 Received shutdown signal: {signum}")
-        logger.info("Initiating graceful shutdown sequence...")
+        logger.info("Initiating graceful shutdown sequence (30s timeout)...")
 
-    # 1️⃣ Global shutdown flag
+    # 1️⃣ Global shutdown flag (stops all loops immediately)
     shutdown_event.set()
 
-    # 2️⃣ Shutdown bot FIRST (owns feed, supervisor, watcher)
+    # 2️⃣ Shutdown bot FIRST (owns feed, supervisor, watcher) — 25s timeout
     if bot_instance:
         try:
             if logger:
-                logger.info("Shutting down trading bot...")
+                logger.info("🤖 Shutting down trading bot...")
             bot_instance.shutdown()
         except Exception as e:
             if logger:
-                logger.error(f"Error shutting down bot: {e}")
+                logger.error(f"❌ Error shutting down bot: {e}")
 
-    # 3️⃣ Stop dashboard server
+    # 3️⃣ Stop dashboard server (non-blocking)
     if dashboard_server:
         try:
             if logger:
-                logger.info("Stopping dashboard server...")
+                logger.info("📊 Stopping dashboard server...")
             dashboard_server.should_exit = True
         except Exception as e:
             if logger:
-                logger.error(f"Error stopping dashboard: {e}")
+                logger.error(f"❌ Error stopping dashboard: {e}")
 
-    # 4️⃣ Wait for dashboard thread
+    # 4️⃣ Wait for dashboard thread (5s timeout)
+    elapsed = time.time() - shutdown_start
+    remaining = max(5, 30 - elapsed)  # At least 5s for dashboard
+    
     if dashboard_thread and dashboard_thread.is_alive():
         if logger:
-            logger.info("Waiting for dashboard thread to terminate...")
-        dashboard_thread.join(timeout=5.0)
+            logger.info(f"⏳ Waiting for dashboard thread (timeout={remaining:.1f}s)...")
+        dashboard_thread.join(timeout=remaining)
+        if dashboard_thread.is_alive():
+            if logger:
+                logger.warning("⚠️ Dashboard thread did not exit gracefully - force exiting")
 
+    elapsed = time.time() - shutdown_start
     if logger:
-        logger.info("✅ Shutdown complete")
+        logger.info(f"✅ Graceful shutdown complete in {elapsed:.1f}s")
+    
+    # Force exit (systemd will restart if configured)
+    sys.exit(0)
 
 # ---------------------------------------------------------------------
 # DASHBOARD RUNNER (THREAD-SAFE UVICORN WITH AUTO-RESTART)

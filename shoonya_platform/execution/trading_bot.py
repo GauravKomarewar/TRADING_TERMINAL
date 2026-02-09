@@ -1763,42 +1763,90 @@ class ShoonyaBot:
 
     
     def shutdown(self):
-        """Shutdown bot gracefully"""
+        """Shutdown bot gracefully with 30-second timeout"""
+        shutdown_start = time.time()
+        shutdown_timeout = 30.0  # 30 second total timeout
+        
         try:
-            logger.info("Shutting down bot...")
+            logger.info("🛑 Shutting down bot...")
 
-            # 🛑 STOP ORDER WATCHER FIRST
-            self.order_watcher.stop()
-
+            # 0️⃣ Set global shutdown event FIRST (stops all loops)
             self._shutdown_event.set()
 
-            # Send shutdown notification
-            if self.telegram_enabled:
-                shutdown_msg = (
-                    f"🛑 <b>BOT SHUTDOWN</b>\n"
-                    f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"👤 Graceful shutdown initiated\n"
-                    f"📊 Session stats:\n"
-                    f"• Total trades: {len(self.trade_records)}\n"
-                    f"• Bot uptime: Until shutdown"
-                )
-                self.send_telegram(shutdown_msg)
+            # 1️⃣ STOP ORDER WATCHER (BLOCKING - must complete)
+            try:
+                elapsed = time.time() - shutdown_start
+                remaining = shutdown_timeout - elapsed
+                if remaining > 5:
+                    logger.info(f"⏳ Stopping OrderWatcher (timeout={remaining:.1f}s)")
+                    self.order_watcher.stop()
+                else:
+                    logger.warning("⚠️ OrderWatcher shutdown timeout - skipping")
+            except Exception as e:
+                logger.error(f"❌ OrderWatcher shutdown error: {e}")
 
+            # 2️⃣ NOTIFY SUPERVISOR & RUNNER (NO WAIT)
             if hasattr(self, "option_supervisor"):
-                self.option_supervisor._stop_event.set()
+                try:
+                    self.option_supervisor._stop_event.set()
+                    logger.info("Option supervisor stop signal sent")
+                except Exception as e:
+                    logger.error(f"Option supervisor signal error: {e}")
 
-            # 🛑 STOP STRATEGY RUNNER (CLOCK ONLY)
+            # 3️⃣ STOP STRATEGY RUNNER (WITH TIMEOUT)
             if hasattr(self, "strategy_runner"):
                 try:
-                    self.strategy_runner.stop()
-                    logger.info("🛑 StrategyRunner stopped")
-                except Exception:
-                    logger.exception("Failed to stop StrategyRunner")
-  
-            # Logout from API
-            self.api.logout()
+                    elapsed = time.time() - shutdown_start
+                    remaining = shutdown_timeout - elapsed
+                    if remaining > 5:
+                        logger.info(f"⏳ Stopping StrategyRunner (timeout={remaining:.1f}s)")
+                        self.strategy_runner.stop(timeout=int(remaining))
+                    else:
+                        logger.warning("⚠️ StrategyRunner shutdown timeout - skipping")
+                except Exception as e:
+                    logger.error(f"❌ StrategyRunner shutdown error: {e}")
+
+            # 4️⃣ TELEGRAM SHUTDOWN (NON-BLOCKING - fire and forget with short timeout)
+            if self.telegram_enabled:
+                try:
+                    # Send async to avoid blocking shutdown
+                    def send_shutdown_msg():
+                        try:
+                            shutdown_msg = (
+                                f"🛑 <b>BOT SHUTDOWN</b>\n"
+                                f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                f"🤖 Graceful shutdown complete\n"
+                                f"📊 Session stats:\n"
+                                f"• Total trades: {len(self.trade_records)}\n"
+                                f"• Uptime: Until shutdown"
+                            )
+                            self.telegram.send_message(shutdown_msg, timeout=3.0)  # 3 sec timeout
+                        except Exception as tg_e:
+                            logger.debug(f"Telegram send timeout (expected): {tg_e}")
+                    
+                    # Fire off in separate thread - don't wait
+                    import threading
+                    tg_thread = threading.Thread(target=send_shutdown_msg, daemon=True)
+                    tg_thread.start()
+                    # Don't join - let it run in background
+                except Exception as e:
+                    logger.debug(f"Telegram notification skipped: {e}")
+
+            # 5️⃣ LOGOUT FROM API (WITH TIMEOUT)
+            try:
+                elapsed = time.time() - shutdown_start
+                remaining = shutdown_timeout - elapsed
+                if remaining > 2:
+                    logger.info(f"⏳ Logging out from broker (timeout={remaining:.1f}s)")
+                    self.api.logout()
+                else:
+                    logger.warning("⚠️ API logout timeout - skipping")
+            except Exception as e:
+                logger.debug(f"API logout error (expected): {e}")
             
-            logger.info("Bot shutdown completed")
+            elapsed = time.time() - shutdown_start
+            logger.info(f"✅ Bot shutdown completed in {elapsed:.1f}s")
             
         except Exception as e:
-            log_exception("shutdown", e)
+            elapsed = time.time() - shutdown_start
+            logger.error(f"❌ Shutdown error after {elapsed:.1f}s: {e}")

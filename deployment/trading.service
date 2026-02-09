@@ -43,11 +43,8 @@ CPUQuota=80%
 # ========================================
 PrivateTmp=yes
 NoNewPrivileges=yes
-ProtectSystem=strict
-ReadWritePaths=/opt/shoonya/logs
-ReadWritePaths=/opt/shoonya/shoonya_platform/persistence/data
-ReadWritePaths=/opt/shoonya/shoonya_platform/market_data/option_chain/data
-ProtectHome=yes
+ProtectSystem=no
+ProtectHome=no
 ProtectKernelTunables=yes
 
 # ========================================

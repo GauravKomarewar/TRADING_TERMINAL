@@ -170,12 +170,76 @@ def main() -> None:
     run([str(pip), "install", str(WHEEL_PATH)])
 
     # -------------------------------------------------------------------------
+    # SETUP CLEANUP UTILITY (CROSS-PLATFORM)
+    # -------------------------------------------------------------------------
+    print("\n🧹 Setting up cleanup utility...")
+    cleanup_script = PROJECT_ROOT / "shoonya_platform" / "tools" / "cleanup_shoonya_platform.py"
+    
+    if is_windows():
+        # Create batch wrapper for Windows
+        batch_wrapper = PROJECT_ROOT / "shoonya-clean.bat"
+        batch_content = f'''@echo off
+REM Shoonya Platform Cleanup Utility (Windows)
+"{python}" "{cleanup_script}" %*
+'''
+        with open(batch_wrapper, 'w') as f:
+            f.write(batch_content)
+        print(f"✅ Created Windows batch wrapper: {batch_wrapper.name}")
+        print("   👉 Usage: .\\shoonya-clean.bat")
+        print("   👉 Or add project root to PATH for 'shoonya-clean' command")
+    else:
+        # Linux/EC2: Make executable and create symlink
+        try:
+            # Make script executable
+            os.chmod(cleanup_script, 0o755)
+            print(f"✅ Made cleanup script executable")
+            
+            # Try to create symlink (requires sudo, may fail)
+            symlink_path = "/usr/local/bin/shoonya-clean"
+            try:
+                # Check if symlink already exists
+                if Path(symlink_path).exists() or Path(symlink_path).is_symlink():
+                    print(f"ℹ️  Symlink already exists: {symlink_path}")
+                else:
+                    # Attempt to create symlink
+                    subprocess.run(
+                        ["sudo", "ln", "-sf", str(cleanup_script), symlink_path],
+                        check=True,
+                        capture_output=True
+                    )
+                    print(f"✅ Created global command: shoonya-clean")
+                    print("   👉 Usage: shoonya-clean (from anywhere)")
+            except (subprocess.CalledProcessError, PermissionError):
+                print("⚠️  Could not create global symlink (sudo required)")
+                print("   👉 Run manually to enable global command:")
+                print(f"      sudo ln -sf {cleanup_script} /usr/local/bin/shoonya-clean")
+                print(f"   👉 Or run directly: python {cleanup_script}")
+        except Exception as e:
+            print(f"⚠️  Cleanup utility setup skipped: {e}")
+            print(f"   👉 Run directly: python {cleanup_script}")
+
+    # -------------------------------------------------------------------------
     # FINAL MESSAGE
     # -------------------------------------------------------------------------
     print("\n✅ SETUP COMPLETE")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("👉 Activate environment with:")
     print(f"   {activate_hint}")
+    
+    if is_windows():
+        print("\n🧹 Cleanup utility available:")
+        print("   .\\shoonya-clean.bat")
+        print("\n   Optional: Install as PowerShell command:")
+        print("   .\\setup_powershell_commands.ps1 -Install")
+    else:
+        print("\n🧹 Cleanup utility:")
+        if Path("/usr/local/bin/shoonya-clean").exists():
+            print("   ✅ Global command: shoonya-clean")
+        else:
+            print("   👉 Enable global command: sudo ln -sf")
+            print(f"      {cleanup_script}")
+            print("      /usr/local/bin/shoonya-clean")
+    
     print("\n🧊 This environment is now production-ready.")
 
 # =============================================================================

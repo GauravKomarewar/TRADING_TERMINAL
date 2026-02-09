@@ -3,15 +3,27 @@
 Shoonya Platform – Clean Runtime Utility (Cross-Platform)
 =========================================================
 
-LINUX/EC2 INSTALLATION:
+AUTOMATIC SETUP (RECOMMENDED):
+    Run bootstrap.py - it automatically configures this utility
+
+MANUAL SETUP:
+
+LINUX/EC2:
     chmod +x ~/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py
-    sudo ln -sf ~/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py \
+    sudo ln -sf ~/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py \\
         /usr/local/bin/shoonya-clean
     
-    Usage: shoonya-clean
+    Usage: shoonya-clean (from anywhere)
 
-WINDOWS USAGE:
-    python shoonya_platform/tools/cleanup_shoonya_platform.py
+WINDOWS (Option 1 - Batch File):
+    shoonya-clean.bat (created by bootstrap.py in project root)
+    
+    Usage: .\\shoonya-clean.bat
+
+WINDOWS (Option 2 - PowerShell Command):
+    .\\setup_powershell_commands.ps1 -Install
+    
+    Usage: shoonya-clean (from anywhere in PowerShell)
 
 This is a SAFE, OPERATOR-FRIENDLY runtime cleanup tool.
 

@@ -8,20 +8,20 @@ Wants=network-online.target
 Type=simple
 User=ec2-user
 Group=ec2-user
-WorkingDirectory=/home/ec2-user/shoonya_platform
+WorkingDirectory=/opt/shoonya
 
 # ========================================
 # ENVIRONMENT VARIABLES
 # ========================================
-Environment="PATH=/home/ec2-user/shoonya_platform/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PATH=/opt/shoonya/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="LOG_LEVEL=INFO"
-Environment="PYTHONPATH=/home/ec2-user/shoonya_platform"
+Environment="PYTHONPATH=/opt/shoonya"
 
 # ========================================
 # SERVICE ENTRYPOINT
 # ========================================
-ExecStart=/home/ec2-user/shoonya_platform/venv/bin/python /home/ec2-user/shoonya_platform/main.py
+ExecStart=/opt/shoonya/venv/bin/python /opt/shoonya/main.py
 
 # ========================================
 # RESTART POLICY
@@ -44,9 +44,9 @@ CPUQuota=80%
 PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/home/ec2-user/shoonya_platform/logs
-ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data
-ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/market_data/option_chain/data
+ReadWritePaths=/opt/shoonya/logs
+ReadWritePaths=/opt/shoonya/shoonya_platform/persistence/data
+ReadWritePaths=/opt/shoonya/shoonya_platform/market_data/option_chain/data
 ProtectHome=yes
 ProtectKernelTunables=yes
 

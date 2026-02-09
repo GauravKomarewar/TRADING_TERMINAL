@@ -9,10 +9,10 @@
 echo "🕐 Installing Shoonya Platform Systemd Schedulers..."
 
 # Copy service and timer files
-sudo  cp systemd/shoonya_start.timer /etc/systemd/system/
-sudo cp systemd/shoonya_stop.timer /etc/systemd/system/
-sudo cp systemd/shoonya_start.service /etc/systemd/system/
-sudo cp systemd/shoonya_stop.service /etc/systemd/system/
+sudo cp deployment/systemd/shoonya_start.timer /etc/systemd/system/
+sudo cp deployment/systemd/shoonya_stop.timer /etc/systemd/system/
+sudo cp deployment/systemd/shoonya_start.service /etc/systemd/system/
+sudo cp deployment/systemd/shoonya_stop.service /etc/systemd/system/
 
 # Update systemd registry
 echo "📋 Reloading systemd daemon..."

@@ -30,6 +30,7 @@ Responsibilities:
 import json
 import logging
 import sqlite3
+from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 from typing import Optional

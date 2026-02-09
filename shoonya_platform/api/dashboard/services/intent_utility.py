@@ -43,8 +43,15 @@ from shoonya_platform.api.dashboard.api.schemas import (
 
 logger = logging.getLogger("DASHBOARD.INTENT")
 
-# 🔒 SINGLE SOURCE OF TRUTH
-DB_PATH = "/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data/orders.db"
+# 🔒 SINGLE SOURCE OF TRUTH - Cross-platform path
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DB_PATH = str(
+    _PROJECT_ROOT
+    / "shoonya_platform"
+    / "persistence"
+    / "data"
+    / "orders.db"
+)
 
 
 class DashboardIntentService:

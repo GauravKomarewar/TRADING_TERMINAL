@@ -48,9 +48,14 @@ from shoonya_platform.api.dashboard.api.schemas import (
     StrategyEntryRequest,
 )
 
-# 🔒 Single canonical storage location
-DATA_DIR = Path(
-    "/home/ec2-user/shoonya_platform/shoonya_platform/market_data/option_chain/data"
+# 🔒 Single canonical storage location (cross-platform)
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DATA_DIR = (
+    _PROJECT_ROOT
+    / "shoonya_platform"
+    / "market_data"
+    / "option_chain"
+    / "data"
 )
 
 logger = logging.getLogger("DASHBOARD.INTENT.API")

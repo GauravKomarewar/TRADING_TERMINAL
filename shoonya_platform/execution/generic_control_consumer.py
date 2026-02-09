@@ -41,11 +41,20 @@ import json
 import time
 import logging
 import sqlite3
+from pathlib import Path
 from typing import Optional, Tuple
 
 logger = logging.getLogger("EXECUTION.CONTROL")
 
-DB_PATH = "/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data/orders.db"
+# Cross-platform database path
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DB_PATH = str(
+    _PROJECT_ROOT
+    / "shoonya_platform"
+    / "persistence"
+    / "data"
+    / "orders.db"
+)
 POLL_INTERVAL_SEC = 1.0
 
 

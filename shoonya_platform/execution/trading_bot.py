@@ -1358,10 +1358,16 @@ class ShoonyaBot:
         # 3️⃣ Create run_id
         run_id = f"{strategy_name}_{int(time.time())}"
 
-        # 4️⃣ Start DB audit
-        writer = StrategyRunWriter(
-            db_path="/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data/strategy_runs.db"
+        # 4️⃣ Start DB audit (cross-platform path)
+        _project_root = Path(__file__).resolve().parents[2]
+        strategy_runs_db = str(
+            _project_root
+            / "shoonya_platform"
+            / "persistence"
+            / "data"
+            / "strategy_runs.db"
         )
+        writer = StrategyRunWriter(db_path=strategy_runs_db)
 
         writer.start_run(
             run_id=run_id,

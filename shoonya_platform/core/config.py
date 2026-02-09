@@ -36,6 +36,7 @@ Python version: 3.9 compatible
 """
 from datetime import timedelta
 import os
+import tempfile
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
@@ -127,9 +128,14 @@ class Config:
             os.getenv("RISK_STATUS_UPDATE_MIN", "30")
         )
         # === Risk State ===
+        # Use cross-platform temp directory (Windows/Linux compatible)
+        default_risk_state = os.path.join(
+            tempfile.gettempdir(), 
+            "supreme_risk_state.json"
+        )
         self.risk_state_file: str = os.getenv(
             "RISK_STATE_FILE",
-            "/tmp/supreme_risk_state.json",
+            default_risk_state,
         )
         # === Risk PnL Retention (days) ===
         self.risk_pnl_retention = {
@@ -292,7 +298,20 @@ class Config:
         if not self.risk_state_file:
             raise ConfigValidationError("RISK_STATE_FILE cannot be empty")
 
-        state_dir = os.path.dirname(self.risk_state_file) or "/"
+        state_dir = os.path.dirname(self.risk_state_file)
+        if not state_dir:
+            # No directory specified, use current directory
+            state_dir = "."
+        
+        # Create directory if it doesn't exist (cross-platform)
+        try:
+            os.makedirs(state_dir, exist_ok=True)
+        except Exception as e:
+            raise ConfigValidationError(
+                f"Cannot create RISK_STATE_FILE directory: {state_dir} - {e}"
+            )
+        
+        # Verify directory is writable
         if not os.access(state_dir, os.W_OK):
             raise ConfigValidationError(
                 f"RISK_STATE_FILE directory not writable: {state_dir}"

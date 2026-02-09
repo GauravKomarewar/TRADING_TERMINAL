@@ -8,20 +8,20 @@ Wants=network-online.target
 Type=simple
 User=ec2-user
 Group=ec2-user
-WorkingDirectory=/opt/shoonya
+WorkingDirectory=/home/ec2-user/shoonya_platform
 
 # ========================================
 # ENVIRONMENT VARIABLES
 # ========================================
-Environment="PATH=/opt/shoonya/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PATH=/home/ec2-user/shoonya_platform/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="LOG_LEVEL=INFO"
-Environment="PYTHONPATH=/opt/shoonya"
+Environment="PYTHONPATH=/home/ec2-user/shoonya_platform"
 
 # ========================================
 # SERVICE ENTRYPOINT
 # ========================================
-ExecStart=/opt/shoonya/venv/bin/python /opt/shoonya/main.py
+ExecStart=/home/ec2-user/shoonya_platform/venv/bin/python /home/ec2-user/shoonya_platform/main.py
 
 # ========================================
 # RESTART POLICY

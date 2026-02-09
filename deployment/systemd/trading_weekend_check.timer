@@ -1,0 +1,13 @@
+[Unit]
+Description=Trading Weekend Market Detection Timer (Sat-Sun 9:00 AM)
+Documentation=Checks for market activity on weekends and starts service if detected
+
+[Timer]
+# Run at 9:00 AM on Saturday and Sunday
+OnCalendar=Sat,Sun *-*-* 09:00:00
+# Allow manual trigger
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Trading Platform Auto-Stop Timer (Daily 12:00 AM)
+Documentation=Stop trading service after market hours
+
+[Timer]
+# Stop at 12:00 AM (midnight) daily
+OnCalendar=*-*-* 00:00:00
+# Allow manual trigger
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

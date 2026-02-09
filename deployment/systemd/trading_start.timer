@@ -1,0 +1,14 @@
+[Unit]
+Description=Trading Platform Auto-Start Timer (Mon-Fri 8:45 AM)
+Documentation=Start trading service before market hours
+
+[Timer]
+# Start at 8:45 AM Monday through Friday
+OnCalendar=Mon-Fri *-*-* 08:45:00
+# Allow manual start
+Persistent=true
+# Start immediately if system was down during scheduled time
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Trading Platform Stop Service
+Documentation=Stops trading platform with proper cleanup
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/home/ec2-user/shoonya_platform
+ExecStart=/usr/bin/systemctl stop trading.service
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Trading Platform Start Service
+Documentation=Starts trading platform
+After=network.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/home/ec2-user/shoonya_platform
+ExecStart=/usr/bin/systemctl start trading.service
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

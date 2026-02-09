@@ -10,6 +10,7 @@ import time
 import logging
 import subprocess
 from datetime import datetime
+from typing import Optional
 from pathlib import Path
 
 # Add project root to path
@@ -32,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger('weekend_check')
 
 
-def send_telegram_alert(telegram: TelegramNotifier, message: str):
+def send_telegram_alert(telegram: Optional[TelegramNotifier], message: str):
     """Send telegram notification"""
     try:
         if telegram:
@@ -188,7 +189,7 @@ def main():
     
     # Initialize config and clients
     try:
-        config = Config.load_from_env()
+        config = Config()
         
         # Initialize telegram
         telegram = None
@@ -200,14 +201,7 @@ def main():
             telegram.test_connection()
         
         # Create broker client
-        api = ShoonyaClient(
-            user_id=config.user_id,
-            password=config.password,
-            totp_key=config.totp_key,
-            vendor_code=config.vendor_code,
-            api_secret=config.api_secret,
-            imei=config.imei,
-        )
+        api = ShoonyaClient(config)
         
         # Attempt login
         logger.info("🔐 Attempting broker login...")

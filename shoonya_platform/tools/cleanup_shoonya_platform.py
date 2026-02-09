@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Shoonya Dashboard – Clean Runtime Utility
-=========================================
-run in terminal
-chmod +x /home/ec2-user/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py
+Shoonya Platform – Clean Runtime Utility (Cross-Platform)
+=========================================================
 
-sudo ln -sf \
-/home/ec2-user/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py \
-/usr/local/bin/shoonya-clean
+LINUX/EC2 INSTALLATION:
+    chmod +x ~/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py
+    sudo ln -sf ~/shoonya_platform/shoonya_platform/tools/cleanup_shoonya_platform.py \
+        /usr/local/bin/shoonya-clean
+    
+    Usage: shoonya-clean
 
-now use anywhere just by entering "shoonya-clean" in terminal done.
+WINDOWS USAGE:
+    python shoonya_platform/tools/cleanup_shoonya_platform.py
 
 This is a SAFE, OPERATOR-FRIENDLY runtime cleanup tool.
 
@@ -48,18 +50,16 @@ from pathlib import Path
 
 
 # ---------------------------------------------------------------------
-# PROJECT CONFIGURATION
+# PROJECT CONFIGURATION (CROSS-PLATFORM)
 # ---------------------------------------------------------------------
 
-# Absolute project root (DO NOT CHANGE unless project is relocated)
-PROJECT_ROOT = Path("/home/ec2-user/shoonya_platform")
+# Auto-detect project root from script location
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Systemd services used by Shoonya platform
-# Index position is IMPORTANT (used for operator selection)
+# Systemd service (Linux/EC2 only)
+# Windows users: use run_windows_service.py instead
 SERVICES = [
-    "option_data",
-    "shoonya-dashboard",
-    "signal_processor",
+    "shoonya_platform",  # Single unified service (runs main.py)
 ]
 
 
@@ -153,8 +153,16 @@ def ask_services_by_index() -> list[str]:
 def reload_and_restart_services(services: list[str]):
     """
     Reload systemd and restart selected services.
-    Uses sudo but does NOT raise if a service fails.
+    Linux/EC2 only - uses sudo.
+    Windows users: restart service manually via Services app or run_windows_service.py
     """
+    import platform
+    
+    if platform.system() == "Windows":
+        print("⚠️  Service restart not available on Windows")
+        print("👉 Manually restart the service or use run_windows_service.py")
+        return
+    
     print("\n🔄 Reloading systemd...")
     subprocess.run(["sudo", "systemctl", "daemon-reexec"], check=False)
     subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False)

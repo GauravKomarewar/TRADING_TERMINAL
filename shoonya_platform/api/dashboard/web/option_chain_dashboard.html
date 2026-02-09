@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <title>Option Chain – Shoonya OMS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
         :root {
             --bg: #0a0e13;
@@ -650,20 +653,8 @@
         }
     </style>
 </head>
-<body>
-<header>
-    <div class="nav-left">
-        <div class="brand" onclick="window.location.href='/dashboard/web/dashboard.html'">⚡ Shoonya OMS</div>
-        <a class="nav-link" href="/dashboard/web/dashboard.html">Dashboard</a>
-        <a class="nav-link" href="/dashboard/web/home.html">Home</a>
-        <a class="nav-link active" href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
-        <a class="nav-link" href="/dashboard/web/place_order.html">Place Order</a>
-        <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
-        <a class="nav-link" href="/dashboard/web/diagnostics.html">Diagnostics</a>
-        <a class="nav-link" href="/dashboard/web/strategy_dnss.html">DNSS Strategy</a>
-    </div>
-    <div style="margin-left: auto;"><button onclick="logout()" style="background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;">Logout</button></div>
-</header>
+<body data-page="option-chain">
+<div id="app-header"></div>
 
 <main>
     <div id="errorMsg" class="error-msg"></div>
@@ -773,9 +764,7 @@
                     <!-- Headers will be generated here -->
                 </thead>
                 <tbody id="tableBody">
-                    <tr>
-                        <td colspan="100" class="loading">Loading option chain data...</td>
-                    </tr>
+                    <!-- Table rows will be generated here -->
                 </tbody>
             </table>
         </div>
@@ -783,42 +772,44 @@
     
     <!-- Order Entry Popup -->
     <div id="orderPopup" class="order-popup">
-        <div class="order-popup-header">
-            <span id="orderPopupTitle">Place Order</span>
-            <span class="order-popup-close" onclick="closeOrderPopup()">&times;</span>
-        </div>
-        <div class="order-form-group">
-            <label class="order-form-label">Side</label>
-            <div class="order-form-row">
-                <button id="orderSideBuy" class="order-form-input" style="background:var(--success)" onclick="setOrderSide('BUY')">BUY</button>
-                <button id="orderSideSell" class="order-form-input" style="background:var(--danger)" onclick="setOrderSide('SELL')">SELL</button>
+        <div class="order-popup-content">
+            <div class="order-popup-header">
+                <span id="orderPopupTitle">Place Order</span>
+                <span class="order-popup-close" onclick="closeOrderPopup()">&times;</span>
             </div>
-        </div>
-        <div class="order-form-group">
-            <label class="order-form-label">Quantity (Lots)</label>
-            <input type="number" id="orderQty" class="order-form-input" value="1" min="1">
-        </div>
-        <div class="order-form-group">
-            <label class="order-form-label">Product Type</label>
-            <div class="order-form-row">
-                <button id="orderProductMIS" class="order-form-input" onclick="setOrderProduct('MIS')">MIS</button>
-                <button id="orderProductNRML" class="order-form-input" onclick="setOrderProduct('NRML')">NRML</button>
+            <div class="order-form-group">
+                <label class="order-form-label">Side</label>
+                <div class="order-form-row">
+                    <button id="orderSideBuy" class="order-form-input" style="background:var(--success)" onclick="setOrderSide('BUY')">BUY</button>
+                    <button id="orderSideSell" class="order-form-input" style="background:var(--danger)" onclick="setOrderSide('SELL')">SELL</button>
+                </div>
             </div>
-        </div>
-        <div class="order-form-group">
-            <label class="order-form-label">Price Type</label>
-            <div class="order-form-row">
-                <button id="orderPriceTypeMKT" class="order-form-input" onclick="setOrderPriceType('MARKET')">MARKET</button>
-                <button id="orderPriceTypeLMT" class="order-form-input" onclick="setOrderPriceType('LIMIT')">LIMIT</button>
+            <div class="order-form-group">
+                <label class="order-form-label">Quantity (Lots)</label>
+                <input type="number" id="orderQty" class="order-form-input" value="1" min="1">
             </div>
-        </div>
-        <div class="order-form-group" id="orderPriceGroup">
-            <label class="order-form-label">Price</label>
-            <input type="number" id="orderPrice" class="order-form-input" step="0.05">
-        </div>
-        <div class="order-form-actions">
-            <button onclick="closeOrderPopup()" style="background:var(--muted)">Cancel</button>
-            <button onclick="confirmOrderEntry()" style="background:var(--success)">Add to Basket</button>
+            <div class="order-form-group">
+                <label class="order-form-label">Product Type</label>
+                <div class="order-form-row">
+                    <button id="orderProductMIS" class="order-form-input" onclick="setOrderProduct('MIS')">MIS</button>
+                    <button id="orderProductNRML" class="order-form-input" onclick="setOrderProduct('NRML')">NRML</button>
+                </div>
+            </div>
+            <div class="order-form-group">
+                <label class="order-form-label">Price Type</label>
+                <div class="order-form-row">
+                    <button id="orderPriceTypeMKT" class="order-form-input" onclick="setOrderPriceType('MARKET')">MARKET</button>
+                    <button id="orderPriceTypeLMT" class="order-form-input" onclick="setOrderPriceType('LIMIT')">LIMIT</button>
+                </div>
+            </div>
+            <div class="order-form-group" id="orderPriceGroup">
+                <label class="order-form-label">Price</label>
+                <input type="number" id="orderPrice" class="order-form-input" step="0.05">
+            </div>
+            <div class="order-form-actions">
+                <button onclick="closeOrderPopup()" style="background:var(--muted)">Cancel</button>
+                <button onclick="confirmOrderEntry()" style="background:var(--success)">Add to Basket</button>
+            </div>
         </div>
     </div>
     
@@ -911,8 +902,10 @@
         optionType: null,
         ltp: null,
         tradingSymbol: null,
-        side: 'BUY',
+        lotSize: 1,
+        qtyLots: 1,
         qty: 1,
+        side: 'BUY',
         product: 'MIS',
         priceType: 'LIMIT',
         price: null
@@ -1101,6 +1094,7 @@
             strikeMap[strike][`${prefix}_oi`] = parseFloat(row.oi) || 0;
             strikeMap[strike][`${prefix}_iv`] = parseFloat(row.iv) || 0;
             strikeMap[strike][`${prefix}_trading_symbol`] = row.trading_symbol;
+            strikeMap[strike][`${prefix}_lot_size`] = parseInt(row.lot_size, 10) || 1;
             strikeMap[strike][`${prefix}_delta`] = parseFloat(row.delta) || 0;
             strikeMap[strike][`${prefix}_gamma`] = parseFloat(row.gamma) || 0;
             strikeMap[strike][`${prefix}_theta`] = parseFloat(row.theta) || 0;
@@ -1404,7 +1398,7 @@
             // Call LTP
             const ceChangeClass = getChangeClass(data.ce_change_pct);
             bodyHTML += `<td class="ltp-cell call-${callItm ? 'itm' : 'otm'} ce-ltp-cell ${ceChangeClass}" 
-                           onclick="openOrderEntry(${strike}, 'CE', ${data.ce_ltp || 0}, '${data.ce_trading_symbol || ''}', event)">
+                           onclick="openOrderEntry(${strike}, 'CE', ${data.ce_ltp || 0}, '${data.ce_trading_symbol || ''}', ${data.ce_lot_size || 1}, event)">
                            ${formatNumber(data.ce_ltp, 2)}
                        </td>`;
             
@@ -1414,7 +1408,7 @@
             // Put LTP
             const peChangeClass = getChangeClass(data.pe_change_pct);
             bodyHTML += `<td class="ltp-cell put-${putItm ? 'itm' : 'otm'} pe-ltp-cell ${peChangeClass}" 
-                           onclick="openOrderEntry(${strike}, 'PE', ${data.pe_ltp || 0}, '${data.pe_trading_symbol || ''}', event)">
+                           onclick="openOrderEntry(${strike}, 'PE', ${data.pe_ltp || 0}, '${data.pe_trading_symbol || ''}', ${data.pe_lot_size || 1}, event)">
                            ${formatNumber(data.pe_ltp, 2)}
                        </td>`;
             
@@ -1481,7 +1475,7 @@
     }
     
     // Order Entry Functions
-    function openOrderEntry(strike, optionType, ltp, tradingSymbol, event) {
+    function openOrderEntry(strike, optionType, ltp, tradingSymbol, lotSize, event) {
         event.stopPropagation();
         
         currentOrderEntry = {
@@ -1489,8 +1483,10 @@
             optionType,
             ltp,
             tradingSymbol,
+            lotSize: parseInt(lotSize, 10) || 1,
+            qtyLots: 1,
+            qty: parseInt(lotSize, 10) || 1,
             side: 'BUY',
-            qty: 1,
             product: 'MIS',
             priceType: 'LIMIT',
             price: ltp
@@ -1508,6 +1504,9 @@
         const rect = event.target.getBoundingClientRect();
         popup.style.left = `${rect.left}px`;
         popup.style.top = `${rect.bottom + 5}px`;
+            // Show popup
+            popup.classList.add('show');
+        
         
         setTimeout(() => {
             const popupRect = popup.getBoundingClientRect();
@@ -1518,8 +1517,6 @@
                 popup.style.top = `${rect.top - popupRect.height - 5}px`;
             }
         }, 10);
-        
-        popup.classList.add('show');
     }
     
     function closeOrderPopup() {
@@ -1546,10 +1543,10 @@
     }
     
     function confirmOrderEntry() {
-        const qty = parseInt(elements.orderQty.value);
+        const qtyLots = parseInt(elements.orderQty.value, 10);
         const price = parseFloat(elements.orderPrice.value);
         
-        if (!qty || qty < 1) {
+        if (!qtyLots || qtyLots < 1) {
             showError('Invalid quantity');
             return;
         }
@@ -1559,7 +1556,10 @@
             return;
         }
         
-        currentOrderEntry.qty = qty;
+        const lotSize = currentOrderEntry.lotSize || 1;
+        const actualQty = qtyLots * lotSize;
+        currentOrderEntry.qtyLots = qtyLots;
+        currentOrderEntry.qty = actualQty;
         currentOrderEntry.price = currentOrderEntry.priceType === 'LIMIT' ? price : null;
         
         addToBasket(
@@ -1569,6 +1569,8 @@
             currentOrderEntry.tradingSymbol,
             currentOrderEntry.side,
             currentOrderEntry.qty,
+            currentOrderEntry.qtyLots,
+            currentOrderEntry.lotSize,
             currentOrderEntry.product,
             currentOrderEntry.priceType,
             currentOrderEntry.price
@@ -1578,7 +1580,7 @@
     }
     
     // Basket Functions
-    function addToBasket(strike, optionType, ltp, tradingSymbol, side, qty, product, orderType, price) {
+    function addToBasket(strike, optionType, ltp, tradingSymbol, side, qty, qtyLots, lotSize, product, orderType, price) {
         const exists = basket.find(item => item.strike === strike && item.optionType === optionType);
         
         if (exists) {
@@ -1593,6 +1595,8 @@
             tradingSymbol,
             side,
             qty,
+            qtyLots,
+            lotSize,
             product,
             orderType,
             price
@@ -1668,7 +1672,7 @@
                     </button>
                 </div>
                 <div style="font-size: 11px; color: var(--muted)">
-                    ${item.side} | ${item.qty} Lots | ${item.product} | ${item.orderType} ${item.orderType === 'LIMIT' ? '@ ₹' + item.price : ''}
+                    ${item.side} | ${item.qtyLots} Lots (Qty ${item.qty}) | ${item.product} | ${item.orderType} ${item.orderType === 'LIMIT' ? '@ ₹' + item.price : ''}
                 </div>
             </div>
         `).join('');

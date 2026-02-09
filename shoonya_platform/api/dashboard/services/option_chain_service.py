@@ -8,7 +8,8 @@ from typing import Dict, Any, Optional
 from shoonya_platform.market_data.option_chain.db_access import OptionChainDBReader
 
 OPTION_CHAIN_DATA_DIR = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[4]
+    / "shoonya_platform"
     / "market_data/option_chain/data"
 )
 

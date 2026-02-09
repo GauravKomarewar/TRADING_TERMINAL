@@ -47,14 +47,18 @@ if not ENV_FILE.exists():
     )
 
 # Load env vars ONLY if not already set
-with ENV_FILE.open() as f:
+with ENV_FILE.open(encoding='utf-8') as f:
     for line in f:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         if "=" in line:
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
+            # Strip comments from value (everything after #)
+            v = v.strip()
+            if '#' in v:
+                v = v.split('#')[0].strip()
+            os.environ.setdefault(k.strip(), v)
 
 # Fail fast on required secret
 if "DASHBOARD_PASSWORD" not in os.environ:

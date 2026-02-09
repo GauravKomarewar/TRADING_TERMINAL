@@ -45,7 +45,7 @@ from shoonya_platform.api.dashboard.api.schemas import (
 logger = logging.getLogger("DASHBOARD.INTENT")
 
 # 🔒 SINGLE SOURCE OF TRUTH - Cross-platform path
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DB_PATH = str(
     _PROJECT_ROOT
     / "shoonya_platform"

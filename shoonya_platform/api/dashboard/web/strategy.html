@@ -4,21 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Strategy Management | Shoonya Platform</title>
-    <link rel="stylesheet" href="/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/layout.js" defer></script>
 </head>
-<body>
-    <header>
-        <div class="brand" onclick="window.location.href='/web/dashboard.html'">◬ Shoonya</div>
-        <button class="mobile-menu-toggle" onclick="toggleMobileNav()">☰</button>
-        <nav class="nav-links" id="navLinks">
-            <a href="/web/dashboard.html" class="nav-link">Dashboard</a>
-            <a href="/web/option_chain_dashboard.html" class="nav-link">Option Chain</a>
-            <a href="/web/orderbook.html" class="nav-link">Orders</a>
-            <a href="/web/place_order.html" class="nav-link">Place Order</a>
-            <a href="/web/strategy.html" class="nav-link active">Strategy</a>
-            <a href="/web/diagnostics.html" class="nav-link">Diagnostics</a>
-        </nav>
-    </header>
+<body data-page="strategy">
+    <div id="app-header"></div>
 
     <main>
         <div class="page-header">
@@ -596,15 +587,44 @@
             container.innerHTML = html;
         }
 
-        // Strategy Control Functions
+        // Strategy Control Functions (Dashboard Intent API)
+        const DASHBOARD_API = '/dashboard';
+
+        function getStrategyName() {
+            const type = document.getElementById('strategyType').value || 'strategy';
+            const underlying = (document.getElementById('underlying').value || 'NIFTY').trim();
+            return `${underlying}_${type}`.toUpperCase();
+        }
+
+        async function sendStrategyIntent(action, reason) {
+            const payload = {
+                strategy_name: getStrategyName(),
+                action,
+                reason: reason || 'DASHBOARD_UI',
+            };
+
+            const response = await fetch(`${DASHBOARD_API}/intent/strategy`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${response.status}`);
+            }
+
+            return response.json();
+        }
+
         async function startStrategy() {
-            if (!confirm('Start the trading strategy?')) return;
+            if (!confirm('Start the trading strategy intent?')) return;
             
             try {
-                const response = await fetch('/api/strategy/start', { method: 'POST' });
-                const data = await response.json();
-                showResult(data.status === 'success', data.message);
-                if (data.status === 'success') refreshMonitor();
+                const data = await sendStrategyIntent('ENTRY', 'DASHBOARD_STRATEGY_START');
+                showResult(!!data.accepted, data.message || 'Strategy entry intent queued');
+                refreshMonitor();
             } catch (error) {
                 showResult(false, 'Failed to start strategy: ' + error.message);
             }
@@ -612,9 +632,8 @@
 
         async function pauseStrategy() {
             try {
-                const response = await fetch('/api/strategy/pause', { method: 'POST' });
-                const data = await response.json();
-                showResult(data.status === 'success', data.message);
+                const data = await sendStrategyIntent('ADJUST', 'DASHBOARD_STRATEGY_ADJUST');
+                showResult(!!data.accepted, data.message || 'Strategy adjust intent queued');
                 refreshMonitor();
             } catch (error) {
                 showResult(false, 'Failed to pause strategy: ' + error.message);
@@ -625,9 +644,8 @@
             if (!confirm('Stop strategy and square off all positions?')) return;
             
             try {
-                const response = await fetch('/api/strategy/stop', { method: 'POST' });
-                const data = await response.json();
-                showResult(data.status === 'success', data.message);
+                const data = await sendStrategyIntent('FORCE_EXIT', 'DASHBOARD_STRATEGY_STOP');
+                showResult(!!data.accepted, data.message || 'Strategy exit intent queued');
                 refreshMonitor();
             } catch (error) {
                 showResult(false, 'Failed to stop strategy: ' + error.message);
@@ -706,29 +724,33 @@
         }
 
         async function saveConfig(section, config) {
-            try {
-                const response = await fetch('/api/strategy/config/' + section, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config)
-                });
-                
-                const data = await response.json();
-                showResult(data.status === 'success', data.message || section.toUpperCase() + ' configuration saved');
-            } catch (error) {
-                showResult(false, 'Failed to save configuration: ' + error.message);
-            }
+            showResult(false, `${section.toUpperCase()} config API is not available in this build.`);
         }
 
         // Monitor Functions
         async function refreshMonitor() {
             try {
-                const response = await fetch('/api/strategy/status');
+                const response = await fetch(`${DASHBOARD_API}/home/status`, { credentials: 'include' });
                 const data = await response.json();
-                
-                if (data.status === 'success') {
-                    updateMonitorUI(data);
-                }
+
+                const positions = (data.broker && data.broker.positions) ? data.broker.positions : [];
+                const positionsSummary = (data.broker && data.broker.positions_summary) ? data.broker.positions_summary : {};
+                const openOrders = (data.system && data.system.open_orders) ? data.system.open_orders : 0;
+
+                updateMonitorUI({
+                    strategy_status: (data.system && data.system.signal && data.system.signal.status) || 'UNKNOWN',
+                    active_positions: positions.length,
+                    today_pnl: positionsSummary.net_pnl || positionsSummary.total_pnl || 0,
+                    open_orders: openOrders,
+                    positions: [],
+                    total_delta: 0,
+                    total_theta: 0,
+                    total_vega: 0,
+                    combined_pnl: 0,
+                    total_premium: 0,
+                    margin_used: 0,
+                    event_log: []
+                });
             } catch (error) {
                 console.error('Failed to refresh monitor:', error);
             }
@@ -775,21 +797,7 @@
         }
 
         async function exitPosition(symbol) {
-            if (!confirm(`Exit position for ${symbol}?`)) return;
-            
-            try {
-                const response = await fetch('/api/strategy/exit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbol })
-                });
-                
-                const data = await response.json();
-                showResult(data.status === 'success', data.message);
-                refreshMonitor();
-            } catch (error) {
-                showResult(false, 'Failed to exit position: ' + error.message);
-            }
+            showResult(false, `Exit by symbol is not supported here. Use Orders page instead.`);
         }
 
         function showResult(success, message) {

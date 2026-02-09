@@ -44,6 +44,22 @@ class OrderWatcherEngine(threading.Thread):
         self.poll_interval = poll_interval
         self._running = True
         self.repo = OrderRepository(bot.client_id)
+        self._last_failure_log = {}
+        self._failure_log_ttl_sec = 60.0
+
+    def _should_log_failure(self, broker_id: str, status: str) -> bool:
+        now = time.time()
+        key = (broker_id, status)
+        last = self._last_failure_log.get(key)
+        if last and now - last < self._failure_log_ttl_sec:
+            return False
+        self._last_failure_log[key] = now
+        if len(self._last_failure_log) > 1000:
+            cutoff = now - self._failure_log_ttl_sec
+            self._last_failure_log = {
+                k: ts for k, ts in self._last_failure_log.items() if ts >= cutoff
+            }
+        return True
 
     # --------------------------------------------------
     # Thread lifecycle
@@ -78,7 +94,7 @@ class OrderWatcherEngine(threading.Thread):
             if not record:
                 continue
             # 🔒 Skip already reconciled orders (idempotency)
-            if record.status == "EXECUTED":
+            if record.status in ("EXECUTED", "FAILED"):
                 continue
             # -------------------------------
             # Broker FAILURE
@@ -99,12 +115,13 @@ class OrderWatcherEngine(threading.Thread):
                         record.symbol,
                     )
 
-                logger.error(
-                    "OrderWatcher: broker failure | cmd_id=%s broker_id=%s status=%s",
-                    record.command_id,
-                    broker_id,
-                    status,
-                )
+                if self._should_log_failure(broker_id, status):
+                    logger.error(
+                        "OrderWatcher: broker failure | cmd_id=%s broker_id=%s status=%s",
+                        record.command_id,
+                        broker_id,
+                        status,
+                    )
                 continue
 
             # -------------------------------

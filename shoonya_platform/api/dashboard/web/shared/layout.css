@@ -1,0 +1,77 @@
+/* Shared dashboard layout (navigation + shell) */
+
+body.dashboard-shell {
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+}
+
+.app-header {
+    height: var(--header-height);
+    background: var(--panel);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--spacing-lg);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    gap: var(--spacing-md);
+}
+
+.app-brand {
+    font-weight: 700;
+    font-size: var(--font-md);
+    color: var(--primary);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.app-nav {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.app-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.app-mobile-toggle {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--font-md);
+}
+
+@media (max-width: 860px) {
+    .app-mobile-toggle {
+        display: inline-flex;
+    }
+
+    .app-nav {
+        display: none;
+        width: 100%;
+        padding: var(--spacing-sm) 0;
+    }
+
+    .app-nav.open {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* Page-specific overrides */
+.page-option-chain main {
+    margin-top: 0;
+}

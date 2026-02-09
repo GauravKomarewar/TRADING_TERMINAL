@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <title>Dashboard – Shoonya Platform</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
         /* Stats Grid */
         .stats-grid {
@@ -322,25 +324,8 @@
         }
     </style>
 </head>
-<body>
-<header>
-    <div class="brand" onclick="window.location.href='/web/dashboard.html'">◬ Shoonya</div>
-    <button class="mobile-menu-toggle" onclick="toggleMobileNav()">☰</button>
-    <nav class="nav-links" id="navLinks">
-        <a href="/web/dashboard.html" class="nav-link active">Dashboard</a>
-        <a href="/web/option_chain_dashboard.html" class="nav-link">Option Chain</a>
-        <a href="/web/orderbook.html" class="nav-link">Orders</a>
-        <a href="/web/place_order.html" class="nav-link">Place Order</a>
-        <a href="/web/strategy.html" class="nav-link">Strategy</a>
-        <a href="/web/diagnostics.html" class="nav-link">Diagnostics</a>
-    </nav>
-    <div style="display: flex; gap: 12px; align-items: center; margin-left: auto;">
-        <div class="auto-refresh-status">
-            <span class="refresh-dot"></span>
-            <span>Live Updates</span>
-        </div>
-    </div>
-</header>
+<body data-page="dashboard">
+<div id="app-header"></div>
 
 <main>
     <div id="errorBanner" class="error-banner"></div>
@@ -720,7 +705,6 @@
     }
     
     // Auto-refresh control
-    let autoRefreshTimer = null;
     function startAutoRefresh() {
         if (autoRefreshTimer) return;
         autoRefreshTimer = setInterval(() => updateDashboard(true), config.autoRefreshInterval);
@@ -810,13 +794,16 @@
             
             // Update refresh indicator
             lastUpdate = Date.now();
-            document.getElementById('posRefresh').textContent = 'Updated just now';
+            const posRefreshEl = document.getElementById('posRefresh');
+            if (posRefreshEl) posRefreshEl.textContent = 'Updated just now';
             
             // Update auto-refresh status
             const autoRefreshStatus = document.getElementById('autoRefreshStatus');
-            const refreshDot = autoRefreshStatus.querySelector('.refresh-dot');
-            autoRefreshStatus.classList.add('active');
-            refreshDot.classList.add('active');
+            if (autoRefreshStatus) {
+                const refreshDot = autoRefreshStatus.querySelector('.refresh-dot');
+                autoRefreshStatus.classList.add('active');
+                if (refreshDot) refreshDot.classList.add('active');
+            }
             
             // Reset retry count on success
             retryCount = 0;

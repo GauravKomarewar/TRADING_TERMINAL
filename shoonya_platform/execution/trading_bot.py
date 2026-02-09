@@ -990,7 +990,10 @@ class ShoonyaBot:
             # =================================================
             # 🔒 REGISTER INTENT ONLY
             # =================================================
-            self.command_service.register(cmd)
+            if execution_type == "EXIT":
+                self.command_service.register(cmd)
+            else:
+                self.command_service.register_intent(cmd, execution_type=execution_type)
 
             logger.info(
                 "INTENT_REGISTERED | %s | %s | %s | qty=%s | type=%s",

@@ -103,29 +103,34 @@ class Config:
         """Load configuration values from environment."""
         
         # === Shoonya Credentials ===
-        self.user_name: Optional[str] = os.getenv("USER_NAME")
-        self.user_id: Optional[str] = os.getenv("USER_ID")
-        self.password: Optional[str] = os.getenv("PASSWORD")
-        self.totp_key: Optional[str] = os.getenv("TOKEN")
-        self.vendor_code: Optional[str] = os.getenv("VC")
-        self.api_secret: Optional[str] = os.getenv("APP_KEY")
-        self.imei: str = os.getenv("IMEI", "mac")
+        self.user_name: Optional[str] = self._strip_comment(os.getenv("USER_NAME", "")) or None
+        self.user_id: Optional[str] = self._strip_comment(os.getenv("USER_ID", "")) or None
+        self.password: Optional[str] = self._strip_comment(os.getenv("PASSWORD", "")) or None
+        self.totp_key: Optional[str] = self._strip_comment(os.getenv("TOKEN", "")) or None
+        self.vendor_code: Optional[str] = self._strip_comment(os.getenv("VC", "")) or None
+        self.api_secret: Optional[str] = self._strip_comment(os.getenv("APP_KEY", "")) or None
+        self.imei: str = self._strip_comment(os.getenv("IMEI", "mac"))
 
         # === Risk Management Config ===
-        self.risk_base_max_loss: float = float(
-            os.getenv("RISK_BASE_MAX_LOSS", "-2000")
+        self.risk_base_max_loss: float = self._parse_float(
+            os.getenv("RISK_BASE_MAX_LOSS", "-2000"),
+            "RISK_BASE_MAX_LOSS"
         )
-        self.risk_trail_step: float = float(
-            os.getenv("RISK_TRAIL_STEP", "100")
+        self.risk_trail_step: float = self._parse_float(
+            os.getenv("RISK_TRAIL_STEP", "100"),
+            "RISK_TRAIL_STEP"
         )
-        self.risk_warning_threshold: float = float(
-            os.getenv("RISK_WARNING_THRESHOLD", "0.80")
+        self.risk_warning_threshold: float = self._parse_float(
+            os.getenv("RISK_WARNING_THRESHOLD", "0.80"),
+            "RISK_WARNING_THRESHOLD"
         )
-        self.risk_max_consecutive_loss_days: int = int(
-            os.getenv("RISK_MAX_CONSECUTIVE_LOSS_DAYS", "3")
+        self.risk_max_consecutive_loss_days: int = self._parse_int(
+            os.getenv("RISK_MAX_CONSECUTIVE_LOSS_DAYS", "3"),
+            "RISK_MAX_CONSECUTIVE_LOSS_DAYS"
         )
-        self.risk_status_update_min: int = int(
-            os.getenv("RISK_STATUS_UPDATE_MIN", "30")
+        self.risk_status_update_min: int = self._parse_int(
+            os.getenv("RISK_STATUS_UPDATE_MIN", "30"),
+            "RISK_STATUS_UPDATE_MIN"
         )
         # === Risk State ===
         # Use cross-platform temp directory (Windows/Linux compatible)
@@ -133,26 +138,28 @@ class Config:
             tempfile.gettempdir(), 
             "supreme_risk_state.json"
         )
-        self.risk_state_file: str = os.getenv(
-            "RISK_STATE_FILE",
-            default_risk_state,
+        self.risk_state_file: str = self._strip_comment(
+            os.getenv(
+                "RISK_STATE_FILE",
+                default_risk_state,
+            )
         )
         # === Risk PnL Retention (days) ===
         self.risk_pnl_retention = {
-            "1m": timedelta(days=int(os.getenv("RISK_PNL_RETENTION_1M", "3"))),
-            "5m": timedelta(days=int(os.getenv("RISK_PNL_RETENTION_5M", "7"))),
-            "1d": timedelta(days=int(os.getenv("RISK_PNL_RETENTION_1D", "30"))),
+            "1m": timedelta(days=self._parse_int(os.getenv("RISK_PNL_RETENTION_1M", "3"), "RISK_PNL_RETENTION_1M")),
+            "5m": timedelta(days=self._parse_int(os.getenv("RISK_PNL_RETENTION_5M", "7"), "RISK_PNL_RETENTION_5M")),
+            "1d": timedelta(days=self._parse_int(os.getenv("RISK_PNL_RETENTION_1D", "30"), "RISK_PNL_RETENTION_1D")),
         }
 
         # === Security ===
-        self.webhook_secret: Optional[str] = os.getenv("WEBHOOK_SECRET_KEY")
+        self.webhook_secret: Optional[str] = self._strip_comment(os.getenv("WEBHOOK_SECRET_KEY", "")) or None
 
         # === Telegram (optional) ===
-        self.telegram_bot_token: Optional[str] = os.getenv("TELEGRAM_TOKEN")
-        self.telegram_chat_id: Optional[str] = os.getenv("TELEGRAM_CHAT_ID")
+        self.telegram_bot_token: Optional[str] = self._strip_comment(os.getenv("TELEGRAM_TOKEN", "")) or None
+        self.telegram_chat_id: Optional[str] = self._strip_comment(os.getenv("TELEGRAM_CHAT_ID", "")) or None
 
         # === Server ===
-        self.host: str = os.getenv("HOST", "0.0.0.0")
+        self.host: str = self._strip_comment(os.getenv("HOST", "0.0.0.0"))
         self.port: int = self._parse_port(os.getenv("PORT", "5000"))
         self.threads: int = self._parse_int(os.getenv("THREADS", "4"), "THREADS", 1, 32)
 
@@ -176,14 +183,40 @@ class Config:
     # ------------------------------------------------------------------
 
     def _parse_port(self, value: str) -> int:
-        """Parse and validate port number."""
+        """Parse and validate port number, stripping comments."""
         try:
-            port = int(value)
+            clean_value = self._strip_comment(value)
+            port = int(clean_value)
             if not (1024 <= port <= 65535):
                 raise ValueError(f"Port must be between 1024-65535, got: {port}")
             return port
         except ValueError as e:
             raise ConfigValidationError(f"Invalid PORT value '{value}': {e}")
+
+    def _strip_comment(self, value: str) -> str:
+        """Strip comments from config values (everything after #)."""
+        if '#' in value:
+            return value.split('#')[0].strip()
+        return value.strip()
+
+    def _parse_float(
+        self,
+        value: str,
+        name: str,
+        min_val: Optional[float] = None,
+        max_val: Optional[float] = None
+    ) -> float:
+        """Parse and validate float with optional bounds, stripping comments."""
+        try:
+            clean_value = self._strip_comment(value)
+            num = float(clean_value)
+            if min_val is not None and num < min_val:
+                raise ValueError(f"{name} must be >= {min_val}, got: {num}")
+            if max_val is not None and num > max_val:
+                raise ValueError(f"{name} must be <= {max_val}, got: {num}")
+            return num
+        except ValueError as e:
+            raise ConfigValidationError(f"Invalid {name} value '{value}': {e}")
 
     def _parse_int(
         self, 
@@ -192,9 +225,10 @@ class Config:
         min_val: Optional[int] = None, 
         max_val: Optional[int] = None
     ) -> int:
-        """Parse and validate integer with optional bounds."""
+        """Parse and validate integer with optional bounds, stripping comments."""
         try:
-            num = int(value)
+            clean_value = self._strip_comment(value)
+            num = int(clean_value)
             if min_val is not None and num < min_val:
                 raise ValueError(f"{name} must be >= {min_val}, got: {num}")
             if max_val is not None and num > max_val:
@@ -338,7 +372,7 @@ class Config:
             # Validate Telegram chat ID format
             if self.telegram_chat_id:
                 try:
-                    int(self.telegram_chat_id)
+                    int(self._strip_comment(self.telegram_chat_id))
                 except ValueError:
                     raise ConfigValidationError(
                         f"TELEGRAM_CHAT_ID must be numeric, got: {self.telegram_chat_id}"
@@ -440,7 +474,7 @@ class Config:
 
     def get_telegram_allowed_users(self) -> List[int]:
         """Get list of allowed Telegram user IDs."""
-        users = os.getenv("TELEGRAM_ALLOWED_USERS", "")
+        users = self._strip_comment(os.getenv("TELEGRAM_ALLOWED_USERS", ""))
         result = []
         
         for u in users.split(","):

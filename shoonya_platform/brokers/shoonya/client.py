@@ -85,12 +85,13 @@ SHOONYA CLIENT v3.3 - PRODUCTION GATEWAY (FAIL-HARD HARDENED)
     client.login()  # Raises RuntimeError on failure
     client.start_websocket(on_tick=handler)
     
-# Freeze date: 2026-02-04
-# Version: 3.3.0 (FINAL - PRODUCTION READY)
+# Freeze date: 2026-02-09
+# Version: 3.3.1 (WebSocket reconnection race condition fix)
 """
 
 import time
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, Callable, Any, List, Set, Union, Dict
 from threading import RLock
@@ -193,6 +194,7 @@ class ShoonyaClient(NorenApi):
         self._ws_running: bool = False
         self._ws_auto_reconnect: bool = True
         self._ws_reconnect_attempts: int = 0
+        self._ws_reconnect_in_progress: bool = False
         self._subscribed_tokens: Set[str] = set()
         
         # Rate limiting (sliding window)
@@ -202,7 +204,7 @@ class ShoonyaClient(NorenApi):
         self._logged_flags: Set[str] = set()
 
         logger.info(
-            "✅ ShoonyaClient v3.3 initialized | auto_recovery=%s | fail_hard=enabled",
+            "✅ ShoonyaClient v3.3.1 initialized | auto_recovery=%s | fail_hard=enabled",
             enable_auto_recovery
         )
 
@@ -779,6 +781,11 @@ class ShoonyaClient(NorenApi):
             if not (self._ws_running and self._ws_auto_reconnect and self._enable_auto_recovery):
                 return
             
+            # 🔧 FIX: Prevent concurrent reconnection attempts
+            if self._ws_reconnect_in_progress:
+                logger.debug("⚠️  Reconnection already in progress - ignoring close event")
+                return
+            
             # Check maximum attempts
             if self._ws_reconnect_attempts >= self.WS_MAX_RECONNECT_ATTEMPTS:
                 logger.error(
@@ -788,44 +795,63 @@ class ShoonyaClient(NorenApi):
                 self._ws_running = False
                 return
             
-            # Calculate exponential backoff delay
-            delay = min(
-                self.WS_RECONNECT_BASE_DELAY * (2 ** self._ws_reconnect_attempts),
-                self.WS_RECONNECT_MAX_DELAY
-            )
-            
-            logger.info(
-                "🔄 WebSocket reconnect attempt #%d in %ds...",
-                self._ws_reconnect_attempts + 1,
-                delay
-            )
-            time.sleep(delay)
-            self._ws_reconnect_attempts += 1
-            
-            # Reset session (thread-safe)
-            with self._api_lock:
-                self._logged_in = False
-            
-            try:
-                # Re-establish session (will raise on failure if auto_recovery enabled)
-                self.ensure_session()
-                
-                # Restart WebSocket
-                self._start_websocket_internal()
-                
-                # Re-subscribe to tokens
-                if self._subscribed_tokens:
-                    with self._api_lock:
-                        token_list = list(self._subscribed_tokens)
-                        super().subscribe(token_list)
-                    logger.info("✅ Re-subscribed %d tokens", len(token_list))
-                
-                # Reset attempts on success
-                self._ws_reconnect_attempts = 0
-                logger.info("✅ WebSocket reconnected successfully")
+            # 🔧 FIX: Spawn reconnection in background thread to avoid blocking
+            def _reconnect_worker():
+                """Background worker for WebSocket reconnection."""
+                try:
+                    self._ws_reconnect_in_progress = True
                     
-            except Exception as exc:
-                logger.exception("❌ WebSocket reconnect error")
+                    # Calculate exponential backoff delay
+                    delay = min(
+                        self.WS_RECONNECT_BASE_DELAY * (2 ** self._ws_reconnect_attempts),
+                        self.WS_RECONNECT_MAX_DELAY
+                    )
+                    
+                    logger.info(
+                        "🔄 WebSocket reconnect attempt #%d in %ds...",
+                        self._ws_reconnect_attempts + 1,
+                        delay
+                    )
+                    time.sleep(delay)
+                    self._ws_reconnect_attempts += 1
+                    
+                    # Reset session (thread-safe)
+                    with self._api_lock:
+                        self._logged_in = False
+                    
+                    # Re-establish session (will raise on failure if auto_recovery enabled)
+                    self.ensure_session()
+                    
+                    # 🔧 FIX: Give NorenApi time to fully close previous websocket
+                    time.sleep(0.5)
+                    
+                    # Restart WebSocket
+                    self._start_websocket_internal()
+                    
+                    # Re-subscribe to tokens
+                    if self._subscribed_tokens:
+                        with self._api_lock:
+                            token_list = list(self._subscribed_tokens)
+                            super().subscribe(token_list)
+                        logger.info("✅ Re-subscribed %d tokens", len(token_list))
+                    
+                    # Reset attempts on success
+                    self._ws_reconnect_attempts = 0
+                    logger.info("✅ WebSocket reconnected successfully")
+                    
+                except Exception as exc:
+                    logger.exception("❌ WebSocket reconnect error")
+                    # Ensure flag is reset even on failure
+                finally:
+                    self._ws_reconnect_in_progress = False
+            
+            # Start reconnection in background
+            reconnect_thread = threading.Thread(
+                target=_reconnect_worker,
+                name="WebSocket-Reconnect",
+                daemon=True
+            )
+            reconnect_thread.start()
 
         # Start WebSocket with enhanced close handler
         self._start_websocket_internal(close_callback=_enhanced_on_close)
@@ -844,6 +870,7 @@ class ShoonyaClient(NorenApi):
         """Stop WebSocket and disable auto-reconnect."""
         self._ws_running = False
         self._ws_auto_reconnect = False
+        self._ws_reconnect_in_progress = False
         logger.info("🛑 WebSocket stopped (auto-reconnect disabled)")
 
     # =========================================================================
@@ -1693,7 +1720,7 @@ class ShoonyaClient(NorenApi):
 
     def shutdown(self) -> None:
         """Graceful shutdown with complete cleanup."""
-        logger.info("🛑 Shutting down ShoonyaClient v3.3")
+        logger.info("🛑 Shutting down ShoonyaClient v3.3.1")
         
         # Stop WebSocket
         self.stop_websocket()

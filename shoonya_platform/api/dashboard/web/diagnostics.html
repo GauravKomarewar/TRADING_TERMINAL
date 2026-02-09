@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <title>API Diagnostics - Shoonya OMS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
         :root{--bg:#0a0e13;--panel:#151b26;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444}
         *{box-sizing:border-box;margin:0;padding:0}
@@ -15,57 +18,35 @@
         pre{background:#0a0e13;padding:15px;border-radius:6px;overflow-x:auto;border:1px solid var(--border)}
         .error{color:var(--danger)}
         .success{color:var(--success)}
+        .status{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
+        .status.CREATED{background:rgba(245,158,11,.1);color:var(--warning);border:1px solid var(--warning)}
+        .status.SENT_TO_BROKER{background:rgba(59,130,246,.1);color:var(--primary);border:1px solid var(--primary)}
+        .status.EXECUTED{background:rgba(16,185,129,.12);color:var(--success);border:1px solid var(--success)}
+        .status.FAILED{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid var(--danger)}
+        .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px}
+        .info-card{background:var(--panel);padding:12px;border-radius:8px;border-left:4px solid var(--primary)}
+        .info-card.warning{border-left-color:var(--warning)}
+        .info-card.danger{border-left-color:var(--danger)}
+        .info-card.success{border-left-color:var(--success)}
+        .info-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;margin-bottom:4px}
+        .info-value{font-size:18px;font-weight:700;color:var(--text)}
+        .list-item{padding:12px;background:var(--panel);border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--border)}
+        .list-item.error{border-left-color:var(--danger)}
+        .list-item.warning{border-left-color:var(--warning)}
+        .list-item.success{border-left-color:var(--success)}
+        .pipeline-step{display:flex;align-items:center;gap:12px;padding:12px;background:var(--panel);border-radius:8px;margin-bottom:8px;border-left:4px solid var(--border)}
+        .pipeline-step.active{background:rgba(16,185,129,.05);border-left-color:var(--success)}
+        .pipeline-step.pending{background:rgba(245,158,11,.05);border-left-color:var(--warning)}
+        .pipeline-step.failed{background:rgba(239,68,68,.05);border-left-color:var(--danger)}
+        .step-icon{font-size:20px}
+        .step-content{flex:1}
+        .step-label{font-weight:600;font-size:12px;color:var(--text)}
+        .step-desc{font-size:11px;color:var(--muted);margin-top:2px}
+        .loading{text-align:center;padding:20px;color:var(--muted)}
     </style>
 </head>
-<body>
-<style>
-    .header-nav {
-        background: #151b26;
-        border-bottom: 1px solid #2d3548;
-        padding: 12px 20px;
-        display: flex;
-        gap: 16px;
-        align-items: center;
-        margin-bottom: 20px;
-        border-radius: 8px 8px 0 0;
-    }
-    .header-nav a, .header-nav button {
-        color: #94a3b8;
-        text-decoration: none;
-        font-size: 13px;
-        padding: 6px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: none;
-        background: transparent;
-    }
-    .header-nav a:hover, .header-nav button:hover {
-        color: #f1f5f9;
-        background: #1c2333;
-    }
-    .header-nav button {
-        border: 1px solid #ef4444;
-        color: #ef4444;
-        margin-left: auto;
-    }
-    .header-nav button:hover {
-        background: #ef4444;
-        color: #fff;
-        border-color: #ef4444;
-    }
-</style>
-<div class="header-nav">
-    <strong style="color: #3b82f6;">⚡ Shoonya OMS</strong>
-    <a href="/dashboard/web/dashboard.html">Dashboard</a>
-    <a href="/dashboard/web/home.html">Home</a>
-    <a href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
-    <a href="/dashboard/web/place_order.html">Place Order</a>
-    <a href="/dashboard/web/orderbook.html">Orderbook</a>
-    <a href="/dashboard/web/diagnostics.html">Diagnostics</a>
-    <a href="/dashboard/web/strategy_dnss.html">DNSS Strategy</a>
-    <button onclick="logout()">Logout</button>
-</div>
+<body data-page="diagnostics">
+<div id="app-header"></div>
     <h1>🔍 API Diagnostics Tool</h1>
     
     <div class="section">
@@ -90,6 +71,68 @@
         <input id="expiryInput" placeholder="e.g., 27-FEB-2025" style="padding:8px;background:#1c2333;border:1px solid var(--border);color:#fff;border-radius:6px">
         <button onclick="testOptionChain()">Test /dashboard/option-chain</button>
         <pre id="optionChainResult">Click button to test...</pre>
+    </div>
+
+    <div class="section">
+        <h2>Order Pipeline Diagnostics</h2>
+        <div id="diagnosticsContent">
+            <div class="loading">Loading diagnostics...</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Intent Verification</h2>
+        <div id="intentContent">
+            <div class="loading">Loading intent verification...</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Order Processing Pipeline</h2>
+        <div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">1</div>
+                <div class="step-content">
+                    <div class="step-label">Intent Created</div>
+                    <div class="step-desc">Order created in OMS layer (status: CREATED)</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">2</div>
+                <div class="step-content">
+                    <div class="step-label">Intent Generation</div>
+                    <div class="step-desc">Dashboard generates UniversalOrderCommand via /intent endpoint</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">3</div>
+                <div class="step-content">
+                    <div class="step-label">DB Write</div>
+                    <div class="step-desc">Order persisted to orders.db with command_id</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">4</div>
+                <div class="step-content">
+                    <div class="step-label">Sent to Broker</div>
+                    <div class="step-desc">Execution consumer processes intent, sends to broker (status: SENT_TO_BROKER)</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">5</div>
+                <div class="step-content">
+                    <div class="step-label">Broker Confirmation</div>
+                    <div class="step-desc">Broker returns order_id, persisted as broker_order_id</div>
+                </div>
+            </div>
+            <div class="pipeline-step pending">
+                <div class="step-icon">6</div>
+                <div class="step-content">
+                    <div class="step-label">Watcher Reconciliation</div>
+                    <div class="step-desc">OrderWatcher polls broker, updates status on fill/rejection</div>
+                </div>
+            </div>
+        </div>
     </div>
 
 <script>
@@ -166,6 +209,133 @@ ${data.rows ? data.rows.slice(0, 5).map(r => `  ${r.strike} ${r.option_type}: ${
     }
 }
 
+async function loadDiagnostics(){
+    try{
+        const container = document.getElementById('diagnosticsContent');
+        if (!container) return;
+        container.innerHTML = '<div class="loading">Loading...</div>';
+        const res = await fetch('/dashboard/diagnostics/orders',{credentials:'include'});
+        const data = await res.json();
+
+        let html = '<div class="info-grid">';
+        html += `<div class="info-card">
+            <div class="info-label">Total Orders</div>
+            <div class="info-value">${data.summary.total_orders}</div>
+        </div>`;
+
+        for (const [status, count] of Object.entries(data.summary.status_breakdown)) {
+            let color = 'info-card';
+            if (status === 'EXECUTED') color = 'info-card success';
+            if (status === 'FAILED') color = 'info-card danger';
+            if (status === 'CREATED' || status === 'SENT_TO_BROKER') color = 'info-card warning';
+            html += `<div class="${color}">
+                <div class="info-label">${status}</div>
+                <div class="info-value">${count || 0}</div>
+            </div>`;
+        }
+        html += '</div>';
+
+        html += '<h3 style="margin-top:16px;margin-bottom:8px">Source Breakdown</h3>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">';
+        for (const [source, count] of Object.entries(data.summary.source_breakdown)) {
+            html += `<div class="list-item"><span>${source}</span><strong>${count}</strong></div>`;
+        }
+        html += '</div>';
+
+        if (data.failed_orders.count > 0) {
+            html += `<h3 style="margin-top:16px;margin-bottom:8px;color:var(--danger)">Failed Orders (${data.failed_orders.count})</h3>`;
+            for (const order of data.failed_orders.details) {
+                html += `<div class="list-item error">
+                    <div>
+                        <strong>${order.symbol}</strong> ${order.side} ${order.qty}<br>
+                        <span style="color:var(--muted);font-size:11px">${order.command_id}</span>
+                    </div>
+                    <span style="color:var(--muted);font-size:11px">${formatTime(order.updated)}</span>
+                </div>`;
+            }
+        }
+
+        if (data.pending_orders.count > 0) {
+            html += `<h3 style="margin-top:16px;margin-bottom:8px;color:var(--warning)">Pending Orders (${data.pending_orders.count})</h3>`;
+            for (const order of data.pending_orders.details.slice(0,10)) {
+                html += `<div class="list-item warning">
+                    <div>
+                        <strong>${order.symbol}</strong> ${order.side} ${order.qty} - <span style="color:var(--warning)">${order.status}</span><br>
+                        <span style="color:var(--muted);font-size:11px">${order.command_id}</span>
+                    </div>
+                </div>`;
+            }
+        }
+
+        container.innerHTML = html;
+    } catch (err) {
+        document.getElementById('diagnosticsContent').innerHTML = `<div style="color:var(--danger)">Error: ${err.message}</div>`;
+    }
+}
+
+async function loadIntentVerification(){
+    try{
+        const container = document.getElementById('intentContent');
+        if (!container) return;
+        container.innerHTML = '<div class="loading">Loading...</div>';
+        const res = await fetch('/dashboard/diagnostics/intent-verification',{credentials:'include'});
+        const data = await res.json();
+
+        let html = '<div class="info-grid">';
+        html += `<div class="info-card">
+            <div class="info-label">Total Intents</div>
+            <div class="info-value">${data.intent_pipeline.total_intents}</div>
+        </div>`;
+        html += `<div class="info-card success">
+            <div class="info-label">Sent to Broker</div>
+            <div class="info-value">${data.intent_pipeline.sent_to_broker}</div>
+        </div>`;
+        html += `<div class="info-card danger">
+            <div class="info-label">Missing Broker ID</div>
+            <div class="info-value">${data.data_quality.missing_broker_id_count}</div>
+        </div>`;
+        html += '</div>';
+
+        html += '<h3 style="margin-top:16px;margin-bottom:8px">Orders by Execution Type</h3>';
+        for (const [execType, orders] of Object.entries(data.intent_pipeline.by_execution_type)) {
+            html += `<div class="list-item"><strong>${execType}</strong><span style="color:var(--primary)">${orders.length}</span></div>`;
+        }
+
+        if (data.data_quality.incomplete_orders.length > 0) {
+            html += `<h3 style="margin-top:16px;margin-bottom:8px;color:var(--danger)">Data Quality Issues (${data.data_quality.incomplete_orders.length})</h3>`;
+            for (const order of data.data_quality.incomplete_orders.slice(0,5)) {
+                html += `<div class="list-item error">
+                    <div>
+                        <strong>${order.command_id}</strong><br>
+                        <span style="color:var(--danger);font-size:11px">${order.issues.join(', ')}</span>
+                    </div>
+                </div>`;
+            }
+        }
+
+        html += '<h3 style="margin-top:16px;margin-bottom:8px">Recent Activity</h3>';
+        for (const order of data.recent_activity) {
+            html += `<div class="list-item">
+                <div>
+                    <strong>${order.symbol}</strong> [${order.source}] <span class="status ${order.status}">${order.status}</span><br>
+                    <span style="color:var(--muted);font-size:11px">${order.command_id}</span>
+                </div>
+                <span style="color:var(--muted);font-size:11px">${formatTime(order.updated)}</span>
+            </div>`;
+        }
+
+        container.innerHTML = html;
+    } catch (err) {
+        document.getElementById('intentContent').innerHTML = `<div style="color:var(--danger)">Error: ${err.message}</div>`;
+    }
+}
+
+function formatTime(ts){
+    if (!ts) return '-';
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
 async function logout() {
     try {
         await fetch('/auth/logout', {
@@ -186,7 +356,13 @@ window.addEventListener('DOMContentLoaded', function() {
 let diagnosticsAutoTimer = null;
 window.addEventListener('DOMContentLoaded', function() {
     try { testDashboard(); } catch (e) {}
-    diagnosticsAutoTimer = setInterval(() => { try { testDashboard(); } catch (e) {} }, 2000);
+    try { loadDiagnostics(); } catch (e) {}
+    try { loadIntentVerification(); } catch (e) {}
+    diagnosticsAutoTimer = setInterval(() => {
+        try { testDashboard(); } catch (e) {}
+        try { loadDiagnostics(); } catch (e) {}
+        try { loadIntentVerification(); } catch (e) {}
+    }, 5000);
 });
 
 async function checkAuth() {

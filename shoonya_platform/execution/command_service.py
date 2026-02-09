@@ -92,6 +92,48 @@ class CommandService:
 
         self.bot.order_repo.create(record)
 
+    def register_intent(self, cmd: UniversalOrderCommand, *, execution_type: str):
+        """
+        Register ENTRY / ADJUST intents only (NO execution).
+
+        EXIT intents must use register() for explicit EXIT semantics.
+        """
+        if execution_type == "EXIT" or cmd.intent == "EXIT":
+            raise RuntimeError("EXIT intents must use register()")
+
+        validate_order(cmd)
+
+        record = OrderRecord(
+            command_id=cmd.command_id,
+            broker_order_id=None,
+            execution_type=execution_type,
+            tag=None,
+
+            source=cmd.source,
+            user=cmd.user,
+            strategy_name=cmd.strategy_name,
+
+            exchange=cmd.exchange,
+            symbol=cmd.symbol,
+            side=cmd.side,
+            quantity=cmd.quantity,
+            product=cmd.product,
+
+            order_type=cmd.order_type,
+            price=cmd.price,
+
+            stop_loss=cmd.stop_loss,
+            target=cmd.target,
+            trailing_type=cmd.trailing_type,
+            trailing_value=cmd.trailing_value,
+
+            status="CREATED",
+            created_at=datetime.utcnow().isoformat(),
+            updated_at=datetime.utcnow().isoformat(),
+        )
+
+        self.bot.order_repo.create(record)
+
     def submit(self, cmd: UniversalOrderCommand, *, execution_type: str):
         """
         Validate, persist ONCE, and submit ENTRY / ADJUST commands.

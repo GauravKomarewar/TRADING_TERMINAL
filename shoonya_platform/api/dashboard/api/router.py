@@ -49,7 +49,7 @@ from shoonya_platform.api.dashboard.api.schemas import (
 )
 
 # 🔒 Single canonical storage location (cross-platform)
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DATA_DIR = (
     _PROJECT_ROOT
     / "shoonya_platform"

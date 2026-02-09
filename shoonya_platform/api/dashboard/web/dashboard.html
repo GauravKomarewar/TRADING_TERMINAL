@@ -15,6 +15,24 @@
             gap: var(--spacing-lg);
             margin-bottom: var(--spacing-xl);
         }
+
+        .overview-grid {
+            display: grid;
+            grid-template-columns: minmax(280px, 1.1fr) minmax(220px, 1fr) minmax(220px, 1fr);
+            gap: var(--spacing-lg);
+            margin-bottom: var(--spacing-xl);
+        }
+
+        .stat-block {
+            display: grid;
+            gap: 6px;
+        }
+
+        .stat-block + .stat-block {
+            margin-top: var(--spacing-md);
+            padding-top: var(--spacing-md);
+            border-top: 1px solid var(--border);
+        }
         
         .stat-card {
             background: var(--panel);
@@ -35,49 +53,6 @@
             margin-bottom: var(--spacing-sm);
             font-weight: 600;
             letter-spacing: 0.5px;
-        }
-        
-        .stat-value {
-            font-size: var(--font-xl);
-            font-weight: 700;
-            font-variant-numeric: tabular-nums;
-            letter-spacing: -0.5px;
-        }
-        
-        .stat-value.up {
-            color: var(--success);
-        }
-        
-        .stat-value.down {
-            color: var(--danger);
-        }
-        
-        .stat-value.neutral {
-            color: var(--text);
-        }
-        
-        /* Grid Layout */
-        .grid-main {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 24px;
-        }
-        
-        .card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            overflow: hidden;
-        }
-        
-        .card-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-weight: 700;
-            font-size: 15px;
         }
         
         .refresh-indicator {
@@ -315,6 +290,10 @@
             .grid-main {
                 grid-template-columns: 1fr;
             }
+
+            .overview-grid {
+                grid-template-columns: 1fr;
+            }
         }
         
         @media (max-width: 768px) {
@@ -329,29 +308,46 @@
 
 <main>
     <div id="errorBanner" class="error-banner"></div>
-    
-    <!-- Stats Cards -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-label">Net PnL</div>
-            <div id="netPnl" class="stat-value neutral">₹0.00</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Open Positions</div>
-            <div id="openPositions" class="stat-value neutral">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Pending Orders</div>
-            <div id="pendingOrders" class="stat-value neutral">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">System Signal</div>
-            <div id="systemSignal" class="stat-value neutral">IDLE</div>
-        </div>
-    </div>
 
-    <!-- System Analytics -->
-    <div class="analytics-grid">
+    <!-- Top Overview -->
+    <div class="overview-grid">
+        <div class="card">
+            <div class="card-header">Account Limits</div>
+            <div style="padding: 20px">
+                <div class="status-item">
+                    <span class="status-label">Cash Available</span>
+                    <span id="cashAvail" class="status-value">₹0.00</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Collateral</span>
+                    <span id="collateral" class="status-value">₹0.00</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Used Margin</span>
+                    <span id="usedMargin" class="status-value">₹0.00</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Available Margin</span>
+                    <span id="availMargin" class="status-value">₹0.00</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Net Available</span>
+                    <span id="netAvail" class="status-value" style="font-weight: 700">₹0.00</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: grid; gap: var(--spacing-lg)">
+            <div class="stat-card">
+                <div class="stat-label">Net PnL</div>
+                <div id="netPnl" class="stat-value neutral">₹0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Open Positions</div>
+                <div id="openPositions" class="stat-value neutral">0</div>
+            </div>
+        </div>
+
         <div class="mini-card">
             <div class="mini-title">Risk Manager</div>
             <div class="mini-value" id="riskStatusBadge">SAFE</div>
@@ -372,6 +368,22 @@
                 <span id="riskHumanViolation">--</span>
             </div>
         </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Pending Orders</div>
+            <div id="pendingOrders" class="stat-value neutral">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">System Signal</div>
+            <div id="systemSignal" class="stat-value neutral">IDLE</div>
+        </div>
+    </div>
+
+    <!-- System Analytics -->
+    <div class="analytics-grid">
 
         <div class="mini-card">
             <div class="mini-title">Alerts Summary</div>
@@ -444,14 +456,14 @@
                         <thead>
                             <tr>
                                 <th>Symbol</th>
+                                <th>LTP</th>
+                                <th>Net PnL</th>
+                                <th>Realized PnL</th>
+                                <th>Unrealized PnL</th>
                                 <th>Exchange</th>
                                 <th>Product</th>
                                 <th>Qty</th>
                                 <th>Avg Price</th>
-                                <th>LTP</th>
-                                <th>Realized PnL</th>
-                                <th>Unrealized PnL</th>
-                                <th>Net PnL</th>
                             </tr>
                         </thead>
                         <tbody id="positionRows">
@@ -474,15 +486,19 @@
                         <thead>
                             <tr>
                                 <th>Symbol</th>
-                                <th>Quantity</th>
-                                <th>Avg Price</th>
                                 <th>LTP</th>
-                                <th>PnL</th>
+                                <th>Net PnL</th>
+                                <th>Realized PnL</th>
+                                <th>Unrealized PnL</th>
+                                <th>Exchange</th>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Avg Price</th>
                             </tr>
                         </thead>
                         <tbody id="holdingsRows">
                             <tr>
-                                <td colspan="5" class="empty-state">
+                                <td colspan="9" class="empty-state">
                                     <div class="empty-state-icon">📈</div>
                                     Loading holdings...
                                 </td>
@@ -508,7 +524,7 @@
         </div>
         
         <!-- Right Column -->
-        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; grid-template-rows: auto auto">
+        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; grid-template-rows: auto">
             <!-- System Status -->
             <div class="card">
                 <div class="card-header">System Status</div>
@@ -535,33 +551,6 @@
                     </div>
                     <div id="forceExitAlert" style="display: none; padding: 12px; background: rgba(239, 68, 68, 0.15); color: var(--danger); border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; margin-top: 16px; border: 1px solid rgba(239, 68, 68, 0.3)">
                         ⚠️ FORCE EXIT IN PROGRESS
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Account Limits -->
-            <div class="card">
-                <div class="card-header">Account Limits</div>
-                <div style="padding: 20px">
-                    <div class="status-item">
-                        <span class="status-label">Cash Available</span>
-                        <span id="cashAvail" class="status-value">₹0.00</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">Collateral</span>
-                        <span id="collateral" class="status-value">₹0.00</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">Used Margin</span>
-                        <span id="usedMargin" class="status-value">₹0.00</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">Available Margin</span>
-                        <span id="availMargin" class="status-value">₹0.00</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">Net Available</span>
-                        <span id="netAvail" class="status-value" style="font-weight: 700">₹0.00</span>
                     </div>
                 </div>
             </div>
@@ -837,7 +826,7 @@
         const dailyLossEl = document.getElementById('riskDailyLoss');
         const humanEl = document.getElementById('riskHumanViolation');
 
-        if (!risk) {
+        if (!risk || Object.keys(risk).length === 0) {
             riskStatusEl.textContent = 'UNKNOWN';
             trailingEl.textContent = '--';
             peakEl.textContent = '--';
@@ -998,18 +987,20 @@
                 const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
                 const rpnlClass = parseFloat(p.rpnl || 0) >= 0 ? 'success' : 'danger';
                 const urmtomClass = parseFloat(p.urmtom || 0) >= 0 ? 'success' : 'danger';
+                const product = p.prd || p.product || '';
+                const productCell = product ? `<span class="badge ok">${product}</span>` : '-';
                 
                 return `
                     <tr data-symbol="${p.tsym || p.symbol || ''}">
                         <td style="font-weight: 700">${p.tsym || p.symbol || '-'}</td>
-                        <td>${p.exch || p.exchange || '-'}</td>
-                        <td><span class="badge ok">${p.prd || p.product || '-'}</span></td>
-                        <td data-field="netqty">${p.netqty || 0}</td>
-                        <td data-field="avgprc">${formatCurrency(p.avgprc || p.avg_price || 0)}</td>
                         <td data-field="ltp">${formatCurrency(p.lp || p.ltp || 0)}</td>
+                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
                         <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(p.rpnl || 0)}</td>
                         <td data-field="urmtom" style="color: var(--${urmtomClass})">${formatCurrency(p.urmtom || 0)}</td>
-                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
+                        <td>${p.exch || p.exchange || '-'}</td>
+                        <td>${productCell}</td>
+                        <td data-field="netqty">${p.netqty || 0}</td>
+                        <td data-field="avgprc">${formatCurrency(p.avgprc || p.avg_price || 0)}</td>
                     </tr>
                 `;
             }).join('');
@@ -1039,7 +1030,7 @@
         if (!holdings || holdings.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="empty-state">
+                    <td colspan="9" class="empty-state">
                         <div class="empty-state-icon">📈</div>
                         No holdings
                     </td>
@@ -1049,16 +1040,49 @@
         }
         
         tbody.innerHTML = holdings.map(h => {
-            const pnl = (parseFloat(h.lp || h.ltp || 0) - parseFloat(h.upldprc || h.avg_price || 0)) * parseInt(h.holdqty || h.quantity || 0);
-            const pnlClass = pnl >= 0 ? 'success' : 'danger';
+            // Symbol: Try all possible field names from broker response
+            const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '-';
+            
+            // Quantity: Try all possible quantity field names
+            const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
+            
+            // Average Price: Try all possible price field names
+            const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
+            
+            // LTP: Latest Trade Price
+            const ltp = parseFloat(h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
+            
+            // Realized P&L
+            const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
+            
+            // Unrealized P&L
+            const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
+            const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
+            
+            // Net P&L
+            const netPnl = realized + unrealized;
+            const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
+            const rpnlClass = realized >= 0 ? 'success' : 'danger';
+            const urmtomClass = unrealized >= 0 ? 'success' : 'danger';
+            
+            // Product: Try all possible product field names
+            const product = h.prd || h.product || h.producttype || '';
+            const productCell = product ? `<span class="badge ok">${product}</span>` : '-';
+            
+            // Exchange: Try all possible exchange field names
+            const exchange = h.exch || h.exchange || h.exchangetype || '-';
             
             return `
                 <tr>
-                    <td style="font-weight: 700">${h.tsym || h.symbol || '-'}</td>
-                    <td>${h.holdqty || h.quantity || 0}</td>
-                    <td>${formatCurrency(h.upldprc || h.avg_price || 0)}</td>
-                    <td>${formatCurrency(h.lp || h.ltp || 0)}</td>
-                    <td style="color: var(--${pnlClass}); font-weight: 700">${formatCurrency(pnl)}</td>
+                    <td style="font-weight: 700" title="${symbol}">${symbol}</td>
+                    <td>${formatCurrency(ltp)}</td>
+                    <td style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
+                    <td style="color: var(--${rpnlClass})">${formatCurrency(realized)}</td>
+                    <td style="color: var(--${urmtomClass})">${formatCurrency(unrealized)}</td>
+                    <td>${exchange}</td>
+                    <td>${productCell}</td>
+                    <td>${qty}</td>
+                    <td>${formatCurrency(avgPrice)}</td>
                 </tr>
             `;
         }).join('');

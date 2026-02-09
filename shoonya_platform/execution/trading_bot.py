@@ -1396,12 +1396,17 @@ class ShoonyaBot:
 
     def execute_command(self, command, **kwargs):
         """
-        🔗 CommandService → ShoonyaBot execution bridge
-
+        🔗 DESIRED FLOW: COMPLETE 6-STEP ORDER EXECUTION
+        
+        Step 1: REGISTER TO DB with status=CREATED       [✅ DONE by CommandService.submit()]
+        Step 2: SYSTEM BLOCKERS CHECK (Risk/Guard/Dup)   [✅ THIS METHOD]
+        Step 3: UPDATE TO status=SENT_TO_BROKER          [✅ THIS METHOD - before broker call]
+        Step 4: EXECUTE ON BROKER                        [✅ THIS METHOD - place order]
+        Step 5: UPDATE DB BASED ON BROKER RESULT         [✅ THIS METHOD - handle success/fail]
+        Step 6: ORDERWATCH POLLS BROKER ("EXECUTED TRUTH") [✅ DONE by OrderWatcher]
+        
         Accepts extra keyword args (trailing_engine, etc.)
         for forward compatibility.
-        
-        ✅ FIXED: Now updates database on broker failures
         """
         # 🔒 HARD EXECUTION AUTHORITY (NON-NEGOTIABLE)
         assert command.source == "ORDER_WATCHER", (
@@ -1409,11 +1414,94 @@ class ShoonyaBot:
         )
         try:
             self._ensure_login()
+            
+            # ==================================================
+            # STEP 2: SYSTEM BLOCKERS CHECK (BEFORE EXECUTION)
+            # ==================================================
+            logger.info(
+                f"STEP_2: SYSTEM_BLOCKERS_CHECK | cmd_id={command.command_id} | {command.symbol}"
+            )
+            
+            # 🛡️ Check 2A: RISK MANAGER (daily loss, cooldown, max loss)
+            if not self.risk_manager.can_execute():
+                reason = "RISK_LIMITS_EXCEEDED"
+                logger.warning(
+                    f"BLOCKER_RISK | cmd_id={command.command_id} | {command.symbol} | reason={reason}"
+                )
+                try:
+                    self.order_repo.update_status(command.command_id, "FAILED")
+                    self.order_repo.update_tag(command.command_id, reason)
+                except Exception as db_err:
+                    logger.error(f"Failed to update DB with risk blocker: {db_err}")
+                
+                return OrderResult(success=False, error_message=reason)
+            
+            # 🛡️ Check 2B: EXECUTION GUARD (strategy tracking)
+            # Check if strategy already has an ENTRY (prevent duplicate entries)
+            strategy_id = getattr(command, 'strategy_name', 'UNKNOWN')
+            if self.execution_guard.has_strategy(strategy_id):
+                # Strategy already has positions, allow only EXITs
+                if getattr(command, 'execution_type', 'ENTRY').upper() == "ENTRY":
+                    reason = "EXECUTION_GUARD_BLOCKED"
+                    logger.warning(
+                        f"BLOCKER_GUARD | cmd_id={command.command_id} | {command.symbol} | "
+                        f"strategy={strategy_id} | reason={reason}"
+                    )
+                    try:
+                        self.order_repo.update_status(command.command_id, "FAILED")
+                        self.order_repo.update_tag(command.command_id, reason)
+                    except Exception as db_err:
+                        logger.error(f"Failed to update DB with guard blocker: {db_err}")
+                    
+                    return OrderResult(success=False, error_message=reason)
+            
+            # 🛡️ Check 2C: DUPLICATE DETECTION (live orders by symbol)
+            open_orders = self.order_repo.get_open_orders_by_strategy(strategy_id)
+            
+            for order in open_orders:
+                if order.symbol == command.symbol and order.command_id != command.command_id:
+                    reason = "DUPLICATE_ORDER_BLOCKED"
+                    logger.warning(
+                        f"BLOCKER_DUPLICATE | cmd_id={command.command_id} | {command.symbol} | "
+                        f"existing={order.command_id} | reason={reason}"
+                    )
+                    try:
+                        self.order_repo.update_status(command.command_id, "FAILED")
+                        self.order_repo.update_tag(command.command_id, reason)
+                    except Exception as db_err:
+                        logger.error(f"Failed to update DB with duplicate blocker: {db_err}")
+                    
+                    return OrderResult(success=False, error_message=reason)
+            
+            logger.info(
+                f"BLOCKERS_PASSED ✅ | cmd_id={command.command_id} | {command.symbol}"
+            )
+            
+            # ==================================================
+            # STEP 3: UPDATE TO status=SENT_TO_BROKER
+            # ==================================================
+            logger.info(
+                f"STEP_3: SENDING_TO_BROKER | cmd_id={command.command_id} | {command.symbol}"
+            )
+            
+            try:
+                self.order_repo.update_status(command.command_id, "SENT_TO_BROKER")
+            except Exception as db_err:
+                logger.error(f"STEP_3 FAILED: Could not update DB to SENT_TO_BROKER: {db_err}")
+                # Note: Continue to broker anyway (broker is source of truth)
+            
+            # ==================================================
+            # STEP 4: EXECUTE ON BROKER
+            # ==================================================
+            logger.info(
+                f"STEP_4: EXECUTE_ON_BROKER | cmd_id={command.command_id} | {command.symbol}"
+            )
+            
             # Convert canonical command → broker params
             order_params = command.to_broker_params()
 
             logger.info(
-                f"EXECUTE_COMMAND | {order_params.get('exchange')} | "
+                f"BROKER_PARAMS | {order_params.get('exchange')} | "
                 f"{order_params.get('tradingsymbol')} | "
                 f"{order_params.get('buy_or_sell')} | "
                 f"qty={order_params.get('quantity')} | "
@@ -1422,21 +1510,48 @@ class ShoonyaBot:
 
             # 🔥 Single broker touchpoint
             result = self.api.place_order(order_params)
-
-            if not result.success:
+            
+            # ==================================================
+            # STEP 5: UPDATE DB BASED ON BROKER RESULT
+            # ==================================================
+            logger.info(
+                f"STEP_5: UPDATE_DB_BROKER_RESULT | cmd_id={command.command_id} | "
+                f"success={result.success}"
+            )
+            
+            if result.success:
+                # ✅ BROKER ACCEPTED: Update with broker_order_id
+                broker_id = getattr(result, 'order_id', None) or getattr(result, 'norenordno', None)
+                if broker_id:
+                    try:
+                        self.order_repo.update_broker_id(command.command_id, broker_id)
+                        logger.info(
+                            f"DB_UPDATED_SUCCESS | cmd_id={command.command_id} | "
+                            f"broker_id={broker_id} | status=SENT_TO_BROKER"
+                        )
+                    except Exception as db_err:
+                        logger.error(f"STEP_5 WARNING: Failed to persist broker_id: {db_err}")
+                else:
+                    logger.warning(
+                        f"STEP_5 WARNING: Broker accepted but no order_id in result | "
+                        f"cmd_id={command.command_id}"
+                    )
+            else:
+                # ❌ BROKER REJECTED: Update status to FAILED
                 logger.error(
-                    f"ORDER_FAILED | {order_params.get('tradingsymbol')} | "
-                    f"{result.error_message}"
+                    f"STEP_5_BROKER_REJECTED | cmd_id={command.command_id} | {command.symbol} | "
+                    f"error={result.error_message}"
                 )
                 
-                # ✅ FIX: Update database status to FAILED
                 try:
                     self.order_repo.update_status(command.command_id, "FAILED")
-                    logger.info(f"Database updated: {command.command_id} → FAILED")
+                    if hasattr(self.order_repo, 'update_tag'):
+                        self.order_repo.update_tag(command.command_id, "BROKER_REJECTED")
+                    logger.info(f"DB_UPDATED_FAILED | cmd_id={command.command_id} | status=FAILED")
                 except Exception as db_err:
-                    logger.error(f"Failed to update DB status: {db_err}")
+                    logger.error(f"STEP_5 ERROR: Failed to update DB on broker rejection: {db_err}")
                 
-                # ✅ FIX: Send telegram alert for failed exits
+                # 📢 TELEGRAM ALERT for failed exits
                 if hasattr(command, 'execution_type') and command.execution_type == "EXIT":
                     if self.telegram_enabled:
                         try:
@@ -1447,7 +1562,7 @@ class ShoonyaBot:
                                 f"⚠️ Position still open - manual action may be needed"
                             )
                         except Exception as e:
-                            logger.warning(f"Failed to send telegram notification for EXIT order rejection: {e}")
+                            logger.warning(f"Failed to send telegram notification: {e}")
 
             return result
 
@@ -1457,7 +1572,8 @@ class ShoonyaBot:
         except Exception as e:
             log_exception("execute_command", e)
             
-            # ✅ FIX: Update database on exception
+            # 🆘 UNEXPECTED ERROR: Mark as FAILED
+            logger.error(f"STEP_5_EXCEPTION | cmd_id={command.command_id} | {type(e).__name__}: {e}")
             try:
                 self.order_repo.update_status(command.command_id, "FAILED")
             except Exception as db_error:

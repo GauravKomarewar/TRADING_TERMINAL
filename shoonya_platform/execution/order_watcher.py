@@ -6,6 +6,19 @@ OrderWatcherEngine
 PRODUCTION-GRADE EXECUTION ENGINE
 Aligned with ScriptMaster v2.0 (PRODUCTION FROZEN)
 
+🎯 DESIRED FLOW - OrderWatcher implements STEP 6: BROKER POLLING
+=====================================
+Step 1: REGISTER TO DB with status=CREATED           [Done by CommandService]
+Step 2: SYSTEM BLOCKERS CHECK (Risk/Guard/Dup)       [Done by execute_command]
+Step 3: UPDATE TO status=SENT_TO_BROKER              [Done by execute_command]
+Step 4: EXECUTE ON BROKER                            [Done by execute_command]
+Step 5: UPDATE DB BASED ON BROKER RESULT             [Done by execute_command]
+Step 6: ORDERWATCH POLLS BROKER ("EXECUTED TRUTH")  [⭐ THIS MODULE]
+   - Check order status on broker
+   - If COMPLETE → status=EXECUTED
+   - If REJECTED/CANCELLED/EXPIRED → status=FAILED
+   - Clear execution guard on failure
+
 Invariants:
 - Broker is the ONLY source of EXECUTED truth
 - EXIT execution is idempotent and persistent
@@ -32,10 +45,8 @@ class OrderWatcherEngine(threading.Thread):
     OrderWatcherEngine
 
     Responsibilities:
-    - Poll broker order book
-    - Persist EXECUTED / FAILED truth
-    - Execute OPEN intents mechanically
-    - Reconcile ExecutionGuard AFTER broker confirmation
+    ✅ Step 1-5: Done by CommandService/execute_command
+    ✅ Step 6: Poll broker, update DB to EXECUTED/FAILED, reconcile guard
     """
 
     def __init__(self, bot, poll_interval: float = 1.0):
@@ -69,19 +80,27 @@ class OrderWatcherEngine(threading.Thread):
         self._running = False
 
     def run(self):
-        logger.info("🧠 OrderWatcherEngine started (ScriptMaster v2.0 compliant)")
+        logger.info(
+            "🧠 OrderWatcherEngine STEP 6: BROKER POLLING (ScriptMaster v2.0 compliant)"
+        )
 
         while self._running:
             self.bot._ensure_login()
-            self._reconcile_broker_orders()
-            self._process_open_intents()
+            self._reconcile_broker_orders()  # STEP 6: Poll broker & update to EXECUTED/FAILED
+            self._process_open_intents()     # Legacy support for pre-submitted intents
             time.sleep(self.poll_interval)
 
-    # --------------------------------------------------
-    # Broker reconciliation (EXECUTED truth ONLY here)
-    # --------------------------------------------------
+    # ==================================================
+    # STEP 6: RECONCILE WITH BROKER (DEFINITIVE TRUTH)
+    # ==================================================
 
     def _reconcile_broker_orders(self):
+        """
+        STEP 6: Poll broker for EXECUTED truth.
+        
+        Updates DB status from SENT_TO_BROKER → EXECUTED/FAILED based on broker reality.
+        This is the ONLY source of definitive execution status.
+        """
         broker_orders = self.bot.api.get_order_book()
         for bo in broker_orders:
             broker_id = bo.get("norenordno")
@@ -93,20 +112,32 @@ class OrderWatcherEngine(threading.Thread):
             record = self.repo.get_by_broker_id(broker_id)
             if not record:
                 continue
+            
             # 🔒 Skip already reconciled orders (idempotency)
             if record.status in ("EXECUTED", "FAILED"):
                 continue
-            # -------------------------------
-            # Broker FAILURE
-            # -------------------------------
+            
+            # ==================================================
+            # 📍 BROKER FAILURE (STEP 6A)
+            # ==================================================
             if status in ("REJECTED", "CANCELLED", "EXPIRED"):
+                logger.warning(
+                    f"STEP_6A_BROKER_FAILED | cmd_id={record.command_id} | "
+                    f"broker_id={broker_id} | status={status}"
+                )
+                
                 self.repo.update_status(record.command_id, "FAILED")
+                if hasattr(self.repo, 'update_tag'):
+                    self.repo.update_tag(record.command_id, f"BROKER_{status}")
 
                 # 🔒 FIX: Clear guard state for failed leg
                 try:
                     self.bot.execution_guard.force_clear_symbol(
                         strategy_id=record.strategy_name,
                         symbol=record.symbol,
+                    )
+                    logger.info(
+                        f"GUARD_CLEARED | strategy={record.strategy_name} | symbol={record.symbol}"
                     )
                 except Exception:
                     logger.exception(
@@ -117,21 +148,26 @@ class OrderWatcherEngine(threading.Thread):
 
                 if self._should_log_failure(broker_id, status):
                     logger.error(
-                        "OrderWatcher: broker failure | cmd_id=%s broker_id=%s status=%s",
+                        "OrderWatcher: STEP_6A_BROKER_FAILURE | "
+                        "cmd_id=%s broker_id=%s status=%s",
                         record.command_id,
                         broker_id,
                         status,
                     )
                 continue
 
-            # -------------------------------
-            # Broker EXECUTED (FINAL TRUTH)
-            # -------------------------------
+            # ==================================================
+            # ✅ BROKER EXECUTED (STEP 6B - FINAL TRUTH)
+            # ==================================================
             if status == "COMPLETE":
+                logger.info(
+                    f"STEP_6B_BROKER_EXECUTED | cmd_id={record.command_id} | broker_id={broker_id}"
+                )
+                
                 self.repo.update_status(record.command_id, "EXECUTED")
 
                 logger.info(
-                    "OrderWatcher: EXECUTED | cmd_id=%s broker_id=%s",
+                    "OrderWatcher: EXECUTED_CONFIRMED | cmd_id=%s broker_id=%s",
                     record.command_id,
                     broker_id,
                 )
@@ -212,98 +248,116 @@ class OrderWatcherEngine(threading.Thread):
 
         return broker_map
 
-    # --------------------------------------------------
-    # Intent execution (MECHANICAL ONLY)
-    # --------------------------------------------------
+    # ==================================================
+    # LEGACY SUPPORT: Intent execution (RARELY USED)
+    # ==================================================
 
     def _process_open_intents(self):
+        """
+        ⚠️ LEGACY: This is for rare cases where CREATED orders exist.
+        Normal flow: CommandService.submit() → execute_command() handles Steps 1-5
+        
+        This only executes orders that:
+        1. Have status=CREATED (not yet sent to broker)
+        2. Don't have broker_order_id yet
+        """
         intents = self.repo.get_open_orders()
         if not intents:
             return
 
         for record in intents:
-            # 🔒 Idempotency — already submitted
-            if record.broker_order_id:
-                continue
-
-            # --------------------------------------------------
-            # ScriptMaster — order type LAW
-            # --------------------------------------------------
-            must_use_limit = requires_limit_order(
-                exchange=record.exchange,
-                tradingsymbol=record.symbol,
-            )
-
-            order_type = "LIMIT" if must_use_limit else "MARKET"
-            price = 0.0
-
-            if must_use_limit:
-                ltp = self.bot.api.get_ltp(record.exchange, record.symbol)
-                if not ltp:
-                    continue
-
-                # Aggressive but legal (LMT-as-MKT)
-                price = float(ltp)
-
-            # --------------------------------------------------
-            # Build canonical execution command
-            # --------------------------------------------------
-            cmd = UniversalOrderCommand.from_record(
-                record,
-                order_type=order_type,
-                price=price,
-                source="ORDER_WATCHER",
-            )
-
-            # --------------------------------------------------
-            # Submit (SINGLE broker path)
-            # --------------------------------------------------
-            try:
-                result = self.bot.execute_command(cmd)
-            except Exception:
-                logger.exception(
-                    "OrderWatcher: execution crash | cmd_id=%s",
-                    record.command_id,
+            # Handle CREATED orders that were never submitted
+            if record.status == "CREATED" and not record.broker_order_id:
+                logger.info(
+                    f"LEGACY_INTENT_EXECUTION | cmd_id={record.command_id} | {record.symbol}"
                 )
-                continue
+                
+                # This should be rare - normally execute_command would have handled this
+                # But for compatibility, submit it now
+                try:
+                    self._execute_legacy_intent(record)
+                except Exception:
+                    logger.exception(
+                        "OrderWatcher: legacy intent execution failed | cmd_id=%s",
+                        record.command_id,
+                    )
 
-            # Normalize result object/dict for backwards compatibility
-            if isinstance(result, dict):
-                _R = type("ExecutionResult", (), {})()
-                _R.success = result.get("success", result.get("ok", False))
-                _R.error_message = (
-                    result.get("error_message")
-                    or result.get("error")
-                    or result.get("emsg")
-                )
-                _R.order_id = (
-                    result.get("order_id")
-                    or result.get("norenordno")
-                    or result.get("broker_id")
-                )
-                result = _R
+    def _execute_legacy_intent(self, record):
+        """
+        Execute a legacy intent (rare case where CREATED order wasn't submitted).
+        Follows the 6-step flow within this call.
+        """
+        # --------------------------------------------------
+        # ScriptMaster — order type LAW
+        # --------------------------------------------------
+        must_use_limit = requires_limit_order(
+            exchange=record.exchange,
+            tradingsymbol=record.symbol,
+        )
 
-            if not getattr(result, "success", False):
-                self.repo.update_status(record.command_id, "FAILED")
+        order_type = "LIMIT" if must_use_limit else "MARKET"
+        price = 0.0
 
-                logger.error(
-                    "OrderWatcher: submission failed | cmd_id=%s error=%s",
-                    record.command_id,
-                    getattr(result, "error_message", None),
-                )
-                continue
+        if must_use_limit:
+            ltp = self.bot.api.get_ltp(record.exchange, record.symbol)
+            if not ltp:
+                return
 
-            # --------------------------------------------------
-            # Persist submission (NOT executed yet)
-            # --------------------------------------------------
-            self.repo.update_broker_id(record.command_id, result.order_id)
+            # Aggressive but legal (LMT-as-MKT)
+            price = float(ltp)
 
-            logger.info(
-                "OrderWatcher: SENT_TO_BROKER | cmd_id=%s broker_id=%s type=%s",
+        # --------------------------------------------------
+        # Build canonical execution command
+        # --------------------------------------------------
+        cmd = UniversalOrderCommand.from_record(
+            record,
+            order_type=order_type,
+            price=price,
+            source="ORDER_WATCHER",
+        )
+
+        # --------------------------------------------------
+        # Submit via execute_command (which does Steps 2-5)
+        # --------------------------------------------------
+        try:
+            result = self.bot.execute_command(cmd)
+        except Exception:
+            logger.exception(
+                "OrderWatcher: execution crash | cmd_id=%s",
                 record.command_id,
-                result.order_id,
-                order_type,
             )
+            return
+
+        # Normalize result object/dict for backwards compatibility
+        if isinstance(result, dict):
+            _R = type("ExecutionResult", (), {})()
+            _R.success = result.get("success", result.get("ok", False))
+            _R.error_message = (
+                result.get("error_message")
+                or result.get("error")
+                or result.get("emsg")
+            )
+            _R.order_id = (
+                result.get("order_id")
+                or result.get("norenordno")
+                or result.get("broker_id")
+            )
+            result = _R
+
+        if not getattr(result, "success", False):
+            logger.error(
+                "OrderWatcher: legacy submission failed | cmd_id=%s error=%s",
+                record.command_id,
+                getattr(result, "error_message", None),
+            )
+            return
+
+        logger.info(
+            "OrderWatcher: legacy intent submitted | cmd_id=%s broker_id=%s type=%s",
+            record.command_id,
+            result.order_id,
+            order_type,
+        )
 
     # -----------------------------------------------------------------
     # Compatibility shims for older tests / callers

@@ -8,7 +8,415 @@
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
-        :root{--bg:#0a0e13;--panel:#151b26;--panel-2:#1c2333;--panel-hover:#222938;--border:#2d3548;--border-focus:#3b82f6;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--primary-hover:#2563eb;--success:#10b981;--success-bg:#10b98115;--danger:#ef4444;--warning:#f59e0b;--shadow:0 4px 6px -1px rgba(0,0,0,0.3),0 2px 4px -2px rgba(0,0,0,0.3)}*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}header{height:64px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;padding:0 24px;box-shadow:var(--shadow);position:sticky;top:0;z-index:100}.nav-left{display:flex;gap:24px;align-items:center}.brand{font-weight:700;font-size:18px;color:var(--primary);cursor:pointer;transition:color .2s}.brand:hover{color:var(--primary-hover)}.nav-link{color:var(--muted);font-size:14px;text-decoration:none;padding:8px 12px;border-radius:6px;transition:all .2s;display:inline-block;border:1px solid transparent}.nav-link:hover{color:var(--text);background:var(--panel-2);border-color:var(--primary)}.nav-link.active{color:var(--primary);background:var(--panel-2);border-color:var(--primary);font-weight:600}.nav-right button{background:transparent;border:1px solid var(--border);color:var(--danger);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:all .2s}.nav-right button:hover{background:var(--danger);color:#fff;border-color:var(--danger)}main{max-width:1400px;margin:0 auto;padding:32px 24px}.header-section{margin-bottom:32px;display:flex;align-items:center;justify-content:space-between}h1{font-size:28px;font-weight:700;background:linear-gradient(135deg,var(--text) 0%,var(--muted) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}h2{font-size:20px;font-weight:700;margin:32px 0 16px;color:var(--text);display:flex;align-items:center;gap:12px}h2::before{content:'';width:6px;height:24px;background:var(--warning);border-radius:3px}.subtitle{color:var(--muted);font-size:14px;display:flex;align-items:center;gap:8px}.badge{display:inline-block;padding:2px 8px;background:var(--panel-2);border:1px solid var(--border);border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:24px}.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;box-shadow:var(--shadow);transition:all .3s ease}.card:hover{border-color:var(--border-focus);box-shadow:0 8px 16px -4px rgba(59,130,246,.1)}.card-title{font-weight:700;font-size:16px;margin-bottom:20px;display:flex;align-items:center;gap:8px;color:var(--text)}.card-title::before{content:'';width:4px;height:20px;background:var(--primary);border-radius:2px}.row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}.row.full{grid-template-columns:1fr}.field{display:flex;flex-direction:column}label{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}input,select{width:100%;padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:8px;font-size:14px;transition:all .2s;font-family:inherit}input:focus,select:focus{outline:0;border-color:var(--border-focus);background:var(--panel-hover);box-shadow:0 0 0 3px rgba(59,130,246,.15)}input::placeholder{color:var(--muted);opacity:.7}button.primary{width:100%;background:linear-gradient(135deg,var(--primary) 0%,var(--primary-hover) 100%);border:none;padding:12px;border-radius:10px;color:#fff;font-weight:600;font-size:14px;cursor:pointer;transition:all .2s;margin-top:8px;box-shadow:0 4px 12px rgba(59,130,246,.3)}button.primary:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(59,130,246,.4)}button.primary:active{transform:translateY(0)}button.secondary{width:100%;background:transparent;border:1px solid var(--border);padding:12px;border-radius:10px;color:var(--text);font-weight:600;font-size:14px;cursor:pointer;transition:all .2s;margin-top:8px}button.secondary:hover{background:var(--panel-2);border-color:var(--primary)}button.warning{background:linear-gradient(135deg,var(--warning) 0%,#d97706 100%)}button.small{width:auto;padding:6px 12px;margin:0;font-size:13px}.note{font-size:12px;color:var(--muted);margin-top:12px;padding:8px 12px;background:var(--panel-2);border-radius:6px;border-left:3px solid var(--primary)}.result{margin-top:16px;font-size:13px;padding:12px;border-radius:8px;font-weight:500;animation:slideIn .3s ease}@keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}.ok{color:var(--success);background:var(--success-bg);border:1px solid var(--success)}.bad{color:var(--danger);background:rgba(239,68,68,.1);border:1px solid var(--danger)}.basket-items{max-height:300px;overflow-y:auto;margin-bottom:16px}.basket-item{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;transition:all .2s}.basket-item:hover{border-color:var(--primary)}.basket-info{flex:1}.basket-symbol{font-weight:600;color:var(--text);margin-bottom:4px}.basket-details{font-size:12px;color:var(--muted)}.basket-remove{background:transparent;border:1px solid var(--danger);color:var(--danger);padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;transition:all .2s}.basket-remove:hover{background:var(--danger);color:#fff}.basket-empty{text-align:center;padding:32px;color:var(--muted);font-size:14px}.leg-container{background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;position:relative}.leg-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.leg-title{font-weight:600;color:var(--text);font-size:14px}.leg-remove{background:transparent;border:1px solid var(--danger);color:var(--danger);padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer}.leg-remove:hover{background:var(--danger);color:#fff}.autocomplete-wrap{position:relative}.autocomplete-list{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:50;box-shadow:var(--shadow);animation:dropdownSlide .2s ease}@keyframes dropdownSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}.autocomplete-list::-webkit-scrollbar{width:8px}.autocomplete-list::-webkit-scrollbar-track{background:var(--panel-2);border-radius:10px}.autocomplete-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}.autocomplete-item{padding:12px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;transition:all .15s}.autocomplete-item:last-child{border-bottom:none}.autocomplete-item:hover{background:var(--panel-2)}.autocomplete-item strong{display:block;color:var(--text);margin-bottom:2px}.autocomplete-item small{display:block;font-size:11px;color:var(--muted)}@media (max-width:768px){.grid{grid-template-columns:1fr}.nav-left{gap:12px}.nav-link{display:none}.nav-link:first-of-type{display:block}}
+        .header-section {
+            margin-bottom: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text) 0%, var(--muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 32px 0 16px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        h2::before {
+            content: '';
+            width: 6px;
+            height: 24px;
+            background: var(--warning);
+            border-radius: 3px;
+        }
+
+        .subtitle {
+            color: var(--muted);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+            gap: 24px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: var(--border-focus);
+            box-shadow: 0 8px 16px -4px rgba(59, 130, 246, 0.1);
+        }
+
+        .card-title {
+            font-weight: 700;
+            font-size: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+        }
+
+        .card-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .row.full {
+            grid-template-columns: 1fr;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        select option {
+            background: var(--panel-2);
+            color: var(--text);
+        }
+
+        input:focus,
+        select:focus {
+            outline: 0;
+            border-color: var(--border-focus);
+            background: var(--panel-hover);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        input::placeholder {
+            color: var(--muted);
+            opacity: 0.6;
+        }
+
+        button.primary {
+            width: 100%;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            color: #fff;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        }
+
+        button.primary:active {
+            transform: translateY(0);
+        }
+
+        button.secondary {
+            width: 100%;
+            background: transparent;
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 10px;
+            color: var(--text);
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        button.secondary:hover {
+            background: var(--panel-2);
+            border-color: var(--primary);
+        }
+
+        button.warning {
+            background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
+        }
+
+        button.small {
+            width: auto;
+            padding: 6px 12px;
+            margin: 0;
+            font-size: 13px;
+        }
+
+        .note {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 12px;
+            padding: 8px 12px;
+            background: var(--panel-2);
+            border-radius: 6px;
+            border-left: 3px solid var(--primary);
+        }
+
+        .result {
+            margin-top: 16px;
+            font-size: 13px;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .ok {
+            color: var(--success);
+            background: var(--success-bg);
+            border: 1px solid var(--success);
+        }
+
+        .bad {
+            color: var(--danger);
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--danger);
+        }
+
+        .basket-items {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+        }
+
+        .basket-item {
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+
+        .basket-item:hover {
+            border-color: var(--primary);
+        }
+
+        .basket-info {
+            flex: 1;
+        }
+
+        .basket-symbol {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .basket-details {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .basket-remove {
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .basket-remove:hover {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .basket-empty {
+            text-align: center;
+            padding: 32px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .leg-container {
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+            position: relative;
+        }
+
+        .leg-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .leg-title {
+            font-weight: 600;
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .leg-remove {
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .leg-remove:hover {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .autocomplete-wrap {
+            position: relative;
+        }
+
+        .autocomplete-list {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-top: 4px;
+            max-height: 280px;
+            overflow-y: auto;
+            z-index: 50;
+            box-shadow: var(--shadow);
+            animation: dropdownSlide 0.2s ease;
+            color: var(--text);
+        }
+
+        @keyframes dropdownSlide {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .autocomplete-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .autocomplete-list::-webkit-scrollbar-track {
+            background: var(--panel-2);
+            border-radius: 10px;
+        }
+
+        .autocomplete-list::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+
+        .autocomplete-item {
+            padding: 12px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            transition: all 0.15s;
+            color: var(--text);
+        }
+
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-item:hover {
+            background: var(--panel-2);
+        }
+
+        .autocomplete-item strong {
+            display: block;
+            color: var(--text);
+            margin-bottom: 2px;
+        }
+
+        .autocomplete-item small {
+            display: block;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body data-page="place-order">
@@ -20,341 +428,31 @@
             <span class="badge">Manual Intent</span>
             <span class="badge">OMS Validated</span>
             <span class="badge">Real-time</span>
-        </main>
-        <script>
-        // Refactored frontend JS for place_order.html
-        (() => {
-            // State
-            const state = {
-                basket: [],
-                advLegs: [],
-                nextLegId: 1,
-                advDebouncers: {},
-                advSymbolTimers: {}
-            };
-
-            // Helpers
-            function qs(id) { return document.getElementById(id); }
-            function go(path){ window.location.href = path; }
-
-            async function logout(){
-                try { await fetch('/auth/logout', { method: 'POST', credentials: 'include' }); } catch(e) {}
-                window.location.href = '/';
-            }
-
-            // -----------------------
-            // Symbol autocomplete (main)
-            // -----------------------
-            let symbolTimer = null;
-            function onSymbolType(){
-                const q = qs('g_symbol').value.trim();
-                if (q.length < 2) { hideMainDropdown(); return; }
-                clearTimeout(symbolTimer);
-                symbolTimer = setTimeout(()=> fetchSymbols(q), 250);
-            }
-
-            async function fetchSymbols(q){
-                try{
-                    const res = await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`, { credentials: 'include' });
-                    if (!res.ok) return;
-                    const items = await res.json();
-                    renderMainDropdown(items);
-                }catch(e){ hideMainDropdown(); }
-            }
-
-            function renderMainDropdown(items){
-                const dd = qs('symbolDropdown'); dd.innerHTML = '';
-                if (!items || items.length === 0){ hideMainDropdown(); return; }
-                items.slice(0,20).forEach(it => {
-                    const sym = it.tradingsymbol || it.symbol;
-                    const lot = it.lot_size || null;
-                    const div = document.createElement('div');
-                    div.className = 'autocomplete-item';
-                    div.innerHTML = `<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;
-                    div.onclick = () => { qs('g_symbol').value = sym; if (lot) qs('g_qty').value = lot; hideMainDropdown(); };
-                    dd.appendChild(div);
-                });
-                dd.style.display = 'block';
-            }
-            function hideMainDropdown(){ setTimeout(()=> { const dd = qs('symbolDropdown'); if(dd) dd.style.display='none'; }, 120); }
-
-            // -----------------------
-            // Generic / Basket orders
-            // -----------------------
-            function addToBasket(){
-                const execution_type = normalizeExecution(qs('g_execution_mode').value);
-                const item = {
-                    exchange: qs('g_exchange').value,
-                    symbol: qs('g_symbol').value,
-                    execution_type,
-                    side: qs('g_side').value,
-                    qty: Number(qs('g_qty').value) || 1,
-                    product: qs('g_product').value,
-                    order_type: qs('g_order_type').value,
-                    price: qs('g_order_type').value === 'LIMIT' ? Number(qs('g_price').value) : null
-                };
-                state.basket.push(item);
-                renderBasket();
-            }
-
-            function normalizeExecution(mode){
-                if (!mode) return 'ENTRY';
-                if (!mode.startsWith('TEST_')) return mode;
-                return mode.includes('ENTRY') ? 'ENTRY' : 'EXIT';
-            }
-
-            function renderBasket(){
-                const container = qs('basketItems');
-                const countEl = qs('basketCount');
-                if (state.basket.length === 0){ container.innerHTML = '<div class="basket-empty">No orders yet</div>'; countEl.textContent='0'; return; }
-                container.innerHTML = state.basket.map((o,idx) => `
-                    <div class="basket-item">
-                        <div class="basket-info">
-                            <div class="basket-symbol">${o.exchange} ${o.symbol} ${o.side}</div>
-                            <div class="basket-details">${o.execution_type} · ${o.qty} · ${o.order_type}${o.price? ' @ '+o.price : ''}</div>
-                        </div>
-                        <button class="basket-remove" onclick="(function(i){return function(){window.__placeOrder.removeFromBasket(i)}}(idx))()">Remove</button>
-                    </div>
-                `).join('');
-                countEl.textContent = String(state.basket.length);
-            }
-
-            // Expose removeFromBasket globally for inline handlers
-            window.__placeOrder = window.__placeOrder || {};
-            window.__placeOrder.removeFromBasket = function(idx){ state.basket.splice(idx,1); renderBasket(); };
-
-            async function submitBasket(){
-                if (state.basket.length === 0) return;
-                try{
-                    const res = await fetch('/dashboard/intent/basket', { method: 'POST', credentials: 'include', headers: { 'Content-Type':'application/json'}, body: JSON.stringify({ orders: state.basket, reason: 'WEB_BASKET' }) });
-                    const data = await res.json();
-                    qs('basketResult').className='result ok';
-                    qs('basketResult').innerText = `✔ Submitted (${data.intent_id})`;
-                    state.basket = [];
-                    renderBasket();
-                }catch(e){ qs('basketResult').className='result bad'; qs('basketResult').innerText='✖ Failed'; }
-            }
-
-            async function submitGeneric(){
-                if (!qs('g_symbol').value.trim()){ qs('genericResult').className='result bad'; qs('genericResult').innerText='✖ Symbol required'; return; }
-                if (!Number(qs('g_qty').value) || Number(qs('g_qty').value) <= 0){ qs('genericResult').className='result bad'; qs('genericResult').innerText='✖ Qty must be > 0'; return; }
-                if (qs('g_order_type').value === 'LIMIT' && !qs('g_price').value){ qs('genericResult').className='result bad'; qs('genericResult').innerText='✖ LIMIT orders require price'; return; }
-
-                const execution_raw = qs('g_execution_mode').value;
-                const execution_type = normalizeExecution(execution_raw);
-
-                const payload = {
-                    exchange: qs('g_exchange').value,
-                    symbol: qs('g_symbol').value,
-                    execution_type,
-                    side: qs('g_side').value,
-                    qty: Number(qs('g_qty').value),
-                    product: qs('g_product').value,
-                    order_type: qs('g_order_type').value,
-                    price: qs('g_order_type').value === 'LIMIT' ? Number(qs('g_price').value) : null,
-                    reason: 'WEB_MANUAL'
-                };
-
-                qs('genericResult').className='result'; qs('genericResult').innerText='Processing...';
-                try{
-                    const res = await fetch('/dashboard/intent/generic', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-                    if(!res.ok){ const err = await res.json().catch(()=>({detail:'Server error'})); throw new Error(err.detail||'Server error'); }
-                    const data = await res.json(); qs('genericResult').className='result ok'; qs('genericResult').innerText = `✔ Queued (${data.intent_id})`;
-                }catch(e){ qs('genericResult').className='result bad'; qs('genericResult').innerText = `✖ ${e.message}`.substring(0,80); }
-            }
-
-            // -----------------------
-            // Advanced legs: DOM builder + nearest-option wiring
-            // -----------------------
-            function addAdvancedLeg(){
-                const id = state.nextLegId++;
-                state.advLegs.push(id);
-                renderAdvancedLegs();
-            }
-
-            function removeAdvLeg(id){ state.advLegs = state.advLegs.filter(x=>x!==id); renderAdvancedLegs(); }
-
-            function renderAdvancedLegs(){
-                const container = qs('advLegsContainer'); container.innerHTML = '';
-                state.advLegs.forEach((id, idx) => {
-                    const el = document.createElement('div'); el.className = 'leg-container';
-
-                    el.innerHTML = `
-                        <div class="leg-header">
-                            <div class="leg-title">Leg ${idx+1}</div>
-                            <button class="leg-remove" data-id="${id}">Remove</button>
-                        </div>
-                        <div class="row">
-                            <div class="field">
-                                <label>Exchange</label>
-                                <select id="adv_ex_${id}"><option>NSE</option><option>BSE</option><option>NFO</option><option>BFO</option><option>MCX</option><option>CDS</option></select>
-                            </div>
-                            <div class="field autocomplete-wrap">
-                                <label>Symbol</label>
-                                <input id="adv_sym_${id}" placeholder="Symbol" autocomplete="off">
-                                <div id="advDropdown_${id}" class="autocomplete-list" style="display:none;"></div>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="field">
-                                <label>Side</label>
-                                <select id="adv_side_${id}"><option>BUY</option><option>SELL</option></select>
-                            </div>
-                            <div class="field">
-                                <label>Execution</label>
-                                <select id="adv_exec_${id}"><option value="ENTRY">ENTRY</option><option value="EXIT">EXIT</option><option value="TEST_ENTRY_SUCCESS">TEST ENTRY (S)</option><option value="TEST_ENTRY_FAILURE">TEST ENTRY (F)</option><option value="TEST_EXIT_SUCCESS">TEST EXIT (S)</option><option value="TEST_EXIT_FAILURE">TEST EXIT (F)</option></select>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="field"><label>Qty</label><input id="adv_qty_${id}" type="number" value="1" min="1"></div>
-                            <div class="field"><label>Target Type</label>
-                                <select id="adv_tgt_type_${id}"><option>DELTA</option><option>THETA</option><option>GAMMA</option><option>VEGA</option><option>PRICE</option><option>PREMIUM</option></select>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="field"><label>Target Value</label><input id="adv_tgt_val_${id}" type="number" step="0.01" placeholder="Value"></div>
-                            <div class="field"><label>Product</label>
-                                <select id="adv_prod_${id}"><option value="MIS">MIS</option><option value="NRML">NRML</option><option value="CNC">CNC</option></select>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="field"><label>Order Type</label><select id="adv_ord_${id}"><option>MARKET</option><option>LIMIT</option></select></div>
-                            <div class="field"><label>Price</label><input id="adv_price_${id}" type="number" step="0.05" placeholder="0.00"></div>
-                        </div>
-                    `;
-
-                    container.appendChild(el);
-
-                    // Bind remove
-                    el.querySelector('.leg-remove').addEventListener('click', () => removeAdvLeg(id));
-
-                    // Bind symbol autocomplete
-                    const symEl = qs(`adv_sym_${id}`);
-                    symEl.addEventListener('input', () => onAdvSymbolType(id));
-
-                    // Bind target fields to trigger nearest-option lookup
-                    const tgtTypeEl = qs(`adv_tgt_type_${id}`);
-                    const tgtValEl = qs(`adv_tgt_val_${id}`);
-                    tgtTypeEl.addEventListener('change', () => onAdvTargetChange(id));
-                    tgtValEl.addEventListener('input', () => onAdvTargetChange(id));
-                });
-            }
-
-            // Advanced autocomplete and helpers
-            function onAdvSymbolType(id){
-                const input = qs(`adv_sym_${id}`);
-                const q = input.value.trim();
-                if (q.length < 2){ hideAdvDropdown(id); return; }
-                clearTimeout(state.advSymbolTimers[id]);
-                state.advSymbolTimers[id] = setTimeout(()=> fetchAdvSymbols(id, q), 250);
-            }
-
-            async function fetchAdvSymbols(id, q){
-                try{
-                    const res = await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`, { credentials: 'include' });
-                    if (!res.ok) return;
-                    const items = await res.json(); renderAdvDropdown(id, items);
-                }catch(e){ hideAdvDropdown(id); }
-            }
-
-            function renderAdvDropdown(id, items){
-                const dd = qs(`advDropdown_${id}`); if(!dd) return; dd.innerHTML = '';
-                if (!items || items.length === 0){ hideAdvDropdown(id); return; }
-                items.slice(0,20).forEach(it => {
-                    const sym = it.tradingsymbol || it.symbol; const lot = it.lot_size || null;
-                    const div = document.createElement('div'); div.className='autocomplete-item';
-                    div.innerHTML = `<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;
-                    div.onclick = () => { qs(`adv_sym_${id}`).value = sym; if (lot) qs(`adv_qty_${id}`).value = lot; hideAdvDropdown(id); };
-                    dd.appendChild(div);
-                }); dd.style.display = 'block';
-            }
-            function hideAdvDropdown(id){ setTimeout(()=>{ const dd = qs(`advDropdown_${id}`); if(dd) dd.style.display='none'; }, 120); }
-
-            // Nearest-option lookup (debounced per leg)
-            function onAdvTargetChange(id){
-                clearTimeout(state.advDebouncers[id]);
-                state.advDebouncers[id] = setTimeout(()=> resolveNearestForLeg(id), 300);
-            }
-
-            async function resolveNearestForLeg(id){
-                try{
-                    const tgtType = qs(`adv_tgt_type_${id}`).value;
-                    const tgtVal = Number(qs(`adv_tgt_val_${id}`).value);
-                    if (!Number.isFinite(tgtVal)) return;
-
-                    const exchange = qs(`adv_ex_${id}`).value || qs('g_exchange').value || 'NFO';
-                    const symbol = qs(`adv_sym_${id}`).value || qs('g_symbol').value || 'NIFTY';
-
-                    // Map metric
-                    let metric = 'ltp';
-                    if (['DELTA','THETA','GAMMA','VEGA'].includes(tgtType)) metric = tgtType.toLowerCase();
-
-                    // Get first active expiry
-                    const expiriesRes = await fetch(`/dashboard/option-chain/active-expiries?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(symbol)}`, { credentials: 'include' });
-                    if (!expiriesRes.ok) return;
-                    const expiries = await expiriesRes.json(); if (!Array.isArray(expiries) || expiries.length===0) return;
-                    const expiry = typeof expiries[0] === 'string' ? expiries[0] : expiries[0].expiry;
-
-                    const nearestRes = await fetch(`/dashboard/option-chain/nearest?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(symbol)}&expiry=${encodeURIComponent(expiry)}&target=${encodeURIComponent(tgtVal)}&metric=${encodeURIComponent(metric)}`, { credentials: 'include' });
-                    if (!nearestRes.ok) return;
-                    const row = await nearestRes.json();
-
-                    if (row.trading_symbol) qs(`adv_sym_${id}`).value = row.trading_symbol;
-                    if (row.ltp) qs(`adv_price_${id}`).value = row.ltp;
-                    if (row.lot_size) qs(`adv_qty_${id}`).value = row.lot_size;
-
-                }catch(e){ console.debug('Nearest lookup failed', e); }
-            }
-
-            // Build payload and submit advanced order
-            async function submitAdvancedOrder(){
-                const legs = state.advLegs.map(id => {
-                    const execRaw = qs(`adv_exec_${id}`).value;
-                    const execution_type = normalizeExecution(execRaw);
-                    return {
-                        exchange: qs(`adv_ex_${id}`).value,
-                        symbol: qs(`adv_sym_${id}`).value,
-                        side: qs(`adv_side_${id}`).value,
-                        execution_type,
-                        qty: Number(qs(`adv_qty_${id}`).value) || 1,
-                        target_type: qs(`adv_tgt_type_${id}`).value,
-                        target_value: Number(qs(`adv_tgt_val_${id}`).value) || null,
-                        product: qs(`adv_prod_${id}`).value,
-                        order_type: qs(`adv_ord_${id}`).value,
-                        price: qs(`adv_ord_${id}`).value === 'LIMIT' ? Number(qs(`adv_price_${id}`).value) : null
-                    };
-                });
-
-                try{
-                    const res = await fetch('/dashboard/intent/advanced', { method: 'POST', credentials: 'include', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ legs, reason: 'WEB_ADVANCED' }) });
-                    const data = await res.json(); qs('advancedResult').className='result ok'; qs('advancedResult').innerText = `✔ Submitted (${data.intent_id})`;
-                    state.advLegs = []; state.nextLegId = 1; renderAdvancedLegs();
-                }catch(e){ qs('advancedResult').className='result bad'; qs('advancedResult').innerText='✖ Failed'; }
-            }
-
-            // -----------------------
-            // Initialization
-            // -----------------------
-            function bindUI(){
-                // expose some functions referenced inline
-                window.go = go; window.logout = logout; window.addToBasket = addToBasket; window.submitGeneric = submitGeneric; window.submitBasket = submitBasket; window.addAdvancedLeg = addAdvancedLeg; window.submitAdvancedOrder = submitAdvancedOrder;
-
-                // symbol input
-                const mainSym = qs('g_symbol'); if (mainSym) mainSym.addEventListener('input', onSymbolType);
-
-                // set defaults
-                try{ qs('g_exchange').value = 'NFO'; qs('g_symbol').value = 'NIFTY'; } catch(e){}
-
-                renderBasket();
-            }
-
-            // Start
-            window.addEventListener('DOMContentLoaded', () => { bindUI(); });
-
-        })();
-        </script>
-        </body>
-        </html>
+        </div>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <div class="card-title">Manual Order</div>
+            <div class="row">
+                <div class="field">
+                    <label>Exchange</label>
+                    <select id="g_exchange"><option>NSE</option><option>BSE</option><option>NFO</option><option>BFO</option><option>MCX</option><option>CDS</option></select>
+                </div>
+                <div class="field autocomplete-wrap">
+                    <label>Symbol</label>
+                    <input id="g_symbol" placeholder="Type..." autocomplete="off" oninput="onSymbolType()">
+                    <div id="symbolDropdown" class="autocomplete-list" style="display:none;"></div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label>Side</label>
+                    <select id="g_side"><option>BUY</option><option>SELL</option></select>
+                </div>
+                <div class="field">
+                    <label>Execution</label>
+                    <select id="g_execution_mode">
+                        <option value="ENTRY">ENTRY</option><option value="EXIT">EXIT</option>
                         <option value="TEST_ENTRY_SUCCESS">TEST ENTRY (S)</option><option value="TEST_ENTRY_FAILURE">TEST ENTRY (F)</option>
                         <option value="TEST_EXIT_SUCCESS">TEST EXIT (S)</option><option value="TEST_EXIT_FAILURE">TEST EXIT (F)</option>
                     </select>
@@ -409,26 +507,7 @@
     </div>
 </main>
 <script>
-let basketOrders=[],advLegs=[],legCounter=0;function go(p){window.location.href=p}async function logout(){try{await fetch('/auth/logout',{method:'POST',credentials:'include'})}catch(e){console.log('Logout completed')}window.location.href='/'}let symbolTimer=null;function onSymbolType(){const q=g_symbol.value.trim();if(q.length<2){hideDropdown();return}clearTimeout(symbolTimer);symbolTimer=setTimeout(()=>fetchSymbols(q),250)}async function fetchSymbols(q){try{const res=await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`,{credentials:'include'});if(!res.ok)return;renderDropdown(await res.json())}catch{hideDropdown()}}function renderDropdown(items){symbolDropdown.innerHTML='';if(!items.length){hideDropdown();return}items.slice(0,20).forEach(it=>{const sym=it.tradingsymbol||it.symbol,lot=it.lot_size||null,div=document.createElement('div');div.className='autocomplete-item';div.innerHTML=`<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;div.onclick=()=>{g_symbol.value=sym;if(lot)g_qty.value=lot;hideDropdown()};symbolDropdown.appendChild(div)});symbolDropdown.style.display='block'}function hideDropdown(){setTimeout(()=>symbolDropdown.style.display='none',120)}async function submitGeneric(){if(!g_symbol.value.trim()){genericResult.className='result bad';genericResult.innerHTML='✖ Symbol required';return}if(!g_qty.value||Number(g_qty.value)<=0){genericResult.className='result bad';genericResult.innerHTML='✖ Qty must be > 0';return}if(g_order_type.value==='LIMIT'&&!g_price.value){genericResult.className='result bad';genericResult.innerHTML='✖ LIMIT orders require price';return}let execution_type=g_execution_mode.value,test_mode=null;if(execution_type.startsWith("TEST_")){if(execution_type.includes("ENTRY"))execution_type="ENTRY";if(execution_type.includes("EXIT"))execution_type="EXIT";test_mode=execution_type.includes("SUCCESS")?"SUCCESS":"FAILURE"}const payload={exchange:g_exchange.value,symbol:g_symbol.value,execution_type,test_mode,side:g_side.value,qty:Number(g_qty.value),product:g_product.value,order_type:g_order_type.value,price:g_order_type.value==='LIMIT'?Number(g_price.value):null,triggered_order:g_triggered.value,trigger_value:g_trigger_value.value?Number(g_trigger_value.value):null,target:g_target.value?Number(g_target.value):null,stoploss:g_stoploss.value?Number(g_stoploss.value):null,trail_sl:g_trail_sl.value?Number(g_trail_sl.value):null,trail_when:g_trail_when.value?Number(g_trail_when.value):null,reason:"WEB_MANUAL"};genericResult.className='result';genericResult.innerHTML='Processing...';try{const res=await fetch('/dashboard/intent/generic',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!res.ok){const err=await res.json();throw new Error(err.detail||'Server error')}const data=await res.json();genericResult.className='result ok';genericResult.innerHTML=`✔ Queued (${data.intent_id})`}catch(err){genericResult.className='result bad';genericResult.innerHTML=`✖ ${err.message}`.substring(0,60)}}function addToBasket(){let execution_type=g_execution_mode.value,test_mode=null;if(execution_type.startsWith("TEST_")){if(execution_type.includes("ENTRY"))execution_type="ENTRY";if(execution_type.includes("EXIT"))execution_type="EXIT";test_mode=execution_type.includes("SUCCESS")?"SUCCESS":"FAILURE"}basketOrders.push({exchange:g_exchange.value,symbol:g_symbol.value,execution_type,test_mode,side:g_side.value,qty:Number(g_qty.value),product:g_product.value,order_type:g_order_type.value,price:g_order_type.value==='LIMIT'?Number(g_price.value):null,triggered_order:g_triggered.value,trigger_value:g_trigger_value.value?Number(g_trigger_value.value):null,target:g_target.value?Number(g_target.value):null,stoploss:g_stoploss.value?Number(g_stoploss.value):null,trail_sl:g_trail_sl.value?Number(g_trail_sl.value):null,trail_when:g_trail_when.value?Number(g_trail_when.value):null});renderBasket()}function renderBasket(){const sorted=[...basketOrders].sort((a,b)=>{if(a.execution_type==='EXIT'&&b.execution_type!=='EXIT')return -1;if(a.execution_type!=='EXIT'&&b.execution_type==='EXIT')return 1;return 0});if(!sorted.length){basketItems.innerHTML='<div class="basket-empty">No orders yet</div>';basketCount.textContent='0';return}basketItems.innerHTML=sorted.map((o,i)=>`<div class="basket-item"><div class="basket-info"><div class="basket-symbol">${o.exchange} ${o.symbol} ${o.side}</div><div class="basket-details">${o.execution_type} · ${o.qty} · ${o.order_type}${o.price?' @ '+o.price:''}</div></div><button class="basket-remove" onclick="removeFromBasket(${basketOrders.indexOf(o)})">Remove</button></div>`).join('');basketCount.textContent=basketOrders.length}function removeFromBasket(idx){basketOrders.splice(idx,1);renderBasket()}function clearBasket(){basketOrders=[];renderBasket()}async function submitBasket(){const sorted=[...basketOrders].sort((a,b)=>{if(a.execution_type==='EXIT'&&b.execution_type!=='EXIT')return -1;if(a.execution_type!=='EXIT'&&b.execution_type==='EXIT')return 1;return 0});try{const res=await fetch('/dashboard/intent/basket',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({orders:sorted,reason:"WEB_BASKET"})});const data=await res.json();basketResult.className='result ok';basketResult.innerHTML=`✔ Submitted (${data.intent_id})`;clearBasket()}catch(err){basketResult.className='result bad';basketResult.innerHTML=`✖ Failed`}}function addAdvancedLeg(){const id=legCounter++;advLegs.push(id);renderAdvancedLegs()}function renderAdvancedLegs(){advLegsContainer.innerHTML=advLegs.map(id=>`<div class="leg-container"><div class="leg-header"><div class="leg-title">Leg ${id+1}</div><button class="leg-remove" onclick="removeAdvLeg(${id})">Remove</button></div><div class="row"><div class="field"><label>Exchange</label><select id="adv_ex_${id}"><option>NSE</option><option>BSE</option><option>NFO</option><option>BFO</option><option>MCX</option><option>CDS</option></select></div><div class="field autocomplete-wrap"><label>Symbol</label><input id="adv_sym_${id}" placeholder="Symbol" autocomplete="off" oninput="onAdvSymbolType(${id})"><div id="advDropdown_${id}" class="autocomplete-list" style="display:none;"></div></div></div><div class="row"><div class="field"><label>Side</label><select id="adv_side_${id}"><option>BUY</option><option>SELL</option></select></div><div class="field"><label>Execution</label><select id="adv_exec_${id}"><option value="ENTRY">ENTRY</option><option value="EXIT">EXIT</option><option value="TEST_ENTRY_SUCCESS">TEST ENTRY (S)</option><option value="TEST_ENTRY_FAILURE">TEST ENTRY (F)</option><option value="TEST_EXIT_SUCCESS">TEST EXIT (S)</option><option value="TEST_EXIT_FAILURE">TEST EXIT (F)</option></select></div></div><div class="row"><div class="field"><label>Qty</label><input id="adv_qty_${id}" type="number" value="1" min="1"></div><div class="field"><label>Target Type</label><select id="adv_tgt_type_${id}"><option>DELTA</option><option>THETA</option><option>GAMMA</option><option>VEGA</option><option>PRICE</option><option>PREMIUM</option></select></div></div><div class="row"><div class="field"><label>Target Value</label><input id="adv_tgt_val_${id}" type="number" step="0.01" placeholder="Value"></div><div class="field"><label>Product</label><select id="adv_prod_${id}"><option value="MIS">MIS</option><option value="NRML">NRML</option><option value="CNC">CNC</option></select></div></div><div class="row"><div class="field"><label>Order Type</label><select id="adv_ord_${id}"><option>MARKET</option><option>LIMIT</option></select></div><div class="field"><label>Price</label><input id="adv_price_${id}" type="number" step="0.05" placeholder="0.00"></div></div></div>`).join('')}function removeAdvLeg(id){advLegs=advLegs.filter(x=>x!==id);renderAdvancedLegs()}let advSymbolTimers={};function onAdvSymbolType(id){const input=document.getElementById(`adv_sym_${id}`);const q=input.value.trim();if(q.length<2){hideAdvDropdown(id);return}clearTimeout(advSymbolTimers[id]);advSymbolTimers[id]=setTimeout(()=>fetchAdvSymbols(id,q),250)}async function fetchAdvSymbols(id,q){try{const res=await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`,{credentials:'include'});if(!res.ok)return;renderAdvDropdown(id,await res.json())}catch{hideAdvDropdown(id)}}function renderAdvDropdown(id,items){const dropdown=document.getElementById(`advDropdown_${id}`);if(!dropdown)return;dropdown.innerHTML='';if(!items.length){hideAdvDropdown(id);return}items.slice(0,20).forEach(it=>{const sym=it.tradingsymbol||it.symbol,lot=it.lot_size||null,div=document.createElement('div');div.className='autocomplete-item';div.innerHTML=`<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;div.onclick=()=>{document.getElementById(`adv_sym_${id}`).value=sym;if(lot)document.getElementById(`adv_qty_${id}`).value=lot;hideAdvDropdown(id)};dropdown.appendChild(div)});dropdown.style.display='block'}function hideAdvDropdown(id){const dropdown=document.getElementById(`advDropdown_${id}`);if(dropdown)setTimeout(()=>dropdown.style.display='none',120)}async function submitAdvancedOrder(){const legs=advLegs.map(id=>{let execution_type=document.getElementById(`adv_exec_${id}`).value,test_mode=null;if(execution_type.startsWith("TEST_")){if(execution_type.includes("ENTRY"))execution_type="ENTRY";if(execution_type.includes("EXIT"))execution_type="EXIT";test_mode=execution_type.includes("SUCCESS")?"SUCCESS":"FAILURE"}return{exchange:document.getElementById(`adv_ex_${id}`).value,symbol:document.getElementById(`adv_sym_${id}`).value,side:document.getElementById(`adv_side_${id}`).value,execution_type,test_mode,qty:Number(document.getElementById(`adv_qty_${id}`).value),target_type:document.getElementById(`adv_tgt_type_${id}`).value,target_value:Number(document.getElementById(`adv_tgt_val_${id}`).value)||null,product:document.getElementById(`adv_prod_${id}`).value,order_type:document.getElementById(`adv_ord_${id}`).value,price:document.getElementById(`adv_ord_${id}`).value==='LIMIT'?Number(document.getElementById(`adv_price_${id}`).value):null}});try{const res=await fetch('/dashboard/intent/advanced',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({legs,reason:"WEB_ADVANCED"})});const data=await res.json();advancedResult.className='result ok';advancedResult.innerHTML=`✔ Submitted (${data.intent_id})`;advLegs=[];legCounter=0;renderAdvancedLegs()}catch(err){advancedResult.className='result bad';advancedResult.innerHTML=`✖ Failed`}}
-
-// Check authentication on page load
-window.addEventListener('DOMContentLoaded', function(){
-    checkAuth();
-    try { g_exchange.value = 'NFO'; g_symbol.value = 'NIFTY'; } catch(e){}
-});
-
-async function checkAuth() {
-    try {
-        const res = await fetch('/dashboard/home/status', {
-            credentials: 'include'
-        });
-        if (res.status === 401) {
-            window.location.href = '/';
-        }
-    } catch (e) {
-        console.log('Auth check completed');
-    }
-}
+let basketOrders=[],advLegs=[],legCounter=0;function go(p){window.location.href=p}async function logout(){await fetch('/auth/logout',{method:'POST',credentials:'include'});window.location.href='/'}let symbolTimer=null;function onSymbolType(){const q=g_symbol.value.trim();if(q.length<2){hideDropdown();return}clearTimeout(symbolTimer);symbolTimer=setTimeout(()=>fetchSymbols(q),250)}async function fetchSymbols(q){try{const res=await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`,{credentials:'include'});if(!res.ok)return;renderDropdown(await res.json())}catch{hideDropdown()}}function renderDropdown(items){symbolDropdown.innerHTML='';if(!items.length){hideDropdown();return}items.slice(0,20).forEach(it=>{const sym=it.tradingsymbol||it.symbol,lot=it.lot_size||null,div=document.createElement('div');div.className='autocomplete-item';div.innerHTML=`<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;div.onclick=()=>{g_symbol.value=sym;if(lot)g_qty.value=lot;hideDropdown()};symbolDropdown.appendChild(div)});symbolDropdown.style.display='block'}function hideDropdown(){setTimeout(()=>symbolDropdown.style.display='none',120)}async function submitGeneric(){let execution_type=g_execution_mode.value,test_mode=null;if(execution_type.startsWith("TEST_")){if(execution_type.includes("ENTRY"))execution_type="ENTRY";if(execution_type.includes("EXIT"))execution_type="EXIT";test_mode=execution_type.includes("SUCCESS")?"SUCCESS":"FAILURE"}const payload={exchange:g_exchange.value,symbol:g_symbol.value,execution_type,test_mode,side:g_side.value,qty:Number(g_qty.value),product:g_product.value,order_type:g_order_type.value,price:g_order_type.value==='LIMIT'?Number(g_price.value):null,triggered_order:g_triggered.value,trigger_value:g_trigger_value.value?Number(g_trigger_value.value):null,target:g_target.value?Number(g_target.value):null,stoploss:g_stoploss.value?Number(g_stoploss.value):null,trail_sl:g_trail_sl.value?Number(g_trail_sl.value):null,trail_when:g_trail_when.value?Number(g_trail_when.value):null,reason:"WEB_MANUAL"};try{const res=await fetch('/dashboard/intent/generic',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await res.json();genericResult.className='result ok';genericResult.innerHTML=`✔ Queued (${data.intent_id})`}catch(err){genericResult.className='result bad';genericResult.innerHTML=`✖ Failed`}}function addToBasket(){let execution_type=g_execution_mode.value,test_mode=null;if(execution_type.startsWith("TEST_")){if(execution_type.includes("ENTRY"))execution_type="ENTRY";if(execution_type.includes("EXIT"))execution_type="EXIT";test_mode=execution_type.includes("SUCCESS")?"SUCCESS":"FAILURE"}basketOrders.push({exchange:g_exchange.value,symbol:g_symbol.value,execution_type,test_mode,side:g_side.value,qty:Number(g_qty.value),product:g_product.value,order_type:g_order_type.value,price:g_order_type.value==='LIMIT'?Number(g_price.value):null,triggered_order:g_triggered.value,trigger_value:g_trigger_value.value?Number(g_trigger_value.value):null,target:g_target.value?Number(g_target.value):null,stoploss:g_stoploss.value?Number(g_stoploss.value):null,trail_sl:g_trail_sl.value?Number(g_trail_sl.value):null,trail_when:g_trail_when.value?Number(g_trail_when.value):null});renderBasket()}function renderBasket(){const sorted=[...basketOrders].sort((a,b)=>{if(a.execution_type==='EXIT'&&b.execution_type!=='EXIT')return -1;if(a.execution_type!=='EXIT'&&b.execution_type==='EXIT')return 1;return 0});if(!sorted.length){basketItems.innerHTML='<div class="basket-empty">No orders yet</div>';basketCount.textContent='0';return}basketItems.innerHTML=sorted.map((o,i)=>`<div class="basket-item"><div class="basket-info"><div class="basket-symbol">${o.exchange} ${o.symbol} ${o.side}</div><div class="basket-details">${o.execution_type} · ${o.qty} · ${o.order_type}${o.price?' @ '+o.price:''}</div></div><button class="basket-remove" onclick="removeFromBasket(${basketOrders.indexOf(o)})">Remove</button></div>`).join('');basketCount.textContent=basketOrders.length}function removeFromBasket(idx){basketOrders.splice(idx,1);renderBasket()}function clearBasket(){basketOrders=[];renderBasket()}async function submitBasket(){const sorted=[...basketOrders].sort((a,b)=>{if(a.execution_type==='EXIT'&&b.execution_type!=='EXIT')return -1;if(a.execution_type!=='EXIT'&&b.execution_type==='EXIT')return 1;return 0});try{const res=await fetch('/dashboard/intent/basket',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({orders:sorted,reason:"WEB_BASKET"})});const data=await res.json();basketResult.className='result ok';basketResult.innerHTML=`✔ Submitted (${data.intent_id})`;clearBasket()}catch(err){basketResult.className='result bad';basketResult.innerHTML=`✖ Failed`}}function addAdvancedLeg(){const id=legCounter++;advLegs.push(id);renderAdvancedLegs()}function renderAdvancedLegs(){advLegsContainer.innerHTML=advLegs.map(id=>`<div class="leg-container"><div class="leg-header"><div class="leg-title">Leg ${id+1}</div><button class="leg-remove" onclick="removeAdvLeg(${id})">Remove</button></div><div class="row"><div class="field"><label>Exchange</label><select id="adv_ex_${id}"><option>NSE</option><option>BSE</option><option>NFO</option><option>BFO</option><option>MCX</option><option>CDS</option></select></div><div class="field autocomplete-wrap"><label>Symbol</label><input id="adv_sym_${id}" placeholder="Symbol" autocomplete="off" oninput="onAdvSymbolType(${id})"><div id="advDropdown_${id}" class="autocomplete-list" style="display:none;"></div></div></div><div class="row"><div class="field"><label>Side</label><select id="adv_side_${id}"><option>BUY</option><option>SELL</option></select></div><div class="field"><label>Execution</label><select id="adv_exec_${id}"><option value="ENTRY">ENTRY</option><option value="EXIT">EXIT</option><option value="TEST_ENTRY_SUCCESS">TEST ENTRY (S)</option><option value="TEST_ENTRY_FAILURE">TEST ENTRY (F)</option><option value="TEST_EXIT_SUCCESS">TEST EXIT (S)</option><option value="TEST_EXIT_FAILURE">TEST EXIT (F)</option></select></div></div><div class="row"><div class="field"><label>Qty</label><input id="adv_qty_${id}" type="number" value="1" min="1"></div><div class="field"><label>Target Type</label><select id="adv_tgt_type_${id}"><option>DELTA</option><option>THETA</option><option>GAMMA</option><option>VEGA</option><option>PRICE</option><option>PREMIUM</option></select></div></div><div class="row"><div class="field"><label>Target Value</label><input id="adv_tgt_val_${id}" type="number" step="0.01" placeholder="Value"></div><div class="field"><label>Product</label><select id="adv_prod_${id}"><option value="MIS">MIS</option><option value="NRML">NRML</option><option value="CNC">CNC</option></select></div></div><div class="row"><div class="field"><label>Order Type</label><select id="adv_ord_${id}"><option>MARKET</option><option>LIMIT</option></select></div><div class="field"><label>Price</label><input id="adv_price_${id}" type="number" step="0.05" placeholder="0.00"></div></div></div>`).join('')}function removeAdvLeg(id){advLegs=advLegs.filter(x=>x!==id);renderAdvancedLegs()}let advSymbolTimers={};function onAdvSymbolType(id){const input=document.getElementById(`adv_sym_${id}`);const q=input.value.trim();if(q.length<2){hideAdvDropdown(id);return}clearTimeout(advSymbolTimers[id]);advSymbolTimers[id]=setTimeout(()=>fetchAdvSymbols(id,q),250)}async function fetchAdvSymbols(id,q){try{const res=await fetch(`/dashboard/symbols/search?q=${encodeURIComponent(q)}`,{credentials:'include'});if(!res.ok)return;renderAdvDropdown(id,await res.json())}catch{hideAdvDropdown(id)}}function renderAdvDropdown(id,items){const dropdown=document.getElementById(`advDropdown_${id}`);if(!dropdown)return;dropdown.innerHTML='';if(!items.length){hideAdvDropdown(id);return}items.slice(0,20).forEach(it=>{const sym=it.tradingsymbol||it.symbol,lot=it.lot_size||null,div=document.createElement('div');div.className='autocomplete-item';div.innerHTML=`<strong>${sym}</strong>${lot?`<small>Lot: ${lot}</small>`:''}`;div.onclick=()=>{document.getElementById(`adv_sym_${id}`).value=sym;if(lot)document.getElementById(`adv_qty_${id}`).value=lot;hideAdvDropdown(id)};dropdown.appendChild(div)});dropdown.style.display='block'}function hideAdvDropdown(id){const dropdown=document.getElementById(`advDropdown_${id}`);if(dropdown)setTimeout(()=>dropdown.style.display='none',120)}async function submitAdvancedOrder(){const legs=advLegs.map(id=>{let execution_type=document.getElementById(`adv_exec_${id}`).value,test_mode=null;if(execution_type.startsWith("TEST_")){if(execution_type.includes("ENTRY"))execution_type="ENTRY";if(execution_type.includes("EXIT"))execution_type="EXIT";test_mode=execution_type.includes("SUCCESS")?"SUCCESS":"FAILURE"}return{exchange:document.getElementById(`adv_ex_${id}`).value,symbol:document.getElementById(`adv_sym_${id}`).value,side:document.getElementById(`adv_side_${id}`).value,execution_type,test_mode,qty:Number(document.getElementById(`adv_qty_${id}`).value),target_type:document.getElementById(`adv_tgt_type_${id}`).value,target_value:Number(document.getElementById(`adv_tgt_val_${id}`).value)||null,product:document.getElementById(`adv_prod_${id}`).value,order_type:document.getElementById(`adv_ord_${id}`).value,price:document.getElementById(`adv_ord_${id}`).value==='LIMIT'?Number(document.getElementById(`adv_price_${id}`).value):null}});try{const res=await fetch('/dashboard/intent/advanced',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({legs,reason:"WEB_ADVANCED"})});const data=await res.json();advancedResult.className='result ok';advancedResult.innerHTML=`✔ Submitted (${data.intent_id})`;advLegs=[];legCounter=0;renderAdvancedLegs()}catch(err){advancedResult.className='result bad';advancedResult.innerHTML=`✖ Failed`}}
 </script>
 </body>
 </html>

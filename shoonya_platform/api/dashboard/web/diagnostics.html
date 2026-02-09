@@ -8,14 +8,17 @@
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
-        :root{--bg:#0a0e13;--panel:#151b26;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444}
+        :root{--bg:#0a0e13;--panel:#151b26;--panel-2:#1c2333;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444;--warning:#f59e0b}
         *{box-sizing:border-box;margin:0;padding:0}
         body{font-family:monospace;background:var(--bg);color:var(--text);padding:20px;line-height:1.6}
         h1{color:var(--primary);margin-bottom:20px}
+        h2{color:var(--text);font-size:16px;margin-bottom:12px}
+        h3{color:var(--text);font-size:14px;margin-bottom:8px}
         .section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:20px}
+        select{padding:8px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer}
         button{background:var(--primary);color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;margin:5px}
         button:hover{background:#2563eb}
-        pre{background:#0a0e13;padding:15px;border-radius:6px;overflow-x:auto;border:1px solid var(--border)}
+        pre{background:#0a0e13;padding:15px;border-radius:6px;overflow-x:auto;border:1px solid var(--border);color:var(--text)}
         .error{color:var(--danger)}
         .success{color:var(--success)}
         .status{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
@@ -24,21 +27,21 @@
         .status.EXECUTED{background:rgba(16,185,129,.12);color:var(--success);border:1px solid var(--success)}
         .status.FAILED{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid var(--danger)}
         .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px}
-        .info-card{background:var(--panel);padding:12px;border-radius:8px;border-left:4px solid var(--primary)}
-        .info-card.warning{border-left-color:var(--warning)}
-        .info-card.danger{border-left-color:var(--danger)}
-        .info-card.success{border-left-color:var(--success)}
+        .info-card{background:var(--panel-2);padding:12px;border-radius:8px;border-left:4px solid var(--primary)}
+        .info-card.warning{border-left-color:var(--warning);background:rgba(245,158,11,.05)}
+        .info-card.danger{border-left-color:var(--danger);background:rgba(239,68,68,.05)}
+        .info-card.success{border-left-color:var(--success);background:rgba(16,185,129,.05)}
         .info-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;margin-bottom:4px}
         .info-value{font-size:18px;font-weight:700;color:var(--text)}
-        .list-item{padding:12px;background:var(--panel);border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--border)}
-        .list-item.error{border-left-color:var(--danger)}
-        .list-item.warning{border-left-color:var(--warning)}
-        .list-item.success{border-left-color:var(--success)}
-        .pipeline-step{display:flex;align-items:center;gap:12px;padding:12px;background:var(--panel);border-radius:8px;margin-bottom:8px;border-left:4px solid var(--border)}
+        .list-item{padding:12px;background:var(--panel-2);border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--border)}
+        .list-item.error{border-left-color:var(--danger);background:rgba(239,68,68,.05)}
+        .list-item.warning{border-left-color:var(--warning);background:rgba(245,158,11,.05)}
+        .list-item.success{border-left-color:var(--success);background:rgba(16,185,129,.05)}
+        .pipeline-step{display:flex;align-items:center;gap:12px;padding:12px;background:var(--panel-2);border-radius:8px;margin-bottom:8px;border-left:4px solid var(--border)}
         .pipeline-step.active{background:rgba(16,185,129,.05);border-left-color:var(--success)}
         .pipeline-step.pending{background:rgba(245,158,11,.05);border-left-color:var(--warning)}
         .pipeline-step.failed{background:rgba(239,68,68,.05);border-left-color:var(--danger)}
-        .step-icon{font-size:20px}
+        .step-icon{font-size:20px;font-weight:700}
         .step-content{flex:1}
         .step-label{font-weight:600;font-size:12px;color:var(--text)}
         .step-desc{font-size:11px;color:var(--muted);margin-top:2px}

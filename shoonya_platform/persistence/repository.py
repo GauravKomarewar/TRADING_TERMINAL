@@ -167,6 +167,25 @@ class OrderRepository:
             ),
         )
         conn.commit()
+
+    def update_tag(self, command_id: str, tag: str):
+        """
+        Update order tag (used for blocker reasons).
+        Tags: VALIDATION_FAILED, RISK_LIMITS_EXCEEDED, EXECUTION_GUARD_BLOCKED, 
+              DUPLICATE_ORDER_BLOCKED, BROKER_REJECTED, etc.
+        """
+        conn = get_connection()
+        conn.execute(
+            """
+            UPDATE orders
+            SET tag = ?, updated_at = ?
+            WHERE command_id = ?
+            AND client_id = ?
+            """,
+            (tag, datetime.utcnow().isoformat(), command_id, self.client_id),
+        )
+        conn.commit()
+
     # -----------------------------
     # READ
     # -----------------------------

@@ -6,7 +6,7 @@
 # Note    : No execution semantics changed
 #===========================================================
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Optional, Literal
 import uuid
@@ -370,3 +370,10 @@ class UniversalOrderCommand:
             updated_at=now,
             tag=None,
         )
+
+    def with_intent(self, intent: str) -> "UniversalOrderCommand":
+        """
+        Return a new UniversalOrderCommand with the intent field set.
+        Used for immutable command transformation.
+        """
+        return replace(self, intent=intent)

@@ -1,28 +1,35 @@
 [Unit]
-Description=Shoonya Signal Processor - Webhook Execution Service
-Documentation=file:///opt/shoonya/README.txt
+Description=Shoonya Trading Platform - Execution Service
+Documentation=file:///home/ec2-user/shoonya_platform/README.txt
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=shoonya
-Group=shoonya
-WorkingDirectory=/opt/shoonya
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/shoonya_platform
 
 # Environment variables
-Environment="PATH=/opt/shoonya/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PATH=/home/ec2-user/shoonya_platform/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="LOG_LEVEL=INFO"
 
 # Service startup
-ExecStart=/opt/shoonya/venv/bin/python /opt/shoonya/main.py
+ExecStart=/home/ec2-user/shoonya_platform/venv/bin/python /home/ec2-user/shoonya_platform/main.py
 
-# Restart policy
-Restart=on-failure
+# ========================================
+# ENHANCED RESTART POLICY
+# ========================================
+# Always restart on failure (including session recovery failures)
+Restart=always
+# Wait 10 seconds before restart (allows broker to stabilize)
 RestartSec=10
+# Allow up to 5 restarts in 5 minutes
 StartLimitInterval=300
-StartLimitBurst=3
+StartLimitBurst=5
+# Exit code 1 (session failure) triggers restart
+RestartForceExitStatus=1
 
 # Resource limits
 MemoryLimit=2G
@@ -32,6 +39,8 @@ CPUQuota=80%
 PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
+ReadWritePaths=/home/ec2-user/shoonya_platform/logs
+ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data
 ProtectHome=yes
 ProtectKernelTunables=yes
 
@@ -41,13 +50,13 @@ KillSignal=SIGTERM
 SendSIGKILL=yes
 
 # Security hardening
-SecureRandom=yes
 OOMScoreAdjust=-100  # Prevent OOM killer
 LimitNOFILE=65536
 LimitNPROC=8192
 
 # Logging to systemd journal (in addition to file logs)
 StandardOutput=journal
+StandardError=journal
 StandardError=journal
 SyslogIdentifier=shoonya-signal-processor
 

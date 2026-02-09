@@ -2,145 +2,41 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard – Shoonya OMS</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard – Shoonya Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/web/styles/common.css">
     <style>
-        :root {
-            --bg: #0a0e13;
-            --panel: #151b26;
-            --border: #2d3548;
-            --text: #f1f5f9;
-            --muted: #94a3b8;
-            --primary: #3b82f6;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-        }
-        
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
-        }
-        
-        /* Header */
-        header {
-            height: 64px;
-            background: var(--panel);
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 24px;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        
-        .nav-left {
-            display: flex;
-            gap: 24px;
-            align-items: center;
-        }
-        
-        .brand {
-            font-weight: 700;
-            font-size: 18px;
-            color: var(--primary);
-            cursor: pointer;
-        }
-        
-        .nav-link {
-            color: var(--muted);
-            font-size: 14px;
-            text-decoration: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            transition: 0.2s;
-            display: inline-block;
-        }
-        
-        .nav-link:hover {
-            color: var(--text);
-            background: #1c2333;
-        }
-        
-        .nav-link.active {
-            color: var(--primary);
-            background: #1c2333;
-            font-weight: 600;
-        }
-        
-        .nav-right {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-        
-        .logout-btn {
-            background: transparent;
-            border: 1px solid var(--danger);
-            color: var(--danger);
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: 0.2s;
-            font-weight: 600;
-        }
-        
-        .logout-btn:hover {
-            background: var(--danger);
-            color: #fff;
-            border-color: var(--danger);
-        }
-        
-        /* Main Content */
-        main {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 32px 24px;
-        }
-        
         /* Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 24px;
-            margin-bottom: 32px;
+            gap: var(--spacing-lg);
+            margin-bottom: var(--spacing-xl);
         }
         
         .stat-card {
             background: var(--panel);
             border: 1px solid var(--border);
-            padding: 24px;
-            border-radius: 16px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            transition: 0.2s;
+            padding: var(--spacing-lg);
+            border-radius: var(--radius-lg);
+            transition: var(--transition);
         }
         
         .stat-card:hover {
-            border-color: var(--primary);
+            border-color: var(--border-light);
         }
         
         .stat-label {
-            font-size: 12px;
+            font-size: var(--font-xs);
             color: var(--muted);
             text-transform: uppercase;
-            margin-bottom: 8px;
+            margin-bottom: var(--spacing-sm);
             font-weight: 600;
             letter-spacing: 0.5px;
         }
         
         .stat-value {
-            font-size: 28px;
+            font-size: var(--font-xl);
             font-weight: 700;
             font-variant-numeric: tabular-nums;
             letter-spacing: -0.5px;
@@ -327,10 +223,6 @@
             align-items: center;
             gap: 6px;
             font-size: 11px;
-            color: var(--muted);
-        }
-        
-        .auto-refresh-status.active {
             color: var(--success);
         }
         
@@ -338,10 +230,6 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: var(--muted);
-        }
-        
-        .refresh-dot.active {
             background: var(--success);
             animation: pulse 2s ease-in-out infinite;
         }
@@ -349,6 +237,75 @@
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.4; }
+        }
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .mini-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+        }
+
+        .mini-title {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .mini-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .mini-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .mini-row:last-child {
+            border-bottom: none;
+        }
+
+        .message-list {
+            max-height: 320px;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .message-item {
+            border: 1px solid var(--border);
+            background: #1c2333;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+        }
+
+        .message-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        .message-text {
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre-wrap;
         }
         
         /* Responsive */
@@ -367,22 +324,21 @@
 </head>
 <body>
 <header>
-    <div class="nav-left">
-        <div class="brand" onclick="window.location.href='/dashboard/web/dashboard.html'">⚡ Shoonya OMS</div>
-        <a class="nav-link" href="/dashboard/web/dashboard.html">Dashboard</a>
-        <a class="nav-link" href="/dashboard/web/home.html">Home</a>
-        <a class="nav-link" href="/dashboard/web/option_chain_dashboard.html">Option Chain</a>
-        <a class="nav-link" href="/dashboard/web/place_order.html">Place Order</a>
-        <a class="nav-link" href="/dashboard/web/orderbook.html">Orderbook</a>
-        <a class="nav-link" href="/dashboard/web/diagnostics.html">Diagnostics</a>
-        <a class="nav-link" href="/dashboard/web/strategy_dnss.html">DNSS Strategy</a>
-    </div>
-    <div style="display: flex; gap: 12px; align-items: center">
-        <div class="auto-refresh-status" id="autoRefreshStatus">
+    <div class="brand" onclick="window.location.href='/web/dashboard.html'">◬ Shoonya</div>
+    <button class="mobile-menu-toggle" onclick="toggleMobileNav()">☰</button>
+    <nav class="nav-links" id="navLinks">
+        <a href="/web/dashboard.html" class="nav-link active">Dashboard</a>
+        <a href="/web/option_chain_dashboard.html" class="nav-link">Option Chain</a>
+        <a href="/web/orderbook.html" class="nav-link">Orders</a>
+        <a href="/web/place_order.html" class="nav-link">Place Order</a>
+        <a href="/web/strategy.html" class="nav-link">Strategy</a>
+        <a href="/web/diagnostics.html" class="nav-link">Diagnostics</a>
+    </nav>
+    <div style="display: flex; gap: 12px; align-items: center; margin-left: auto;">
+        <div class="auto-refresh-status">
             <span class="refresh-dot"></span>
-            <span>Auto-refresh: <span id="refreshInterval">2s</span></span>
+            <span>Live Updates</span>
         </div>
-        <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
 </header>
 
@@ -406,6 +362,85 @@
         <div class="stat-card">
             <div class="stat-label">System Signal</div>
             <div id="systemSignal" class="stat-value neutral">IDLE</div>
+        </div>
+    </div>
+
+    <!-- System Analytics -->
+    <div class="analytics-grid">
+        <div class="mini-card">
+            <div class="mini-title">Risk Manager</div>
+            <div class="mini-value" id="riskStatusBadge">SAFE</div>
+            <div class="mini-row">
+                <span>Trailing SL</span>
+                <span id="riskTrailingSl">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Peak Profit</span>
+                <span id="riskPeakProfit">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Daily Loss Hit</span>
+                <span id="riskDailyLoss">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Human Violation</span>
+                <span id="riskHumanViolation">--</span>
+            </div>
+        </div>
+
+        <div class="mini-card">
+            <div class="mini-title">Alerts Summary</div>
+            <div class="mini-value" id="alertTotal">0</div>
+            <div class="mini-row">
+                <span>Success</span>
+                <span id="alertSuccess">0</span>
+            </div>
+            <div class="mini-row">
+                <span>Failed</span>
+                <span id="alertFailed">0</span>
+            </div>
+            <div class="mini-row">
+                <span>Alerts Received</span>
+                <span id="alertReceived">0</span>
+            </div>
+            <div class="mini-row">
+                <span>Risk Alerts</span>
+                <span id="alertRisk">0</span>
+            </div>
+        </div>
+
+        <div class="mini-card">
+            <div class="mini-title">Market Data</div>
+            <div class="mini-value" id="heartbeatAgeMini">--</div>
+            <div class="mini-row">
+                <span>Chains</span>
+                <span id="heartbeatChains">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Login</span>
+                <span id="heartbeatLogin">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Last Update</span>
+                <span id="heartbeatLast">--</span>
+            </div>
+        </div>
+
+        <div class="mini-card">
+            <div class="mini-title">System Signals</div>
+            <div class="mini-value" id="signalStatusMini">IDLE</div>
+            <div class="mini-row">
+                <span>Open Orders</span>
+                <span id="openOrdersMini">0</span>
+            </div>
+            <div class="mini-row">
+                <span>Last Order</span>
+                <span id="lastOrderTime">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Messages</span>
+                <span id="telegramMessageCount">0</span>
+            </div>
         </div>
     </div>
     
@@ -469,6 +504,20 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- System Messages -->
+            <div class="card">
+                <div class="card-header">
+                    <span>System Messages (Telegram)</span>
+                    <span class="badge ok" id="telegramMessageBadge">0</span>
+                </div>
+                <div class="message-list" id="telegramMessages">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">💬</div>
+                        Waiting for messages...
+                    </div>
                 </div>
             </div>
         </div>
@@ -573,7 +622,7 @@
     
     // Configuration
     const config = {
-        autoRefreshInterval: 2000, // 2 seconds (aggressive)
+        autoRefreshInterval: 1000, // 1 second (real-time)
         maxRetries: 3,
         retryDelay: 2000
     };
@@ -702,8 +751,10 @@
         
         isRefreshing = true;
         const refreshBtn = document.getElementById('refreshBtn');
-        const originalText = refreshBtn.innerHTML;
-        refreshBtn.innerHTML = '<span class="spinner"></span> Refreshing...';
+        const originalText = refreshBtn ? refreshBtn.innerHTML : null;
+        if (refreshBtn) {
+            refreshBtn.innerHTML = '<span class="spinner"></span> Refreshing...';
+        }
         
         try {
             const res = await fetch('/dashboard/home/status', { 
@@ -746,6 +797,13 @@
             
             // Update System Status
             updateSystemStatus(system);
+
+            // Update Risk / Alerts / Messages
+            updateRiskWidgets(system.risk || null);
+            updateAlertSummary(system.telegram_stats || null);
+            updateTelegramMessages(system.telegram_messages || []);
+            updateHeartbeatMini(system.heartbeat || null);
+            updateSignalMini(system.signal || null, system.open_orders || 0, system.orders || []);
             
             // Update Limits
             updateLimits(broker.limits || {});
@@ -779,8 +837,132 @@
             
         } finally {
             isRefreshing = false;
-            refreshBtn.innerHTML = originalText;
+            if (refreshBtn && originalText !== null) {
+                refreshBtn.innerHTML = originalText;
+            }
         }
+    }
+
+    function updateRiskWidgets(risk) {
+        const riskStatusEl = document.getElementById('riskStatusBadge');
+        const trailingEl = document.getElementById('riskTrailingSl');
+        const peakEl = document.getElementById('riskPeakProfit');
+        const dailyLossEl = document.getElementById('riskDailyLoss');
+        const humanEl = document.getElementById('riskHumanViolation');
+
+        if (!risk) {
+            riskStatusEl.textContent = 'UNKNOWN';
+            trailingEl.textContent = '--';
+            peakEl.textContent = '--';
+            dailyLossEl.textContent = '--';
+            humanEl.textContent = '--';
+            return;
+        }
+
+        const dailyLossHit = !!risk.daily_loss_hit;
+        const humanViolation = !!risk.human_violation_detected;
+        const status = dailyLossHit || humanViolation ? 'ALERT' : 'SAFE';
+
+        riskStatusEl.textContent = status;
+        riskStatusEl.style.color = status === 'SAFE' ? 'var(--success)' : 'var(--danger)';
+        trailingEl.textContent = formatCurrency(risk.dynamic_max_loss || 0);
+        peakEl.textContent = formatCurrency(risk.highest_profit || 0);
+        dailyLossEl.textContent = dailyLossHit ? 'YES' : 'NO';
+        humanEl.textContent = humanViolation ? 'YES' : 'NO';
+    }
+
+    function updateAlertSummary(stats) {
+        const totalEl = document.getElementById('alertTotal');
+        const successEl = document.getElementById('alertSuccess');
+        const failedEl = document.getElementById('alertFailed');
+        const receivedEl = document.getElementById('alertReceived');
+        const riskEl = document.getElementById('alertRisk');
+
+        if (!stats) {
+            totalEl.textContent = '0';
+            successEl.textContent = '0';
+            failedEl.textContent = '0';
+            receivedEl.textContent = '0';
+            riskEl.textContent = '0';
+            return;
+        }
+
+        totalEl.textContent = formatNumber(stats.total || 0);
+        successEl.textContent = formatNumber(stats.success || 0);
+        failedEl.textContent = formatNumber(stats.failed || 0);
+        receivedEl.textContent = formatNumber(stats.alerts || 0);
+        riskEl.textContent = formatNumber(stats.risk || 0);
+
+        const msgCount = document.getElementById('telegramMessageCount');
+        const msgBadge = document.getElementById('telegramMessageBadge');
+        if (msgCount) msgCount.textContent = formatNumber(stats.total || 0);
+        if (msgBadge) msgBadge.textContent = formatNumber(stats.total || 0);
+    }
+
+    function updateTelegramMessages(messages) {
+        const container = document.getElementById('telegramMessages');
+        if (!container) return;
+
+        if (!messages || messages.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    No messages yet
+                </div>
+            `;
+            return;
+        }
+
+        const recent = messages.slice(-50).reverse();
+        container.innerHTML = recent.map(item => {
+            const ts = item.ts ? new Date(item.ts * 1000) : null;
+            const timeStr = ts ? ts.toLocaleTimeString('en-IN') : '--';
+            const dateStr = ts ? ts.toLocaleDateString('en-IN') : '--';
+            const raw = (item.message || '').replace(/<[^>]*>/g, '');
+            return `
+                <div class="message-item">
+                    <div class="message-meta">
+                        <span>${dateStr} ${timeStr}</span>
+                        <span>Telegram</span>
+                    </div>
+                    <div class="message-text">${raw}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function updateHeartbeatMini(heartbeat) {
+        const ageEl = document.getElementById('heartbeatAgeMini');
+        const chainsEl = document.getElementById('heartbeatChains');
+        const loginEl = document.getElementById('heartbeatLogin');
+        const lastEl = document.getElementById('heartbeatLast');
+
+        if (!heartbeat) {
+            ageEl.textContent = '--';
+            chainsEl.textContent = '--';
+            loginEl.textContent = '--';
+            lastEl.textContent = '--';
+            return;
+        }
+
+        ageEl.textContent = `${heartbeat.age_sec || 0}s`;
+        chainsEl.textContent = formatNumber(heartbeat.chains || 0);
+        loginEl.textContent = heartbeat.login || '--';
+        lastEl.textContent = heartbeat.timestamp ? new Date(heartbeat.timestamp * 1000).toLocaleTimeString('en-IN') : '--';
+    }
+
+    function updateSignalMini(signal, openOrders, orders) {
+        const statusEl = document.getElementById('signalStatusMini');
+        const openOrdersEl = document.getElementById('openOrdersMini');
+        const lastOrderEl = document.getElementById('lastOrderTime');
+
+        const status = (signal && signal.status) || 'IDLE';
+        statusEl.textContent = status;
+        openOrdersEl.textContent = formatNumber(openOrders || 0);
+
+        const lastOrder = (orders && orders.length) ? orders[0] : null;
+        const lastTs = lastOrder && lastOrder.updated_at ? new Date(lastOrder.updated_at).toLocaleTimeString('en-IN') : '--';
+        lastOrderEl.textContent = lastTs;
     }
     
     // Update Stats Cards
@@ -977,7 +1159,16 @@
     });
     
     // Cleanup on unload
-    window.addEventListener('beforeunload', stopAutoRefresh);
+    window.addEventListener('beforeunload', () => {
+        if (autoRefreshTimer) {
+            clearInterval(autoRefreshTimer);
+        }
+    });
+    
+    // Mobile Navigation Toggle
+    function toggleMobileNav() {
+        document.getElementById('navLinks').classList.toggle('mobile-open');
+    }
 </script>
 </body>
 </html>

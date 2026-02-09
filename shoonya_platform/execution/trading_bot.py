@@ -48,6 +48,7 @@ Main trading bot logic with alert processing and trade management
 # ======================================================================
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -563,8 +564,8 @@ class ShoonyaBot:
                 schedule.every().day.at("15:30").do(self.send_market_close_summary)
                 # Periodic PnL OHLC tracking (analytics only)
                 schedule.every(1).minutes.do(self.risk_manager.track_pnl_ohlc)
+                
                 # 🔐 Supreme Risk Manager heartbeat (REAL-TIME RISK)
-                # schedule.every(5).seconds.do(self.risk_manager.heartbeat)
                 def _rms_heartbeat_wrapper():
                     try:
                         self.risk_manager.heartbeat()
@@ -575,6 +576,18 @@ class ShoonyaBot:
                         log_exception("RMS.heartbeat", e)
 
                 schedule.every(5).seconds.do(_rms_heartbeat_wrapper)
+                
+                # 💓 Telegram Heartbeat - validates session + sends alive signal
+                def _telegram_heartbeat():
+                    try:
+                        self.send_telegram_heartbeat()
+                    except RuntimeError:
+                        # 🔥 FAIL-HARD: session failure must trigger restart
+                        raise
+                    except Exception as e:
+                        log_exception("telegram_heartbeat", e)
+                
+                schedule.every(5).minutes.do(_telegram_heartbeat)
 
                 schedule.every(10).minutes.do(send_strategy_reports)
                 # 🧹 Weekly DB hygiene (safe, non-trading)
@@ -587,8 +600,21 @@ class ShoonyaBot:
                         schedule.run_pending()
 
                     # 🔥 FAIL-HARD: broker/session failure must kill process
-                    except RuntimeError:
-                        raise
+                    except RuntimeError as e:
+                        logger.critical(f"FATAL SESSION ERROR: {e} - RESTARTING PROCESS")
+                        if self.telegram_enabled:
+                            try:
+                                self.send_telegram(
+                                    f"🚨 <b>CRITICAL: SERVICE RESTART REQUIRED</b>\n"
+                                    f"❌ Session recovery failed\n"
+                                    f"🔄 Service will auto-restart in 5 seconds\n"
+                                    f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}"
+                                )
+                            except:
+                                pass
+                        time.sleep(5)
+                        # Force process exit - systemd will restart us
+                        os._exit(1)
 
                     except Exception as e:
                         log_exception("scheduler.run_pending", e)
@@ -1530,6 +1556,54 @@ class ShoonyaBot:
         except Exception as e:
             log_exception("send_market_close_summary", e)
     
+    def send_telegram_heartbeat(self):
+        """Send periodic heartbeat with session validation"""
+        try:
+            if not self.telegram_enabled:
+                return
+            
+            # 1️⃣ Validate session by fetching limits
+            try:
+                limits = self.api.get_limits()
+                if not limits or not isinstance(limits, dict):
+                    raise RuntimeError("BROKER_SESSION_INVALID")
+                session_status = "✅ Live"
+                cash = float(limits.get('cash', 0))
+            except Exception as e:
+                session_status = "❌ Disconnected"
+                cash = 0.0
+                logger.error(f"Heartbeat session check failed: {e}")
+                # Trigger session recovery
+                raise RuntimeError("SESSION_VALIDATION_FAILED")
+            
+            # 2️⃣ Get positions count
+            try:
+                positions = self.api.get_positions()
+                active_pos = sum(1 for p in positions if int(p.get('netqty', 0)) != 0)
+            except:
+                active_pos = 0
+            
+            # 3️⃣ Send compact heartbeat
+            now = datetime.now()
+            message = (
+                f"💓 <b>SYSTEM HEARTBEAT</b>\n"
+                f"⏰ {now.strftime('%H:%M:%S')} | {now.strftime('%d-%b-%Y')}\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"🔐 Session: {session_status}\n"
+                f"💰 Cash: ₹{cash:,.2f}\n"
+                f"📊 Positions: {active_pos}\n"
+                f"🤖 Status: Active & Monitoring"
+            )
+            
+            self.send_telegram(message)
+            logger.debug("Heartbeat sent")
+            
+        except RuntimeError:
+            # Re-raise to trigger restart
+            raise
+        except Exception as e:
+            log_exception("send_telegram_heartbeat", e)
+
     def send_status_report(self):
         """Send comprehensive status report"""
         try:
@@ -1550,6 +1624,14 @@ class ShoonyaBot:
             account_info = self.get_account_info()
             bot_stats = self.get_bot_stats()
             risk_status = self.risk_manager.get_status()
+            
+            # Validate broker connection
+            session_valid = False
+            try:
+                limits = self.api.get_limits()
+                session_valid = limits is not None and isinstance(limits, dict)
+            except:
+                pass
                         
             # Format message
             message = f"📊 <b>BOT STATUS REPORT</b>\n"
@@ -1558,7 +1640,7 @@ class ShoonyaBot:
             
             # Bot Status
             message += f"🤖 <b>BOT STATUS:</b> ✅ Active\n"
-            message += f"🔐 <b>Login Status:</b> ✅ Connected\n\n"
+            message += f"🔐 <b>Login Status:</b> {'✅ Connected' if session_valid else '❌ Disconnected'}\n\n"
             
             if account_info:
                 # Account Limits

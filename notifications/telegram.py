@@ -4,7 +4,10 @@ Telegram Notifier Module
 Handles all Telegram notifications using HTTP requests
 """
 
+import json
 import logging
+import time
+from pathlib import Path
 import requests
 from typing import Optional, Literal
 
@@ -20,6 +23,7 @@ class TelegramNotifier:
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
         self.session = requests.Session()
         self.is_connected = False
+        self._log_path = self._resolve_log_path()
         
     
     def test_connection(self):
@@ -76,6 +80,7 @@ class TelegramNotifier:
                 response_data = response.json()
                 if response_data.get('ok'):
                     logger.debug("Telegram message sent successfully")
+                    self._append_message_log(message)
                     return True
                 else:
                     logger.error(f"Telegram API error: {response_data}")
@@ -94,34 +99,59 @@ class TelegramNotifier:
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
             return False
+
+    def _resolve_log_path(self) -> Path:
+        project_root = Path(__file__).resolve().parents[1]
+        log_dir = project_root / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir / "telegram_messages.jsonl"
+
+    def _append_message_log(self, message: str) -> None:
+        try:
+            payload = {
+                "ts": time.time(),
+                "message": message,
+            }
+            with open(self._log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning(f"Failed to log telegram message: {e}")
     
     def send_startup_message(self, host: str, port: int, report_frequency: int) -> bool:
         """Send bot startup notification"""
+        from datetime import datetime
+        
         message = (
-            f"🚀 <b>BOT STARTING UP</b>\n"
-            f"📅 Starting at system boot\n"
+            f"🚀 <b>TRADING SYSTEM STARTING</b>\n"
+            f"📅 {datetime.now().strftime('%A, %d %B %Y')}\n"
+            f"⏰ {datetime.now().strftime('%H:%M:%S')}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
             f"🤖 Initializing trading bot...\n"
-            f"🔐 Attempting login...\n"
+            f"🔐 Attempting broker login...\n"
             f"🌐 Server: http://{host}:{port}\n"
             f"🔔 Telegram: ✅ Connected\n"
-            f"📊 Reports: Every {report_frequency} minutes"
+            f"📊 Reports: Every {report_frequency} minutes\n\n"
+            f"⏳ Please wait for READY confirmation..."
         )
         return self.send_message(message)
     
     def send_ready_message(self, host: str, port: int, report_frequency: int) -> bool:
         """Send bot ready notification"""
+        from datetime import datetime
+        
         message = (
-            f"✅ <b>BOT READY</b>\n"
-            f"🌐 Server: http://{host}:{port}\n"
-            f"🔔 Telegram: Connected\n"
-            f"📊 Reports: Every {report_frequency} minutes\n"
-            f"🎯 Status: Monitoring for alerts...\n\n"
-            f"📋 Available endpoints:\n"
-            f"• /webhook (POST) - Receive trading alerts\n"
-            f"• /health (GET) - Health check\n"
-            f"• /status (GET) - Detailed status\n"
-            f"• /report (POST) - Manual report\n"
-            f"• /test-telegram (POST) - Test notifications"
+            f"✅ <b>SYSTEM READY - TRADING ACTIVE</b>\n"
+            f"📅 {datetime.now().strftime('%A, %d %B %Y')}\n"
+            f"⏰ {datetime.now().strftime('%H:%M:%S')}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔐 Login: ✅ Successful\n"
+            f"📊 Market Data: ✅ Live\n"
+            f"🌐 Dashboard: http://{host}:{port}\n"
+            f"💓 Heartbeat: Every 5 minutes\n"
+            f"📊 Reports: Every {report_frequency} minutes\n\n"
+            f"🎯 <b>Status: Monitoring for trading signals...</b>\n\n"
+            f"📖 <i>Available:"
+            f" Webhook | Dashboard | Live Feed</i>"
         )
         return self.send_message(message)
     

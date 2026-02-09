@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Management | Shoonya Platform</title>
+    <link rel="stylesheet" href="/web/styles/common.css">
+</head>
+<body>
+    <header>
+        <div class="brand" onclick="window.location.href='/web/dashboard.html'">◬ Shoonya</div>
+        <button class="mobile-menu-toggle" onclick="toggleMobileNav()">☰</button>
+        <nav class="nav-links" id="navLinks">
+            <a href="/web/dashboard.html" class="nav-link">Dashboard</a>
+            <a href="/web/option_chain_dashboard.html" class="nav-link">Option Chain</a>
+            <a href="/web/orderbook.html" class="nav-link">Orders</a>
+            <a href="/web/place_order.html" class="nav-link">Place Order</a>
+            <a href="/web/strategy.html" class="nav-link active">Strategy</a>
+            <a href="/web/diagnostics.html" class="nav-link">Diagnostics</a>
+        </nav>
+    </header>
+
+    <main>
+        <div class="page-header">
+            <h1>Strategy Management</h1>
+            <p class="muted">Configure, monitor, and control trading strategies</p>
+        </div>
+
+        <!-- Strategy Control Panel -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Strategy Control</h3>
+                <div class="flex gap-sm">
+                    <button class="btn-success btn-sm" onclick="startStrategy()">▶ Start</button>
+                    <button class="btn-warning btn-sm" onclick="pauseStrategy()">⏸ Pause</button>
+                    <button class="btn-danger btn-sm" onclick="stopStrategy()">⏹ Stop</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="grid grid-cols-4">
+                    <div class="status-box">
+                        <div class="muted">Status</div>
+                        <div id="strategyStatus" style="font-weight:600; margin-top:4px;">IDLE</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="muted">Active Positions</div>
+                        <div id="activePositions" style="font-weight:600; margin-top:4px;">0</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="muted">Today's PnL</div>
+                        <div id="todayPnL" style="font-weight:600; margin-top:4px;">₹0.00</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="muted">Open Orders</div>
+                        <div id="openOrders" style="font-weight:600; margin-top:4px;">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Strategy Configuration Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('entry')">Entry Rules</div>
+            <div class="tab" onclick="switchTab('adjustment')">Adjustment Rules</div>
+            <div class="tab" onclick="switchTab('exit')">Exit Rules</div>
+            <div class="tab" onclick="switchTab('rms')">Risk Management</div>
+            <div class="tab" onclick="switchTab('monitor')">Monitor</div>
+        </div>
+
+        <!-- TAB 1: ENTRY RULES -->
+        <div id="entryTab" class="tab-content active">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Entry Configuration</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="field">
+                            <label>Strategy Type</label>
+                            <select id="strategyType" onchange="updateStrategyType()">
+                                <option value="custom">Custom Strategy</option>
+                                <option value="dnss">Delta Neutral Straddle/Strangle (DNSS)</option>
+                                <option value="iron_condor">Iron Condor</option>
+                                <option value="butterfly">Butterfly</option>
+                                <option value="long_straddle">Long Straddle</option>
+                                <option value="short_straddle">Short Straddle</option>
+                                <option value="directional">Directional Spread</option>
+                            </select>
+                        </div>
+                        
+                        <div class="field">
+                            <label>Underlying Symbol</label>
+                            <input type="text" id="underlying" placeholder="e.g., NIFTY, BANKNIFTY, FINNIFTY" value="NIFTY">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="field">
+                            <label>Entry Time</label>
+                            <input type="time" id="entryTime" value="09:20">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Entry Condition</label>
+                            <select id="entryCondition">
+                                <option value="time_based">Time Based</option>
+                                <option value="price_based">Price Level</option>
+                                <option value="volatility_based">Volatility Threshold</option>
+                                <option value="indicator_based">Technical Indicator</option>
+                            </select>
+                        </div>
+                        
+                        <div class="field">
+                            <label>Position Size (Lots)</label>
+                            <input type="number" id="positionSize" min="1" value="1">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Max Positions</label>
+                            <input type="number" id="maxPositions" min="1" value="1">
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Strategy-Specific Fields -->
+                    <div id="strategySpecificFields"></div>
+
+                    <div class="row">
+                        <div class="field">
+                            <label>
+                                <input type="checkbox" id="hedgeEntry" style="width:auto; margin-right:8px;">
+                                Enable Hedging on Entry
+                            </label>
+                        </div>
+                        
+                        <div class="field">
+                            <label>
+                                <input type="checkbox" id="autoConfirm" style="width:auto; margin-right:8px;">
+                                Auto-confirm Orders (No Manual Approval)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn-primary" onclick="saveEntryRules()">Save Entry Rules</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: ADJUSTMENT RULES -->
+        <div id="adjustmentTab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Adjustment Configuration</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="field">
+                            <label>
+                                <input type="checkbox" id="enableAdjustments" style="width:auto; margin-right:8px;">
+                                Enable Automatic Adjustments
+                            </label>
+                        </div>
+                    </div>
+
+                    <h3>Delta Adjustment</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Delta Trigger Threshold</label>
+                            <input type="number" id="deltaTrigger" step="0.01" placeholder="e.g., 0.15">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Target Delta After Adjustment</label>
+                            <input type="number" id="targetDelta" step="0.01" placeholder="e.g., 0.05">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Max Adjustments Per Day</label>
+                            <input type="number" id="maxAdjustments" min="0" value="3">
+                        </div>
+                    </div>
+
+                    <h3>Profit/Loss Adjustment</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Profit Lock Trigger (₹)</label>
+                            <input type="number" id="profitLockTrigger" step="100" placeholder="Lock at profit level">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Loss Repair Trigger (₹)</label>
+                            <input type="number" id="lossRepairTrigger" step="100" placeholder="Adjust at loss level">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Adjustment Action</label>
+                            <select id="adjustmentAction">
+                                <option value="add_hedge">Add Hedge</option>
+                                <option value="roll_strike">Roll Strike</option>
+                                <option value="reduce_position">Reduce Position</option>
+                                <option value="inverse_spread">Add Inverse Spread</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <h3>Time-Based Adjustment</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Adjustment Check Interval (minutes)</label>
+                            <input type="number" id="adjustCheckInterval" min="1" value="5">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Max Leg Delta</label>
+                            <input type="number" id="maxLegDelta" step="0.01" placeholder="Max delta per leg">
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn-primary" onclick="saveAdjustmentRules()">Save Adjustment Rules</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: EXIT RULES -->
+        <div id="exitTab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Exit Configuration</h3>
+                </div>
+                <div class="card-body">
+                    <h3>Time-Based Exit</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Exit Time</label>
+                            <input type="time" id="exitTime" value="15:15">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Force Exit Before Expiry (minutes)</label>
+                            <input type="number" id="forceExitMinutes" min="0" value="10">
+                        </div>
+                    </div>
+
+                    <h3>Profit Target</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Target Profit (₹)</label>
+                            <input type="number" id="targetProfit" step="100" placeholder="Exit at profit">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Target Profit (%)</label>
+                            <input type="number" id="targetProfitPercent" step="1" placeholder="% of premium">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Partial Exit at Target</label>
+                            <select id="partialExitPercent">
+                                <option value="100">Full Exit (100%)</option>
+                                <option value="75">Exit 75%</option>
+                                <option value="50">Exit 50%</option>
+                                <option value="25">Exit 25%</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <h3>Stop Loss</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Stop Loss (₹)</label>
+                            <input type="number" id="stopLoss" step="100" placeholder="Exit at loss">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Stop Loss (%)</label>
+                            <input type="number" id="stopLossPercent" step="1" placeholder="% of premium">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Trailing Stop (%)</label>
+                            <input type="number" id="trailingStop" step="1" placeholder="Trail profit">
+                        </div>
+                    </div>
+
+                    <h3>Position-Specific Exit</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Individual Leg SL (₹)</label>
+                            <input type="number" id="legStopLoss" step="50" placeholder="Per leg stop loss">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Individual Leg Target (₹)</label>
+                            <input type="number" id="legTarget" step="50" placeholder="Per leg target">
+                        </div>
+                        
+                        <div class="field">
+                            <label>
+                                <input type="checkbox" id="exitAllOnLegBreach" style="width:auto; margin-right:8px;">
+                                Exit All Legs if One Breaches
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn-primary" onclick="saveExitRules()">Save Exit Rules</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: RISK MANAGEMENT -->
+        <div id="rmsTab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Risk Management System</h3>
+                </div>
+                <div class="card-body">
+                    <h3>Position Limits</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Max Position Value (₹)</label>
+                            <input type="number" id="maxPositionValue" step="10000" placeholder="Total value limit">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Max Margin Usage (%)</label>
+                            <input type="number" id="maxMarginPercent" min="0" max="100" value="70">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Max Lots Per Trade</label>
+                            <input type="number" id="maxLotsPerTrade" min="1" value="10">
+                        </div>
+                    </div>
+
+                    <h3>Daily Limits</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Daily Loss Limit (₹)</label>
+                            <input type="number" id="dailyLossLimit" step="1000" placeholder="Stop trading at loss">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Daily Profit Target (₹)</label>
+                            <input type="number" id="dailyProfitTarget" step="1000" placeholder="Stop trading at profit">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Max Trades Per Day</label>
+                            <input type="number" id="maxTradesPerDay" min="1" value="10">
+                        </div>
+                    </div>
+
+                    <h3>Risk Controls</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>Circuit Breaker Loss (₹)</label>
+                            <input type="number" id="circuitBreaker" step="1000" placeholder="Emergency stop">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Drawdown Limit (%)</label>
+                            <input type="number" id="drawdownLimit" step="5" placeholder="From peak">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Position Concentration (%)</label>
+                            <input type="number" id="concentrationLimit" min="0" max="100" value="30" placeholder="Max % in one symbol">
+                        </div>
+                    </div>
+
+                    <h3>Combined Legs Management</h3>
+                    <div class="row">
+                        <div class="field">
+                            <label>
+                                <input type="checkbox" id="trackCombinedPnL" style="width:auto; margin-right:8px;" checked>
+                                Track Combined Legs PnL (Strategy-Level)
+                            </label>
+                        </div>
+                        
+                        <div class="field">
+                            <label>Combined Stop Loss (₹)</label>
+                            <input type="number" id="combinedStopLoss" step="100" placeholder="Total position SL">
+                        </div>
+                        
+                        <div class="field">
+                            <label>Combined Target (₹)</label>
+                            <input type="number" id="combinedTarget" step="100" placeholder="Total position target">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="field">
+                            <label>
+                                <input type="checkbox" id="autoSquareOff" style="width:auto; margin-right:8px;">
+                                Auto Square-Off on Risk Breach
+                            </label>
+                        </div>
+                        
+                        <div class="field">
+                            <label>
+                                <input type="checkbox" id="notifyOnRiskBreach" style="width:auto; margin-right:8px;" checked>
+                                Send Telegram Alert on Risk Breach
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn-primary" onclick="saveRMSRules()">Save RMS Configuration</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: MONITOR -->
+        <div id="monitorTab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Live Strategy Monitor</h3>
+                    <span class="badge badge-success" style="margin-left:auto;">Auto-refresh: 2s</span>
+                </div>
+                <div class="card-body">
+                    <!-- Position Summary -->
+                    <h3>Position Summary</h3>
+                    <div class="table-container">
+                        <table id="positionsTable">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Type</th>
+                                    <th>Qty</th>
+                                    <th>Entry Price</th>
+                                    <th>LTP</th>
+                                    <th>PnL</th>
+                                    <th>Delta</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positionsBody">
+                                <tr><td colspan="8" class="text-center muted">No active positions</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Combined Strategy Metrics -->
+                    <h3>Strategy Metrics</h3>
+                    <div class="grid grid-cols-3">
+                        <div class="status-box">
+                            <div class="muted">Total Delta</div>
+                            <div id="totalDelta" style="font-weight:600; margin-top:4px;">0.00</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="muted">Total Theta</div>
+                            <div id="totalTheta" style="font-weight:600; margin-top:4px;">0.00</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="muted">Total Vega</div>
+                            <div id="totalVega" style="font-weight:600; margin-top:4px;">0.00</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="muted">Combined PnL</div>
+                            <div id="combinedPnL" style="font-weight:600; margin-top:4px;">₹0.00</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="muted">Total Premium Collected</div>
+                            <div id="totalPremium" style="font-weight:600; margin-top:4px;">₹0.00</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="muted">Margin Used</div>
+                            <div id="marginUsed" style="font-weight:600; margin-top:4px;">₹0.00</div>
+                        </div>
+                    </div>
+
+                    <!-- Strategy Log -->
+                    <h3>Strategy Event Log</h3>
+                    <div class="status-box" style="max-height:300px; overflow-y:auto; font-family:monospace; font-size:12px;">
+                        <div id="strategyLog">No events to display</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="result" class="result" style="display:none;"></div>
+    </main>
+
+    <script>
+        // Mobile Navigation
+        function toggleMobileNav() {
+            document.getElementById('navLinks').classList.toggle('mobile-open');
+        }
+
+        // Tab Management
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tabName + 'Tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Update strategy-specific fields based on type
+        function updateStrategyType() {
+            const type = document.getElementById('strategyType').value;
+            const container = document.getElementById('strategySpecificFields');
+            
+            let html = '<h3 style="margin-top:24px;">Strategy-Specific Parameters</h3><div class="row">';
+            
+            if (type === 'dnss') {
+                html += `
+                    <div class="field">
+                        <label>Straddle/Strangle</label>
+                        <select id="dnssType">
+                            <option value="straddle">Straddle (ATM)</option>
+                            <option value="strangle">Strangle (OTM)</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>ATM Offset (Points)</label>
+                        <input type="number" id="atmOffset" step="50" value="0">
+                    </div>
+                    <div class="field">
+                        <label>CE Strike Offset</label>
+                        <input type="number" id="ceOffset" step="50" value="100">
+                    </div>
+                    <div class="field">
+                        <label>PE Strike Offset</label>
+                        <input type="number" id="peOffset" step="50" value="100">
+                    </div>
+                `;
+            } else if (type === 'iron_condor') {
+                html += `
+                    <div class="field">
+                        <label>Short CE Strike Offset</label>
+                        <input type="number" id="shortCEOffset" step="50" value="200">
+                    </div>
+                    <div class="field">
+                        <label>Long CE Strike Offset</label>
+                        <input type="number" id="longCEOffset" step="50" value="300">
+                    </div>
+                    <div class="field">
+                        <label>Short PE Strike Offset</label>
+                        <input type="number" id="shortPEOffset" step="50" value="200">
+                    </div>
+                    <div class="field">
+                        <label>Long PE Strike Offset</label>
+                        <input type="number" id="longPEOffset" step="50" value="300">
+                    </div>
+                `;
+            } else if (type === 'butterfly') {
+                html += `
+                    <div class="field">
+                        <label>Butterfly Type</label>
+                        <select id="butterflyType">
+                            <option value="long">Long Butterfly</option>
+                            <option value="short">Short Butterfly</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Wing Width (Points)</label>
+                        <input type="number" id="wingWidth" step="50" value="100">
+                    </div>
+                    <div class="field">
+                        <label>Option Type</label>
+                        <select id="butterflyOptionType">
+                            <option value="CE">Call Butterfly</option>
+                            <option value="PE">Put Butterfly</option>
+                        </select>
+                    </div>
+                `;
+            } else if (type === 'directional') {
+                html += `
+                    <div class="field">
+                        <label>Direction</label>
+                        <select id="direction">
+                            <option value="bullish">Bullish</option>
+                            <option value="bearish">Bearish</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Spread Type</label>
+                        <select id="spreadType">
+                            <option value="debit">Debit Spread</option>
+                            <option value="credit">Credit Spread</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Spread Width (Points)</label>
+                        <input type="number" id="spreadWidth" step="50" value="100">
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // Strategy Control Functions
+        async function startStrategy() {
+            if (!confirm('Start the trading strategy?')) return;
+            
+            try {
+                const response = await fetch('/api/strategy/start', { method: 'POST' });
+                const data = await response.json();
+                showResult(data.status === 'success', data.message);
+                if (data.status === 'success') refreshMonitor();
+            } catch (error) {
+                showResult(false, 'Failed to start strategy: ' + error.message);
+            }
+        }
+
+        async function pauseStrategy() {
+            try {
+                const response = await fetch('/api/strategy/pause', { method: 'POST' });
+                const data = await response.json();
+                showResult(data.status === 'success', data.message);
+                refreshMonitor();
+            } catch (error) {
+                showResult(false, 'Failed to pause strategy: ' + error.message);
+            }
+        }
+
+        async function stopStrategy() {
+            if (!confirm('Stop strategy and square off all positions?')) return;
+            
+            try {
+                const response = await fetch('/api/strategy/stop', { method: 'POST' });
+                const data = await response.json();
+                showResult(data.status === 'success', data.message);
+                refreshMonitor();
+            } catch (error) {
+                showResult(false, 'Failed to stop strategy: ' + error.message);
+            }
+        }
+
+        // Save Functions
+        async function saveEntryRules() {
+            const config = {
+                strategy_type: document.getElementById('strategyType').value,
+                underlying: document.getElementById('underlying').value,
+                entry_time: document.getElementById('entryTime').value,
+                entry_condition: document.getElementById('entryCondition').value,
+                position_size: parseInt(document.getElementById('positionSize').value),
+                max_positions: parseInt(document.getElementById('maxPositions').value),
+                hedge_entry: document.getElementById('hedgeEntry').checked,
+                auto_confirm: document.getElementById('autoConfirm').checked
+            };
+            
+            await saveConfig('entry', config);
+        }
+
+        async function saveAdjustmentRules() {
+            const config = {
+                enable_adjustments: document.getElementById('enableAdjustments').checked,
+                delta_trigger: parseFloat(document.getElementById('deltaTrigger').value) || null,
+                target_delta: parseFloat(document.getElementById('targetDelta').value) || null,
+                max_adjustments: parseInt(document.getElementById('maxAdjustments').value),
+                profit_lock_trigger: parseFloat(document.getElementById('profitLockTrigger').value) || null,
+                loss_repair_trigger: parseFloat(document.getElementById('lossRepairTrigger').value) || null,
+                adjustment_action: document.getElementById('adjustmentAction').value,
+                adjust_check_interval: parseInt(document.getElementById('adjustCheckInterval').value),
+                max_leg_delta: parseFloat(document.getElementById('maxLegDelta').value) || null
+            };
+            
+            await saveConfig('adjustment', config);
+        }
+
+        async function saveExitRules() {
+            const config = {
+                exit_time: document.getElementById('exitTime').value,
+                force_exit_minutes: parseInt(document.getElementById('forceExitMinutes').value),
+                target_profit: parseFloat(document.getElementById('targetProfit').value) || null,
+                target_profit_percent: parseFloat(document.getElementById('targetProfitPercent').value) || null,
+                partial_exit_percent: parseInt(document.getElementById('partialExitPercent').value),
+                stop_loss: parseFloat(document.getElementById('stopLoss').value) || null,
+                stop_loss_percent: parseFloat(document.getElementById('stopLossPercent').value) || null,
+                trailing_stop: parseFloat(document.getElementById('trailingStop').value) || null,
+                leg_stop_loss: parseFloat(document.getElementById('legStopLoss').value) || null,
+                leg_target: parseFloat(document.getElementById('legTarget').value) || null,
+                exit_all_on_leg_breach: document.getElementById('exitAllOnLegBreach').checked
+            };
+            
+            await saveConfig('exit', config);
+        }
+
+        async function saveRMSRules() {
+            const config = {
+                max_position_value: parseFloat(document.getElementById('maxPositionValue').value) || null,
+                max_margin_percent: parseInt(document.getElementById('maxMarginPercent').value),
+                max_lots_per_trade: parseInt(document.getElementById('maxLotsPerTrade').value),
+                daily_loss_limit: parseFloat(document.getElementById('dailyLossLimit').value) || null,
+                daily_profit_target: parseFloat(document.getElementById('dailyProfitTarget').value) || null,
+                max_trades_per_day: parseInt(document.getElementById('maxTradesPerDay').value),
+                circuit_breaker: parseFloat(document.getElementById('circuitBreaker').value) || null,
+                drawdown_limit: parseFloat(document.getElementById('drawdownLimit').value) || null,
+                concentration_limit: parseInt(document.getElementById('concentrationLimit').value),
+                track_combined_pnl: document.getElementById('trackCombinedPnL').checked,
+                combined_stop_loss: parseFloat(document.getElementById('combinedStopLoss').value) || null,
+                combined_target: parseFloat(document.getElementById('combinedTarget').value) || null,
+                auto_square_off: document.getElementById('autoSquareOff').checked,
+                notify_on_risk_breach: document.getElementById('notifyOnRiskBreach').checked
+            };
+            
+            await saveConfig('rms', config);
+        }
+
+        async function saveConfig(section, config) {
+            try {
+                const response = await fetch('/api/strategy/config/' + section, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                
+                const data = await response.json();
+                showResult(data.status === 'success', data.message || section.toUpperCase() + ' configuration saved');
+            } catch (error) {
+                showResult(false, 'Failed to save configuration: ' + error.message);
+            }
+        }
+
+        // Monitor Functions
+        async function refreshMonitor() {
+            try {
+                const response = await fetch('/api/strategy/status');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    updateMonitorUI(data);
+                }
+            } catch (error) {
+                console.error('Failed to refresh monitor:', error);
+            }
+        }
+
+        function updateMonitorUI(data) {
+            // Update control panel
+            document.getElementById('strategyStatus').textContent = data.strategy_status || 'IDLE';
+            document.getElementById('activePositions').textContent = data.active_positions || 0;
+            document.getElementById('todayPnL').textContent = '₹' + (data.today_pnl || 0).toFixed(2);
+            document.getElementById('openOrders').textContent = data.open_orders || 0;
+            
+            // Update positions table
+            const tbody = document.getElementById('positionsBody');
+            if (data.positions && data.positions.length > 0) {
+                tbody.innerHTML = data.positions.map(pos => `
+                    <tr>
+                        <td>${pos.symbol}</td>
+                        <td>${pos.type}</td>
+                        <td>${pos.quantity}</td>
+                        <td>₹${pos.entry_price.toFixed(2)}</td>
+                        <td>₹${pos.ltp.toFixed(2)}</td>
+                        <td style="color:${pos.pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${pos.pnl.toFixed(2)}</td>
+                        <td>${pos.delta.toFixed(3)}</td>
+                        <td><button class="btn-danger btn-sm" onclick="exitPosition('${pos.symbol}')">Exit</button></td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center muted">No active positions</td></tr>';
+            }
+            
+            // Update metrics
+            document.getElementById('totalDelta').textContent = (data.total_delta || 0).toFixed(3);
+            document.getElementById('totalTheta').textContent = (data.total_theta || 0).toFixed(2);
+            document.getElementById('totalVega').textContent = (data.total_vega || 0).toFixed(2);
+            document.getElementById('combinedPnL').textContent = '₹' + (data.combined_pnl || 0).toFixed(2);
+            document.getElementById('totalPremium').textContent = '₹' + (data.total_premium || 0).toFixed(2);
+            document.getElementById('marginUsed').textContent = '₹' + (data.margin_used || 0).toFixed(2);
+            
+            // Update log
+            if (data.event_log && data.event_log.length > 0) {
+                document.getElementById('strategyLog').innerHTML = data.event_log.join('<br>');
+            }
+        }
+
+        async function exitPosition(symbol) {
+            if (!confirm(`Exit position for ${symbol}?`)) return;
+            
+            try {
+                const response = await fetch('/api/strategy/exit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol })
+                });
+                
+                const data = await response.json();
+                showResult(data.status === 'success', data.message);
+                refreshMonitor();
+            } catch (error) {
+                showResult(false, 'Failed to exit position: ' + error.message);
+            }
+        }
+
+        function showResult(success, message) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = 'result ' + (success ? 'success' : 'error');
+            resultDiv.textContent = message;
+            resultDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                resultDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            updateStrategyType();
+            refreshMonitor();
+            // Auto-refresh every 2 seconds for live monitoring
+            setInterval(refreshMonitor, 2000);
+        });
+    </script>
+</body>
+</html>

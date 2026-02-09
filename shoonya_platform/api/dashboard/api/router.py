@@ -336,6 +336,8 @@ def dashboard_snapshot(
             "risk": system.get_risk_state(),
             "heartbeat": system.get_option_data_heartbeat(),
             "signal": system.get_signal_activity(),
+            "telegram_messages": system.get_telegram_messages(200),
+            "telegram_stats": system.get_telegram_alert_stats(500),
         },
     }
 

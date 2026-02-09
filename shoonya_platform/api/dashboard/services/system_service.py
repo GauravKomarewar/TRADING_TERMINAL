@@ -16,6 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 OPTION_DATA_HEARTBEAT = (
     PROJECT_ROOT / "market_data/option_chain/data/.supervisor_heartbeat"
 )
+TELEGRAM_LOG = PROJECT_ROOT / "logs/telegram_messages.jsonl"
 
 
 class SystemTruthService:
@@ -90,6 +91,60 @@ class SystemTruthService:
             "age_sec": round(time.time() - ts, 1),
             "chains": chains,
             "login": login,
+        }
+
+    # ==================================================
+    # TELEGRAM MESSAGE LOG (SYSTEM-SCOPED)
+    # ==================================================
+    def get_telegram_messages(self, limit: int = 200) -> list:
+        if not TELEGRAM_LOG.exists():
+            return []
+
+        try:
+            with open(TELEGRAM_LOG, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except Exception:
+            return []
+
+        items = []
+        for line in lines[-limit:]:
+            try:
+                items.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return items
+
+    def get_telegram_alert_stats(self, limit: int = 500) -> dict:
+        messages = self.get_telegram_messages(limit=limit)
+        total = len(messages)
+        success = 0
+        failed = 0
+        alerts = 0
+        risk = 0
+        last_ts = None
+
+        for item in messages:
+            text = (item.get("message") or "").lower()
+            ts = item.get("ts")
+            if ts:
+                last_ts = max(last_ts or ts, ts)
+
+            if "alert received" in text:
+                alerts += 1
+            if "order successful" in text or "login successful" in text:
+                success += 1
+            if "order failed" in text or "login failed" in text:
+                failed += 1
+            if "risk" in text or "force exit" in text:
+                risk += 1
+
+        return {
+            "total": total,
+            "success": success,
+            "failed": failed,
+            "alerts": alerts,
+            "risk": risk,
+            "last_ts": last_ts,
         }
 
     # ==================================================

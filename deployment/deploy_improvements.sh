@@ -27,7 +27,7 @@ fi
 # Step 2: Update main service file
 echo ""
 echo "🔧 Step 2: Updating main service file..."
-sudo cp shoonya_service.service /etc/systemd/system/
+sudo cp deployment/trading.service /etc/systemd/system/trading.service
 if [ $? -eq 0 ]; then
     echo "✅ Service file updated"
 else
@@ -38,8 +38,8 @@ fi
 # Step 3: Install scheduler timers
 echo ""
 echo "⏰ Step 3: Installing scheduler timers..."
-chmod +x install_schedulers.sh
-./install_schedulers.sh
+chmod +x deployment/install_schedulers.sh
+./deployment/install_schedulers.sh
 if [ $? -eq 0 ]; then
     echo "✅ Schedulers installed"
 else
@@ -54,14 +54,14 @@ sudo systemctl daemon-reload
 
 # Step 5: Restart the service
 echo ""
-echo "🔄 Step 5: Restarting shoonya_service..."
-sudo systemctl restart shoonya_service
+echo "🔄 Step 5: Restarting trading..."
+sudo systemctl restart trading
 sleep 3
 
 # Step 6: Check service status
 echo ""
 echo "📊 Step 6: Checking service status..."
-sudo systemctl status shoonya_service --no-pager -l
+sudo systemctl status trading --no-pager -l
 
 # Step 7: Verify timers
 echo ""

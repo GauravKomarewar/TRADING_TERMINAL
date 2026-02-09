@@ -1,0 +1,75 @@
+[Unit]
+Description=Trading Service
+Documentation=https://github.com/yourusername/trading
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/shoonya_platform
+
+# ========================================
+# ENVIRONMENT VARIABLES
+# ========================================
+Environment="PATH=/home/ec2-user/shoonya_platform/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="LOG_LEVEL=INFO"
+Environment="PYTHONPATH=/home/ec2-user/shoonya_platform"
+
+# ========================================
+# SERVICE ENTRYPOINT
+# ========================================
+ExecStart=/home/ec2-user/shoonya_platform/venv/bin/python /home/ec2-user/shoonya_platform/main.py
+
+# ========================================
+# RESTART POLICY
+# ========================================
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+RestartForceExitStatus=1
+
+# ========================================
+# RESOURCE LIMITS
+# ========================================
+MemoryLimit=2G
+CPUQuota=80%
+
+# ========================================
+# SECURITY & ISOLATION
+# ========================================
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/ec2-user/shoonya_platform/logs
+ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data
+ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/market_data/option_chain/data
+ProtectHome=yes
+ProtectKernelTunables=yes
+
+# ========================================
+# GRACEFUL SHUTDOWN
+# ========================================
+TimeoutStopSec=30
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# ========================================
+# PROCESS LIMITS
+# ========================================
+OOMScoreAdjust=-100
+LimitNOFILE=65536
+LimitNPROC=8192
+
+# ========================================
+# LOGGING
+# ========================================
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading
+
+[Install]
+WantedBy=multi-user.target

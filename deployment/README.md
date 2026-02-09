@@ -8,15 +8,15 @@ This folder contains all deployment-related configuration files for the Shoonya 
 
 ### Service Files
 
-#### `shoonya_service.service`
+#### `trading.service`
 **Purpose:** Systemd service definition for Linux/EC2 deployment
 
 **Installation:**
 ```bash
-sudo cp shoonya_service.service /etc/systemd/system/shoonya_platform.service
+sudo cp trading.service /etc/systemd/system/trading.service
 sudo systemctl daemon-reload
-sudo systemctl enable shoonya_platform
-sudo systemctl start shoonya_platform
+sudo systemctl enable trading
+sudo systemctl start trading
 ```
 
 **Documentation:** See [DOCS/SERVICE_INSTALLATION_LINUX.md](../DOCS/SERVICE_INSTALLATION_LINUX.md)
@@ -94,10 +94,10 @@ python bootstrap.py
 nano config_env/primary.env
 
 # 4. Install service
-sudo cp deployment/shoonya_service.service /etc/systemd/system/shoonya_platform.service
+sudo cp deployment/trading.service /etc/systemd/system/trading.service
 sudo systemctl daemon-reload
-sudo systemctl enable shoonya_platform
-sudo systemctl start shoonya_platform
+sudo systemctl enable trading
+sudo systemctl start trading
 
 # 5. (Optional) Install timers for auto-start/stop
 cd deployment

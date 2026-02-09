@@ -48,19 +48,19 @@ python3 -c "from shoonya_platform.logging.logger_config import setup_application
 ### 5. Deploy systemd service
 ```bash
 # Copy service file to systemd directory
-sudo cp shoonya_service.service /etc/systemd/system/shoonya_signal_processor.service
+sudo cp deployment/trading.service /etc/systemd/system/trading.service
 
 # Reload systemd configuration
 sudo systemctl daemon-reload
 
 # Enable service to start on boot
-sudo systemctl enable shoonya_signal_processor
+sudo systemctl enable trading
 
 # Start the service
-sudo systemctl start shoonya_signal_processor
+sudo systemctl start trading
 
 # Verify it's running
-sudo systemctl status shoonya_signal_processor
+sudo systemctl status trading
 ```
 
 ### 6. Verify logs are being created
@@ -87,18 +87,18 @@ tail -f /opt/shoonya/logs/execution_service.log
 
 ### Check Service Status
 ```bash
-sudo systemctl status shoonya_signal_processor
+sudo systemctl status trading
 
 # Expected output:
-# ● shoonya_signal_processor.service - Shoonya Signal Processor
-#    Loaded: loaded (/etc/systemd/system/shoonya_signal_processor.service)
+# ● trading.service - Trading Service
+#    Loaded: loaded (/etc/systemd/system/trading.service)
 #    Active: active (running) since [timestamp]
 ```
 
 ### View Recent Logs
 ```bash
 # Recent execution service logs
-sudo journalctl -u shoonya_signal_processor -n 20
+sudo journalctl -u trading -n 20
 
 # File-based logs with tail
 tail -20 /opt/shoonya/logs/execution_service.log
@@ -127,7 +127,7 @@ curl http://localhost:5000/health
 ### Edit Environment Variables
 ```bash
 # Edit the systemd service file
-sudo systemctl edit shoonya_signal_processor
+sudo systemctl edit trading
 
 # Add or modify environment variables:
 [Service]
@@ -136,7 +136,7 @@ Environment="PYTHONUNBUFFERED=1"
 
 # Save and reload
 sudo systemctl daemon-reload
-sudo systemctl restart shoonya_signal_processor
+sudo systemctl restart trading
 ```
 
 ### Update Application Config
@@ -145,7 +145,7 @@ sudo systemctl restart shoonya_signal_processor
 nano /opt/shoonya/config_env/primary.env
 
 # Then restart service for changes to take effect
-sudo systemctl restart shoonya_signal_processor
+sudo systemctl restart trading
 ```
 
 ### Log Rotation Settings

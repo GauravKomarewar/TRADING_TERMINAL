@@ -188,11 +188,11 @@ def main():
         return
     
     # Initialize config and clients
+    telegram: Optional[TelegramNotifier] = None
     try:
         config = Config()
         
         # Initialize telegram
-        telegram = None
         if config.telegram_bot_token and config.telegram_chat_id:
             telegram = TelegramNotifier(
                 bot_token=config.telegram_bot_token,

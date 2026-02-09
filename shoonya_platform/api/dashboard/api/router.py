@@ -262,8 +262,20 @@ def modify_broker_order(
 
 
 # ==================================================
-# STRATEGY SUPERVISOR (OPTIONAL)
+# STRATEGY DISCOVERY & MANAGEMENT  
 # ==================================================
+
+@router.get("/strategies/list")
+def list_available_strategies(ctx=Depends(require_dashboard_auth)):
+    """Discover all available strategies from folder structure"""
+    from shoonya_platform.strategies.strategy_registry import list_strategy_templates
+    
+    templates = list_strategy_templates()
+    return {
+        "strategies": templates,
+        "total": len(templates),
+        "predefined": [t for t in templates if not t["folder"].startswith("custom_")],
+    }
 
 
 @router.post("/strategy/start")
@@ -274,6 +286,9 @@ def start_strategy(
     """Start a strategy runner subprocess from dashboard.
 
     payload: {"config_path": "delta_neutral.configs.nifty"}
+    
+    LEGACY: For backward compatibility only.
+    NEW: Use /intent/strategy/entry for intent-based control
     """
     cfg = payload.get("config_path")
     if not cfg:
@@ -291,7 +306,11 @@ def stop_strategy(
     payload: dict = Body(...),
     svc: SupervisorService = Depends(get_supervisor),
 ):
-    """Stop a previously started strategy. Accepts `config_path` or `pid`."""
+    """Stop a previously started strategy. Accepts `config_path` or `pid`.
+    
+    LEGACY: For backward compatibility only.
+    NEW: Use /intent/strategy with action=FORCE_EXIT
+    """
     cfg = payload.get("config_path")
     pid = payload.get("pid")
     try:

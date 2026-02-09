@@ -92,7 +92,7 @@ from shoonya_platform.execution.generic_control_consumer import GenericControlIn
 from shoonya_platform.execution.strategy_control_consumer import StrategyControlConsumer
 
 # ---------------- REPORTING ----------------
-from shoonya_platform.strategies.reporting.strategy_reporter import build_strategy_report
+from shoonya_platform.strategies.strategy_reporter import build_strategy_report
 
 #--------------------MODELS--------------
 from shoonya_platform.domain.models import TradeRecord, AlertData, LegResult, BotStats, OrderResult, AccountInfo

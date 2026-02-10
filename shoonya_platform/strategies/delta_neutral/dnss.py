@@ -373,8 +373,12 @@ class DeltaNeutralShortStrangleStrategy:
         self, symbol: str, side: str, price: float, qty: int, delta: float
     ) -> List[UniversalOrderCommand]:
         """
-        Handle initial entry fills with IMMEDIATE partial fill detection
-        CRITICAL: Immediate exit on partial fill
+        Handle initial entry fills with SEQUENTIAL fill tracking.
+        
+        Two orders are sent simultaneously (CE + PE). Fills arrive
+        one at a time. We must wait for BOTH before declaring success.
+        Only if the second fill never arrives (handled by timeout in
+        _monitor or external order watcher) do we declare partial.
         """
         
         leg = Leg(
@@ -393,7 +397,7 @@ class DeltaNeutralShortStrangleStrategy:
         else:
             self.state.pe_leg = leg
         
-        # Check if entry is complete
+        # Check if entry is complete (BOTH legs filled)
         if self.state.has_both_legs():
             # SUCCESS - Both legs filled
             self.state.entry_confirmed = True
@@ -403,14 +407,13 @@ class DeltaNeutralShortStrangleStrategy:
             logger.info("✅ ENTRY COMPLETE | Both legs filled")
             return []
         
-        # IMMEDIATE PARTIAL FILL EXIT
-        # If we have one leg but not both, this is a partial fill
-        # We must exit immediately and fail
-        if self.state.has_any_leg():
-            logger.error("❌ PARTIAL ENTRY DETECTED - exiting immediately")
-            self.state.failed = True
-            return self._force_exit("PARTIAL_ENTRY")
-        
+        # Only ONE leg filled so far — wait for the second fill.
+        # Do NOT exit yet. Partial fill detection is handled by
+        # timeout in _monitor() or by the Order Watcher if the
+        # second order is rejected by the broker.
+        logger.info(
+            f"⏳ ENTRY PARTIAL | {leg.option_type} filled, waiting for other leg"
+        )
         return []
     
     def on_execution_failed(self, reason: str):

@@ -460,64 +460,41 @@ class ShoonyaBot:
     # ==================================================
     def _process_strategy_intents(self, strategy_name: str, strategy, market, intents, *, force_exit: bool = False):
         """
-        Convert strategy `Intent` objects into `UniversalOrderCommand`
-        and route them through CommandService.
+        Route strategy UniversalOrderCommand objects through CommandService.
 
-        - ENTRY intents -> `command_service.submit(..., execution_type="ENTRY")`
-        - EXIT-like intents -> `command_service.register(...)` (OrderWatcher will execute)
+        Strategy._cmd() already creates fully-formed UniversalOrderCommand instances
+        so we route them DIRECTLY — no re-wrapping or attribute translation needed.
+
+        Routing:
+        - BUY commands (position exits)  → command_service.register() (OrderWatcher executes)
+        - SELL commands (position opens)  → command_service.submit(execution_type="ENTRY")
+        - force_exit flag overrides to register() for all
         """
-        from shoonya_platform.execution.intent import UniversalOrderCommand
-
-        EXIT_TAGS = {
-            "TIME_EXIT",
-            "FORCE_EXIT",
-            "PARTIAL_ENTRY",
-            "LEG_MISSING",
-            "ADJ_REENTRY_FAILED",
-            "ADJ_SELECTION_FAILED",
-        }
-
         for intent in intents or []:
             try:
-                # Resolve exchange/product from strategy/market
-                exchange = getattr(strategy, "exchange", None)
-                if not exchange and hasattr(market, "exchange"):
-                    exchange = getattr(market, "exchange")
+                # Strategy returns UOC with .side, .symbol, .comment — use directly
+                comment = getattr(intent, "comment", "") or ""
+                side = getattr(intent, "side", "")
 
-                order_type = "LIMIT" if getattr(intent, "order_type", "MKT") in ("LMT", "LIMIT") else "MARKET"
-
-                order_params = {
-                    "exchange": exchange or "NFO",
-                    "symbol": intent.symbol,
-                    "quantity": int(intent.qty),
-                    "side": intent.action,
-                    "product": "NRML",
-                    "order_type": order_type,
-                    "price": float(intent.price) if getattr(intent, "price", None) else None,
-                    "strategy_name": strategy_name,
-                }
-
-                cmd = UniversalOrderCommand.from_order_params(
-                    order_params=order_params,
-                    source="STRATEGY",
-                    user=strategy_name,
-                )
-
-                # EXIT-like intents must be registered (OrderWatcher executes them)
-                is_exit_like = force_exit or (getattr(intent, "tag", "") in EXIT_TAGS)
+                # BUY = closing/exiting; force_exit overrides all to EXIT path
+                is_exit_like = force_exit or (side == "BUY")
 
                 if is_exit_like:
-                    # register a pure EXIT (no immediate broker submit)
                     try:
-                        self.command_service.register(cmd)
-                        logger.info(f"🔁 Registered EXIT intent from strategy {strategy_name} for {cmd.symbol}")
+                        self.command_service.register(intent)
+                        logger.info(
+                            "🔁 EXIT intent: %s → %s %s [%s]",
+                            strategy_name, side, intent.symbol, comment,
+                        )
                     except Exception:
                         logger.exception("Failed to register strategy EXIT intent")
                 else:
-                    # ENTRY / ADJUST -> submit for immediate execution
                     try:
-                        self.command_service.submit(cmd, execution_type="ENTRY")
-                        logger.info(f"🚀 Submitted ENTRY intent from strategy {strategy_name} for {cmd.symbol}")
+                        self.command_service.submit(intent, execution_type="ENTRY")
+                        logger.info(
+                            "🚀 ENTRY intent: %s → %s %s [%s]",
+                            strategy_name, side, intent.symbol, comment,
+                        )
                     except Exception:
                         logger.exception("Failed to submit strategy ENTRY intent")
 
@@ -1401,49 +1378,37 @@ class ShoonyaBot:
             lot_qty = universal_config.to_dict().get('lot_qty', lot_qty)
         
         # Adapt UniversalStrategyConfig -> strategy-specific StrategyConfig
-        try:
-            from shoonya_platform.strategies.delta_neutral.dnss import (
-                DeltaNeutralShortStrangleStrategy,
-                StrategyConfig as DnssStrategyConfig,
-            )
+        from shoonya_platform.strategies.delta_neutral.dnss import (
+            DeltaNeutralShortStrangleStrategy,
+            StrategyConfig as DnssStrategyConfig,
+        )
 
-            params = getattr(universal_config, "params", {}) or {}
+        params = getattr(universal_config, "params", {}) or {}
 
-            strategy_config = DnssStrategyConfig(
-                entry_time=universal_config.entry_time,
-                exit_time=universal_config.exit_time,
+        strategy_config = DnssStrategyConfig(
+            entry_time=universal_config.entry_time,
+            exit_time=universal_config.exit_time,
 
-                target_entry_delta=float(params.get("target_entry_delta")),
-                delta_adjust_trigger=float(params.get("delta_adjust_trigger")),
-                max_leg_delta=float(params.get("max_leg_delta")),
+            target_entry_delta=float(params.get("target_entry_delta", 0.20)),
+            delta_adjust_trigger=float(params.get("delta_adjust_trigger", 0.50)),
+            max_leg_delta=float(params.get("max_leg_delta", 0.65)),
 
-                profit_step=float(params.get("profit_step")),
-                cooldown_seconds=int(params.get("cooldown_seconds", 0)),
-                lot_qty=int(params.get("lot_qty", lot_qty)),
+            profit_step=float(params.get("profit_step", 1500)),
+            cooldown_seconds=int(params.get("cooldown_seconds", 0)),
+            lot_qty=int(params.get("lot_qty", lot_qty)),
 
-                # OMS execution parameters
-                order_type=params.get("order_type", getattr(universal_config, "order_type", "LIMIT")),
-                product=params.get("product", getattr(universal_config, "product", "NRML")),
-            )
+            # OMS execution parameters
+            order_type=params.get("order_type", getattr(universal_config, "order_type", "LIMIT")),
+            product=params.get("product", getattr(universal_config, "product", "NRML")),
+        )
 
-            strategy = DeltaNeutralShortStrangleStrategy(
-                exchange=universal_config.exchange,
-                symbol=universal_config.symbol,
-                expiry=market.expiry,
-                get_option_func=market.get_nearest_option,
-                config=strategy_config,
-            )
-
-        except Exception:
-            # Fallback: try to construct from older module if dnss import fails
-            strategy = DeltaNeutralShortStrangleStrategy(
-                exchange=universal_config.exchange,
-                symbol=universal_config.symbol,
-                expiry=market.expiry,
-                lot_qty=lot_qty,
-                get_option_func=market.get_nearest_option,
-                config=universal_config,
-            )
+        strategy = DeltaNeutralShortStrangleStrategy(
+            exchange=universal_config.exchange,
+            symbol=universal_config.symbol,
+            expiry=market.expiry,
+            get_option_func=market.get_nearest_option,
+            config=strategy_config,
+        )
 
         # 3️⃣ Create run_id
         run_id = f"{strategy_name}_{int(time.time())}"

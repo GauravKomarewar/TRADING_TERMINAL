@@ -37,6 +37,7 @@ import json
 import time
 import logging
 import sqlite3
+from datetime import time as dt_time
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -46,27 +47,39 @@ from shoonya_platform.strategies.universal_config.universal_strategy_config impo
 )
 
 def build_universal_config(payload: dict) -> UniversalStrategyConfig:
+    """Transform dashboard intent payload → UniversalStrategyConfig.
+
+    Uses datetime.time.fromisoformat() for HH:MM:SS parsing.
+    Falls back to manual split if fromisoformat is unavailable (Python <3.7).
+    """
+    def _parse_time(val: str) -> dt_time:
+        """Parse HH:MM or HH:MM:SS string to datetime.time."""
+        try:
+            return dt_time.fromisoformat(val)
+        except (ValueError, AttributeError):
+            parts = val.split(":")
+            return dt_time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+
     return UniversalStrategyConfig(
         strategy_name=payload["strategy_name"],
         strategy_version=payload["strategy_version"],
 
         exchange=payload["exchange"],
         symbol=payload["symbol"],
-        instrument_type=payload["instrument_type"], 
-        #instrument_type will drive market_cls selection (OPTIDX/MCX/etc)
+        instrument_type=payload["instrument_type"],
+        # instrument_type drives market_cls selection (OPTIDX/MCX/etc)
 
-
-        entry_time=time.fromisoformat(payload["entry_time"]),
-        exit_time=time.fromisoformat(payload["exit_time"]),
+        entry_time=_parse_time(payload["entry_time"]),
+        exit_time=_parse_time(payload["exit_time"]),
 
         order_type=payload["order_type"],
         product=payload["product"],
 
-        lot_qty=payload["lot_qty"],
-        params=payload["params"],
+        lot_qty=int(payload["lot_qty"]),
+        params=payload.get("params", {}),
 
-        poll_interval=payload.get("poll_interval", 2.0),
-        cooldown_seconds=payload.get("cooldown_seconds", 0),
+        poll_interval=float(payload.get("poll_interval", 2.0)),
+        cooldown_seconds=int(payload.get("cooldown_seconds", 0)),
     )
 
 logger = logging.getLogger("EXECUTION.CONTROL")
@@ -190,6 +203,13 @@ class StrategyControlConsumer:
                     source="STRATEGY_CONTROL",
                 )
 
+            elif action == "ADJUST":
+                # Advisory only — no runtime support yet.
+                # Dashboard status is updated cosmetically.
+                logger.info(
+                    "⏸️ ADJUST intent received for %s — no-op (advisory)",
+                    strategy_name,
+                )
 
             else:
                 raise RuntimeError(f"Unknown strategy action: {action}")

@@ -212,12 +212,16 @@ class StrategyEntryRequest(BaseModel):
     @model_validator(mode="after")
     def normalize_cooldown(self):
         if "cooldown_seconds" in self.params:
-            self.cooldown_seconds = self.params["cooldown_seconds"]
+            self.cooldown_seconds = int(self.params["cooldown_seconds"])
         return self
 
     @model_validator(mode="after")
     def validate_dnss_contract(self):
-        if self.instrument_type == "OPTIDX":
+        """Validate DNSS-specific params only for DNSS strategies."""
+        name_lower = (self.strategy_name or "").lower()
+        version_lower = (self.strategy_version or "").lower()
+        is_dnss = "dnss" in name_lower or "dnss" in version_lower
+        if is_dnss:
             required = [
                 "target_entry_delta",
                 "delta_adjust_trigger",
@@ -232,7 +236,7 @@ class StrategyEntryRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_instrument_type(self):
-        allowed = {"OPTIDX", "OPTSTK", "FUT", "MCX"}
+        allowed = {"OPTIDX", "OPTSTK", "FUTIDX", "FUTSTK", "MCX", "CASH"}
         if self.instrument_type not in allowed:
             raise ValueError(
                 f"instrument_type must be one of {sorted(allowed)}"

@@ -22,7 +22,7 @@
 .sc-name{font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
 .sc-id{font-size:10px;color:var(--muted);font-family:monospace;margin-bottom:4px}
 .sc-meta{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
-.sc-desc{font-size:10px;color:var(--muted);margin-bottom:6px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sc-desc{font-size:10px;color:var(--muted);margin-bottom:6px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .sc-row{display:flex;gap:5px;flex-wrap:wrap}
 .sc-row button{padding:3px 8px;font-size:10px;border-radius:4px}
 .sc-actions{display:flex;gap:4px;margin-top:6px}
@@ -555,6 +555,7 @@ const API='/dashboard';
 let strategies=[],step=0,editing=null,modalMode='clone',modalName='';
 
 const $=id=>document.getElementById(id);
+const hesc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const gv=id=>{const e=$(id);return e?e.value.trim():''};
 const gn=id=>{const v=parseFloat(gv(id));return isNaN(v)?null:v};
 const gi=id=>{const v=parseInt(gv(id));return isNaN(v)?null:v};
@@ -810,20 +811,20 @@ function reset(){
 async function loadList(){
     try{const r=await fetch(`${API}/strategy/configs`,{credentials:'include'});if(!r.ok)return;const d=await r.json();strategies=d.configs||[];renderList()}catch(e){console.error(e)}
 }
-function esc(s){return s.replace(/'/g,"\\'")}
+function esc(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
 function renderList(){
     const c=$('sList');
     if(!strategies.length){c.innerHTML='<div class="empty-state">No saved strategies.<br>Build your first →</div>';return}
     c.innerHTML=strategies.map(s=>{
         const st=(s.status||'IDLE').toLowerCase(),active=editing===s.name;
-        const secs=(s.sections||[]).map(x=>`<span class="sec-pill">${x}</span>`).join(' ');
+        const secs=(s.sections||[]).map(x=>`<span class="sec-pill">${hesc(x)}</span>`).join(' ');
         const und=s.identity?.underlying||s.entry?.position?.underlying||'';
         const typ=s.identity?.strategy_type||'';
         const desc=s.description||'';
-        return`<div class="strat-card${active?' active':''}" data-name="${s.name}" onclick="S.load('${esc(s.name)}')">
-            <div class="sc-head"><span class="sc-name">${s.name}</span><span class="sp ${st}">${s.status||'IDLE'}</span></div>
-            <div class="sc-id">${s.id||s.name}${und?' · '+und:''}${typ?' · '+typ:''}</div>
-            ${desc?`<div class="sc-desc">${desc}</div>`:''}
+        return`<div class="strat-card${active?' active':''}" data-name="${hesc(s.name)}" onclick="S.load('${esc(s.name)}')">
+            <div class="sc-head"><span class="sc-name">${hesc(s.name)}</span><span class="sp ${st}">${hesc(s.status||'IDLE')}</span></div>
+            <div class="sc-id">${hesc(s.id||s.name)}${und?' · '+hesc(und):''}${typ?' · '+hesc(typ):''}</div>
+            ${desc?`<div class="sc-desc">${hesc(desc)}</div>`:''}
             <div class="sc-meta">${secs||'<span class="muted" style="font-size:9px">No sections</span>'}</div>
             <div class="sc-row" onclick="event.stopPropagation()">
                 <button class="btn-success" onclick="S.ctrl('${esc(s.name)}','start')"${st==='running'?' disabled':''}>▶</button>
@@ -917,19 +918,100 @@ async function load(name){
     }catch(e){toast('Load failed: '+e.message,false)}
 }
 
+// ── Lot-size defaults (exchange-standard, override via form) ──
+const LOT_SIZES={NIFTY:75,BANKNIFTY:15,FINNIFTY:25,MIDCPNIFTY:50,SENSEX:10,BANKEX:15,CRUDEOIL:100,CRUDEOILM:10,GOLD:100,GOLDM:10,SILVER:30,SILVERM:5,USDINR:1000};
+
+// ── Transform v2.0 schema → StrategyEntryRequest for execution ──
+function buildExecutionPayload(cfg){
+    const id=cfg.identity||{};
+    const en=cfg.entry||{};
+    const et=en.timing||{};
+    const ep=en.position||{};
+    const lg=en.legs||{};
+    const adj=cfg.adjustment||{};
+    const ag=adj.general||{};
+    const adl=adj.delta||{};
+    const apn=adj.pnl||{};
+    const xt=cfg.exit||{};
+    const xti=xt.time||{};
+
+    const underlying=(id.underlying||'NIFTY').toUpperCase();
+    const lots=ep.lots||1;
+    const lotSz=ep.lot_size_override||LOT_SIZES[underlying]||75;
+    const lotQty=lots*lotSz;
+
+    // SL-LIMIT unsupported by execution, map to LIMIT
+    let orderType=id.order_type||'MARKET';
+    if(orderType==='SL-LIMIT')orderType='LIMIT';
+
+    // Ensure HH:MM → HH:MM:SS
+    const normTime=t=>{if(!t)return'09:20:00';return t.length===5?t+':00':t};
+
+    // Build strategy-specific params based on type
+    const stype=id.strategy_type||'custom';
+    const params={};
+
+    if(stype==='dnss'||stype==='short_straddle'){
+        params.target_entry_delta=lg.target_entry_delta!=null?lg.target_entry_delta:0.20;
+        params.delta_adjust_trigger=adl.trigger!=null?adl.trigger:0.50;
+        params.max_leg_delta=adl.emergency_trigger!=null?adl.emergency_trigger:0.65;
+        params.profit_step=apn.profit_lock_trigger||apn.trailing_adj_step||1500;
+        params.cooldown_seconds=ag.cooldown_seconds||60;
+        params.lot_qty=lotQty;
+        params.order_type=orderType;
+        params.product=id.product_type||'NRML';
+    } else {
+        params.lot_qty=lotQty;
+        params.order_type=orderType;
+        params.product=id.product_type||'NRML';
+        if(lg&&Object.keys(lg).length)params.legs=lg;
+        if(adl.trigger!=null)params.delta_adjust_trigger=adl.trigger;
+        if(adl.emergency_trigger!=null)params.max_leg_delta=adl.emergency_trigger;
+        if(ag.cooldown_seconds)params.cooldown_seconds=ag.cooldown_seconds;
+    }
+
+    return {
+        strategy_name:cfg.name,
+        strategy_version:(stype||'custom')+'_v2.0',
+        exchange:id.exchange||'NFO',
+        symbol:underlying,
+        instrument_type:id.instrument_type||'OPTIDX',
+        entry_time:normTime(et.entry_time),
+        exit_time:normTime(xti.exit_time),
+        order_type:orderType,
+        product:id.product_type||'NRML',
+        lot_qty:lotQty,
+        params:params,
+        poll_interval:2.0,
+        cooldown_seconds:ag.cooldown_seconds||0
+    };
+}
+
 // ── Control ──
 async function ctrl(name,action){
-    const iMap={start:'ENTRY',pause:'ADJUST',stop:'FORCE_EXIT'};
     const sMap={start:'RUNNING',pause:'PAUSED',stop:'STOPPED'};
-    if(action==='stop'&&!confirm(`Stop "${name}" and square off?`))return;
-    if(action==='start'&&!confirm(`Start "${name}"?`))return;
+    if(action==='stop'&&!confirm(`Stop "${name}" and force-exit all positions?`))return;
+    if(action==='start'&&!confirm(`Launch "${name}" for live execution?`))return;
     try{
-        const ir=await fetch(`${API}/intent/strategy`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({strategy_name:name,action:iMap[action],reason:'DASHBOARD_'+action.toUpperCase()})});
-        if(!ir.ok){const e=await ir.json().catch(()=>({}));throw new Error(e.detail||`HTTP ${ir.status}`)}
+        if(action==='start'){
+            // Load full config → transform → fire execution intent
+            const cr=await fetch(`${API}/strategy/config/${encodeURIComponent(name)}`,{credentials:'include'});
+            if(!cr.ok)throw new Error('Could not load strategy config');
+            const cfg=await cr.json();
+            const payload=buildExecutionPayload(cfg);
+            const ir=await fetch(`${API}/intent/strategy/entry`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(payload)});
+            if(!ir.ok){const e=await ir.json().catch(()=>({}));throw new Error(e.detail||`HTTP ${ir.status}`)}
+        } else if(action==='stop'){
+            // FORCE_EXIT lifecycle intent → consumer handles exit
+            const ir=await fetch(`${API}/intent/strategy`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({strategy_name:name,action:'FORCE_EXIT',reason:'DASHBOARD_STOP'})});
+            if(!ir.ok){const e=await ir.json().catch(()=>({}));throw new Error(e.detail||`HTTP ${ir.status}`)}
+        }
+        // Pause = cosmetic status update (strategy keeps ticking; use Stop to exit positions)
         await fetch(`${API}/strategy/config/${encodeURIComponent(name)}/status`,{method:'POST',credentials:'include',
             headers:{'Content-Type':'application/json'},body:JSON.stringify({status:sMap[action]})});
-        toast(`"${name}" ${action==='start'?'started':action==='pause'?'paused':'stopped'}`);await loadList();
+        toast(`"${name}" ${action==='start'?'launched':action==='pause'?'paused':'stopped'}`);await loadList();
     }catch(e){toast(`${action} failed: ${e.message}`,false)}
 }
 

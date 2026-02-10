@@ -149,9 +149,9 @@ class ShoonyaClient(NorenApi):
     RATE_LIMIT_WINDOW_SECONDS = 1.0
     
     # WebSocket reconnection
-    WS_MAX_RECONNECT_ATTEMPTS = 5
+    WS_MAX_RECONNECT_ATTEMPTS = 50  # 🔒 FIX: Was 5 (permanent death). Now retries indefinitely during market hours.
     WS_RECONNECT_BASE_DELAY = 2  # seconds (doubles each attempt)
-    WS_RECONNECT_MAX_DELAY = 32  # seconds
+    WS_RECONNECT_MAX_DELAY = 60  # seconds (was 32 — cap at 1 minute between retries)
     
     # Order placement
     ORDER_MAX_RETRY_ATTEMPTS = 3
@@ -786,14 +786,14 @@ class ShoonyaClient(NorenApi):
                 logger.debug("⚠️  Reconnection already in progress - ignoring close event")
                 return
             
-            # Check maximum attempts
+            # Check maximum attempts — reset counter and keep trying
             if self._ws_reconnect_attempts >= self.WS_MAX_RECONNECT_ATTEMPTS:
-                logger.error(
-                    "❌ Max WebSocket reconnection attempts reached (%d)",
+                logger.warning(
+                    "⚠️  WebSocket reconnection attempts reached %d — resetting counter and continuing",
                     self.WS_MAX_RECONNECT_ATTEMPTS
                 )
-                self._ws_running = False
-                return
+                self._ws_reconnect_attempts = 0
+                # Do NOT set _ws_running=False — keep retrying during market hours
             
             # 🔧 FIX: Spawn reconnection in background thread to avoid blocking
             def _reconnect_worker():

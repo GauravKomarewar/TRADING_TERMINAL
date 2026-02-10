@@ -89,9 +89,10 @@ class RecoveryBootstrap:
 
             try:
                 if status == "COMPLETE" and db_record.status != "EXECUTED":
-                    self.repo.update_status(order_id, "EXECUTED")
+                    # 🔒 FIX: order_id is broker_order_id (norenordno), NOT command_id
+                    self.repo.update_status_by_broker_id(order_id, "EXECUTED")
                 elif status in ("CANCELLED", "REJECTED") and db_record.status != "FAILED":
-                    self.repo.update_status(order_id, "FAILED")
+                    self.repo.update_status_by_broker_id(order_id, "FAILED")
             except Exception:
                 # Best-effort, continue
                 logger.exception("Failed to update DB status for broker order %s", order_id)

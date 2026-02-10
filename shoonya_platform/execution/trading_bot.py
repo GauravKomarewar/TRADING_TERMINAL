@@ -329,6 +329,8 @@ class ShoonyaBot:
         # ⚠️ CommandService DEPENDS on order_watcher
         self.command_service = CommandService(self)
         self.pending_commands = []
+        # 🔒 Atomic lock for execute_command (prevents double execution)
+        self._cmd_lock = threading.Lock()
         # -------------------------------------------------
         # 🧠 RISK MANAGER (INTENT ONLY – NO DIRECT ORDERS)
         # -------------------------------------------------
@@ -632,7 +634,7 @@ class ShoonyaBot:
                     except Exception as e:
                         log_exception("scheduler.run_pending", e)
 
-                    time.sleep(60)
+                    time.sleep(1)
 
                     
             except Exception as e:
@@ -1429,6 +1431,14 @@ class ShoonyaBot:
                 f"EXECUTE_COMMAND_SOURCE | cmd_id={command.command_id} | source={command.source} | "
                 f"(non-ORDER_WATCHER caller — allowed)"
             )
+
+        # 🔒 ATOMIC LOCK: Prevents race condition where two threads both pass
+        # can_execute() and place the same order twice (double execution).
+        with self._cmd_lock:
+            return self._execute_command_inner(command, **kwargs)
+
+    def _execute_command_inner(self, command, **kwargs):
+        """Inner execution logic, called under _cmd_lock."""
         try:
             self._ensure_login()
             

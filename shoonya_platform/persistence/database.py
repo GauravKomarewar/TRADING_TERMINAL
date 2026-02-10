@@ -43,6 +43,11 @@ def get_connection():
             check_same_thread=False
         )
         conn.row_factory = sqlite3.Row
+
+        # 🔒 CRITICAL: WAL mode for concurrent read/write from multiple threads
+        conn.execute("PRAGMA journal_mode=WAL")
+        # 🔒 Wait up to 5s for locked DB instead of failing immediately
+        conn.execute("PRAGMA busy_timeout=5000")
         
         # Ensure minimal schema exists for tests and runtime
         try:

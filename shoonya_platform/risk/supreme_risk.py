@@ -242,6 +242,7 @@ class SupremeRiskManager:
             return
 
         self.daily_loss_hit = True
+        self._save_state()  # 🔒 PERSIST IMMEDIATELY — crash cannot clear this flag
         self.failed_days.append(self.current_day)
         self.force_exit_in_progress = True
         consecutive_losses = len(self.failed_days)

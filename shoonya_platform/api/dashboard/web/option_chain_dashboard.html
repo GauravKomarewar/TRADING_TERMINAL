@@ -1461,7 +1461,7 @@
             console.log('[OptionChain] loadOptionChain called, isAutoRefresh:', isAutoRefresh);
             
             const res = await fetch(
-                `/dashboard/option-chain?exchange=${getCurrentExchange()}&symbol=${elements.symbol.value}&expiry=${elements.expiry.value}&max_age=5`,
+                `/dashboard/option-chain?exchange=${getCurrentExchange()}&symbol=${elements.symbol.value}&expiry=${elements.expiry.value}&max_age=300`,
                 { credentials: 'include' }
             );
             
@@ -1486,6 +1486,15 @@
             
             // Update info bar FIRST so atmStrike is set before rendering table
             updateInfoBar(data.meta || {});
+            
+            // Show stale indicator if snapshot is old
+            if (data.meta && data.meta.is_stale) {
+                const age = parseFloat(data.meta.snapshot_age) || 0;
+                elements.lastUpdated.textContent = `STALE (${age.toFixed(0)}s ago)`;
+                elements.lastUpdated.style.color = 'var(--danger)';
+            } else {
+                elements.lastUpdated.style.color = '';
+            }
             console.log('[OptionChain] ✓ Info bar updated');
             
             if (strikeListChanged || isFirstLoad) {

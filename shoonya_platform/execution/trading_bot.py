@@ -1420,10 +1420,14 @@ class ShoonyaBot:
         Accepts extra keyword args (trailing_engine, etc.)
         for forward compatibility.
         """
-        # 🔒 HARD EXECUTION AUTHORITY (NON-NEGOTIABLE)
-        assert command.source == "ORDER_WATCHER", (
-            f"FORBIDDEN EXECUTION PATH: source={command.source}"
-        )
+        # 🔒 EXECUTION AUTHORITY — log non-ORDER_WATCHER callers for audit
+        # Both CommandService.submit() and OrderWatcher may call execute_command.
+        # Previously this was an assert that broke strategy ENTRY orders.
+        if command.source != "ORDER_WATCHER":
+            logger.info(
+                f"EXECUTE_COMMAND_SOURCE | cmd_id={command.command_id} | source={command.source} | "
+                f"(non-ORDER_WATCHER caller — allowed)"
+            )
         try:
             self._ensure_login()
             
@@ -1435,7 +1439,19 @@ class ShoonyaBot:
             )
             
             # 🛡️ Check 2A: RISK MANAGER (daily loss, cooldown, max loss)
-            if not self.risk_manager.can_execute():
+            # EXIT orders ALWAYS bypass risk checks — they REDUCE risk, not add it.
+            # Without this bypass, RMS exit orders block themselves when daily_loss_hit=True.
+            is_exit_order = (
+                getattr(command, 'intent', None) == 'EXIT'
+                or getattr(command, 'execution_type', '').upper() == 'EXIT'
+                or (hasattr(command, 'command_id') and command.command_id.startswith('EXIT_'))
+            )
+            if is_exit_order:
+                logger.info(
+                    f"RISK_BYPASS_EXIT | cmd_id={command.command_id} | {command.symbol} | "
+                    f"EXIT orders always pass risk check"
+                )
+            elif not self.risk_manager.can_execute():
                 reason = "RISK_LIMITS_EXCEEDED"
                 logger.warning(
                     f"BLOCKER_RISK | cmd_id={command.command_id} | {command.symbol} | reason={reason}"
@@ -1468,22 +1484,24 @@ class ShoonyaBot:
                     return OrderResult(success=False, error_message=reason)
             
             # 🛡️ Check 2C: DUPLICATE DETECTION (live orders by symbol)
-            open_orders = self.order_repo.get_open_orders_by_strategy(strategy_id)
-            
-            for order in open_orders:
-                if order.symbol == command.symbol and order.command_id != command.command_id:
-                    reason = "DUPLICATE_ORDER_BLOCKED"
-                    logger.warning(
-                        f"BLOCKER_DUPLICATE | cmd_id={command.command_id} | {command.symbol} | "
-                        f"existing={order.command_id} | reason={reason}"
-                    )
-                    try:
-                        self.order_repo.update_status(command.command_id, "FAILED")
-                        self.order_repo.update_tag(command.command_id, reason)
-                    except Exception as db_err:
-                        logger.error(f"Failed to update DB with duplicate blocker: {db_err}")
-                    
-                    return OrderResult(success=False, error_message=reason)
+            # EXIT orders skip duplicate check — multiple exit legs for same symbol are valid
+            if not is_exit_order:
+                open_orders = self.order_repo.get_open_orders_by_strategy(strategy_id)
+                
+                for order in open_orders:
+                    if order.symbol == command.symbol and order.command_id != command.command_id:
+                        reason = "DUPLICATE_ORDER_BLOCKED"
+                        logger.warning(
+                            f"BLOCKER_DUPLICATE | cmd_id={command.command_id} | {command.symbol} | "
+                            f"existing={order.command_id} | reason={reason}"
+                        )
+                        try:
+                            self.order_repo.update_status(command.command_id, "FAILED")
+                            self.order_repo.update_tag(command.command_id, reason)
+                        except Exception as db_err:
+                            logger.error(f"Failed to update DB with duplicate blocker: {db_err}")
+                        
+                        return OrderResult(success=False, error_message=reason)
             
             logger.info(
                 f"BLOCKERS_PASSED ✅ | cmd_id={command.command_id} | {command.symbol}"

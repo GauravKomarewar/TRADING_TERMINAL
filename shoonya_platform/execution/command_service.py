@@ -137,16 +137,10 @@ class CommandService:
     def submit(self, cmd: UniversalOrderCommand, *, execution_type: str):
         """
         Validate, persist ONCE, and submit ENTRY / ADJUST commands.
+        
+        Called by both strategy alerts (source=STRATEGY) and OrderWatcher (source=ORDER_WATCHER).
         """
-        # --------------------------------------------------
-        # 🔒 HARD EXECUTION AUTHORITY CHECK (NON-NEGOTIABLE)
-        # --------------------------------------------------
-        if cmd.source != "ORDER_WATCHER":
-            raise RuntimeError(
-                f"FORBIDDEN EXECUTION PATH: source={cmd.source}. "
-                "Only OrderWatcherEngine may execute broker orders."
-            )
-        # 🔒 HARD BLOCK EXIT
+        # 🔒 HARD BLOCK EXIT — EXITs must go via PositionExitService → OrderWatcher
         if execution_type == "EXIT" or cmd.intent == "EXIT":
             raise RuntimeError(
                 "EXIT submission forbidden. "

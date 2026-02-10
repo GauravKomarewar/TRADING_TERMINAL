@@ -512,8 +512,8 @@ def get_option_chain(
     symbol: str = Query(..., description="NIFTY / BANKNIFTY / SENSEX"),
     expiry: str = Query(..., description="24-FEB-2026"),
     max_age: float = Query(
-        5.0,
-        description="Maximum allowed snapshot age in seconds",
+        300.0,
+        description="Maximum allowed snapshot age in seconds (300 = 5 min)",
     ),
 ):
     """
@@ -550,12 +550,10 @@ def get_option_chain(
     snapshot_ts = float(meta.get("snapshot_ts", 0))
     age = time.time() - snapshot_ts
 
-    if age > max_age:
-        conn.close()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Snapshot stale ({age:.1f}s old)",
-        )
+    # Flag staleness in meta instead of blocking with 409
+    # This lets the dashboard show data (even if old) and display a warning
+    meta["snapshot_age"] = round(age, 1)
+    meta["is_stale"] = age > max_age
 
     # --------------------------------------------------
     # OPTION CHAIN (FULL CONTRACT)

@@ -203,12 +203,17 @@ class UniversalOrderCommand:
         Used ONLY by OrderWatcherEngine.
         """
 
+        # Carry execution_type so execute_command can bypass risk checks for EXITs
+        exec_type = getattr(record, 'execution_type', None) or 'ENTRY'
+        intent_val = "EXIT" if exec_type.upper() == "EXIT" else None
+
         return cls(
             # ---- identity ----
             command_id=record.command_id,
             created_at=datetime.utcnow(),
             source=source,
             user=record.user,
+            intent=intent_val,
 
             # ---- instrument ----
             exchange=record.exchange,

@@ -286,6 +286,13 @@
         }
         
         /* Responsive */
+        .grid-main {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
         @media (max-width: 1024px) {
             .grid-main {
                 grid-template-columns: 1fr;
@@ -299,6 +306,22 @@
         @media (max-width: 768px) {
             .stats-grid {
                 grid-template-columns: 1fr;
+            }
+            
+            /* Make tables scroll horizontally on mobile */
+            .table-wrap {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            table {
+                min-width: 600px;
+            }
+            
+            td, th {
+                padding: 6px 4px;
+                font-size: 12px;
+                white-space: nowrap;
             }
         }
     </style>
@@ -444,7 +467,7 @@
     <!-- Main Grid -->
     <div class="grid-main">
         <!-- Left Column -->
-        <div style="display: grid; grid-template-columns: 1fr; gap: 10px">
+        <div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
             <!-- Positions Table -->
             <div class="card">
                 <div class="card-header">
@@ -524,7 +547,7 @@
         </div>
         
         <!-- Right Column -->
-        <div style="display: grid; grid-template-columns: 1fr; gap: 10px; grid-template-rows: auto">
+        <div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
             <!-- System Status -->
             <div class="card">
                 <div class="card-header">System Status</div>

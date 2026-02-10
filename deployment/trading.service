@@ -35,7 +35,7 @@ RestartForceExitStatus=1
 # ========================================
 # RESOURCE LIMITS
 # ========================================
-MemoryLimit=2G
+MemoryMax=2G
 CPUQuota=80%
 
 # ========================================

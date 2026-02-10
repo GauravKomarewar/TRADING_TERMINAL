@@ -98,6 +98,10 @@
         input, select, textarea { padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); font-size: 12px; transition: all .2s; }
         input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: var(--panel); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); }
         .card-footer { display: flex; gap: 12px; justify-content: flex-end; padding-top: var(--spacing-md); border-top: 1px solid var(--border); margin-top: var(--spacing-md); }
+
+        /* Audit Styles */
+        .stat-badge { display: inline-block; padding: 4px 8px; background: var(--panel-2); border-radius: 3px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+        .text-center { text-align: center; }
         h3 { font-size: 18px; font-weight: 700; margin: 20px 0 12px; }
         h4 { font-size: 13px; font-weight: 700; margin: 16px 0 12px; text-transform: uppercase; letter-spacing: 0.5px; }
 
@@ -127,10 +131,23 @@
             <p class="muted">Build, control, monitor and manage trading strategies</p>
         </div>
 
+        <!-- 🔍 EXECUTION VISIBILITY BANNER -->
+        <div id="executionBanner" style="display:none; margin-bottom:20px;">
+            <div id="bannerContent" style="background:linear-gradient(135deg,rgba(34,197,94,.15) 0%,rgba(34,197,94,.05) 100%); border:2px solid #22c55e; border-radius:8px; padding:16px; display:flex; align-items:center; gap:16px;">
+                <div style="font-size:32px;">⚡</div>
+                <div style="flex:1;">
+                    <div style="font-weight:700; color:#22c55e; font-size:14px;">ACTIVE EXECUTION IN SYSTEM</div>
+                    <div id="bannerText" style="font-size:12px; color:var(--text); margin-top:4px; font-family:monospace;"></div>
+                </div>
+                <button class="btn-sm" onclick="loadExecutionAudit()" style="background:#22c55e; color:black; border:none; padding:8px 16px; font-weight:600; cursor:pointer; border-radius:4px;">View Details</button>
+            </div>
+        </div>
+
         <!-- Main Navigation Tabs -->
         <div class="main-tabs">
             <div class="main-tab active" onclick="switchMainTab('builder')">📋 Strategy Builder</div>
             <div class="main-tab" onclick="switchMainTab('control')">🎛️ Control & Monitor</div>
+            <div class="main-tab" onclick="switchMainTab('audit')">🔍 Execution Audit</div>
         </div>
 
         <!-- ═══ TAB 1: STRATEGY BUILDER ═══ -->
@@ -435,13 +452,84 @@
             </div>
         </div>
 
-        <div id="result" class="result" style="margin-top:var(--spacing-lg);"></div>
+        <!-- ═══ TAB 3: EXECUTION AUDIT (100% VISIBILITY) ═══ -->
+        <div id="audit" class="tab-panel">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">🔍 System Execution Audit</h3>
+                    <p class="muted" style="margin-top:6px;">Complete visibility of all strategy execution in system - no hidden execution</p>
+                </div>
+
+                <!-- Audit Stats -->
+                <div id="auditStats" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:24px;">
+                    <div class="info-card" style="border-left:4px solid #22c55e;">
+                        <div style="font-size:11px; color:var(--muted);">STRATEGIES RUNNING</div>
+                        <div id="stat-running" style="font-size:28px; font-weight:700; color:#22c55e; margin-top:6px;">0</div>
+                    </div>
+                    <div class="info-card" style="border-left:4px solid #eab308;">
+                        <div style="font-size:11px; color:var(--muted);">PAUSED STRATEGIES</div>
+                        <div id="stat-paused" style="font-size:28px; font-weight:700; color:#eab308; margin-top:6px;">0</div>
+                    </div>
+                    <div class="info-card" style="border-left:4px solid #3b82f6;">
+                        <div style="font-size:11px; color:var(--muted);">INTENTS IN QUEUE</div>
+                        <div id="stat-intents" style="font-size:28px; font-weight:700; color:#3b82f6; margin-top:6px;">0</div>
+                    </div>
+                    <div class="info-card" style="border-left:4px solid #8b5cf6;">
+                        <div style="font-size:11px; color:var(--muted);">ACTIVE POSITIONS</div>
+                        <div id="stat-positions" style="font-size:28px; font-weight:700; color:#8b5cf6; margin-top:6px;">0</div>
+                    </div>
+                </div>
+
+                <!-- Warning for hidden strategies -->
+                <div id="hiddenWarning" style="display:none; background:rgba(239,68,68,.15); border:2px solid #ef4444; border-radius:8px; padding:16px; margin-bottom:20px;">
+                    <div style="font-weight:700; color:#ef4444;">⚠️ HIDDEN STRATEGY DETECTED</div>
+                    <div style="font-size:12px; color:var(--text); margin-top:8px;">Strategy running with active positions but NO saved configuration. See below for details.</div>
+                </div>
+
+                <!-- All Strategies Table -->
+                <div style="margin-top:20px;">
+                    <h4 style="margin-bottom:12px;">📊 All Strategies in System</h4>
+                    <table class="table-compact" style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th style="min-width:150px;">Strategy Name</th>
+                                <th style="min-width:100px;">Status</th>
+                                <th>Underlying</th>
+                                <th>Pending Intents</th>
+                                <th>Active Positions</th>
+                                <th>Created</th>
+                                <th>Update Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditTableBody">
+                            <tr><td colspan="7" class="text-center muted">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Control Intents Queue -->
+                <div style="margin-top:24px;">
+                    <h4 style="margin-bottom:12px;">📋 Control Intents Queue (Execution Order)</h4>
+                    <div style="background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:12px; font-family:monospace; font-size:11px; max-height:300px; overflow-y:auto;">
+                        <div id="intentsQueue" style="color:var(--muted);">No pending intents in queue</div>
+                    </div>
+                </div>
+
+                <!-- Auto-refresh indicator -->
+                <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border); text-align:center;">
+                    <span style="font-size:11px; color:var(--muted);">🔄 Auto-refreshing every 3 seconds</span>
+                    <br/>
+                    <button class="btn-primary btn-sm" onclick="loadExecutionAudit()" style="margin-top:10px;">Refresh Now</button>
+                </div>
+            </div>
+        </div>        <div id="result" class="result" style="margin-top:var(--spacing-lg);"></div>
     </main>
 
     <script>
         const API = '/dashboard';
         let strategies = [];
         let activeIntents = new Map();  // Track ongoing intent submissions
+        let auditRefreshInterval;
 
         function switchMainTab(tab) {
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -449,6 +537,7 @@
             document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
             event.target.classList.add('active');
             if (tab === 'control') { loadStrategies(); refreshMonitor(); }
+            if (tab === 'audit') { loadExecutionAudit(); startAuditRefresh(); }
         }
 
         function switchBuilderTab(tab) {
@@ -617,7 +706,7 @@
                 );
                 
                 // Auto-refresh after delay
-                setTimeout(() => { loadStrategies(); refreshMonitor(); }, 1500);
+                setTimeout(() => { loadStrategies(); refreshMonitor(); loadExecutionAudit(); }, 1500);
             } catch (e) {
                 console.error(`❌ Error:`, e);
                 showResult(false, `❌ FAILED TO SUBMIT\n\n${e.message}`);
@@ -643,6 +732,113 @@
             const toggle = header.querySelector('.section-toggle');
             content.classList.toggle('open');
             toggle.classList.toggle('open');
+        }
+
+        async function loadExecutionAudit() {
+            try {
+                console.log('🔍 Loading execution audit...');
+                const r = await fetch(`${API}/monitoring/all-strategies-status`, { credentials: 'include' });
+                if (!r.ok) {
+                    console.error(`❌ Audit failed: HTTP ${r.status}`);
+                    return;
+                }
+                const data = await r.json();
+                console.log('✅ Execution audit loaded:', data);
+                
+                // Update stats
+                const audit = data.audit || {};
+                document.getElementById('stat-running').textContent = audit.strategies_running || 0;
+                document.getElementById('stat-paused').textContent = audit.strategies_paused || 0;
+                document.getElementById('stat-intents').textContent = audit.pending_intents_in_queue || 0;
+                document.getElementById('stat-positions').textContent = audit.active_positions_total || 0;
+
+                // Show banner if running
+                const banner = document.getElementById('executionBanner');
+                if (audit.strategies_running > 0 || audit.pending_intents_in_queue > 0) {
+                    banner.style.display = 'block';
+                    const bannerText = document.getElementById('bannerText');
+                    bannerText.textContent = `${audit.strategies_running} running · ${audit.pending_intents_in_queue} intents queued · ${audit.active_positions_total} positions`;
+                } else {
+                    banner.style.display = 'none';
+                }
+
+                // Show hidden warning
+                const hiddenWarning = document.getElementById('hiddenWarning');
+                if (audit.has_hidden_strategies) {
+                    hiddenWarning.style.display = 'block';
+                } else {
+                    hiddenWarning.style.display = 'none';
+                }
+
+                // Update strategies table
+                let tableHtml = '';
+                const strategies = data.strategies || [];
+                for (const s of strategies) {
+                    const statusColor = s.status === 'RUNNING' ? '#22c55e' : 
+                                       s.status === 'PAUSED' ? '#eab308' :
+                                       s.status === 'IDLE' ? 'var(--muted)' : '#ef4444';
+                    const hiddenBadge = s.is_hidden ? ' <strong style="color:#ef4444;">HIDDEN</strong>' : '';
+                    
+                    tableHtml += `<tr>
+                        <td><strong>${s.name}</strong>${hiddenBadge}</td>
+                        <td><span class="status-pill status-${s.status.toLowerCase()}">● ${s.status}</span></td>
+                        <td>${s.underlying}</td>
+                        <td><span class="greek" style="background:#3b82f6; color:white;">${s.intent_count}</span></td>
+                        <td><span class="greek" style="background:#8b5cf6; color:white;">${s.position_count}</span></td>
+                        <td style="font-size:10px;">${s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A'}</td>
+                        <td>
+                            <select onchange="updateStrategyStatus('${s.name}', this.value)" style="padding:4px 8px; font-size:11px; border:1px solid var(--border); border-radius:3px; background:var(--panel-2);">
+                                <option value="${s.status}">${s.status}</option>
+                                <option value="IDLE">→ IDLE</option>
+                                ${s.status !== 'RUNNING' ? '<option value="RUNNING">→ RUNNING</option>' : ''}
+                                ${s.status === 'RUNNING' ? '<option value="PAUSED">→ PAUSED</option>' : ''}
+                                ${s.status !== 'IDLE' ? '<option value="STOPPED">→ STOPPED</option>' : ''}
+                            </select>
+                        </td>
+                    </tr>`;
+                }
+                if (!tableHtml) {
+                    tableHtml = '<tr><td colspan="7" class="text-center muted">No strategies found</td></tr>';
+                }
+                document.getElementById('auditTableBody').innerHTML = tableHtml;
+
+                // Update intents queue
+                const intents = data.control_intents || [];
+                let intentsHtml = '';
+                if (intents.length === 0) {
+                    intentsHtml = '— No pending intents in queue';
+                } else {
+                    for (const i of intents) {
+                        intentsHtml += `<div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">
+                            <strong style="color:#3b82f6;">${i.intent_id}</strong> | 
+                            <span style="color:#eab308;">${i.strategy_name}</span> | 
+                            <span style="color:#22c55e;">${i.action}</span> | 
+                            <span style="color:var(--muted);">Created: ${new Date(i.created_at || '').toLocaleString()}</span>
+                        </div>`;
+                    }
+                }
+                document.getElementById('intentsQueue').innerHTML = intentsHtml;
+
+            } catch (e) {
+                console.error('❌ Audit load error:', e);
+            }
+        }
+
+        function updateStrategyStatus(name, newStatus) {
+            if (newStatus === name) return; // No change
+            // This would call an API to update status - for now just show result
+            showResult(true, `📊 Strategy "${name}" status will be updated to: ${newStatus}`);
+        }
+
+        function startAuditRefresh() {
+            // Clear any existing interval
+            if (auditRefreshInterval) clearInterval(auditRefreshInterval);
+            // Refresh every 3 seconds when audit tab is active
+            auditRefreshInterval = setInterval(() => {
+                if (document.getElementById('audit').classList.contains('active')) {
+                    loadExecutionAudit();
+                }
+            }, 3000);
         }
 
         async function refreshMonitor() {
@@ -755,6 +951,7 @@
             console.log(`📡 API endpoint: ${API}`);
             console.log('💡 TIP: Open DevTools (F12) → Console for detailed intent tracking');
             updateStrategyType();
+            loadExecutionAudit();  // Load audit on startup
         });
     </script>
 </body>

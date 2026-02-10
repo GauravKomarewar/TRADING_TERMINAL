@@ -21,7 +21,7 @@
             border-radius: var(--radius-md);
             padding: 10px 16px;
             flex: 1;
-            min-width: 130px;
+            min-width: 120px;
             display: flex;
             flex-direction: column;
             gap: 2px;
@@ -40,6 +40,10 @@
             font-weight: 700;
             font-variant-numeric: tabular-nums;
             line-height: 1.3;
+        }
+        .kpi-sub {
+            font-size: 10px;
+            color: var(--muted);
         }
 
         /* ── Main Grid ── */
@@ -137,19 +141,37 @@
         .status-badge.warning { background: var(--warning-bg); color: var(--warning); }
         .status-badge.danger { background: var(--danger-bg); color: var(--danger); }
         .status-badge.neutral { background: var(--panel-3); color: var(--muted); }
+        .status-badge.info { background: var(--info-bg); color: var(--info); }
 
         /* ── Order side badges ── */
         .side-buy { color: var(--success); font-weight: 700; }
         .side-sell { color: var(--danger); font-weight: 700; }
 
-        /* ── Messages ── */
-        .msg-list { max-height: 260px; overflow-y: auto; }
+        /* ── Source badge ── */
+        .src-system { color: var(--primary); font-weight: 600; font-size: 10px; }
+        .src-broker { color: var(--warning); font-weight: 600; font-size: 10px; }
+
+        /* ── Full-width bottom section ── */
+        .full-width-section {
+            margin-top: 14px;
+        }
+
+        /* ── Messages (horizontal layout) ── */
+        .msg-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
         .msg-item {
-            padding: 8px 0;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px 12px;
             font-size: 11px;
             line-height: 1.4;
         }
-        .msg-item + .msg-item { border-top: 1px solid var(--border); }
         .msg-time {
             font-size: 10px;
             color: var(--muted);
@@ -215,28 +237,15 @@
         }
         .value-changed { animation: flash 0.6s ease; }
 
-        /* ── Spinner ── */
-        .spinner {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border: 2px solid var(--border);
-            border-top-color: var(--primary);
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
         /* ── Responsive ── */
         @media (max-width: 1024px) {
-            .main-grid {
-                grid-template-columns: 1fr;
-            }
+            .main-grid { grid-template-columns: 1fr; }
             .sidebar { order: -1; }
+            .msg-grid { grid-template-columns: 1fr; }
         }
         @media (max-width: 768px) {
             .kpi-strip { gap: 8px; }
-            .kpi-card { min-width: 100px; padding: 8px 12px; }
+            .kpi-card { min-width: 90px; padding: 8px 12px; }
             .kpi-value { font-size: 15px; }
         }
         @media (max-width: 480px) {
@@ -268,8 +277,9 @@
             <span class="kpi-value" id="kpiOpenPos">0</span>
         </div>
         <div class="kpi-card">
-            <span class="kpi-label">Pending Orders</span>
-            <span class="kpi-value" id="kpiPendingOrders">0</span>
+            <span class="kpi-label">Alerts</span>
+            <span class="kpi-value" id="kpiAlertTotal">0</span>
+            <span class="kpi-sub" id="kpiAlertSub">--</span>
         </div>
         <div class="kpi-card">
             <span class="kpi-label">Risk Status</span>
@@ -324,7 +334,7 @@
                 </div>
             </div>
 
-            <!-- Pending Orders -->
+            <!-- Pending Orders (merged: system + broker) -->
             <div class="dash-card">
                 <div class="card-head">
                     <h3>Pending Orders</h3>
@@ -334,19 +344,21 @@
                     <table class="dash-table">
                         <thead>
                             <tr>
+                                <th>Source</th>
                                 <th>Symbol</th>
                                 <th>Side</th>
                                 <th>Qty</th>
                                 <th>Type</th>
                                 <th>Price</th>
+                                <th>Trigger</th>
                                 <th>Product</th>
                                 <th>Status</th>
-                                <th>Source</th>
+                                <th>Order ID</th>
                                 <th>Updated</th>
                             </tr>
                         </thead>
                         <tbody id="pendingRows">
-                            <tr class="empty-row"><td colspan="9">No pending orders</td></tr>
+                            <tr class="empty-row"><td colspan="11">No pending orders</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -471,38 +483,19 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- System Info -->
-            <div class="dash-card">
-                <div class="card-head">
-                    <h3>System</h3>
-                </div>
-                <div class="card-body-pad">
-                    <div class="info-row">
-                        <span class="info-label">Heartbeat</span>
-                        <span class="info-value" id="sysHeartbeat">--</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Signal</span>
-                        <span class="info-value" id="sysSignal">--</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Alerts Sent</span>
-                        <span class="info-value" id="sysAlertCount">0</span>
-                    </div>
-                </div>
+    <!-- Full-Width: Recent Alerts / Telegram Messages -->
+    <div class="full-width-section">
+        <div class="dash-card">
+            <div class="card-head">
+                <h3>Recent Alerts / Telegram Messages</h3>
+                <span class="head-right" id="alertCount">0 messages</span>
             </div>
-
-            <!-- Recent Alerts -->
-            <div class="dash-card">
-                <div class="card-head">
-                    <h3>Recent Alerts</h3>
-                    <span class="head-right" id="alertCount">0</span>
-                </div>
-                <div class="card-body-pad">
-                    <div class="msg-list" id="telegramMessages">
-                        <div class="msg-item" style="color: var(--muted); text-align: center;">No alerts yet</div>
-                    </div>
+            <div class="card-body-pad">
+                <div class="msg-grid" id="telegramMessages">
+                    <div class="msg-item" style="color: var(--muted); text-align: center; grid-column: 1/-1;">No alerts yet</div>
                 </div>
             </div>
         </div>
@@ -519,18 +512,18 @@
 
     async function checkAuth() {
         try {
-            const res = await fetch('/dashboard/home/status', { credentials: 'include' });
+            var res = await fetch('/dashboard/home/status', { credentials: 'include' });
             if (res.status === 401) window.location.href = '/';
         } catch (e) {}
     }
 
     // ─── Config & State ───
-    const REFRESH_MS = 1000;
-    let lastUpdate = Date.now();
-    let autoRefreshTimer = null;
-    let isRefreshing = false;
-    let retryCount = 0;
-    const MAX_RETRIES = 3;
+    var REFRESH_MS = 1000;
+    var lastUpdate = Date.now();
+    var autoRefreshTimer = null;
+    var isRefreshing = false;
+    var retryCount = 0;
+    var MAX_RETRIES = 3;
 
     // ─── Formatting ───
     function fmt(val) {
@@ -551,24 +544,24 @@
     }
 
     function pnlColor(val) {
-        const n = parseFloat(val) || 0;
+        var n = parseFloat(val) || 0;
         return n > 0 ? 'var(--success)' : n < 0 ? 'var(--danger)' : 'var(--text)';
     }
 
     function timeStr(ts) {
         if (!ts) return '--';
         try {
-            const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+            var d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
             return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        } catch { return '--'; }
+        } catch (e) { return '--'; }
     }
 
     // ─── Error ───
     function showError(msg) {
-        const el = document.getElementById('errorBanner');
+        var el = document.getElementById('errorBanner');
         el.textContent = '⚠ ' + msg;
         el.classList.add('show');
-        setTimeout(() => el.classList.remove('show'), 5000);
+        setTimeout(function() { el.classList.remove('show'); }, 5000);
     }
 
     // ─── Flash animation helper ───
@@ -582,46 +575,46 @@
     // ─── Auto-refresh ───
     function startAutoRefresh() {
         stopAutoRefresh();
-        autoRefreshTimer = setInterval(() => updateDashboard(true), REFRESH_MS);
+        autoRefreshTimer = setInterval(function() { updateDashboard(true); }, REFRESH_MS);
     }
     function stopAutoRefresh() {
         if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
     }
 
     // ─── Main Update ───
-    async function updateDashboard(isAuto = true) {
+    async function updateDashboard(isAuto) {
+        if (isAuto === undefined) isAuto = true;
         if (isRefreshing) return;
         isRefreshing = true;
 
         try {
-            const res = await fetch('/dashboard/home/status', {
+            var res = await fetch('/dashboard/home/status', {
                 credentials: 'include',
                 headers: { 'Accept': 'application/json' }
             });
 
             if (!res.ok) {
                 if (res.status === 401) { window.location.href = '/'; return; }
-                let detail = 'HTTP ' + res.status;
-                try { detail = (await res.json()).detail || detail; } catch {}
+                var detail = 'HTTP ' + res.status;
+                try { detail = (await res.json()).detail || detail; } catch (e) {}
                 throw new Error(detail);
             }
 
-            const data = await res.json();
-            const broker = data.broker || {};
-            const system = data.system || {};
+            var data = await res.json();
+            var broker = data.broker || {};
+            var system = data.system || {};
 
             updateKPI(broker, system);
             updatePositions(broker.positions || []);
-            updatePendingOrders(system.open_orders || []);
+            updatePendingOrders(system.open_orders || [], broker.orders || []);
             updateRecentOrders(system.orders || []);
             updateHoldings(broker.holdings || []);
             updateRisk(system.risk || null);
             updateAccount(broker.limits || {});
-            updateSystem(system);
-            updateAlerts(system.telegram_messages || []);
+            updateAlerts(system.telegram_messages || [], system.telegram_stats || {});
 
             // Force exit banner
-            const risk = system.risk || {};
+            var risk = system.risk || {};
             document.getElementById('forceExitBanner').style.display =
                 risk.force_exit_in_progress ? 'block' : 'none';
 
@@ -632,7 +625,7 @@
             if (!isAuto) showError(err.message);
             if (isAuto && retryCount < MAX_RETRIES) {
                 retryCount++;
-                setTimeout(() => updateDashboard(true), 2000);
+                setTimeout(function() { updateDashboard(true); }, 2000);
             }
         } finally {
             isRefreshing = false;
@@ -641,32 +634,35 @@
 
     // ─── KPI Strip ───
     function updateKPI(broker, system) {
-        const summary = broker.positions_summary || {};
-        const netPnl = parseFloat(summary.net_pnl || summary.rpnl || 0);
-        const openCount = summary.open_count || (broker.positions || []).length || 0;
-
-        // BUGFIX: open_orders is a LIST of OrderRecord objects, not a number
-        const pendingList = Array.isArray(system.open_orders) ? system.open_orders : [];
-        const pendingCount = pendingList.length;
+        var summary = broker.positions_summary || {};
+        var netPnl = parseFloat(summary.net_pnl || summary.rpnl || 0);
+        var openCount = summary.open_count || (broker.positions || []).length || 0;
 
         // Net PnL
-        const pnlEl = document.getElementById('kpiNetPnl');
-        const newPnl = fmt(netPnl);
+        var pnlEl = document.getElementById('kpiNetPnl');
+        var newPnl = fmt(netPnl);
         if (pnlEl.textContent !== newPnl) { pnlEl.textContent = newPnl; flashEl(pnlEl); }
         pnlEl.style.color = pnlColor(netPnl);
 
         // Open Positions
-        const posEl = document.getElementById('kpiOpenPos');
-        posEl.textContent = openCount;
+        document.getElementById('kpiOpenPos').textContent = openCount;
 
-        // Pending Orders
-        const pendEl = document.getElementById('kpiPendingOrders');
-        pendEl.textContent = pendingCount;
-        pendEl.style.color = pendingCount > 0 ? 'var(--warning)' : 'var(--text)';
+        // Alert stats
+        var stats = system.telegram_stats || {};
+        var total = stats.total || 0;
+        var success = stats.success || 0;
+        var failed = stats.failed || 0;
+        var riskAlerts = stats.risk || 0;
+        document.getElementById('kpiAlertTotal').textContent = total;
+        var subParts = [];
+        if (success) subParts.push(success + ' ok');
+        if (failed) subParts.push(failed + ' fail');
+        if (riskAlerts) subParts.push(riskAlerts + ' risk');
+        document.getElementById('kpiAlertSub').textContent = subParts.length ? subParts.join(' · ') : 'no alerts';
 
         // Risk Status
-        const risk = system.risk || {};
-        let riskText, riskClass;
+        var risk = system.risk || {};
+        var riskText, riskClass;
         if (risk.force_exit_in_progress) { riskText = 'EXIT'; riskClass = 'danger'; }
         else if (risk.daily_loss_hit) { riskText = 'LOSS HIT'; riskClass = 'danger'; }
         else if (risk.human_violation_detected) { riskText = 'VIOLATION'; riskClass = 'danger'; }
@@ -677,9 +673,9 @@
             '<span class="status-badge ' + riskClass + '">' + riskText + '</span>';
 
         // Broker connection
-        const hb = system.heartbeat || {};
-        const login = hb.login || hb.status || '';
-        let brokerText, brokerClass;
+        var hb = system.heartbeat || {};
+        var login = hb.login || hb.status || '';
+        var brokerText, brokerClass;
         if (login === 'OK' || login === 'CONNECTED') { brokerText = 'CONNECTED'; brokerClass = 'safe'; }
         else if (login) { brokerText = login; brokerClass = 'warning'; }
         else { brokerText = 'UNKNOWN'; brokerClass = 'neutral'; }
@@ -689,8 +685,8 @@
 
     // ─── Positions Table ───
     function updatePositions(positions) {
-        const tbody = document.getElementById('positionRows');
-        const countEl = document.getElementById('posCount');
+        var tbody = document.getElementById('positionRows');
+        var countEl = document.getElementById('posCount');
         countEl.textContent = positions.length ? positions.length + ' position' + (positions.length > 1 ? 's' : '') : '';
 
         if (!positions.length) {
@@ -698,14 +694,14 @@
             return;
         }
 
-        const curSymbols = Array.from(tbody.querySelectorAll('tr[data-sym]')).map(r => r.dataset.sym);
-        const newSymbols = positions.map(p => p.tsym || p.symbol || '');
-        const rebuild = curSymbols.length !== newSymbols.length || !newSymbols.every((s, i) => s === curSymbols[i]);
+        var curSymbols = Array.from(tbody.querySelectorAll('tr[data-sym]')).map(function(r) { return r.dataset.sym; });
+        var newSymbols = positions.map(function(p) { return p.tsym || p.symbol || ''; });
+        var rebuild = curSymbols.length !== newSymbols.length || !newSymbols.every(function(s, i) { return s === curSymbols[i]; });
 
         if (rebuild) {
-            tbody.innerHTML = positions.map(p => {
-                const net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
-                const prd = p.prd || p.product || '';
+            tbody.innerHTML = positions.map(function(p) {
+                var net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
+                var prd = p.prd || p.product || '';
                 return '<tr data-sym="' + (p.tsym || p.symbol || '') + '">'
                     + '<td style="font-weight:700">' + (p.tsym || p.symbol || '-') + '</td>'
                     + '<td data-f="ltp">' + fmt(p.lp || p.ltp || 0) + '</td>'
@@ -719,15 +715,15 @@
                     + '</tr>';
             }).join('');
         } else {
-            positions.forEach(p => {
-                const sym = p.tsym || p.symbol || '';
-                const row = tbody.querySelector('tr[data-sym="' + sym + '"]');
+            positions.forEach(function(p) {
+                var sym = p.tsym || p.symbol || '';
+                var row = tbody.querySelector('tr[data-sym="' + sym + '"]');
                 if (!row) return;
-                const net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
-                const updateCell = function(sel, val, colored) {
-                    const cell = row.querySelector(sel);
+                var net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
+                var updateCell = function(sel, val, colored) {
+                    var cell = row.querySelector(sel);
                     if (!cell) return;
-                    const f = fmt(val);
+                    var f = fmt(val);
                     if (cell.textContent !== f) { cell.textContent = f; flashEl(cell); }
                     if (colored) cell.style.color = pnlColor(val);
                 };
@@ -742,49 +738,90 @@
         }
     }
 
-    // ─── Pending Orders Table (FIXED: shows actual order data) ───
-    function updatePendingOrders(openOrders) {
+    // ─── Pending Orders Table (MERGED: system + broker) ───
+    function updatePendingOrders(systemOpenOrders, brokerOrders) {
         var tbody = document.getElementById('pendingRows');
         var countEl = document.getElementById('pendingCount');
 
-        // open_orders is a LIST of OrderRecord objects from the API
-        var orders = Array.isArray(openOrders) ? openOrders : [];
-        countEl.textContent = orders.length ? orders.length + ' pending' : '';
+        // Normalize system orders (OrderRecord objects)
+        var sysOrders = Array.isArray(systemOpenOrders) ? systemOpenOrders : [];
+        var sysRows = sysOrders.map(function(o) {
+            return {
+                src: 'SYSTEM',
+                symbol: o.symbol || o.tsym || '-',
+                side: (o.side || '').toUpperCase(),
+                qty: o.quantity || 0,
+                type: o.order_type || '-',
+                price: o.price,
+                trigger: null,
+                product: o.product || '-',
+                status: o.status || '--',
+                orderId: o.command_id || o.broker_order_id || '-',
+                updated: o.updated_at
+            };
+        });
 
-        if (!orders.length) {
-            tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No pending orders</td></tr>';
+        // Normalize broker orders — filter to OPEN/PENDING only
+        var brkOrders = Array.isArray(brokerOrders) ? brokerOrders : [];
+        var brkRows = brkOrders
+            .filter(function(o) {
+                var st = (o.status || '').toUpperCase();
+                return st === 'OPEN' || st === 'PENDING' || st === 'TRIGGER_PENDING' || st === 'SL-PENDING';
+            })
+            .map(function(o) {
+                return {
+                    src: 'BROKER',
+                    symbol: o.tsym || '-',
+                    side: o.trantype === 'B' ? 'BUY' : 'SELL',
+                    qty: o.qty || 0,
+                    type: o.prctyp || '-',
+                    price: o.prc ? parseFloat(o.prc) : null,
+                    trigger: o.trgprc ? parseFloat(o.trgprc) : null,
+                    product: o.prd || '-',
+                    status: o.status || '--',
+                    orderId: o.norenordno || '-',
+                    updated: o.norentm || o.exch_tm || null
+                };
+            });
+
+        // Merge: system first, then broker
+        var allPending = sysRows.concat(brkRows);
+        countEl.textContent = allPending.length ? allPending.length + ' pending' : '';
+
+        if (!allPending.length) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No pending orders</td></tr>';
             return;
         }
 
-        tbody.innerHTML = orders.map(function(o) {
-            var side = (o.side || '').toUpperCase();
-            var sideClass = (side === 'BUY' || side === 'B') ? 'side-buy' : 'side-sell';
-            var status = o.status || '--';
+        tbody.innerHTML = allPending.map(function(o) {
+            var sideClass = (o.side === 'BUY' || o.side === 'B') ? 'side-buy' : 'side-sell';
+            var srcClass = o.src === 'SYSTEM' ? 'src-system' : 'src-broker';
             var statusClass = 'neutral';
-            if (status === 'CREATED') statusClass = 'warning';
-            else if (status === 'SENT_TO_BROKER') statusClass = 'safe';
+            if (o.status === 'CREATED' || o.status === 'PENDING' || o.status === 'TRIGGER_PENDING' || o.status === 'SL-PENDING') statusClass = 'warning';
+            else if (o.status === 'SENT_TO_BROKER' || o.status === 'OPEN') statusClass = 'safe';
 
             return '<tr>'
-                + '<td style="font-weight:700">' + (o.symbol || o.tsym || '-') + '</td>'
-                + '<td class="' + sideClass + '">' + side + '</td>'
-                + '<td>' + (o.quantity || 0) + '</td>'
-                + '<td>' + (o.order_type || '-') + '</td>'
+                + '<td><span class="' + srcClass + '">' + o.src + '</span></td>'
+                + '<td style="font-weight:700">' + o.symbol + '</td>'
+                + '<td class="' + sideClass + '">' + o.side + '</td>'
+                + '<td>' + o.qty + '</td>'
+                + '<td>' + o.type + '</td>'
                 + '<td>' + (o.price ? fmt(o.price) : 'MKT') + '</td>'
-                + '<td>' + (o.product || '-') + '</td>'
-                + '<td><span class="status-badge ' + statusClass + '">' + status + '</span></td>'
-                + '<td>' + (o.source || '-') + '</td>'
-                + '<td>' + timeStr(o.updated_at) + '</td>'
+                + '<td>' + (o.trigger ? fmt(o.trigger) : '-') + '</td>'
+                + '<td>' + o.product + '</td>'
+                + '<td><span class="status-badge ' + statusClass + '">' + o.status + '</span></td>'
+                + '<td style="font-size:10px;color:var(--muted)">' + o.orderId + '</td>'
+                + '<td>' + timeStr(o.updated) + '</td>'
                 + '</tr>';
         }).join('');
     }
 
-    // ─── Recent Orders Table (last 15 completed/failed/cancelled) ───
+    // ─── Recent Orders Table (last 15 from system DB) ───
     function updateRecentOrders(allOrders) {
         var tbody = document.getElementById('recentOrderRows');
         var countEl = document.getElementById('recentOrderCount');
 
         var orders = Array.isArray(allOrders) ? allOrders : [];
-        // Filter to non-pending and take top 15
         var recent = orders
             .filter(function(o) { return ['CREATED', 'SENT_TO_BROKER'].indexOf(o.status) === -1; })
             .slice(0, 15);
@@ -904,7 +941,6 @@
             return;
         }
 
-        // Badge
         var forceExit = !!risk.force_exit_in_progress;
         var lossHit = !!risk.daily_loss_hit;
         var violation = !!risk.human_violation_detected;
@@ -919,7 +955,6 @@
         badge.textContent = text;
         badge.className = 'status-badge ' + cls;
 
-        // Values
         var pnl = risk.daily_pnl != null ? risk.daily_pnl : null;
         var maxLoss = risk.dynamic_max_loss != null ? risk.dynamic_max_loss : null;
 
@@ -957,42 +992,19 @@
         document.getElementById('accNetAvail').textContent = fmt(limits.net || limits.payin || 0);
     }
 
-    // ─── System Info Card ───
-    function updateSystem(system) {
-        var hb = system.heartbeat || {};
-        var sig = system.signal || {};
-        var stats = system.telegram_stats || {};
-
-        // Heartbeat
-        var hbEl = document.getElementById('sysHeartbeat');
-        if (hb.age_sec != null) {
-            hbEl.textContent = timeSince(hb.age_sec);
-            hbEl.style.color = hb.age_sec < 30 ? 'var(--success)' : hb.age_sec < 120 ? 'var(--warning)' : 'var(--danger)';
-        } else {
-            hbEl.textContent = '--';
-            hbEl.style.color = 'var(--muted)';
-        }
-
-        // Signal
-        document.getElementById('sysSignal').textContent = sig.status || 'IDLE';
-
-        // Alert count
-        document.getElementById('sysAlertCount').textContent = fmtNum(stats.total || 0);
-    }
-
-    // ─── Alerts / Telegram ───
-    function updateAlerts(messages) {
+    // ─── Alerts / Telegram (full-width horizontal) ───
+    function updateAlerts(messages, stats) {
         var container = document.getElementById('telegramMessages');
         var countEl = document.getElementById('alertCount');
 
         if (!messages || !messages.length) {
-            container.innerHTML = '<div class="msg-item" style="color:var(--muted);text-align:center">No alerts yet</div>';
-            countEl.textContent = '0';
+            container.innerHTML = '<div class="msg-item" style="color:var(--muted);text-align:center;grid-column:1/-1">No alerts yet</div>';
+            countEl.textContent = '0 messages';
             return;
         }
 
-        var recent = messages.slice(-20).reverse();
-        countEl.textContent = String(messages.length);
+        var recent = messages.slice(-30).reverse();
+        countEl.textContent = messages.length + ' messages';
 
         container.innerHTML = recent.map(function(m) {
             var raw = (m.message || '').replace(/<[^>]*>/g, '');

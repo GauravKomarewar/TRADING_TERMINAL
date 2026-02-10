@@ -355,6 +355,7 @@ def dashboard_snapshot(
             "positions_summary": broker.get_positions_summary(),
             "holdings": broker.get_holdings(),
             "limits": broker.get_limits(),
+            "orders": broker.get_order_book(),
         },
         "system": {
             "orders": system.get_orders(200),

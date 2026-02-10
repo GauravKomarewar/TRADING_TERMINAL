@@ -76,17 +76,20 @@ body.dashboard-shell {
     margin-top: 0;
 }
 
-/* Global Index Ticker Ribbon */
+/* Global Index Ticker Ribbon - Always on Top */
 .global-ticker {
-    background: linear-gradient(90deg, var(--panel), rgba(28,35,51,0.8));
+    background: linear-gradient(90deg, var(--panel), rgba(28,35,51,0.9));
     border-bottom: 1px solid var(--border);
     overflow: hidden;
-    z-index: 999;
+    z-index: 10000;  /* On top of everything */
     height: 40px;
     display: flex;
     align-items: center;
-    position: sticky;
-    top: var(--header-height, 50px);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
 }
 
 .ticker-track {
@@ -99,9 +102,14 @@ body.dashboard-shell {
     display: flex;
     gap: 20px;
     padding: 0 20px;
-    animation: scrollTicker 60s linear infinite;
     white-space: nowrap;
     min-width: max-content;
+    transition: transform 0.1s linear;
+}
+
+/* Only animate when content is wider than container */
+.ticker-items.animate-scroll {
+    animation: scrollTicker 60s linear infinite;
 }
 
 @keyframes scrollTicker {
@@ -114,7 +122,7 @@ body.dashboard-shell {
 }
 
 /* Pause animation on hover */
-.ticker-track:hover .ticker-items {
+.ticker-track:hover .ticker-items.animate-scroll {
     animation-play-state: paused;
 }
 
@@ -126,6 +134,7 @@ body.dashboard-shell {
     border-right: 1px solid var(--border);
     font-size: 12px;
     min-width: 140px;
+    flex-shrink: 0;
 }
 
 .ticker-item:last-child {
@@ -135,7 +144,7 @@ body.dashboard-shell {
 .ticker-symbol {
     font-weight: 700;
     color: var(--text);
-    min-width: 50px;
+    min-width: 60px;
 }
 
 .ticker-ltp {
@@ -164,9 +173,22 @@ body.dashboard-shell {
     color: var(--danger);
 }
 
+/* Adjust content for fixed top ribbon */
+body.dashboard-shell {
+    padding-top: 40px;  /* Space for fixed ticker */
+}
+
+.app-header {
+    position: relative;  /* Not sticky anymore since ticker is fixed */
+}
+
 @media (max-width: 768px) {
     .global-ticker {
         height: 35px;
+    }
+    
+    body.dashboard-shell {
+        padding-top: 35px;
     }
     
     .ticker-item {
@@ -179,5 +201,9 @@ body.dashboard-shell {
     .ticker-items {
         gap: 15px;
         padding: 0 15px;
+    }
+    
+    .ticker-symbol {
+        min-width: 50px;
     }
 }

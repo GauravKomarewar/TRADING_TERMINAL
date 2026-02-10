@@ -77,26 +77,20 @@
         body.insertBefore(header, body.firstChild);
     }
 
-    // Create global index ticker ribbon
+    // Create global index ticker ribbon at top of page
     const ticker = document.createElement('div');
     ticker.className = 'global-ticker';
     ticker.id = 'globalTicker';
     ticker.innerHTML = `
-        <div class="ticker-track">
+        <div class="ticker-track" id="tickerTrack">
             <div class="ticker-items" id="tickerItems">
                 <!-- Index tokens will be loaded here -->
             </div>
         </div>
     `;
     
-    if (mount) {
-        const headerEl = document.getElementById('app-header');
-        if (headerEl && headerEl.parentNode) {
-            headerEl.parentNode.insertBefore(ticker, headerEl.nextSibling);
-        }
-    } else {
-        body.insertBefore(ticker, header.nextSibling);
-    }
+    // Insert at very top of body
+    body.insertBefore(ticker, body.firstChild);
 
     // Load and refresh index tokens
     let indexTokensTimer = null;
@@ -104,25 +98,31 @@
     function loadGlobalIndexTokens() {
         fetch('/dashboard/index-tokens/prices', {credentials:'include'})
             .then(r => r.ok ? r.json() : Promise.reject())
-            .then(data => updateGlobalTicker(data.indices || {}))
+            .then(data => updateGlobalTicker(data.indices || {}, data.subscribed || []))
             .catch(() => {});  // Silently fail if not available
     }
     
-    function updateGlobalTicker(indicesData) {
+    function updateGlobalTicker(indicesData, subscribedList) {
         const itemsContainer = document.getElementById('tickerItems');
-        if (!itemsContainer) return;
+        const tickerTrack = document.getElementById('tickerTrack');
+        if (!itemsContainer || !tickerTrack) return;
         
-        if (!Object.keys(indicesData).length) {
+        if (!subscribedList.length) {
             document.getElementById('globalTicker').style.display = 'none';
             return;
         }
         
         document.getElementById('globalTicker').style.display = 'block';
         
-        let html = '';
-        const order = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX', 'INDIAVIX', 'BANKEX'];
+        // Sort: INDIAVIX first, then NIFTY, BANKNIFTY, SENSEX, then rest alphabetically
+        const priority = ['INDIAVIX', 'NIFTY', 'BANKNIFTY', 'SENSEX'];
+        const sorted = [
+            ...priority.filter(s => subscribedList.includes(s)),
+            ...subscribedList.filter(s => !priority.includes(s)).sort()
+        ];
         
-        order.forEach(symbol => {
+        let html = '';
+        sorted.forEach(symbol => {
             if (indicesData[symbol]) {
                 const data = indicesData[symbol];
                 const ltp = data.ltp || 0;
@@ -140,7 +140,19 @@
             }
         });
         
-        if (html) itemsContainer.innerHTML = html;
+        if (html) {
+            itemsContainer.innerHTML = html;
+            // Check if animation is needed (items overflow container)
+            setTimeout(() => {
+                const itemsWidth = itemsContainer.scrollWidth;
+                const trackWidth = tickerTrack.clientWidth;
+                if (itemsWidth > trackWidth) {
+                    itemsContainer.classList.add('animate-scroll');
+                } else {
+                    itemsContainer.classList.remove('animate-scroll');
+                }
+            }, 50);
+        }
     }
     
     // Start ticker on page load

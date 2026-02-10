@@ -4,46 +4,54 @@ body.dashboard-shell {
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
-    padding-top: 68px;  /* Space for fixed ticker (28px) + fixed header (40px) */
+    padding-top: 64px;  /* Space for fixed ticker (28px) + fixed header (36px) */
 }
 
 .app-header {
-    height: var(--header-height);
+    height: 36px;  /* Compact navigation bar */
     background: var(--panel);
     display: flex;
     align-items: center;
-    padding: 0 var(--spacing-lg);
+    padding: 0 var(--spacing-md);
     border-bottom: 1px solid var(--border);
     position: fixed;
     top: 28px;  /* Below fixed ticker */
     left: 0;
     right: 0;
     z-index: 999;
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
     width: 100%;
 }
 
 .app-brand {
     font-weight: 700;
-    font-size: var(--font-md);
+    font-size: 13px;  /* Smaller font for compact header */
     color: var(--primary);
     cursor: pointer;
     white-space: nowrap;
     user-select: none;
+    flex-shrink: 0;
 }
 
 .app-nav {
     display: flex;
-    gap: var(--spacing-sm);
+    gap: 4px;  /* Reduced gap */
     align-items: center;
-    flex-wrap: wrap;
     flex: 1;
+    height: 36px;
 }
 
 .app-actions {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    gap: 4px;  /* Reduced gap */
+    flex-shrink: 0;
+}
+
+.app-actions button {
+    font-size: 11px;  /* Smaller button text */
+    padding: 4px 8px;  /* Compact padding */
+    height: 24px;  /* Reduce button height */
 }
 
 .app-mobile-toggle {
@@ -51,10 +59,13 @@ body.dashboard-shell {
     background: transparent;
     border: 1px solid var(--border);
     color: var(--text);
-    padding: var(--spacing-sm);
+    padding: 2px 6px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: var(--font-md);
+    font-size: 14px;
+    height: 24px;
+    width: 24px;
+    min-width: 24px;
 }
 
 @media (max-width: 860px) {
@@ -73,6 +84,29 @@ body.dashboard-shell {
         flex-direction: column;
         align-items: flex-start;
     }
+}
+
+/* Navigation links styling */
+.nav-link {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: background 0.2s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    height: 24px;
+}
+
+.nav-link:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.nav-link.active {
+    color: var(--primary);
+    font-weight: 600;
 }
 
 /* Page-specific overrides */
@@ -206,7 +240,7 @@ body.dashboard-shell {
 
 @media (max-width: 768px) {
     body.dashboard-shell {
-        padding-top: 63px;  /* 25px ticker + 38px header */
+        padding-top: 61px;  /* 25px ticker + 36px header */
     }
 
     .global-ticker {
@@ -215,11 +249,11 @@ body.dashboard-shell {
     
     .app-header {
         top: 25px;
-        height: 38px;
+        height: 36px;
     }
     
     .ticker-frozen-left {
-        min-width: 120px;
+        min-width: 110px;
         padding: 0 8px;
     }
     
@@ -227,7 +261,7 @@ body.dashboard-shell {
         font-size: 10px;
         gap: 4px;
         padding: 3px 6px;
-        min-width: 110px;
+        min-width: 100px;
     }
     
     .ticker-items {
@@ -236,15 +270,22 @@ body.dashboard-shell {
     }
     
     .ticker-symbol {
-        min-width: 45px;
+        min-width: 40px;
     }
     
     .app-brand {
-        font-size: 14px;
+        font-size: 12px;
     }
     
     .nav-link {
-        font-size: 12px;
-        padding: 4px 8px;
+        font-size: 11px;
+        padding: 2px 6px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+    }
+    
+    .app-actions button {
+        font-size: 10px;
     }
 }

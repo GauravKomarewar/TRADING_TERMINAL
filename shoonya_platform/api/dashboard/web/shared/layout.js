@@ -118,6 +118,8 @@
         
         document.getElementById('globalTicker').style.display = 'flex';
         
+        console.log('📊 Ticker Update - Subscribed:', subscribedList, 'Data Keys:', Object.keys(indicesData));
+        
         // Separate NIFTY from others
         let niftyHtml = '';
         let rotatingHtml = '';
@@ -139,13 +141,15 @@
             `;
         }
         
-        // Sort remaining: INDIAVIX, BANKNIFTY, SENSEX, then rest alphabetically
-        const priority = ['INDIAVIX', 'BANKNIFTY', 'SENSEX'];
+        // Sort rotating symbols: INDIAVIX, SENSEX, BANKNIFTY, then rest alphabetically
+        const priority = ['INDIAVIX', 'SENSEX', 'BANKNIFTY'];
         const otherSymbols = subscribedList.filter(s => s !== 'NIFTY');
         const sorted = [
             ...priority.filter(s => otherSymbols.includes(s)),
             ...otherSymbols.filter(s => !priority.includes(s)).sort()
         ];
+        
+        console.log('📈 Rotating Order:', sorted);
         
         sorted.forEach(symbol => {
             if (indicesData[symbol]) {
@@ -162,7 +166,17 @@
                         <span class="ticker-change ${changeClass}">${arrow} ${Math.abs(pc).toFixed(2)}%</span>
                     </div>
                 `;
+            } else {
+                // Symbol in subscribed list but no price data yet - show placeholder
+                rotatingHtml += `
+                    <div class="ticker-item">
+                        <span class="ticker-symbol">${symbol}</span>
+                        <span class="ticker-ltp">-</span>
+                        <span class="ticker-change">-</span>
+                    </div>
+                `;
             }
+        });
         });
         
         frozenContainer.innerHTML = niftyHtml;

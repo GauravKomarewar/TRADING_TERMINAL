@@ -405,20 +405,120 @@ def load_strategy_config(
 
 @router.get("/strategy/configs")
 def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
-    """List all saved strategy configs."""
+    """List all saved strategy configs with full data."""
     configs = []
     for f in sorted(_STRATEGY_CONFIGS_DIR.glob("*.json")):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             configs.append({
                 "name": data.get("name", f.stem),
+                "id": data.get("id", f.stem),
                 "file": f.name,
                 "updated_at": data.get("updated_at", ""),
-                "sections": [s for s in _VALID_SECTIONS if s in data],
+                "created_at": data.get("created_at", ""),
+                "status": data.get("status", "IDLE"),
+                "sections": [s for s in _VALID_SECTIONS if s in data and data[s]],
+                "entry": data.get("entry", {}),
+                "adjustment": data.get("adjustment", {}),
+                "exit": data.get("exit", {}),
+                "rms": data.get("rms", {}),
             })
         except Exception:
             continue
     return {"configs": configs, "total": len(configs)}
+
+
+@router.post("/strategy/config/save-all")
+def save_strategy_config_all(
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Save a complete strategy config (all sections at once).
+    
+    payload: { "name": "...", "id": "...", "entry": {...}, "adjustment": {...}, "exit": {...}, "rms": {...} }
+    """
+    name = payload.get("name", "").strip()
+    strat_id = payload.get("id", "").strip()
+
+    if not name:
+        raise HTTPException(400, "Strategy name is required")
+    if not strat_id:
+        strat_id = _slugify(name)
+
+    slug = _slugify(name)
+    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+
+    # Load existing or create new
+    existing = {}
+    if filepath.exists():
+        try:
+            existing = json.loads(filepath.read_text(encoding="utf-8"))
+        except Exception:
+            existing = {}
+
+    existing["name"] = name
+    existing["id"] = strat_id
+    for section in _VALID_SECTIONS:
+        if section in payload and isinstance(payload[section], dict):
+            existing[section] = payload[section]
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    if "created_at" not in existing:
+        existing["created_at"] = now
+    existing["updated_at"] = now
+    existing.setdefault("status", "IDLE")
+
+    filepath.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
+    logger.info("Strategy config saved (all): %s", name)
+
+    return {"saved": True, "name": name, "id": strat_id, "file": slug + ".json"}
+
+
+@router.delete("/strategy/config/{name}")
+def delete_strategy_config(
+    name: str,
+    ctx=Depends(require_dashboard_auth),
+):
+    """Delete a saved strategy config by name."""
+    slug = _slugify(name)
+    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+
+    if not filepath.exists():
+        raise HTTPException(404, f"Config '{name}' not found")
+
+    filepath.unlink()
+    logger.info("Strategy config deleted: %s", name)
+    return {"deleted": True, "name": name}
+
+
+@router.post("/strategy/config/{name}/status")
+def update_strategy_status(
+    name: str,
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Update the status of a saved strategy (IDLE/RUNNING/PAUSED/STOPPED)."""
+    new_status = payload.get("status", "").strip().upper()
+    valid_statuses = {"IDLE", "RUNNING", "PAUSED", "STOPPED"}
+    if new_status not in valid_statuses:
+        raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
+
+    slug = _slugify(name)
+    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+
+    if not filepath.exists():
+        raise HTTPException(404, f"Config '{name}' not found")
+
+    try:
+        data = json.loads(filepath.read_text(encoding="utf-8"))
+    except Exception:
+        data = {"name": name}
+
+    data["status"] = new_status
+    data["status_updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    filepath.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+
+    return {"updated": True, "name": name, "status": new_status}
 
 
 @router.post(

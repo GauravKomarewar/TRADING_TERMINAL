@@ -1,0 +1,111 @@
+[Unit]
+Description=Shoonya Trading Platform - Client %i
+Documentation=https://github.com/yourusername/shoonya_platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/shoonya_platform
+
+# ========================================
+# ENVIRONMENT VARIABLES
+# ========================================
+Environment="PATH=/home/ec2-user/shoonya_platform/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="LOG_LEVEL=INFO"
+Environment="PYTHONPATH=/home/ec2-user/shoonya_platform"
+
+# ========================================
+# SERVICE ENTRYPOINT (PER-CLIENT .env)
+# ========================================
+# %i = instance name (e.g. "primary", "yeleshwar_a_komarewar")
+# Loads config_env/%i.env for this client
+ExecStart=/home/ec2-user/shoonya_platform/venv/bin/python /home/ec2-user/shoonya_platform/main.py --env config_env/%i.env
+
+# ========================================
+# RESTART POLICY
+# ========================================
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+RestartForceExitStatus=1
+
+# ========================================
+# RESOURCE LIMITS
+# ========================================
+MemoryLimit=2G
+CPUQuota=80%
+
+# ========================================
+# SECURITY & ISOLATION
+# ========================================
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/ec2-user/shoonya_platform/logs
+ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data
+ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/market_data/option_chain/data
+ProtectHome=yes
+ProtectKernelTunables=yes
+
+# ========================================
+# GRACEFUL SHUTDOWN
+# ========================================
+TimeoutStopSec=30
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# ========================================
+# PROCESS LIMITS
+# ========================================
+OOMScoreAdjust=-100
+LimitNOFILE=65536
+LimitNPROC=8192
+
+# ========================================
+# LOGGING
+# ========================================
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shoonya-%i
+
+[Install]
+WantedBy=multi-user.target
+
+# ========================================
+# MULTI-CLIENT USAGE
+# ========================================
+#
+# Each client gets their own service instance:
+#
+#   1. Copy this template to systemd:
+#      sudo cp deployment/shoonya@.service /etc/systemd/system/shoonya@.service
+#      sudo systemctl daemon-reload
+#
+#   2. Start Client 1 (primary.env → port 5000/8000):
+#      sudo systemctl start shoonya@primary
+#      sudo systemctl enable shoonya@primary
+#
+#   3. Start Client 2 (yeleshwar_a_komarewar.env → port 5001/8001):
+#      sudo systemctl start shoonya@yeleshwar_a_komarewar
+#      sudo systemctl enable shoonya@yeleshwar_a_komarewar
+#
+#   4. Check status:
+#      sudo systemctl status shoonya@primary
+#      sudo systemctl status shoonya@yeleshwar_a_komarewar
+#
+#   5. View logs:
+#      journalctl -u shoonya@primary -f
+#      journalctl -u shoonya@yeleshwar_a_komarewar -f
+#
+#   Each client process has:
+#   - Separate .env file (unique ports, credentials, DB path)
+#   - Separate log directory (logs/<USER_ID>/)
+#   - Separate SQLite database
+#   - Separate risk state file
+#   - Independent restart policy
+# ========================================

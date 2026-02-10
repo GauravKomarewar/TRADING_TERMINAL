@@ -35,6 +35,7 @@ import signal
 import logging
 import threading
 import time
+import argparse
 from pathlib import Path
 from typing import Optional
 
@@ -142,21 +143,22 @@ def run_dashboard():
             app = create_dashboard_app()
 
             # Create Server instance (not run() helper)
-            config = uvicorn.Config(
+            dashboard_port = config.dashboard_port
+            config_uv = uvicorn.Config(
                 app=app,
                 host="0.0.0.0",
-                port=8000,
+                port=dashboard_port,
                 log_level="info",
                 loop="asyncio",
                 lifespan="on",
                 access_log=True,
             )
 
-            dashboard_server = uvicorn.Server(config)
+            dashboard_server = uvicorn.Server(config_uv)
 
             if logger:
                 logger.info(
-                    f"📊 Dashboard starting | PID={os.getpid()} | Thread={threading.current_thread().name}"
+                    f"📊 Dashboard starting on port {dashboard_port} | PID={os.getpid()} | Thread={threading.current_thread().name}"
                 )
 
             # This will block until server.should_exit is set
@@ -190,14 +192,41 @@ def run_dashboard():
 def main():
     global bot_instance, logger, dashboard_thread
 
+    # -------------------------------------------------
+    # CLI ARGUMENT PARSING (MULTI-CLIENT SUPPORT)
+    # -------------------------------------------------
+    parser = argparse.ArgumentParser(description="Shoonya Trading Platform")
+    parser.add_argument(
+        "--env",
+        type=str,
+        default=None,
+        help="Path to client .env file (e.g. config_env/yeleshwar_a_komarewar.env)"
+    )
+    args = parser.parse_args()
+
+    # Resolve env path
+    env_path = None
+    if args.env:
+        env_path = Path(args.env)
+        if not env_path.is_absolute():
+            env_path = Path(__file__).resolve().parent / env_path
+
     try:
         # -------------------------------------------------
-        # LOGGING SETUP (CENTRALIZED WITH LOG ROTATION)
+        # CONFIG LOADING (FIRST — needed for client_id in logs)
         # -------------------------------------------------
-        # Setup application-wide logging with per-component rotating handlers
-        # Each service gets its own log file with 50MB rotation and 10 backups
+        config = Config(env_path=env_path)
+        client_identity = config.get_client_identity()
+        client_id = client_identity["client_id"]
+        # Extract short name for file paths (e.g. "FA14667" from "GAURAV_Y_KOMAREWAR:FA14667")
+        client_short = config.user_id
+
+        # -------------------------------------------------
+        # LOGGING SETUP (PER-CLIENT LOG DIRECTORY)
+        # -------------------------------------------------
+        # Each client gets its own log subdirectory to avoid file conflicts
         base_dir = Path(__file__).resolve().parent
-        logs_dir = base_dir / "logs"
+        logs_dir = base_dir / "logs" / client_short
         
         setup_application_logging(
             log_dir=str(logs_dir),
@@ -226,10 +255,9 @@ def main():
         logger.info("   - dashboard.log (dashboard API)")
 
         # -------------------------------------------------
-        # CONFIG LOADING
+        # SERVER CONFIG
         # -------------------------------------------------
-        logger.info("Loading configuration...")
-        config = Config()
+        logger.info("Configuration loaded for client: %s", client_id)
         server_cfg = config.get_server_config()
 
         # -------------------------------------------------
@@ -296,7 +324,7 @@ def main():
             logger.critical("❌ Dashboard thread died immediately — EXITING")
             sys.exit(1)
         
-        logger.info("✅ Dashboard started on port 8000 (shared session)")
+        logger.info(f"✅ Dashboard started on port {config.dashboard_port} (shared session)")
 
         # -------------------------------------------------
         # TELEGRAM READY NOTIFICATION

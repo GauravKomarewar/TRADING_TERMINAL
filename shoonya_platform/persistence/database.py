@@ -22,7 +22,12 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DB_LOCK = threading.Lock()
 
-_DB_PATH = (
+# 🔒 MULTI-CLIENT: DB path resolved LAZILY at first get_connection() call.
+# This allows load_dotenv() to set ORDERS_DB_PATH before we read it.
+# Each client process should set ORDERS_DB_PATH to a unique file in their .env.
+# Default: shoonya_platform/persistence/data/orders.db
+_DB_PATH = None
+_DEFAULT_DB_PATH = (
     _PROJECT_ROOT
     / "shoonya_platform"
     / "persistence"
@@ -30,16 +35,26 @@ _DB_PATH = (
     / "orders.db"
 )
 
-# Ensure parent directory exists
-db_parent = Path(_DB_PATH).parent
-db_parent.mkdir(parents=True, exist_ok=True)
 
-print("DB PATH IN USE:", _DB_PATH)
+def _resolve_db_path():
+    """Resolve DB path lazily (after load_dotenv has run)."""
+    global _DB_PATH
+    if _DB_PATH is not None:
+        return _DB_PATH
+    
+    _DB_PATH = Path(
+        os.environ.get("ORDERS_DB_PATH", str(_DEFAULT_DB_PATH))
+    )
+    db_parent = _DB_PATH.parent
+    db_parent.mkdir(parents=True, exist_ok=True)
+    print("DB PATH IN USE:", _DB_PATH)
+    return _DB_PATH
 
 def get_connection():
     with _DB_LOCK:
+        db_path = _resolve_db_path()
         conn = sqlite3.connect(
-            _DB_PATH,
+            db_path,
             check_same_thread=False
         )
         conn.row_factory = sqlite3.Row

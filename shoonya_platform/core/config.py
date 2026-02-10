@@ -161,6 +161,7 @@ class Config:
         # === Server ===
         self.host: str = self._strip_comment(os.getenv("HOST", "0.0.0.0"))
         self.port: int = self._parse_port(os.getenv("PORT", "5000"))
+        self.dashboard_port: int = self._parse_port(os.getenv("DASHBOARD_PORT", "8000"))
         self.threads: int = self._parse_int(os.getenv("THREADS", "4"), "THREADS", 1, 32)
 
         # === Bot Runtime Config ===

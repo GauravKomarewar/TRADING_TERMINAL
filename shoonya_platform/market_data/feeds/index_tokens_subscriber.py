@@ -47,8 +47,10 @@ logger = logging.getLogger(__name__)
 # INDEX TOKEN REGISTRY
 # =============================================================================
 # Key: Index Symbol | Value: (Exchange, Token)
+# NOTE: MCX futures tokens change monthly — use resolve_futures_tokens() at
+#       startup to dynamically look up the nearest-expiry contract token.
 INDEX_TOKENS_REGISTRY = {
-    # ===== NSE INDICES =====
+    # ===== NSE INDICES (static tokens, never change) =====
     "NIFTY":        ("NSE", "26000"),
     "BANKNIFTY":    ("NSE", "26009"),
     "FINNIFTY":     ("NSE", "26037"),
@@ -56,30 +58,133 @@ INDEX_TOKENS_REGISTRY = {
     "NIFTYNXT50":   ("NSE", "26013"),
     "INDIAVIX":     ("NSE", "26017"),
 
-    # ===== BSE INDICES =====
+    # ===== BSE INDICES (static tokens) =====
     "SENSEX":       ("BSE", "1"),
     "BANKEX":       ("BSE", "12"),
     "SENSEX50":     ("BSE", "47"),
 
-    # ===== MCX COMMODITIES (Popular) =====
+    # ===== MCX COMMODITIES (tokens resolved at startup) =====
     "CRUDEOIL":     ("MCX", "52929"),
     "CRUDEOILM":    ("MCX", "52929"),
     "GOLD":         ("MCX", "52925"),
     "GOLDM":        ("MCX", "52926"),
+    "GOLDPETAL":    ("MCX", None),    # resolved dynamically
     "SILVER":       ("MCX", "52927"),
     "SILVERM":      ("MCX", "52928"),
+    "SILVERMIC":    ("MCX", None),    # resolved dynamically
+    "NATGASMINI":   ("MCX", None),    # resolved dynamically
 }
 
-# Subset of most-watched indices (for quick subscription)
+# ── Futures that need dynamic token resolution via searchscrip ──
+# Key: our registry symbol | Value: search text for Shoonya API
+MCX_FUTURES_SEARCH = {
+    "GOLDPETAL":   "GOLDPETAL",
+    "SILVERMIC":   "SILVERMIC",
+    "NATGASMINI":  "NATGASMINI",
+    "CRUDEOILM":   "CRUDEOILM",
+}
+
+# ── Ticker ribbon config (consumed by dashboard frontend) ──
+STICKY_SYMBOLS = ["INDIAVIX", "NIFTY"]
+TICKER_SYMBOLS = [
+    "INDIAVIX", "NIFTY",               # sticky
+    "SENSEX", "BANKNIFTY",              # rotating
+    "GOLDPETAL", "SILVERMIC",           # rotating
+    "NATGASMINI", "CRUDEOILM",         # rotating
+    "FINNIFTY",                          # rotating
+]
+
+# All indices the system should subscribe to at startup
 MAJOR_INDICES = [
     "NIFTY",
     "BANKNIFTY",
     "SENSEX",
-    "INDIAVIX",  # Volatility index
+    "INDIAVIX",
+    "FINNIFTY",
+    "GOLDPETAL",
+    "SILVERMIC",
+    "NATGASMINI",
+    "CRUDEOILM",
 ]
 
 # Internal state
 _subscribed_indices: Set[str] = set()
+
+
+# =============================================================================
+# DYNAMIC FUTURES TOKEN RESOLUTION
+# =============================================================================
+
+def resolve_futures_tokens(api_client: Any) -> int:
+    """
+    Dynamically resolve MCX futures tokens for the nearest-expiry contract.
+
+    Uses searchscrip() to find the nearest available futures contract for each
+    symbol in MCX_FUTURES_SEARCH, then updates INDEX_TOKENS_REGISTRY in-place.
+
+    Call this ONCE at startup, before subscribe_index_tokens().
+
+    Returns:
+        Number of tokens successfully resolved.
+    """
+    global INDEX_TOKENS_REGISTRY
+    resolved = 0
+
+    for sym, search_text in MCX_FUTURES_SEARCH.items():
+        try:
+            result = api_client.searchscrip(exchange="MCX", searchtext=search_text)
+            if not result or result.get("stat") != "Ok":
+                logger.warning(f"⚠️  searchscrip returned no results for {sym}")
+                continue
+
+            values = result.get("values", [])
+            if not values:
+                logger.warning(f"⚠️  No scrip found for {sym}")
+                continue
+
+            # Filter to futures only (instname contains 'FUT' or tsym ends with FUT)
+            futures = [
+                v for v in values
+                if v.get("instname", "").upper() in ("FUTCOM", "FUT")
+                or "FUT" in v.get("tsym", "").upper()
+            ]
+
+            if not futures:
+                # If no explicit FUT filter match, take the first result
+                futures = values
+
+            # Sort by expiry (earliest first) — Shoonya returns exd as DD-MMM-YYYY
+            def parse_expiry(v):
+                """Try to parse expiry date for sorting."""
+                exd = v.get("exd", "")
+                if not exd:
+                    return "9999-99-99"
+                try:
+                    from datetime import datetime
+                    return datetime.strptime(exd, "%d-%b-%Y").strftime("%Y-%m-%d")
+                except Exception:
+                    return exd
+
+            futures.sort(key=parse_expiry)
+
+            # Take the nearest expiry
+            nearest = futures[0]
+            token = nearest.get("token", "")
+            tsym = nearest.get("tsym", sym)
+            exd = nearest.get("exd", "?")
+
+            if token:
+                INDEX_TOKENS_REGISTRY[sym] = ("MCX", str(token))
+                resolved += 1
+                logger.info(f"✅ Resolved {sym} → token={token} tsym={tsym} exp={exd}")
+            else:
+                logger.warning(f"⚠️  Token missing in scrip result for {sym}")
+
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to resolve {sym}: {e}")
+
+    logger.info(f"📊 Resolved {resolved}/{len(MCX_FUTURES_SEARCH)} MCX futures tokens")
+    return resolved
 
 
 # =============================================================================
@@ -129,6 +234,9 @@ def subscribe_index_tokens(
             continue
         
         exchange, token = INDEX_TOKENS_REGISTRY[symbol]
+        if not token:
+            logger.warning(f"⚠️  Token not resolved for '{symbol}' — skipping (run resolve_futures_tokens first)")
+            continue
         tokens_to_subscribe.append(token)
         valid_symbols.append(symbol)
         _subscribed_indices.add(symbol)
@@ -214,6 +322,10 @@ def get_index_price(symbol: str) -> Optional[Dict[str, Any]]:
     
     exchange, token = INDEX_TOKENS_REGISTRY[symbol]
     
+    if not token:
+        logger.debug(f"Token not resolved for {symbol}")
+        return None
+    
     # Pull from tick_data_store via live_feed
     tick_data = get_tick_data(token)
     
@@ -269,6 +381,8 @@ def get_index_prices(
             continue
         
         exchange, token = INDEX_TOKENS_REGISTRY[symbol]
+        if not token:
+            continue  # token not resolved yet
         tokens.append(token)
         symbol_map[token] = (symbol, exchange)
     
@@ -324,6 +438,28 @@ def get_index_ltp_map() -> Dict[str, Optional[float]]:
 # METADATA HELPERS
 # =============================================================================
 
+_FRIENDLY_NAMES = {
+    "NIFTY": "Nifty 50",
+    "BANKNIFTY": "Nifty Bank",
+    "FINNIFTY": "Nifty Financial",
+    "MIDCPNIFTY": "Nifty Midcap 50",
+    "NIFTYNXT50": "Nifty Next 50",
+    "INDIAVIX": "India VIX",
+    "SENSEX": "BSE Sensex",
+    "BANKEX": "BSE Bankex",
+    "SENSEX50": "BSE Sensex 50",
+    "CRUDEOIL": "Crude Oil",
+    "CRUDEOILM": "Crude Oil Mini",
+    "GOLD": "Gold",
+    "GOLDM": "Gold Mini",
+    "GOLDPETAL": "Gold Petal",
+    "SILVER": "Silver",
+    "SILVERM": "Silver Mini",
+    "SILVERMIC": "Silver Micro",
+    "NATGASMINI": "Natural Gas Mini",
+}
+
+
 def get_index_metadata(symbol: str) -> Optional[Dict[str, Any]]:
     """
     Get metadata about an index (exchange, token, full name).
@@ -342,23 +478,11 @@ def get_index_metadata(symbol: str) -> Optional[Dict[str, Any]]:
     exchange, token = INDEX_TOKENS_REGISTRY[symbol]
     
     # Friendly names
-    friendly_names = {
-        "NIFTY": "Nifty 50",
-        "BANKNIFTY": "Nifty Bank",
-        "FINNIFTY": "Nifty Financial",
-        "MIDCPNIFTY": "Nifty Midcap 50",
-        "NIFTYNXT50": "Nifty Next 50",
-        "INDIAVIX": "India VIX",
-        "SENSEX": "BSE Sensex",
-        "BANKEX": "BSE Bankex",
-        "SENSEX50": "BSE Sensex 50",
-    }
-    
     return {
         "symbol": symbol,
         "exchange": exchange,
         "token": token,
-        "name": friendly_names.get(symbol, symbol),
+        "name": _FRIENDLY_NAMES.get(symbol, symbol),
     }
 
 
@@ -397,25 +521,7 @@ def get_all_available_indices() -> Dict[str, str]:
     Returns:
         Dict mapping symbol → friendly name
     """
-    friendly_names = {
-        "NIFTY": "Nifty 50",
-        "BANKNIFTY": "Nifty Bank",
-        "FINNIFTY": "Nifty Financial",
-        "MIDCPNIFTY": "Nifty Midcap 50",
-        "NIFTYNXT50": "Nifty Next 50",
-        "INDIAVIX": "India VIX",
-        "SENSEX": "BSE Sensex",
-        "BANKEX": "BSE Bankex",
-        "SENSEX50": "BSE Sensex 50",
-        "CRUDEOIL": "Crude Oil",
-        "CRUDEOILM": "Crude Oil Mini",
-        "GOLD": "Gold",
-        "GOLDM": "Gold Mini",
-        "SILVER": "Silver",
-        "SILVERM": "Silver Mini",
-    }
-    
     return {
-        symbol: friendly_names.get(symbol, symbol)
+        symbol: _FRIENDLY_NAMES.get(symbol, symbol)
         for symbol in INDEX_TOKENS_REGISTRY.keys()
     }

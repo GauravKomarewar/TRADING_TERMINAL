@@ -269,6 +269,12 @@ class ShoonyaBot:
                     
                     # 🔥 NEW: Subscribe to index tokens for live dashboard
                     try:
+                        # Resolve MCX futures tokens (nearest expiry)
+                        try:
+                            index_tokens_subscriber.resolve_futures_tokens(self.api_proxy)
+                        except Exception as e:
+                            logger.warning(f"⚠️  MCX futures token resolution failed: {e}")
+
                         count, symbols = index_tokens_subscriber.subscribe_index_tokens(
                             self.api_proxy
                         )

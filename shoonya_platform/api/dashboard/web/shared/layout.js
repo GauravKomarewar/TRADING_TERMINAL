@@ -1,208 +1,305 @@
+/* ================================================================
+   Shared Layout — Nav Bar + Ticker Ribbon (all dashboard pages)
+   ================================================================ */
 (function () {
+    'use strict';
+
     const body = document.body;
     if (!body) return;
 
     const pageId = body.dataset.page || 'dashboard';
     body.classList.add('dashboard-shell', `page-${pageId}`);
 
-    const navItems = [
-        { id: 'dashboard', label: 'Dashboard', href: '/dashboard/web/dashboard.html' },
-        { id: 'option-chain', label: 'Option Chain', href: '/dashboard/web/option_chain_dashboard.html' },
-        { id: 'orders', label: 'Orders', href: '/dashboard/web/orderbook.html' },
-        { id: 'place-order', label: 'Place Order', href: '/dashboard/web/place_order.html' },
-        { id: 'strategy', label: 'Strategy', href: '/dashboard/web/strategy.html' },
-        { id: 'diagnostics', label: 'Diagnostics', href: '/dashboard/web/diagnostics.html' }
+    /* ── Config ── */
+    const NAV_ITEMS = [
+        { id: 'dashboard',    label: 'Dashboard',    href: '/dashboard/web/dashboard.html' },
+        { id: 'option-chain', label: 'Option Chain',  href: '/dashboard/web/option_chain_dashboard.html' },
+        { id: 'orders',       label: 'Orders',        href: '/dashboard/web/orderbook.html' },
+        { id: 'place-order',  label: 'Place Order',   href: '/dashboard/web/place_order.html' },
+        { id: 'strategy',     label: 'Strategy',      href: '/dashboard/web/strategy.html' },
+        { id: 'diagnostics',  label: 'Diagnostics',   href: '/dashboard/web/diagnostics.html' },
     ];
 
-    const header = document.createElement('header');
-    header.className = 'app-header';
+    /* Ticker — sticky symbols always visible, rest rotate */
+    const STICKY_SYMBOLS  = ['INDIAVIX', 'NIFTY'];
+    const ROTATE_SYMBOLS  = ['SENSEX', 'BANKNIFTY', 'GOLDPETAL', 'SILVERMIC', 'NATGASMINI', 'CRUDEOILM', 'FINNIFTY'];
+    const ALL_SYMBOLS     = [...STICKY_SYMBOLS, ...ROTATE_SYMBOLS];
 
-    const brand = document.createElement('div');
-    brand.className = 'app-brand';
-    brand.textContent = '◬ Shoonya';
-    brand.addEventListener('click', () => {
-        window.location.href = '/dashboard/web/dashboard.html';
-    });
-
-    const mobileToggle = document.createElement('button');
-    mobileToggle.className = 'app-mobile-toggle';
-    mobileToggle.type = 'button';
-    mobileToggle.textContent = '☰';
-
-    const nav = document.createElement('nav');
-    nav.className = 'app-nav';
-
-    navItems.forEach((item) => {
-        const link = document.createElement('a');
-        link.className = 'nav-link';
-        link.href = item.href;
-        link.textContent = item.label;
-        if (item.id === pageId) {
-            link.classList.add('active');
-        }
-        nav.appendChild(link);
-    });
-
-    mobileToggle.addEventListener('click', () => {
-        nav.classList.toggle('open');
-    });
-
-    const actions = document.createElement('div');
-    actions.className = 'app-actions';
-
-    const logoutBtn = document.createElement('button');
-    logoutBtn.className = 'btn-secondary btn-sm';
-    logoutBtn.id = 'appLogout';
-    logoutBtn.textContent = 'Logout';
-    logoutBtn.addEventListener('click', async () => {
-        try {
-            await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
-        } catch (e) {
-            // Ignore logout errors
-        }
-        window.location.href = '/';
-    });
-
-    actions.appendChild(logoutBtn);
-
-    header.appendChild(brand);
-    header.appendChild(mobileToggle);
-    header.appendChild(nav);
-    header.appendChild(actions);
-
-    const mount = document.getElementById('app-header');
-    if (mount) {
-        mount.appendChild(header);
-    } else {
-        body.insertBefore(header, body.firstChild);
+    /* How many rotating items visible at a time (adapts on mobile) */
+    function getRotateVisible() {
+        if (window.innerWidth <= 480)  return 1;
+        if (window.innerWidth <= 768)  return 2;
+        if (window.innerWidth <= 1024) return 3;
+        return 4;
     }
 
-    // Create global index ticker ribbon at top of page (fixed)
+    const ROTATE_INTERVAL_MS = 4000;
+
+    /* Display names for ticker */
+    const DISPLAY_NAMES = {
+        INDIAVIX:    'VIX',
+        NIFTY:       'NIFTY',
+        SENSEX:      'SENSEX',
+        BANKNIFTY:   'BNKNIFTY',
+        GOLDPETAL:   'GOLDPETL',
+        SILVERMIC:   'SILVMIC',
+        NATGASMINI:  'NATGAS',
+        CRUDEOILM:   'CRUDE',
+        FINNIFTY:    'FINNIFTY',
+    };
+
+    /* ────────────────────────────────────────────────────
+       BUILD: Ticker Ribbon (top of page)
+       ──────────────────────────────────────────────────── */
     const ticker = document.createElement('div');
     ticker.className = 'global-ticker';
     ticker.id = 'globalTicker';
-    ticker.innerHTML = `
-        <div class="ticker-frozen-left" id="tickerFrozen">
-            <!-- NIFTY will be locked here -->
-        </div>
-        <div class="ticker-track" id="tickerTrack">
-            <div class="ticker-items" id="tickerItems">
-                <!-- Rotating symbols will be loaded here -->
-            </div>
-        </div>
-    `;
-    
-    // Insert at very top of body
+
+    // Sticky section
+    const stickyDiv = document.createElement('div');
+    stickyDiv.className = 'ticker-sticky';
+    stickyDiv.id = 'tickerSticky';
+
+    // Rotating section
+    const rotateWrap = document.createElement('div');
+    rotateWrap.className = 'ticker-rotate-wrap';
+    const rotateTrack = document.createElement('div');
+    rotateTrack.className = 'ticker-rotate-track';
+    rotateTrack.id = 'tickerRotateTrack';
+    rotateWrap.appendChild(rotateTrack);
+
+    ticker.appendChild(stickyDiv);
+    ticker.appendChild(rotateWrap);
     body.insertBefore(ticker, body.firstChild);
 
-    // Load and refresh index tokens
-    let indexTokensTimer = null;
-    
-    function loadGlobalIndexTokens() {
-        fetch('/dashboard/index-tokens/prices', {credentials:'include'})
-            .then(r => r.ok ? r.json() : Promise.reject())
-            .then(data => updateGlobalTicker(data.indices || {}, data.subscribed || []))
-            .catch(() => {});  // Silently fail if not available
+    /* ────────────────────────────────────────────────────
+       BUILD: Navigation Bar
+       ──────────────────────────────────────────────────── */
+    const header = document.createElement('header');
+    header.className = 'app-header';
+
+    // Brand (SVG trading logo — candlestick chart icon)
+    const brand = document.createElement('div');
+    brand.className = 'app-brand';
+    brand.innerHTML = `<svg viewBox="0 0 32 32" width="30" height="30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="10" width="3" height="12" rx="1" fill="currentColor" opacity="0.4"/>
+        <rect x="4" y="6" width="3" height="20" rx="0.5" stroke="currentColor" stroke-width="0" fill="currentColor" opacity="0.2"/>
+        <line x1="5.5" y1="4" x2="5.5" y2="28" stroke="currentColor" stroke-width="1.2" opacity="0.3"/>
+        <rect x="10" y="7" width="3" height="14" rx="1" fill="currentColor" opacity="0.5"/>
+        <line x1="11.5" y1="3" x2="11.5" y2="26" stroke="currentColor" stroke-width="1.2" opacity="0.35"/>
+        <rect x="16" y="12" width="3" height="10" rx="1" fill="#22c55e" opacity="0.7"/>
+        <line x1="17.5" y1="8" x2="17.5" y2="26" stroke="#22c55e" stroke-width="1.2" opacity="0.5"/>
+        <rect x="22" y="5" width="3" height="16" rx="1" fill="#22c55e"/>
+        <line x1="23.5" y1="2" x2="23.5" y2="25" stroke="#22c55e" stroke-width="1.2" opacity="0.6"/>
+        <path d="M3 24 L8 18 L14 21 L20 12 L28 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7" fill="none"/>
+        <circle cx="28" cy="6" r="2" fill="currentColor"/>
+    </svg>`;
+    brand.title = 'Shoonya Trading Platform';
+    brand.addEventListener('click', () => { window.location.href = '/dashboard/web/dashboard.html'; });
+
+    // Hamburger button (mobile)
+    const hamburger = document.createElement('button');
+    hamburger.className = 'hamburger-btn';
+    hamburger.type = 'button';
+    hamburger.setAttribute('aria-label', 'Toggle navigation');
+    hamburger.innerHTML = `<div class="hamburger-icon"><span></span><span></span><span></span></div>`;
+
+    // Nav
+    const nav = document.createElement('nav');
+    nav.className = 'app-nav';
+    nav.id = 'appNav';
+
+    NAV_ITEMS.forEach(item => {
+        const a = document.createElement('a');
+        a.className = 'nav-link';
+        a.href = item.href;
+        a.textContent = item.label;
+        if (item.id === pageId) a.classList.add('active');
+        nav.appendChild(a);
+    });
+
+    // Overlay (mobile backdrop)
+    const overlay = document.createElement('div');
+    overlay.className = 'nav-overlay';
+    overlay.id = 'navOverlay';
+
+    // Logout
+    const actions = document.createElement('div');
+    actions.className = 'app-actions';
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'logout-btn';
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.addEventListener('click', async () => {
+        try { await fetch('/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) {}
+        window.location.href = '/';
+    });
+    actions.appendChild(logoutBtn);
+
+    // Hamburger toggle
+    function toggleMobileNav() {
+        const isOpen = nav.classList.toggle('open');
+        hamburger.classList.toggle('open', isOpen);
+        overlay.classList.toggle('show', isOpen);
+        // Prevent body scroll when menu open
+        body.style.overflow = isOpen ? 'hidden' : '';
     }
-    
-    function updateGlobalTicker(indicesData, subscribedList) {
-        const frozenContainer = document.getElementById('tickerFrozen');
-        const itemsContainer = document.getElementById('tickerItems');
-        const tickerTrack = document.getElementById('tickerTrack');
-        if (!itemsContainer || !frozenContainer || !tickerTrack) return;
-        
-        if (!subscribedList.length) {
-            document.getElementById('globalTicker').style.display = 'none';
-            return;
-        }
-        
-        document.getElementById('globalTicker').style.display = 'flex';
-        
-        console.log('📊 Ticker Update - Subscribed:', subscribedList, 'Data Keys:', Object.keys(indicesData));
-        
-        // Separate NIFTY from others
-        let niftyHtml = '';
-        let rotatingHtml = '';
-        
-        // Always show NIFTY frozen on left (if available)
-        if (indicesData['NIFTY']) {
-            const data = indicesData['NIFTY'];
-            const ltp = data.ltp || 0;
-            const pc = data.pc || 0;
-            const changeClass = pc >= 0 ? 'up' : 'down';
-            const arrow = pc >= 0 ? '▲' : '▼';
-            
-            niftyHtml = `
-                <div class="ticker-item">
-                    <span class="ticker-symbol">NIFTY</span>
-                    <span class="ticker-ltp ${changeClass}">₹${ltp.toFixed(2)}</span>
-                    <span class="ticker-change ${changeClass}">${arrow} ${Math.abs(pc).toFixed(2)}%</span>
-                </div>
-            `;
-        }
-        
-        // Sort rotating symbols: INDIAVIX, SENSEX, BANKNIFTY, then rest alphabetically
-        const priority = ['INDIAVIX', 'SENSEX', 'BANKNIFTY'];
-        const otherSymbols = subscribedList.filter(s => s !== 'NIFTY');
-        const sorted = [
-            ...priority.filter(s => otherSymbols.includes(s)),
-            ...otherSymbols.filter(s => !priority.includes(s)).sort()
-        ];
-        
-        console.log('📈 Rotating Order:', sorted);
-        
-        sorted.forEach(symbol => {
-            if (indicesData[symbol]) {
-                const data = indicesData[symbol];
-                const ltp = data.ltp || 0;
-                const pc = data.pc || 0;
-                const changeClass = pc >= 0 ? 'up' : 'down';
-                const arrow = pc >= 0 ? '▲' : '▼';
-                
-                rotatingHtml += `
-                    <div class="ticker-item">
-                        <span class="ticker-symbol">${symbol}</span>
-                        <span class="ticker-ltp ${changeClass}">₹${ltp.toFixed(2)}</span>
-                        <span class="ticker-change ${changeClass}">${arrow} ${Math.abs(pc).toFixed(2)}%</span>
-                    </div>
-                `;
-            } else {
-                // Symbol in subscribed list but no price data yet - show placeholder
-                rotatingHtml += `
-                    <div class="ticker-item">
-                        <span class="ticker-symbol">${symbol}</span>
-                        <span class="ticker-ltp">-</span>
-                        <span class="ticker-change">-</span>
-                    </div>
-                `;
-            }
-        });
-        
-        frozenContainer.innerHTML = niftyHtml;
-        
-        if (rotatingHtml) {
-            itemsContainer.innerHTML = rotatingHtml;
-            // Check if animation is needed (items overflow container)
-            setTimeout(() => {
-                const itemsWidth = itemsContainer.scrollWidth;
-                const trackWidth = tickerTrack.clientWidth;
-                if (itemsWidth > trackWidth) {
-                    itemsContainer.classList.add('animate-scroll');
-                } else {
-                    itemsContainer.classList.remove('animate-scroll');
-                }
-            }, 50);
-        }
+
+    function closeMobileNav() {
+        nav.classList.remove('open');
+        hamburger.classList.remove('open');
+        overlay.classList.remove('show');
+        body.style.overflow = '';
     }
-    
-    // Start ticker on page load
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            loadGlobalIndexTokens();
-            indexTokensTimer = setInterval(loadGlobalIndexTokens, 2000);
-        });
+
+    hamburger.addEventListener('click', toggleMobileNav);
+    overlay.addEventListener('click', closeMobileNav);
+
+    // Close on nav link click (mobile)
+    nav.addEventListener('click', e => {
+        if (e.target.classList.contains('nav-link')) closeMobileNav();
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeMobileNav();
+    });
+
+    // Assemble header
+    header.appendChild(brand);
+    header.appendChild(hamburger);
+    header.appendChild(nav);
+    header.appendChild(actions);
+
+    // Mount
+    const mount = document.getElementById('app-header');
+    if (mount) {
+        mount.appendChild(header);
+        mount.parentNode.insertBefore(overlay, mount.nextSibling);
     } else {
-        loadGlobalIndexTokens();
-        indexTokensTimer = setInterval(loadGlobalIndexTokens, 2000);
+        body.insertBefore(header, ticker.nextSibling);
+        body.insertBefore(overlay, header.nextSibling);
     }
+
+    /* ────────────────────────────────────────────────────
+       TICKER: Data & Rendering
+       ──────────────────────────────────────────────────── */
+    let tickerData = {};   // symbol → { ltp, pc }
+    let rotateIndex = 0;
+    let rotateTimer = null;
+
+    function renderChip(symbol, data) {
+        const name = DISPLAY_NAMES[symbol] || symbol;
+        const ltp = data && data.ltp != null ? data.ltp : null;
+        const pc  = data && data.pc  != null ? data.pc  : null;
+
+        if (ltp == null) {
+            return `<div class="ticker-chip">
+                <span class="ticker-sym">${name}</span>
+                <span class="ticker-ltp" style="color:rgba(255,255,255,0.3)">--</span>
+            </div>`;
+        }
+
+        const cls = pc >= 0 ? 'up' : 'down';
+        const arrow = pc >= 0 ? '▲' : '▼';
+        const ltpStr = ltp >= 1000 ? ltp.toLocaleString('en-IN', {maximumFractionDigits:2}) : ltp.toFixed(2);
+        const pctStr = Math.abs(pc).toFixed(2);
+
+        return `<div class="ticker-chip">
+            <span class="ticker-sym">${name}</span>
+            <span class="ticker-ltp ${cls}">${ltpStr}</span>
+            <span class="ticker-pct ${cls}">${arrow} ${pctStr}%</span>
+        </div>`;
+    }
+
+    function renderStickySection() {
+        const el = document.getElementById('tickerSticky');
+        if (!el) return;
+        el.innerHTML = STICKY_SYMBOLS.map(s => renderChip(s, tickerData[s])).join('');
+    }
+
+    function getRotatingSlice() {
+        const vis = getRotateVisible();
+        const items = [];
+        for (let i = 0; i < vis; i++) {
+            const idx = (rotateIndex + i) % ROTATE_SYMBOLS.length;
+            items.push(ROTATE_SYMBOLS[idx]);
+        }
+        return items;
+    }
+
+    function renderRotatingSection(animate) {
+        const track = document.getElementById('tickerRotateTrack');
+        if (!track) return;
+
+        if (animate) {
+            track.classList.add('fade-out');
+            setTimeout(() => {
+                const slice = getRotatingSlice();
+                track.innerHTML = slice.map(s => renderChip(s, tickerData[s])).join('');
+                track.classList.remove('fade-out');
+            }, 350); // matches CSS transition
+        } else {
+            const slice = getRotatingSlice();
+            track.innerHTML = slice.map(s => renderChip(s, tickerData[s])).join('');
+        }
+    }
+
+    function advanceRotation() {
+        rotateIndex = (rotateIndex + 1) % ROTATE_SYMBOLS.length;
+        renderRotatingSection(true);
+    }
+
+    function startRotation() {
+        if (rotateTimer) clearInterval(rotateTimer);
+        rotateTimer = setInterval(advanceRotation, ROTATE_INTERVAL_MS);
+    }
+
+    /* ── Fetch prices ── */
+    function fetchTickerPrices() {
+        const query = ALL_SYMBOLS.join(',');
+        fetch(`/dashboard/index-tokens/prices?symbols=${query}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                const indices = data.indices || {};
+                // Merge into tickerData
+                ALL_SYMBOLS.forEach(s => {
+                    if (indices[s]) tickerData[s] = indices[s];
+                });
+                // Re-render sticky (prices may have changed)
+                renderStickySection();
+                // Re-render current rotating slice (in-place, no animation)
+                const track = document.getElementById('tickerRotateTrack');
+                if (track && !track.classList.contains('fade-out')) {
+                    const slice = getRotatingSlice();
+                    track.innerHTML = slice.map(s => renderChip(s, tickerData[s])).join('');
+                }
+            })
+            .catch(() => {}); // fail silently
+    }
+
+    /* ── Responsive: re-render on resize ── */
+    let resizeDebounce = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeDebounce);
+        resizeDebounce = setTimeout(() => {
+            renderRotatingSection(false);
+            closeMobileNav();
+        }, 200);
+    });
+
+    /* ── Initialize ── */
+    function initTicker() {
+        renderStickySection();
+        renderRotatingSection(false);
+        startRotation();
+        fetchTickerPrices();
+        setInterval(fetchTickerPrices, 2000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initTicker);
+    } else {
+        initTicker();
+    }
+
 })();

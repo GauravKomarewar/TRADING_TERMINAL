@@ -1,291 +1,403 @@
-/* Shared dashboard layout (navigation + shell) */
+/* ================================================================
+   Shared Layout — Ticker Ribbon + Navigation Bar
+   ================================================================ */
 
+/* ── Shell spacing ── */
 body.dashboard-shell {
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
-    padding-top: 77px;  /* Space for fixed ticker (28px) + fixed header (49px) */
+    padding-top: 84px; /* ticker 32px + header 48px + 4px breathing room */
 }
 
-.app-header {
-    height: 49px;  /* 1.75x ticker height (28px × 1.75 = 49px) */
-    background: var(--panel);
-    display: flex;
-    align-items: center;
-    padding: 0 var(--spacing-md);
-    border-bottom: 1px solid var(--border);
-    position: fixed;
-    top: 28px;  /* Below fixed ticker */
-    left: 0;
-    right: 0;
-    z-index: 999;
-    gap: var(--spacing-sm);
-    width: 100%;
-}
-
-.app-brand {
-    font-weight: 700;
-    font-size: 13px;  /* Smaller font for compact header */
-    color: var(--primary);
-    cursor: pointer;
-    white-space: nowrap;
-    user-select: none;
-    flex-shrink: 0;
-}
-
-.app-nav {
-    display: flex;
-    gap: 4px;  /* Reduced gap */
-    align-items: center;
-    flex: 1;
-    height: 49px;
-}
-
-.app-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;  /* Reduced gap */
-    flex-shrink: 0;
-}
-
-.app-actions button {
-    font-size: 11px;  /* Smaller button text */
-    padding: 4px 8px;  /* Compact padding */
-    height: 24px;  /* Reduce button height */
-}
-
-.app-mobile-toggle {
-    display: none;
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 14px;
-    height: 24px;
-    width: 24px;
-    min-width: 24px;
-}
-
-@media (max-width: 860px) {
-    .app-mobile-toggle {
-        display: inline-flex;
-    }
-
-    .app-nav {
-        display: none;
-        width: 100%;
-        padding: var(--spacing-sm) 0;
-    }
-
-    .app-nav.open {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-    }
-}
-
-/* Navigation links styling */
-.nav-link {
-    color: var(--text);
-    text-decoration: none;
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    transition: background 0.2s;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    height: 24px;
-}
-
-.nav-link:hover {
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.nav-link.active {
-    color: var(--primary);
-    font-weight: 600;
-}
-
-/* Page-specific overrides */
-.page-option-chain main {
-    margin-top: 0;
-}
-
-/* Global Index Ticker Ribbon - Always on Top */
+/* ================================================================
+   TICKER RIBBON — Fixed at very top
+   ================================================================ */
 .global-ticker {
-    background: linear-gradient(90deg, var(--panel), rgba(28,35,51,0.95));
-    border-bottom: 1px solid var(--border);
-    z-index: 10000;  /* On top of everything */
-    height: 28px;
-    display: flex;
-    align-items: center;
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
-    width: 100%;
-}
-
-/* Frozen NIFTY column on left */
-.ticker-frozen-left {
+    height: 32px;
+    z-index: 10000;
     display: flex;
     align-items: center;
-    padding: 0 12px;
-    border-right: 2px solid var(--border);
+    background: linear-gradient(90deg, #080c12 0%, #0d1219 50%, #080c12 100%);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    overflow: hidden;
+}
+
+/* Sticky items (VIX + NIFTY) — always visible on left */
+.ticker-sticky {
+    display: flex;
+    align-items: center;
     flex-shrink: 0;
-    min-width: 150px;
+    height: 32px;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.15);
 }
 
-.ticker-frozen-left .ticker-item {
-    gap: 6px;
-    padding: 0;
-    border-right: none;
-    min-width: auto;
-}
-
-.ticker-frozen-left .ticker-symbol {
-    min-width: 45px;
-}
-
-/* Rotating symbols area */
-.ticker-track {
+/* Rotating area */
+.ticker-rotate-wrap {
     flex: 1;
     overflow: hidden;
     position: relative;
-    height: 28px;
+    height: 32px;
     display: flex;
     align-items: center;
 }
 
-.ticker-items {
+.ticker-rotate-track {
     display: flex;
-    gap: 16px;
-    padding: 0 12px;
-    white-space: nowrap;
-    min-width: max-content;
-    height: 28px;
     align-items: center;
-    transition: transform 0.1s linear;
+    height: 32px;
+    transition: opacity 0.35s ease;
 }
 
-/* Only animate when content is wider than container */
-.ticker-items.animate-scroll {
-    animation: scrollTicker 50s linear infinite;
+.ticker-rotate-track.fade-out {
+    opacity: 0;
 }
 
-@keyframes scrollTicker {
-    0% {
-        transform: translateX(100%);
-    }
-    100% {
-        transform: translateX(-100%);
-    }
-}
-
-/* Pause animation on hover over ticker track */
-.ticker-track:hover .ticker-items.animate-scroll {
-    animation-play-state: paused;
-}
-
-.ticker-item {
+/* Individual ticker chip */
+.ticker-chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 8px;
-    border-right: 1px solid var(--border);
-    font-size: 11px;
-    min-width: 130px;
+    padding: 0 14px;
+    height: 32px;
+    white-space: nowrap;
+    border-right: 1px solid rgba(255,255,255,0.04);
     flex-shrink: 0;
 }
 
-.ticker-item:last-child {
+.ticker-chip:last-child {
     border-right: none;
 }
 
-.ticker-symbol {
+.ticker-sym {
+    font-size: 10px;
     font-weight: 700;
-    color: var(--text);
-    min-width: 55px;
+    letter-spacing: 0.5px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    min-width: 38px;
 }
 
 .ticker-ltp {
+    font-size: 11px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    font-size: 11px;
+    color: var(--text);
 }
 
-.ticker-ltp.up {
-    color: var(--success);
-}
-
-.ticker-ltp.down {
-    color: var(--danger);
-}
-
-.ticker-change {
+.ticker-pct {
     font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+.ticker-pct.up {
+    color: #22c55e;
+    background: rgba(34,197,94,0.1);
+}
+
+.ticker-pct.down {
+    color: #ef4444;
+    background: rgba(239,68,68,0.1);
+}
+
+.ticker-ltp.up { color: #22c55e; }
+.ticker-ltp.down { color: #ef4444; }
+
+/* ================================================================
+   NAVIGATION BAR — Fixed below ticker
+   ================================================================ */
+.app-header {
+    position: fixed;
+    top: 32px;
+    left: 0;
+    right: 0;
+    height: 48px;
+    z-index: 9990;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    gap: 0;
+}
+
+/* ── Brand / Logo ── */
+.app-brand {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s;
+    margin-right: 8px;
+}
+
+.app-brand:hover {
+    background: rgba(255,255,255,0.04);
+}
+
+.app-brand svg {
+    color: var(--primary);
+    flex-shrink: 0;
+}
+
+/* ── Hamburger (mobile) ── */
+.hamburger-btn {
+    display: none; /* shown on mobile */
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s;
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+.hamburger-btn:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.hamburger-icon {
+    width: 20px;
+    height: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.hamburger-icon span {
+    display: block;
+    height: 2px;
+    width: 100%;
+    background: var(--text);
+    border-radius: 1px;
+    transition: transform 0.25s, opacity 0.2s;
+}
+
+/* Hamburger open animation */
+.hamburger-btn.open .hamburger-icon span:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+}
+.hamburger-btn.open .hamburger-icon span:nth-child(2) {
+    opacity: 0;
+}
+.hamburger-btn.open .hamburger-icon span:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+}
+
+/* ── Nav links ── */
+.app-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    height: 48px;
+}
+
+.nav-link {
+    color: var(--text-secondary, rgba(255,255,255,0.6));
+    text-decoration: none;
+    font-size: 13px;
     font-weight: 500;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    height: 32px;
+    line-height: 1;
 }
 
-.ticker-change.up {
-    color: var(--success);
+.nav-link:hover {
+    color: var(--text);
+    background: rgba(255,255,255,0.05);
 }
 
-.ticker-change.down {
+.nav-link.active {
+    color: var(--primary);
+    background: rgba(59,130,246,0.08);
+    font-weight: 600;
+}
+
+/* ── Actions (logout) ── */
+.app-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.logout-btn {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.5);
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 5px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+}
+
+.logout-btn:hover {
     color: var(--danger);
+    border-color: var(--danger);
+    background: rgba(239,68,68,0.06);
 }
 
+/* ── Mobile overlay backdrop ── */
+.nav-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 9988;
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+
+.nav-overlay.show {
+    opacity: 1;
+}
+
+/* ================================================================
+   PAGE-SPECIFIC
+   ================================================================ */
+.page-option-chain main {
+    margin-top: 0;
+}
+
+/* ================================================================
+   RESPONSIVE — Tablet (≤1024px)
+   ================================================================ */
+@media (max-width: 1024px) {
+    .nav-link {
+        font-size: 12px;
+        padding: 5px 8px;
+    }
+}
+
+/* ================================================================
+   RESPONSIVE — Mobile (≤768px)
+   ================================================================ */
 @media (max-width: 768px) {
     body.dashboard-shell {
-        padding-top: 69px;  /* 25px ticker + 44px header (25 × 1.75) */
+        padding-top: 74px; /* ticker 28px + header 42px + 4px */
     }
 
+    /* Ticker shrinks */
     .global-ticker {
-        height: 25px;
+        height: 28px;
     }
-    
-    .app-header {
-        top: 25px;
-        height: 44px;
+
+    .ticker-sticky {
+        height: 28px;
     }
-    
-    .ticker-frozen-left {
-        min-width: 110px;
-        padding: 0 8px;
+
+    .ticker-rotate-wrap {
+        height: 28px;
     }
-    
-    .ticker-item {
-        font-size: 10px;
+
+    .ticker-rotate-track {
+        height: 28px;
+    }
+
+    .ticker-chip {
+        height: 28px;
+        padding: 0 10px;
         gap: 4px;
-        padding: 3px 6px;
-        min-width: 100px;
     }
-    
-    .ticker-items {
-        gap: 12px;
-        padding: 0 8px;
+
+    .ticker-sym { font-size: 9px; min-width: 28px; }
+    .ticker-ltp { font-size: 10px; }
+    .ticker-pct { font-size: 9px; padding: 1px 4px; }
+
+    /* Header shrinks */
+    .app-header {
+        top: 28px;
+        height: 42px;
+        padding: 0 12px;
     }
-    
-    .ticker-symbol {
-        min-width: 40px;
+
+    .app-brand svg {
+        width: 26px;
+        height: 26px;
     }
-    
-    .app-brand {
-        font-size: 12px;
-    }
-    
-    .nav-link {
-        font-size: 11px;
-        padding: 2px 6px;
-        height: 24px;
+
+    /* Show hamburger */
+    .hamburger-btn {
         display: flex;
-        align-items: center;
     }
-    
-    .app-actions button {
-        font-size: 10px;
+
+    /* Nav becomes slide-down panel */
+    .app-nav {
+        display: none;
+        position: fixed;
+        top: 70px; /* 28px ticker + 42px header */
+        left: 0;
+        right: 0;
+        bottom: auto;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        flex-direction: column;
+        align-items: stretch;
+        padding: 8px 12px;
+        gap: 2px;
+        z-index: 9989;
+        height: auto;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     }
+
+    .app-nav.open {
+        display: flex;
+    }
+
+    .nav-overlay.show {
+        display: block;
+    }
+
+    .nav-link {
+        font-size: 14px;
+        padding: 10px 12px;
+        height: auto;
+        border-radius: var(--radius-md);
+    }
+
+    .nav-link.active {
+        background: rgba(59,130,246,0.12);
+    }
+
+    .logout-btn {
+        font-size: 11px;
+        padding: 4px 10px;
+    }
+}
+
+/* ================================================================
+   RESPONSIVE — Small Mobile (≤480px)
+   ================================================================ */
+@media (max-width: 480px) {
+    .ticker-sym { font-size: 8px; letter-spacing: 0.3px; }
+    .ticker-ltp { font-size: 9px; }
+    .ticker-pct { font-size: 8px; }
+    .ticker-chip { padding: 0 6px; gap: 3px; }
 }

@@ -8,321 +8,240 @@
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        /* ── KPI Strip ── */
+        .kpi-strip {
+            display: flex;
             gap: 10px;
-            margin-bottom: 12px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
         }
-
-        .overview-grid {
-            display: grid;
-            grid-template-columns: minmax(280px, 1.1fr) minmax(220px, 1fr) minmax(220px, 1fr);
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .stat-block {
-            display: grid;
-            gap: 6px;
-        }
-
-        .stat-block + .stat-block {
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid var(--border);
-        }
-        
-        .stat-card {
+        .kpi-card {
             background: var(--panel);
             border: 1px solid var(--border);
-            padding: 12px;
-            border-radius: var(--radius-lg);
-            transition: var(--transition);
+            border-radius: var(--radius-md);
+            padding: 10px 16px;
+            flex: 1;
+            min-width: 130px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            transition: border-color 0.2s;
         }
-        
-        .stat-card:hover {
-            border-color: var(--border-light);
-        }
-        
-        .stat-label {
-            font-size: var(--font-xs);
-            color: var(--muted);
+        .kpi-card:hover { border-color: var(--border-light); }
+        .kpi-label {
+            font-size: 10px;
             text-transform: uppercase;
-            margin-bottom: 4px;
-            font-weight: 600;
             letter-spacing: 0.5px;
+            color: var(--muted);
+            font-weight: 600;
         }
-        
-        .refresh-indicator {
+        .kpi-value {
+            font-size: 18px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.3;
+        }
+
+        /* ── Main Grid ── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 14px;
+            align-items: start;
+        }
+
+        /* ── Cards ── */
+        .dash-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            margin-bottom: 14px;
+        }
+        .dash-card:last-child { margin-bottom: 0; }
+        .card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            background: var(--panel-2);
+        }
+        .card-head h3 {
+            font-size: 12px;
+            font-weight: 700;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+        .card-head .head-right {
             font-size: 11px;
             color: var(--muted);
-            font-weight: 400;
         }
-        
-        /* Tables */
-        .table-wrap {
-            overflow-x: auto;
-            max-height: 500px;
-        }
-        
-        table {
+        .card-body-pad { padding: 12px 14px; }
+
+        /* ── Tables ── */
+        .dash-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 13px;
+            font-size: 12px;
         }
-        
-        th {
-            background: #1c2333;
-            padding: 8px;
+        .dash-table thead { background: var(--panel-2); }
+        .dash-table th {
+            padding: 8px 10px;
             text-align: left;
-            color: var(--muted);
             font-weight: 600;
-            position: sticky;
-            top: 0;
-            z-index: 1;
-        }
-        
-        td {
-            padding: 8px;
-            border-bottom: 1px solid var(--border);
-        }
-        
-        tr:hover {
-            background: #1c2333;
-        }
-        
-        /* Badges */
-        .badge {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
+            font-size: 10px;
             text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: var(--muted);
+            border-bottom: 1px solid var(--border);
             white-space: nowrap;
         }
-        
-        .badge.ok {
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--success);
+        .dash-table td {
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
         }
-        
-        .badge.warn {
-            background: rgba(245, 158, 11, 0.1);
-            color: var(--warning);
-        }
-        
-        .badge.error {
-            background: rgba(239, 68, 68, 0.1);
-            color: var(--danger);
-        }
-        
-        /* Empty State */
-        .empty-state {
+        .dash-table tbody tr:hover { background: var(--panel-2); }
+        .dash-table .empty-row td {
             text-align: center;
-            padding: 30px 12px;
+            padding: 24px 10px;
             color: var(--muted);
+            font-style: italic;
         }
-        
-        .empty-state-icon {
-            font-size: 36px;
-            margin-bottom: 8px;
-            opacity: 0.5;
-        }
-        
-        /* Status Items */
-        .status-item {
+
+        /* ── Info rows (risk, account) ── */
+        .info-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 6px 0;
-            border-bottom: 1px solid var(--border);
+            font-size: 12px;
         }
-        
-        .status-item:last-child {
-            border-bottom: none;
-        }
-        
-        .status-label {
-            color: var(--muted);
-            font-size: 13px;
-        }
-        
-        .status-value {
-            font-weight: 600;
-            font-size: 13px;
-        }
-        
-        /* Error Banner */
-        .error-banner {
-            background: rgba(239, 68, 68, 0.1);
-            color: var(--danger);
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 12px;
-            display: none;
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
-        
-        .error-banner.show {
-            display: block;
-        }
-        
-        /* Value Change Animation */
-        @keyframes valueChange {
-            0% { background-color: rgba(59, 130, 246, 0.2); }
-            100% { background-color: transparent; }
-        }
-        
-        .value-changed {
-            animation: valueChange 0.4s ease-out;
-        }
-        
-        /* Loading Spinner */
-        .spinner {
+        .info-row + .info-row { border-top: 1px solid var(--border); }
+        .info-label { color: var(--muted); }
+        .info-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        /* ── Badges ── */
+        .status-badge {
             display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid var(--border);
-            border-top-color: var(--primary);
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
         }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .status-badge.safe { background: var(--success-bg); color: var(--success); }
+        .status-badge.warning { background: var(--warning-bg); color: var(--warning); }
+        .status-badge.danger { background: var(--danger-bg); color: var(--danger); }
+        .status-badge.neutral { background: var(--panel-3); color: var(--muted); }
+
+        /* ── Order side badges ── */
+        .side-buy { color: var(--success); font-weight: 700; }
+        .side-sell { color: var(--danger); font-weight: 700; }
+
+        /* ── Messages ── */
+        .msg-list { max-height: 260px; overflow-y: auto; }
+        .msg-item {
+            padding: 8px 0;
+            font-size: 11px;
+            line-height: 1.4;
         }
-        
-        /* Auto-refresh indicator */
-        .auto-refresh-status {
-            display: inline-flex;
+        .msg-item + .msg-item { border-top: 1px solid var(--border); }
+        .msg-time {
+            font-size: 10px;
+            color: var(--muted);
+            margin-bottom: 2px;
+        }
+        .msg-text { color: var(--text-secondary); }
+
+        /* ── Force Exit Banner ── */
+        .force-exit-banner {
+            background: var(--danger-bg);
+            border: 1px solid var(--danger);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+            margin-bottom: 14px;
+            display: none;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--danger);
+            text-align: center;
+        }
+
+        /* ── Error Banner ── */
+        .error-banner {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--danger-bg);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 8px 20px;
+            border-radius: var(--radius-md);
+            font-size: 12px;
+            z-index: 9999;
+            display: none;
+        }
+        .error-banner.show { display: block; }
+
+        /* ── Refresh indicator ── */
+        .refresh-info {
+            display: flex;
             align-items: center;
             gap: 6px;
             font-size: 11px;
-            color: var(--success);
+            color: var(--muted);
         }
-        
         .refresh-dot {
             width: 6px;
             height: 6px;
             border-radius: 50%;
             background: var(--success);
-            animation: pulse 2s ease-in-out infinite;
+            animation: pulse 2s infinite;
         }
-        
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
+            50% { opacity: 0.3; }
         }
 
-        .analytics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 10px;
-            margin-bottom: 12px;
+        /* ── Value flash animation ── */
+        @keyframes flash {
+            0% { background: rgba(59, 130, 246, 0.15); }
+            100% { background: transparent; }
         }
+        .value-changed { animation: flash 0.6s ease; }
 
-        .mini-card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px;
+        /* ── Spinner ── */
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        .mini-title {
-            font-size: 11px;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            margin-bottom: 4px;
-            font-weight: 600;
-        }
-
-        .mini-value {
-            font-size: 18px;
-            font-weight: 700;
-        }
-
-        .mini-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-            padding: 6px 0;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .mini-row:last-child {
-            border-bottom: none;
-        }
-
-        .message-list {
-            max-height: 320px;
-            overflow-y: auto;
-            padding: 6px;
-        }
-
-        .message-item {
-            border: 1px solid var(--border);
-            background: #1c2333;
-            border-radius: 6px;
-            padding: 8px;
-            margin-bottom: 6px;
-        }
-
-        .message-meta {
-            display: flex;
-            justify-content: space-between;
-            font-size: 11px;
-            color: var(--muted);
-            margin-bottom: 6px;
-        }
-
-        .message-text {
-            font-size: 12px;
-            line-height: 1.4;
-            white-space: pre-wrap;
-        }
-        
-        /* Responsive */
-        .grid-main {
-            display: grid;
-            grid-template-columns: 1.5fr 1fr;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
+        /* ── Responsive ── */
         @media (max-width: 1024px) {
-            .grid-main {
+            .main-grid {
                 grid-template-columns: 1fr;
             }
-
-            .overview-grid {
-                grid-template-columns: 1fr;
-            }
+            .sidebar { order: -1; }
         }
-        
         @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            /* Make tables scroll horizontally on mobile */
-            .table-wrap {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            
-            table {
-                min-width: 600px;
-            }
-            
-            td, th {
-                padding: 6px 4px;
-                font-size: 12px;
-                white-space: nowrap;
-            }
+            .kpi-strip { gap: 8px; }
+            .kpi-card { min-width: 100px; padding: 8px 12px; }
+            .kpi-value { font-size: 15px; }
+        }
+        @media (max-width: 480px) {
+            .kpi-strip { flex-direction: column; }
+            .kpi-card { min-width: unset; }
         }
     </style>
 </head>
@@ -330,258 +249,259 @@
 <div id="app-header"></div>
 
 <main>
-    <div id="errorBanner" class="error-banner"></div>
+    <!-- Error Banner -->
+    <div class="error-banner" id="errorBanner"></div>
 
-    <!-- Top Overview -->
-    <div class="overview-grid">
-        <div class="card">
-            <div class="card-header">Account Limits</div>
-            <div style="padding: 10px">
-                <div class="status-item">
-                    <span class="status-label">Cash Available</span>
-                    <span id="cashAvail" class="status-value">₹0.00</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Collateral</span>
-                    <span id="collateral" class="status-value">₹0.00</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Used Margin</span>
-                    <span id="usedMargin" class="status-value">₹0.00</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Available Margin</span>
-                    <span id="availMargin" class="status-value">₹0.00</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Net Available</span>
-                    <span id="netAvail" class="status-value" style="font-weight: 700">₹0.00</span>
-                </div>
-            </div>
+    <!-- Force Exit Banner -->
+    <div class="force-exit-banner" id="forceExitBanner">
+        ⚠ FORCE EXIT IN PROGRESS — All positions being squared off
+    </div>
+
+    <!-- KPI Strip -->
+    <div class="kpi-strip">
+        <div class="kpi-card">
+            <span class="kpi-label">Net P&amp;L</span>
+            <span class="kpi-value" id="kpiNetPnl" style="color: var(--muted)">--</span>
         </div>
-
-        <div style="display: grid; gap: 10px">
-            <div class="stat-card">
-                <div class="stat-label">Net PnL</div>
-                <div id="netPnl" class="stat-value neutral">₹0.00</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Open Positions</div>
-                <div id="openPositions" class="stat-value neutral">0</div>
-            </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Open Positions</span>
+            <span class="kpi-value" id="kpiOpenPos">0</span>
         </div>
-
-        <div class="mini-card">
-            <div class="mini-title">Risk Manager</div>
-            <div class="mini-value" id="riskStatusBadge">SAFE</div>
-            <div class="mini-row">
-                <span>Daily PnL</span>
-                <span id="riskDailyPnl">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Max Loss Limit</span>
-                <span id="riskTrailingSl">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Distance to Exit</span>
-                <span id="riskDistanceExit">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Peak Profit</span>
-                <span id="riskPeakProfit">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Daily Loss Hit</span>
-                <span id="riskDailyLoss">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Human Violation</span>
-                <span id="riskHumanViolation">--</span>
+        <div class="kpi-card">
+            <span class="kpi-label">Pending Orders</span>
+            <span class="kpi-value" id="kpiPendingOrders">0</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Risk Status</span>
+            <span class="kpi-value" id="kpiRiskStatus">
+                <span class="status-badge neutral">--</span>
+            </span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Broker</span>
+            <span class="kpi-value" id="kpiBroker">
+                <span class="status-badge neutral">--</span>
+            </span>
+        </div>
+        <div class="kpi-card" style="flex: 0 0 auto; min-width: unset;">
+            <span class="kpi-label">Live</span>
+            <div class="refresh-info">
+                <span class="refresh-dot"></span>
+                <span id="lastUpdateText">--</span>
             </div>
         </div>
     </div>
 
-    <!-- Stats Cards -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-label">Pending Orders</div>
-            <div id="pendingOrders" class="stat-value neutral">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">System Signal</div>
-            <div id="systemSignal" class="stat-value neutral">IDLE</div>
-        </div>
-    </div>
-
-    <!-- System Analytics -->
-    <div class="analytics-grid">
-
-        <div class="mini-card">
-            <div class="mini-title">Alerts Summary</div>
-            <div class="mini-value" id="alertTotal">0</div>
-            <div class="mini-row">
-                <span>Success</span>
-                <span id="alertSuccess">0</span>
-            </div>
-            <div class="mini-row">
-                <span>Failed</span>
-                <span id="alertFailed">0</span>
-            </div>
-            <div class="mini-row">
-                <span>Alerts Received</span>
-                <span id="alertReceived">0</span>
-            </div>
-            <div class="mini-row">
-                <span>Risk Alerts</span>
-                <span id="alertRisk">0</span>
-            </div>
-        </div>
-
-        <div class="mini-card">
-            <div class="mini-title">Market Data</div>
-            <div class="mini-value" id="heartbeatAgeMini">--</div>
-            <div class="mini-row">
-                <span>Chains</span>
-                <span id="heartbeatChains">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Login</span>
-                <span id="heartbeatLogin">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Last Update</span>
-                <span id="heartbeatLast">--</span>
-            </div>
-        </div>
-
-        <div class="mini-card">
-            <div class="mini-title">System Signals</div>
-            <div class="mini-value" id="signalStatusMini">IDLE</div>
-            <div class="mini-row">
-                <span>Open Orders</span>
-                <span id="openOrdersMini">0</span>
-            </div>
-            <div class="mini-row">
-                <span>Last Order</span>
-                <span id="lastOrderTime">--</span>
-            </div>
-            <div class="mini-row">
-                <span>Messages</span>
-                <span id="telegramMessageCount">0</span>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Main Grid -->
-    <div class="grid-main">
-        <!-- Left Column -->
-        <div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
-            <!-- Positions Table -->
-            <div class="card">
-                <div class="card-header">
-                    <span>Active Positions</span>
-                    <span class="refresh-indicator" id="posRefresh">Updated just now</span>
+    <!-- Main 2-Column Layout -->
+    <div class="main-grid">
+        <!-- Left Column: Tables -->
+        <div class="left-col">
+            <!-- Active Positions -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>Active Positions</h3>
+                    <span class="head-right" id="posCount"></span>
                 </div>
-                <div class="table-wrap">
-                    <table>
+                <div style="overflow-x: auto;">
+                    <table class="dash-table">
                         <thead>
                             <tr>
                                 <th>Symbol</th>
                                 <th>LTP</th>
-                                <th>Net PnL</th>
-                                <th>Realized PnL</th>
-                                <th>Unrealized PnL</th>
-                                <th>Exchange</th>
+                                <th>Net P&amp;L</th>
+                                <th>Realized</th>
+                                <th>Unrealized</th>
+                                <th>Exch</th>
                                 <th>Product</th>
                                 <th>Qty</th>
                                 <th>Avg Price</th>
                             </tr>
                         </thead>
                         <tbody id="positionRows">
-                            <tr>
-                                <td colspan="9" class="empty-state">
-                                    <div class="empty-state-icon">📊</div>
-                                    Loading positions...
-                                </td>
-                            </tr>
+                            <tr class="empty-row"><td colspan="9">No open positions</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-            
-            <!-- Holdings Table -->
-            <div class="card">
-                <div class="card-header">Holdings</div>
-                <div class="table-wrap">
-                    <table>
+
+            <!-- Pending Orders -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>Pending Orders</h3>
+                    <span class="head-right" id="pendingCount"></span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="dash-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Type</th>
+                                <th>Price</th>
+                                <th>Product</th>
+                                <th>Status</th>
+                                <th>Source</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pendingRows">
+                            <tr class="empty-row"><td colspan="9">No pending orders</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recent Orders -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>Recent Orders</h3>
+                    <span class="head-right" id="recentOrderCount"></span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="dash-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Type</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentOrderRows">
+                            <tr class="empty-row"><td colspan="7">No recent orders</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Holdings -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>Holdings</h3>
+                    <span class="head-right" id="holdingsCount"></span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="dash-table">
                         <thead>
                             <tr>
                                 <th>Symbol</th>
                                 <th>LTP</th>
-                                <th>Net PnL</th>
-                                <th>Realized PnL</th>
-                                <th>Unrealized PnL</th>
-                                <th>Exchange</th>
+                                <th>Net P&amp;L</th>
+                                <th>Realized</th>
+                                <th>Unrealized</th>
+                                <th>Exch</th>
                                 <th>Product</th>
                                 <th>Qty</th>
                                 <th>Avg Price</th>
                             </tr>
                         </thead>
                         <tbody id="holdingsRows">
-                            <tr>
-                                <td colspan="9" class="empty-state">
-                                    <div class="empty-state-icon">📈</div>
-                                    Loading holdings...
-                                </td>
-                            </tr>
+                            <tr class="empty-row"><td colspan="9">No holdings</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+        </div>
 
-            <!-- System Messages -->
-            <div class="card">
-                <div class="card-header">
-                    <span>System Messages (Telegram)</span>
-                    <span class="badge ok" id="telegramMessageBadge">0</span>
+        <!-- Right Column: Sidebar Cards -->
+        <div class="sidebar">
+            <!-- Risk Manager -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>Risk Manager</h3>
+                    <span id="riskBadge" class="status-badge neutral">--</span>
                 </div>
-                <div class="message-list" id="telegramMessages">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">💬</div>
-                        Waiting for messages...
+                <div class="card-body-pad">
+                    <div class="info-row">
+                        <span class="info-label">Daily P&amp;L</span>
+                        <span class="info-value" id="riskDailyPnl">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Max Loss Limit</span>
+                        <span class="info-value" id="riskMaxLoss">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Distance to Exit</span>
+                        <span class="info-value" id="riskDistance">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Peak Profit</span>
+                        <span class="info-value" id="riskPeakProfit">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Daily Loss Hit</span>
+                        <span class="info-value" id="riskDailyLoss">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Human Violation</span>
+                        <span class="info-value" id="riskHumanViolation">--</span>
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <!-- Right Column -->
-        <div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
-            <!-- System Status -->
-            <div class="card">
-                <div class="card-header">System Status</div>
-                <div style="padding: 10px">
-                    <div class="status-item">
-                        <span class="status-label">Broker Connection</span>
-                        <span id="loginStatus" class="badge ok">CHECKING</span>
+
+            <!-- Account Summary -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>Account</h3>
+                </div>
+                <div class="card-body-pad">
+                    <div class="info-row">
+                        <span class="info-label">Cash Available</span>
+                        <span class="info-value" id="accCash">--</span>
                     </div>
-                    <div class="status-item">
-                        <span class="status-label">Last Heartbeat</span>
-                        <span id="heartbeatAge" class="status-value">--</span>
+                    <div class="info-row">
+                        <span class="info-label">Collateral</span>
+                        <span class="info-value" id="accCollateral">--</span>
                     </div>
-                    <div class="status-item">
-                        <span class="status-label">Risk Status</span>
-                        <span id="riskStatus" class="badge ok">SAFE</span>
+                    <div class="info-row">
+                        <span class="info-label">Margin Used</span>
+                        <span class="info-value" id="accMarginUsed">--</span>
                     </div>
-                    <div class="status-item">
-                        <span class="status-label">Daily High</span>
-                        <span id="dailyHigh" class="status-value">₹0.00</span>
+                    <div class="info-row">
+                        <span class="info-label">Margin Available</span>
+                        <span class="info-value" id="accMarginAvail">--</span>
                     </div>
-                    <div class="status-item">
-                        <span class="status-label">Daily Low</span>
-                        <span id="dailyLow" class="status-value">₹0.00</span>
+                    <div class="info-row">
+                        <span class="info-label">Net Available</span>
+                        <span class="info-value" id="accNetAvail">--</span>
                     </div>
-                    <div id="forceExitAlert" style="display: none; padding: 12px; background: rgba(239, 68, 68, 0.15); color: var(--danger); border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; margin-top: 16px; border: 1px solid rgba(239, 68, 68, 0.3)">
-                        ⚠️ FORCE EXIT IN PROGRESS
+                </div>
+            </div>
+
+            <!-- System Info -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>System</h3>
+                </div>
+                <div class="card-body-pad">
+                    <div class="info-row">
+                        <span class="info-label">Heartbeat</span>
+                        <span class="info-value" id="sysHeartbeat">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Signal</span>
+                        <span class="info-value" id="sysSignal">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Alerts Sent</span>
+                        <span class="info-value" id="sysAlertCount">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Alerts -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>Recent Alerts</h3>
+                    <span class="head-right" id="alertCount">0</span>
+                </div>
+                <div class="card-body-pad">
+                    <div class="msg-list" id="telegramMessages">
+                        <div class="msg-item" style="color: var(--muted); text-align: center;">No alerts yet</div>
                     </div>
                 </div>
             </div>
@@ -590,696 +510,510 @@
 </main>
 
 <script>
-    // Logout handler
-    async function logout() {
-        try {
-            await fetch('/auth/logout', {
-                method: 'POST',
-                credentials: 'include'
-            });
-        } catch (e) {
-            console.log('Logout completed');
-        }
-        window.location.href = '/';
-    }
-    
-    // Check authentication on page load
-    window.addEventListener('DOMContentLoaded', function(){
+    // ─── Auth ───
+    window.addEventListener('DOMContentLoaded', function () {
         checkAuth();
-        try { g_exchange.value = 'NFO'; g_symbol.value = 'NIFTY'; } catch(e){}
-        // Start auto-refresh on load
         startAutoRefresh();
-        // Initial immediate update
         updateDashboard(false);
     });
+
     async function checkAuth() {
         try {
-            const res = await fetch('/dashboard/home/status', {
-                credentials: 'include'
-            });
-            if (res.status === 401) {
-                window.location.href = '/';
-            }
-        } catch (e) {
-            console.log('Auth check completed');
-        }
+            const res = await fetch('/dashboard/home/status', { credentials: 'include' });
+            if (res.status === 401) window.location.href = '/';
+        } catch (e) {}
     }
-    
-    // Configuration
-    const config = {
-        autoRefreshInterval: 1000, // 1 second (real-time)
-        maxRetries: 3,
-        retryDelay: 2000
-    };
-    
-    // State
+
+    // ─── Config & State ───
+    const REFRESH_MS = 1000;
     let lastUpdate = Date.now();
     let autoRefreshTimer = null;
     let isRefreshing = false;
     let retryCount = 0;
-    
-    // Error Handling
-    function showError(msg) {
-        console.error('Dashboard Error:', msg);
-        const banner = document.getElementById('errorBanner');
-        banner.textContent = '⚠️ ' + msg;
-        banner.classList.add('show');
-        setTimeout(() => banner.classList.remove('show'), 5000);
-    }
-    
-    // Formatting Utilities
-    function formatCurrency(val) {
-        if (val === null || val === undefined || isNaN(val)) return '₹0.00';
-        return '₹' + parseFloat(val).toLocaleString('en-IN', { 
-            minimumFractionDigits: 2, 
-            maximumFractionDigits: 2 
-        });
-    }
-    
-    function formatNumber(val, decimals = 0) {
-        if (val === null || val === undefined || isNaN(val)) return '0';
-        return parseFloat(val).toLocaleString('en-IN', {
-            minimumFractionDigits: decimals,
-            maximumFractionDigits: decimals
-        });
-    }
-    
-    function getTimeSince(seconds) {
-        if (!seconds || seconds < 0) return '--';
-        if (seconds < 60) return `${Math.floor(seconds)}s ago`;
-        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-        return `${Math.floor(seconds / 3600)}h ago`;
-    }
-    
-    // Cell Update with Animation
-    function updateCellValue(cell, newValue, isColored = false, decimals = 2) {
-        if (!cell) return;
-        
-        const formatted = typeof newValue === 'string' ? newValue : 
-                         (decimals === 0 ? formatNumber(newValue, 0) : formatCurrency(newValue));
-        
-        if (cell.textContent !== formatted) {
-            cell.textContent = formatted;
-            
-            // Flash animation
-            cell.classList.remove('value-changed');
-            void cell.offsetWidth; // Force reflow
-            cell.classList.add('value-changed');
-        }
-        
-        if (isColored) {
-            const value = parseFloat(newValue) || 0;
-            cell.style.color = value >= 0 ? 'var(--success)' : 'var(--danger)';
-        }
-    }
-    
-    // Stat Update with Animation
-    function updateStatValue(elementId, newValue, className = 'neutral') {
-        const el = document.getElementById(elementId);
-        if (!el) return;
-        
-        const formatted = typeof newValue === 'string' ? newValue : formatCurrency(newValue);
-        
-        if (el.textContent !== formatted) {
-            el.textContent = formatted;
-            el.classList.remove('value-changed');
-            void el.offsetWidth;
-            el.classList.add('value-changed');
-        }
-        
-        el.className = `stat-value ${className}`;
-    }
-    
-    // Logout
-    async function logout() {
-        try {
-            await fetch('/auth/logout', { 
-                method: 'POST', 
-                credentials: 'include' 
-            });
-            window.location.href = '/';
-        } catch (err) {
-            console.error('Logout failed:', err);
-            showError('Logout failed. Please try again.');
-        }
-    }
-    
-    // Auto-refresh control
-    function startAutoRefresh() {
-        if (autoRefreshTimer) return;
-        autoRefreshTimer = setInterval(() => updateDashboard(true), config.autoRefreshInterval);
-        const autoRefreshStatus = document.getElementById('autoRefreshStatus');
-        if (autoRefreshStatus) {
-            autoRefreshStatus.classList.add('active');
-            const dot = autoRefreshStatus.querySelector('.refresh-dot');
-            if (dot) dot.classList.add('active');
-            const ri = document.getElementById('refreshInterval'); if (ri) ri.textContent = (config.autoRefreshInterval/1000)+'s';
-        }
+    const MAX_RETRIES = 3;
+
+    // ─── Formatting ───
+    function fmt(val) {
+        if (val == null || isNaN(val)) return '₹0.00';
+        return '₹' + parseFloat(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    function stopAutoRefresh() {
-        if (!autoRefreshTimer) return;
-        clearInterval(autoRefreshTimer);
-        autoRefreshTimer = null;
-        const autoRefreshStatus = document.getElementById('autoRefreshStatus');
-        if (autoRefreshStatus) {
-            autoRefreshStatus.classList.remove('active');
-            const dot = autoRefreshStatus.querySelector('.refresh-dot');
-            if (dot) dot.classList.remove('active');
-        }
+    function fmtNum(val) {
+        if (val == null || isNaN(val)) return '0';
+        return parseFloat(val).toLocaleString('en-IN');
     }
-    
-    // Main Dashboard Update
-    async function updateDashboard(isAutoRefresh = true) {
-        if (isRefreshing) return;
-        
-        isRefreshing = true;
-        const refreshBtn = document.getElementById('refreshBtn');
-        const originalText = refreshBtn ? refreshBtn.innerHTML : null;
-        if (refreshBtn) {
-            refreshBtn.innerHTML = '<span class="spinner"></span> Refreshing...';
-        }
-        
+
+    function timeSince(sec) {
+        if (!sec || sec < 0) return '--';
+        if (sec < 60) return Math.floor(sec) + 's ago';
+        if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+        return Math.floor(sec / 3600) + 'h ago';
+    }
+
+    function pnlColor(val) {
+        const n = parseFloat(val) || 0;
+        return n > 0 ? 'var(--success)' : n < 0 ? 'var(--danger)' : 'var(--text)';
+    }
+
+    function timeStr(ts) {
+        if (!ts) return '--';
         try {
-            const res = await fetch('/dashboard/home/status', { 
+            const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+            return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        } catch { return '--'; }
+    }
+
+    // ─── Error ───
+    function showError(msg) {
+        const el = document.getElementById('errorBanner');
+        el.textContent = '⚠ ' + msg;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 5000);
+    }
+
+    // ─── Flash animation helper ───
+    function flashEl(el) {
+        if (!el) return;
+        el.classList.remove('value-changed');
+        void el.offsetWidth;
+        el.classList.add('value-changed');
+    }
+
+    // ─── Auto-refresh ───
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        autoRefreshTimer = setInterval(() => updateDashboard(true), REFRESH_MS);
+    }
+    function stopAutoRefresh() {
+        if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+    }
+
+    // ─── Main Update ───
+    async function updateDashboard(isAuto = true) {
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        try {
+            const res = await fetch('/dashboard/home/status', {
                 credentials: 'include',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
+                headers: { 'Accept': 'application/json' }
             });
-            
+
             if (!res.ok) {
-                if (res.status === 401) {
-                    window.location.href = '/';
-                    return;
-                }
-                
-                let errorDetail = `HTTP ${res.status}`;
-                try {
-                    const errorData = await res.json();
-                    errorDetail = errorData.detail || errorDetail;
-                } catch (e) {
-                    // Response is not JSON
-                }
-                throw new Error(errorDetail);
+                if (res.status === 401) { window.location.href = '/'; return; }
+                let detail = 'HTTP ' + res.status;
+                try { detail = (await res.json()).detail || detail; } catch {}
+                throw new Error(detail);
             }
-            
+
             const data = await res.json();
-            console.log('Dashboard API Response:', data);
-            
-            // Extract data with fallbacks
             const broker = data.broker || {};
             const system = data.system || {};
-            
-            // Update Stats
-            updateStats(broker, system);
-            
-            // Update Tables
-            updatePositionsTable(broker.positions || []);
-            updateHoldingsTable(broker.holdings || []);
-            
-            // Update System Status
-            updateSystemStatus(system);
 
-            // Update Risk / Alerts / Messages
-            updateRiskWidgets(system.risk || null);
-            updateAlertSummary(system.telegram_stats || null);
-            updateTelegramMessages(system.telegram_messages || []);
-            updateHeartbeatMini(system.heartbeat || null);
-            updateSignalMini(system.signal || null, system.open_orders || 0, system.orders || []);
-            
-            // Update Limits
-            updateLimits(broker.limits || {});
-            
-            // Update refresh indicator
+            updateKPI(broker, system);
+            updatePositions(broker.positions || []);
+            updatePendingOrders(system.open_orders || []);
+            updateRecentOrders(system.orders || []);
+            updateHoldings(broker.holdings || []);
+            updateRisk(system.risk || null);
+            updateAccount(broker.limits || {});
+            updateSystem(system);
+            updateAlerts(system.telegram_messages || []);
+
+            // Force exit banner
+            const risk = system.risk || {};
+            document.getElementById('forceExitBanner').style.display =
+                risk.force_exit_in_progress ? 'block' : 'none';
+
             lastUpdate = Date.now();
-            const posRefreshEl = document.getElementById('posRefresh');
-            if (posRefreshEl) posRefreshEl.textContent = 'Updated just now';
-            
-            // Update auto-refresh status
-            const autoRefreshStatus = document.getElementById('autoRefreshStatus');
-            if (autoRefreshStatus) {
-                const refreshDot = autoRefreshStatus.querySelector('.refresh-dot');
-                autoRefreshStatus.classList.add('active');
-                if (refreshDot) refreshDot.classList.add('active');
-            }
-            
-            // Reset retry count on success
             retryCount = 0;
-            
+
         } catch (err) {
-            console.error('Dashboard update error:', err);
-            
-            if (!isAutoRefresh) {
-                showError('Failed to update dashboard: ' + err.message);
-            }
-            
-            // Retry logic for auto-refresh
-            if (isAutoRefresh && retryCount < config.maxRetries) {
+            if (!isAuto) showError(err.message);
+            if (isAuto && retryCount < MAX_RETRIES) {
                 retryCount++;
-                console.log(`Retry attempt ${retryCount}/${config.maxRetries}`);
-                setTimeout(() => updateDashboard(true), config.retryDelay);
+                setTimeout(() => updateDashboard(true), 2000);
             }
-            
         } finally {
             isRefreshing = false;
-            if (refreshBtn && originalText !== null) {
-                refreshBtn.innerHTML = originalText;
-            }
         }
     }
 
-    function updateRiskWidgets(risk) {
-        const riskStatusEl = document.getElementById('riskStatusBadge');
-        const dailyPnlEl = document.getElementById('riskDailyPnl');
-        const trailingEl = document.getElementById('riskTrailingSl');
-        const distanceEl = document.getElementById('riskDistanceExit');
-        const peakEl = document.getElementById('riskPeakProfit');
-        const dailyLossEl = document.getElementById('riskDailyLoss');
-        const humanEl = document.getElementById('riskHumanViolation');
+    // ─── KPI Strip ───
+    function updateKPI(broker, system) {
+        const summary = broker.positions_summary || {};
+        const netPnl = parseFloat(summary.net_pnl || summary.rpnl || 0);
+        const openCount = summary.open_count || (broker.positions || []).length || 0;
 
-        if (!risk || Object.keys(risk).length === 0) {
-            riskStatusEl.textContent = 'NO DATA';
-            riskStatusEl.style.color = 'var(--text-secondary)';
-            if (dailyPnlEl) dailyPnlEl.textContent = '--';
-            trailingEl.textContent = '--';
-            if (distanceEl) distanceEl.textContent = '--';
-            peakEl.textContent = '--';
-            dailyLossEl.textContent = '--';
-            humanEl.textContent = '--';
+        // BUGFIX: open_orders is a LIST of OrderRecord objects, not a number
+        const pendingList = Array.isArray(system.open_orders) ? system.open_orders : [];
+        const pendingCount = pendingList.length;
+
+        // Net PnL
+        const pnlEl = document.getElementById('kpiNetPnl');
+        const newPnl = fmt(netPnl);
+        if (pnlEl.textContent !== newPnl) { pnlEl.textContent = newPnl; flashEl(pnlEl); }
+        pnlEl.style.color = pnlColor(netPnl);
+
+        // Open Positions
+        const posEl = document.getElementById('kpiOpenPos');
+        posEl.textContent = openCount;
+
+        // Pending Orders
+        const pendEl = document.getElementById('kpiPendingOrders');
+        pendEl.textContent = pendingCount;
+        pendEl.style.color = pendingCount > 0 ? 'var(--warning)' : 'var(--text)';
+
+        // Risk Status
+        const risk = system.risk || {};
+        let riskText, riskClass;
+        if (risk.force_exit_in_progress) { riskText = 'EXIT'; riskClass = 'danger'; }
+        else if (risk.daily_loss_hit) { riskText = 'LOSS HIT'; riskClass = 'danger'; }
+        else if (risk.human_violation_detected) { riskText = 'VIOLATION'; riskClass = 'danger'; }
+        else if (risk.warning_sent) { riskText = 'WARNING'; riskClass = 'warning'; }
+        else if (Object.keys(risk).length > 0) { riskText = 'SAFE'; riskClass = 'safe'; }
+        else { riskText = 'NO DATA'; riskClass = 'neutral'; }
+        document.getElementById('kpiRiskStatus').innerHTML =
+            '<span class="status-badge ' + riskClass + '">' + riskText + '</span>';
+
+        // Broker connection
+        const hb = system.heartbeat || {};
+        const login = hb.login || hb.status || '';
+        let brokerText, brokerClass;
+        if (login === 'OK' || login === 'CONNECTED') { brokerText = 'CONNECTED'; brokerClass = 'safe'; }
+        else if (login) { brokerText = login; brokerClass = 'warning'; }
+        else { brokerText = 'UNKNOWN'; brokerClass = 'neutral'; }
+        document.getElementById('kpiBroker').innerHTML =
+            '<span class="status-badge ' + brokerClass + '">' + brokerText + '</span>';
+    }
+
+    // ─── Positions Table ───
+    function updatePositions(positions) {
+        const tbody = document.getElementById('positionRows');
+        const countEl = document.getElementById('posCount');
+        countEl.textContent = positions.length ? positions.length + ' position' + (positions.length > 1 ? 's' : '') : '';
+
+        if (!positions.length) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No open positions</td></tr>';
             return;
         }
 
-        const dailyLossHit = !!risk.daily_loss_hit;
-        const humanViolation = !!risk.human_violation_detected;
-        const forceExit = !!risk.force_exit_in_progress;
-        const pnl = risk.daily_pnl != null ? risk.daily_pnl : null;
-        const maxLoss = risk.dynamic_max_loss != null ? risk.dynamic_max_loss : null;
+        const curSymbols = Array.from(tbody.querySelectorAll('tr[data-sym]')).map(r => r.dataset.sym);
+        const newSymbols = positions.map(p => p.tsym || p.symbol || '');
+        const rebuild = curSymbols.length !== newSymbols.length || !newSymbols.every((s, i) => s === curSymbols[i]);
 
-        // Status badge
-        let status, statusColor;
-        if (forceExit) {
-            status = 'EXIT IN PROGRESS';
-            statusColor = 'var(--danger)';
-        } else if (dailyLossHit) {
-            status = 'LOSS HIT';
-            statusColor = 'var(--danger)';
-        } else if (humanViolation) {
-            status = 'VIOLATION';
-            statusColor = 'var(--danger)';
-        } else if (risk.warning_sent) {
-            status = 'WARNING';
-            statusColor = '#f59e0b';
+        if (rebuild) {
+            tbody.innerHTML = positions.map(p => {
+                const net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
+                const prd = p.prd || p.product || '';
+                return '<tr data-sym="' + (p.tsym || p.symbol || '') + '">'
+                    + '<td style="font-weight:700">' + (p.tsym || p.symbol || '-') + '</td>'
+                    + '<td data-f="ltp">' + fmt(p.lp || p.ltp || 0) + '</td>'
+                    + '<td data-f="net" style="color:' + pnlColor(net) + ';font-weight:700">' + fmt(net) + '</td>'
+                    + '<td data-f="rpnl" style="color:' + pnlColor(p.rpnl) + '">' + fmt(p.rpnl || 0) + '</td>'
+                    + '<td data-f="urm" style="color:' + pnlColor(p.urmtom) + '">' + fmt(p.urmtom || 0) + '</td>'
+                    + '<td>' + (p.exch || p.exchange || '-') + '</td>'
+                    + '<td>' + (prd ? '<span class="status-badge safe">' + prd + '</span>' : '-') + '</td>'
+                    + '<td data-f="qty">' + (p.netqty || 0) + '</td>'
+                    + '<td data-f="avg">' + fmt(p.avgprc || p.avg_price || 0) + '</td>'
+                    + '</tr>';
+            }).join('');
         } else {
-            status = 'SAFE';
-            statusColor = 'var(--success)';
+            positions.forEach(p => {
+                const sym = p.tsym || p.symbol || '';
+                const row = tbody.querySelector('tr[data-sym="' + sym + '"]');
+                if (!row) return;
+                const net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
+                const updateCell = function(sel, val, colored) {
+                    const cell = row.querySelector(sel);
+                    if (!cell) return;
+                    const f = fmt(val);
+                    if (cell.textContent !== f) { cell.textContent = f; flashEl(cell); }
+                    if (colored) cell.style.color = pnlColor(val);
+                };
+                updateCell('[data-f="ltp"]', p.lp || p.ltp || 0, false);
+                updateCell('[data-f="net"]', net, true);
+                updateCell('[data-f="rpnl"]', p.rpnl || 0, true);
+                updateCell('[data-f="urm"]', p.urmtom || 0, true);
+                var qtyCell = row.querySelector('[data-f="qty"]');
+                if (qtyCell) { var q = String(p.netqty || 0); if (qtyCell.textContent !== q) { qtyCell.textContent = q; flashEl(qtyCell); } }
+                updateCell('[data-f="avg"]', p.avgprc || p.avg_price || 0, false);
+            });
         }
-        riskStatusEl.textContent = status;
-        riskStatusEl.style.color = statusColor;
-
-        // Daily PnL
-        if (dailyPnlEl && pnl != null) {
-            dailyPnlEl.textContent = formatCurrency(pnl);
-            dailyPnlEl.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
-        } else if (dailyPnlEl) {
-            dailyPnlEl.textContent = '--';
-        }
-
-        // Max loss limit
-        trailingEl.textContent = maxLoss != null ? formatCurrency(maxLoss) : '--';
-
-        // Distance to exit
-        if (distanceEl && pnl != null && maxLoss != null) {
-            const distance = pnl - maxLoss;
-            distanceEl.textContent = formatCurrency(distance);
-            distanceEl.style.color = distance <= 2 ? 'var(--danger)' : distance <= 5 ? '#f59e0b' : 'var(--text-secondary)';
-        } else if (distanceEl) {
-            distanceEl.textContent = '--';
-        }
-
-        peakEl.textContent = formatCurrency(risk.highest_profit || 0);
-        dailyLossEl.textContent = dailyLossHit ? 'YES' : 'NO';
-        dailyLossEl.style.color = dailyLossHit ? 'var(--danger)' : 'var(--success)';
-        humanEl.textContent = humanViolation ? 'YES' : 'NO';
-        humanEl.style.color = humanViolation ? 'var(--danger)' : 'var(--success)';
     }
 
-    function updateAlertSummary(stats) {
-        const totalEl = document.getElementById('alertTotal');
-        const successEl = document.getElementById('alertSuccess');
-        const failedEl = document.getElementById('alertFailed');
-        const receivedEl = document.getElementById('alertReceived');
-        const riskEl = document.getElementById('alertRisk');
+    // ─── Pending Orders Table (FIXED: shows actual order data) ───
+    function updatePendingOrders(openOrders) {
+        var tbody = document.getElementById('pendingRows');
+        var countEl = document.getElementById('pendingCount');
 
-        if (!stats) {
-            totalEl.textContent = '0';
-            successEl.textContent = '0';
-            failedEl.textContent = '0';
-            receivedEl.textContent = '0';
-            riskEl.textContent = '0';
+        // open_orders is a LIST of OrderRecord objects from the API
+        var orders = Array.isArray(openOrders) ? openOrders : [];
+        countEl.textContent = orders.length ? orders.length + ' pending' : '';
+
+        if (!orders.length) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No pending orders</td></tr>';
             return;
         }
 
-        totalEl.textContent = formatNumber(stats.total || 0);
-        successEl.textContent = formatNumber(stats.success || 0);
-        failedEl.textContent = formatNumber(stats.failed || 0);
-        receivedEl.textContent = formatNumber(stats.alerts || 0);
-        riskEl.textContent = formatNumber(stats.risk || 0);
+        tbody.innerHTML = orders.map(function(o) {
+            var side = (o.side || '').toUpperCase();
+            var sideClass = (side === 'BUY' || side === 'B') ? 'side-buy' : 'side-sell';
+            var status = o.status || '--';
+            var statusClass = 'neutral';
+            if (status === 'CREATED') statusClass = 'warning';
+            else if (status === 'SENT_TO_BROKER') statusClass = 'safe';
 
-        const msgCount = document.getElementById('telegramMessageCount');
-        const msgBadge = document.getElementById('telegramMessageBadge');
-        if (msgCount) msgCount.textContent = formatNumber(stats.total || 0);
-        if (msgBadge) msgBadge.textContent = formatNumber(stats.total || 0);
-    }
-
-    function updateTelegramMessages(messages) {
-        const container = document.getElementById('telegramMessages');
-        if (!container) return;
-
-        if (!messages || messages.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">💬</div>
-                    No messages yet
-                </div>
-            `;
-            return;
-        }
-
-        const recent = messages.slice(-50).reverse();
-        container.innerHTML = recent.map(item => {
-            const ts = item.ts ? new Date(item.ts * 1000) : null;
-            const timeStr = ts ? ts.toLocaleTimeString('en-IN') : '--';
-            const dateStr = ts ? ts.toLocaleDateString('en-IN') : '--';
-            const raw = (item.message || '').replace(/<[^>]*>/g, '');
-            return `
-                <div class="message-item">
-                    <div class="message-meta">
-                        <span>${dateStr} ${timeStr}</span>
-                        <span>Telegram</span>
-                    </div>
-                    <div class="message-text">${raw}</div>
-                </div>
-            `;
+            return '<tr>'
+                + '<td style="font-weight:700">' + (o.symbol || o.tsym || '-') + '</td>'
+                + '<td class="' + sideClass + '">' + side + '</td>'
+                + '<td>' + (o.quantity || 0) + '</td>'
+                + '<td>' + (o.order_type || '-') + '</td>'
+                + '<td>' + (o.price ? fmt(o.price) : 'MKT') + '</td>'
+                + '<td>' + (o.product || '-') + '</td>'
+                + '<td><span class="status-badge ' + statusClass + '">' + status + '</span></td>'
+                + '<td>' + (o.source || '-') + '</td>'
+                + '<td>' + timeStr(o.updated_at) + '</td>'
+                + '</tr>';
         }).join('');
     }
 
-    function updateHeartbeatMini(heartbeat) {
-        const ageEl = document.getElementById('heartbeatAgeMini');
-        const chainsEl = document.getElementById('heartbeatChains');
-        const loginEl = document.getElementById('heartbeatLogin');
-        const lastEl = document.getElementById('heartbeatLast');
+    // ─── Recent Orders Table (last 15 completed/failed/cancelled) ───
+    function updateRecentOrders(allOrders) {
+        var tbody = document.getElementById('recentOrderRows');
+        var countEl = document.getElementById('recentOrderCount');
 
-        if (!heartbeat) {
-            ageEl.textContent = '--';
-            chainsEl.textContent = '--';
-            loginEl.textContent = '--';
-            lastEl.textContent = '--';
+        var orders = Array.isArray(allOrders) ? allOrders : [];
+        // Filter to non-pending and take top 15
+        var recent = orders
+            .filter(function(o) { return ['CREATED', 'SENT_TO_BROKER'].indexOf(o.status) === -1; })
+            .slice(0, 15);
+
+        countEl.textContent = recent.length ? 'Last ' + recent.length : '';
+
+        if (!recent.length) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No recent orders</td></tr>';
             return;
         }
 
-        ageEl.textContent = `${heartbeat.age_sec || 0}s`;
-        chainsEl.textContent = formatNumber(heartbeat.chains || 0);
-        loginEl.textContent = heartbeat.login || '--';
-        lastEl.textContent = heartbeat.timestamp ? new Date(heartbeat.timestamp * 1000).toLocaleTimeString('en-IN') : '--';
+        tbody.innerHTML = recent.map(function(o) {
+            var side = (o.side || '').toUpperCase();
+            var sideClass = (side === 'BUY' || side === 'B') ? 'side-buy' : 'side-sell';
+            var status = o.status || '--';
+            var statusClass = 'neutral';
+            if (status === 'EXECUTED') statusClass = 'safe';
+            else if (status === 'FAILED' || status === 'REJECTED') statusClass = 'danger';
+            else if (status === 'CANCELLED') statusClass = 'warning';
+
+            return '<tr>'
+                + '<td style="font-weight:700">' + (o.symbol || o.tsym || '-') + '</td>'
+                + '<td class="' + sideClass + '">' + side + '</td>'
+                + '<td>' + (o.quantity || 0) + '</td>'
+                + '<td>' + (o.order_type || '-') + '</td>'
+                + '<td>' + (o.price ? fmt(o.price) : 'MKT') + '</td>'
+                + '<td><span class="status-badge ' + statusClass + '">' + status + '</span></td>'
+                + '<td>' + timeStr(o.updated_at) + '</td>'
+                + '</tr>';
+        }).join('');
     }
 
-    function updateSignalMini(signal, openOrders, orders) {
-        const statusEl = document.getElementById('signalStatusMini');
-        const openOrdersEl = document.getElementById('openOrdersMini');
-        const lastOrderEl = document.getElementById('lastOrderTime');
+    // ─── Holdings Table ───
+    function updateHoldings(holdings) {
+        var tbody = document.getElementById('holdingsRows');
+        var countEl = document.getElementById('holdingsCount');
+        countEl.textContent = holdings.length ? holdings.length + ' holding' + (holdings.length > 1 ? 's' : '') : '';
 
-        const status = (signal && signal.status) || 'IDLE';
-        statusEl.textContent = status;
-        openOrdersEl.textContent = formatNumber(openOrders || 0);
-
-        const lastOrder = (orders && orders.length) ? orders[0] : null;
-        const lastTs = lastOrder && lastOrder.updated_at ? new Date(lastOrder.updated_at).toLocaleTimeString('en-IN') : '--';
-        lastOrderEl.textContent = lastTs;
-    }
-    
-    // Update Stats Cards
-    function updateStats(broker, system) {
-        const positionsSummary = broker.positions_summary || {};
-        const netPnl = parseFloat(positionsSummary.net_pnl || positionsSummary.rpnl || 0);
-        const netPnlClass = netPnl > 0 ? 'up' : netPnl < 0 ? 'down' : 'neutral';
-        updateStatValue('netPnl', netPnl, netPnlClass);
-        
-        const openPosCount = positionsSummary.open_count || (broker.positions || []).length || 0;
-        updateStatValue('openPositions', openPosCount, 'neutral');
-        
-        const pendingCount = system.open_orders || 0;
-        updateStatValue('pendingOrders', pendingCount, 'neutral');
-        
-        const signalStatus = (system.signal && system.signal.status) || 'IDLE';
-        updateStatValue('systemSignal', signalStatus, 'neutral');
-    }
-    
-    // Update Positions Table
-    function updatePositionsTable(positions) {
-        const tbody = document.getElementById('positionRows');
-        
-        if (!positions || positions.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="9" class="empty-state">
-                        <div class="empty-state-icon">📊</div>
-                        No open positions
-                    </td>
-                </tr>
-            `;
+        if (!holdings.length) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No holdings</td></tr>';
             return;
         }
-        
-        // Check if we need full rebuild
-        const currentSymbols = Array.from(tbody.querySelectorAll('tr[data-symbol]')).map(tr => tr.dataset.symbol);
-        const newSymbols = positions.map(p => p.tsym || p.symbol || '');
-        const needsRebuild = currentSymbols.length !== newSymbols.length || 
-                             !newSymbols.every((s, i) => s === currentSymbols[i]);
-        
-        if (needsRebuild) {
-            // Full rebuild
-            tbody.innerHTML = positions.map(p => {
-                const netPnl = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
-                const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
-                const rpnlClass = parseFloat(p.rpnl || 0) >= 0 ? 'success' : 'danger';
-                const urmtomClass = parseFloat(p.urmtom || 0) >= 0 ? 'success' : 'danger';
-                const product = p.prd || p.product || '';
-                const productCell = product ? `<span class="badge ok">${product}</span>` : '-';
-                
-                return `
-                    <tr data-symbol="${p.tsym || p.symbol || ''}">
-                        <td style="font-weight: 700">${p.tsym || p.symbol || '-'}</td>
-                        <td data-field="ltp">${formatCurrency(p.lp || p.ltp || 0)}</td>
-                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
-                        <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(p.rpnl || 0)}</td>
-                        <td data-field="urmtom" style="color: var(--${urmtomClass})">${formatCurrency(p.urmtom || 0)}</td>
-                        <td>${p.exch || p.exchange || '-'}</td>
-                        <td>${productCell}</td>
-                        <td data-field="netqty">${p.netqty || 0}</td>
-                        <td data-field="avgprc">${formatCurrency(p.avgprc || p.avg_price || 0)}</td>
-                    </tr>
-                `;
+
+        function extract(h) {
+            var et = (h.exch_tsym && h.exch_tsym.length) ? h.exch_tsym[0] : {};
+            var symbol = et.tsym || h.tsym || h.symbol || h.tradingsymbol || '-';
+            var exchange = et.exch || h.exch || h.exchange || '-';
+            var qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || 0, 10);
+            var avg = parseFloat(h.upldprc || h.avg_price || h.avgprc || 0);
+            var ltp = parseFloat(h.c || h.lp || h.ltp || h.last_price || 0);
+            var realized = parseFloat(h.rpnl || h.realized_pnl || 0);
+            var urmRaw = parseFloat(h.urmtom || h.unrealized_pnl || NaN);
+            var unrealized = Number.isFinite(urmRaw) ? urmRaw : (ltp - avg) * qty;
+            var net = realized + unrealized;
+            var product = h.s_prdt_ali || h.prd || h.product || '';
+            return { symbol: symbol, exchange: exchange, qty: qty, avg: avg, ltp: ltp, realized: realized, unrealized: unrealized, net: net, product: product };
+        }
+
+        var curSymbols = Array.from(tbody.querySelectorAll('tr[data-sym]')).map(function(r) { return r.dataset.sym; });
+        var newSymbols = holdings.map(function(h) { return extract(h).symbol; });
+        var rebuild = curSymbols.length !== newSymbols.length || !newSymbols.every(function(s, i) { return s === curSymbols[i]; });
+
+        if (rebuild) {
+            tbody.innerHTML = holdings.map(function(h) {
+                var f = extract(h);
+                return '<tr data-sym="' + f.symbol + '">'
+                    + '<td style="font-weight:700">' + f.symbol + '</td>'
+                    + '<td data-f="ltp">' + fmt(f.ltp) + '</td>'
+                    + '<td data-f="net" style="color:' + pnlColor(f.net) + ';font-weight:700">' + fmt(f.net) + '</td>'
+                    + '<td data-f="rpnl" style="color:' + pnlColor(f.realized) + '">' + fmt(f.realized) + '</td>'
+                    + '<td data-f="urm" style="color:' + pnlColor(f.unrealized) + '">' + fmt(f.unrealized) + '</td>'
+                    + '<td>' + f.exchange + '</td>'
+                    + '<td>' + (f.product ? '<span class="status-badge safe">' + f.product + '</span>' : '-') + '</td>'
+                    + '<td data-f="qty">' + f.qty + '</td>'
+                    + '<td data-f="avg">' + fmt(f.avg) + '</td>'
+                    + '</tr>';
             }).join('');
         } else {
-            // Smart update
-            positions.forEach(p => {
-                const symbol = p.tsym || p.symbol || '';
-                const row = tbody.querySelector(`tr[data-symbol="${symbol}"]`);
+            holdings.forEach(function(h) {
+                var f = extract(h);
+                var row = tbody.querySelector('tr[data-sym="' + f.symbol + '"]');
                 if (!row) return;
-                
-                const netPnl = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
-                
-                updateCellValue(row.querySelector('[data-field="netqty"]'), p.netqty || 0, false, 0);
-                updateCellValue(row.querySelector('[data-field="avgprc"]'), p.avgprc || p.avg_price || 0);
-                updateCellValue(row.querySelector('[data-field="ltp"]'), p.lp || p.ltp || 0);
-                updateCellValue(row.querySelector('[data-field="rpnl"]'), p.rpnl || 0, true);
-                updateCellValue(row.querySelector('[data-field="urmtom"]'), p.urmtom || 0, true);
-                updateCellValue(row.querySelector('[data-field="netpnl"]'), netPnl, true);
+                var upd = function(sel, val, colored) {
+                    var cell = row.querySelector(sel);
+                    if (!cell) return;
+                    var s = fmt(val);
+                    if (cell.textContent !== s) { cell.textContent = s; flashEl(cell); }
+                    if (colored) cell.style.color = pnlColor(val);
+                };
+                upd('[data-f="ltp"]', f.ltp, false);
+                upd('[data-f="net"]', f.net, true);
+                upd('[data-f="rpnl"]', f.realized, true);
+                upd('[data-f="urm"]', f.unrealized, true);
+                var qtyCell = row.querySelector('[data-f="qty"]');
+                if (qtyCell) { var q = String(f.qty); if (qtyCell.textContent !== q) { qtyCell.textContent = q; flashEl(qtyCell); } }
+                upd('[data-f="avg"]', f.avg, false);
             });
         }
     }
-    
-    // Update Holdings Table
-    function updateHoldingsTable(holdings) {
-        const tbody = document.getElementById('holdingsRows');
-        
-        if (!holdings || holdings.length === 0) {
-            console.log('[Dashboard] No holdings data received');
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="9" class="empty-state">
-                        <div class="empty-state-icon">📈</div>
-                        No holdings
-                    </td>
-                </tr>
-            `;
+
+    // ─── Risk Manager Card ───
+    function updateRisk(risk) {
+        var badge = document.getElementById('riskBadge');
+        var els = {
+            pnl: document.getElementById('riskDailyPnl'),
+            max: document.getElementById('riskMaxLoss'),
+            dist: document.getElementById('riskDistance'),
+            peak: document.getElementById('riskPeakProfit'),
+            loss: document.getElementById('riskDailyLoss'),
+            human: document.getElementById('riskHumanViolation')
+        };
+
+        if (!risk || !Object.keys(risk).length) {
+            badge.textContent = 'NO DATA';
+            badge.className = 'status-badge neutral';
+            Object.keys(els).forEach(function(k) { if (els[k]) els[k].textContent = '--'; });
             return;
         }
-        
-        console.log('[Dashboard] Processing', holdings.length, 'holdings');
-        
-        // Helper: Extract fields from nested broker response
-        // Broker sends exch_tsym as array: [{exch, token, tsym, cname}, ...]
-        function extractHoldingFields(h) {
-            const exchTsym = (h.exch_tsym && h.exch_tsym.length) ? h.exch_tsym[0] : {};
-            const symbol = exchTsym.tsym || h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '-';
-            const cname = exchTsym.cname || h.cname || h.instrumentname || h.company_name || '';
-            const exchange = exchTsym.exch || h.exch || h.exchange || h.exchangetype || '-';
-            const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
-            const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
-            const ltp = parseFloat(h.c || h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
-            const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
-            const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
-            const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
-            const netPnl = realized + unrealized;
-            const product = h.s_prdt_ali || h.prd || h.product || h.producttype || '';
-            return { symbol, cname, exchange, qty, avgPrice, ltp, realized, unrealized, netPnl, product };
+
+        // Badge
+        var forceExit = !!risk.force_exit_in_progress;
+        var lossHit = !!risk.daily_loss_hit;
+        var violation = !!risk.human_violation_detected;
+        var warned = !!risk.warning_sent;
+
+        var text, cls;
+        if (forceExit) { text = 'EXIT IN PROGRESS'; cls = 'danger'; }
+        else if (lossHit) { text = 'LOSS HIT'; cls = 'danger'; }
+        else if (violation) { text = 'VIOLATION'; cls = 'danger'; }
+        else if (warned) { text = 'WARNING'; cls = 'warning'; }
+        else { text = 'SAFE'; cls = 'safe'; }
+        badge.textContent = text;
+        badge.className = 'status-badge ' + cls;
+
+        // Values
+        var pnl = risk.daily_pnl != null ? risk.daily_pnl : null;
+        var maxLoss = risk.dynamic_max_loss != null ? risk.dynamic_max_loss : null;
+
+        if (els.pnl) {
+            els.pnl.textContent = pnl != null ? fmt(pnl) : '--';
+            if (pnl != null) els.pnl.style.color = pnlColor(pnl);
         }
-        
-        // Check if we need full rebuild
-        const currentSymbols = Array.from(tbody.querySelectorAll('tr[data-symbol]')).map(tr => tr.dataset.symbol);
-        const newSymbols = holdings.map(h => extractHoldingFields(h).symbol);
-        const needsRebuild = currentSymbols.length !== newSymbols.length || 
-                             !newSymbols.every((s, i) => s === currentSymbols[i]);
-        
-        if (needsRebuild) {
-            console.log('[Dashboard] Rebuilding holdings table');
-            // Full rebuild
-            tbody.innerHTML = holdings.map(h => {
-                const f = extractHoldingFields(h);
-                const symbolDisplay = f.cname ? `<strong>${f.symbol}</strong><br><span style="font-size:11px;color:var(--muted)">${f.cname}</span>` : f.symbol;
-                
-                const netPnlClass = f.netPnl >= 0 ? 'success' : 'danger';
-                const rpnlClass = f.realized >= 0 ? 'success' : 'danger';
-                const urmtomClass = f.unrealized >= 0 ? 'success' : 'danger';
-                const productCell = f.product ? `<span class="badge ok">${f.product}</span>` : '-';
-                
-                return `
-                    <tr data-symbol="${f.symbol}">
-                        <td style="font-weight: 700" title="${f.symbol}" data-field="symbol">${symbolDisplay}</td>
-                        <td data-field="ltp">${formatCurrency(f.ltp)}</td>
-                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(f.netPnl)}</td>
-                        <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(f.realized)}</td>
-                        <td data-field="urmtom" style="color: var(--${urmtomClass})">${formatCurrency(f.unrealized)}</td>
-                        <td>${f.exchange}</td>
-                        <td>${productCell}</td>
-                        <td data-field="qty">${f.qty}</td>
-                        <td data-field="avgprc">${formatCurrency(f.avgPrice)}</td>
-                    </tr>
-                `;
-            }).join('');
+        if (els.max) els.max.textContent = maxLoss != null ? fmt(maxLoss) : '--';
+
+        if (els.dist && pnl != null && maxLoss != null) {
+            var distance = pnl - maxLoss;
+            els.dist.textContent = fmt(distance);
+            els.dist.style.color = distance <= 2 ? 'var(--danger)' : distance <= 5 ? 'var(--warning)' : 'var(--text-secondary)';
+        } else if (els.dist) {
+            els.dist.textContent = '--';
+        }
+
+        if (els.peak) els.peak.textContent = fmt(risk.highest_profit || 0);
+        if (els.loss) {
+            els.loss.textContent = lossHit ? 'YES' : 'NO';
+            els.loss.style.color = lossHit ? 'var(--danger)' : 'var(--success)';
+        }
+        if (els.human) {
+            els.human.textContent = violation ? 'YES' : 'NO';
+            els.human.style.color = violation ? 'var(--danger)' : 'var(--success)';
+        }
+    }
+
+    // ─── Account Card ───
+    function updateAccount(limits) {
+        document.getElementById('accCash').textContent = fmt(limits.cash || limits.cashmrgnavail || 0);
+        document.getElementById('accCollateral').textContent = fmt(limits.collateral || limits.collateralvalue || 0);
+        document.getElementById('accMarginUsed').textContent = fmt(limits.marginused || limits.marginUsed || 0);
+        document.getElementById('accMarginAvail').textContent = fmt(limits.marginAvailable || limits.marginavailable || 0);
+        document.getElementById('accNetAvail').textContent = fmt(limits.net || limits.payin || 0);
+    }
+
+    // ─── System Info Card ───
+    function updateSystem(system) {
+        var hb = system.heartbeat || {};
+        var sig = system.signal || {};
+        var stats = system.telegram_stats || {};
+
+        // Heartbeat
+        var hbEl = document.getElementById('sysHeartbeat');
+        if (hb.age_sec != null) {
+            hbEl.textContent = timeSince(hb.age_sec);
+            hbEl.style.color = hb.age_sec < 30 ? 'var(--success)' : hb.age_sec < 120 ? 'var(--warning)' : 'var(--danger)';
         } else {
-            console.log('[Dashboard] Smart update for holdings');
-            // Smart update - only update values that changed
-            holdings.forEach(h => {
-                const f = extractHoldingFields(h);
-                const row = tbody.querySelector(`tr[data-symbol="${f.symbol}"]`);
-                if (!row) return;
-                
-                updateCellValue(row.querySelector('[data-field="qty"]'), f.qty, false, 0);
-                updateCellValue(row.querySelector('[data-field="avgprc"]'), f.avgPrice);
-                updateCellValue(row.querySelector('[data-field="ltp"]'), f.ltp);
-                updateCellValue(row.querySelector('[data-field="rpnl"]'), f.realized, true);
-                updateCellValue(row.querySelector('[data-field="urmtom"]'), f.unrealized, true);
-                updateCellValue(row.querySelector('[data-field="netpnl"]'), f.netPnl, true);
-            });
+            hbEl.textContent = '--';
+            hbEl.style.color = 'var(--muted)';
         }
+
+        // Signal
+        document.getElementById('sysSignal').textContent = sig.status || 'IDLE';
+
+        // Alert count
+        document.getElementById('sysAlertCount').textContent = fmtNum(stats.total || 0);
     }
-    
-    // Update System Status
-    function updateSystemStatus(system) {
-        const heartbeat = system.heartbeat || {};
-        const risk = system.risk || {};
-        
-        // Login Status
-        const loginEl = document.getElementById('loginStatus');
-        const loginStatus = heartbeat.login || heartbeat.status || 'UNKNOWN';
-        loginEl.textContent = loginStatus;
-        loginEl.className = `badge ${loginStatus === 'OK' || loginStatus === 'CONNECTED' ? 'ok' : 'error'}`;
-        
-        // Heartbeat Age
-        const heartbeatAge = heartbeat.age_sec || heartbeat.age || 0;
-        document.getElementById('heartbeatAge').textContent = getTimeSince(heartbeatAge);
-        
-        // Risk Status
-        const riskEl = document.getElementById('riskStatus');
-        if (risk.daily_loss_hit) {
-            riskEl.textContent = 'LIMIT HIT';
-            riskEl.className = 'badge error';
-        } else if (risk.cooldown_until) {
-            riskEl.textContent = 'COOLDOWN';
-            riskEl.className = 'badge warn';
-        } else {
-            riskEl.textContent = 'SAFE';
-            riskEl.className = 'badge ok';
+
+    // ─── Alerts / Telegram ───
+    function updateAlerts(messages) {
+        var container = document.getElementById('telegramMessages');
+        var countEl = document.getElementById('alertCount');
+
+        if (!messages || !messages.length) {
+            container.innerHTML = '<div class="msg-item" style="color:var(--muted);text-align:center">No alerts yet</div>';
+            countEl.textContent = '0';
+            return;
         }
-        
-        document.getElementById('dailyHigh').textContent = formatCurrency(risk.today_high || 0);
-        document.getElementById('dailyLow').textContent = formatCurrency(risk.today_low || 0);
-        
-        // Force Exit Alert
-        const forceExitAlert = document.getElementById('forceExitAlert');
-        forceExitAlert.style.display = risk.force_exit_in_progress ? 'block' : 'none';
+
+        var recent = messages.slice(-20).reverse();
+        countEl.textContent = String(messages.length);
+
+        container.innerHTML = recent.map(function(m) {
+            var raw = (m.message || '').replace(/<[^>]*>/g, '');
+            return '<div class="msg-item">'
+                + '<div class="msg-time">' + timeStr(m.ts) + '</div>'
+                + '<div class="msg-text">' + raw + '</div>'
+                + '</div>';
+        }).join('');
     }
-    
-    // Update Limits
-    function updateLimits(limits) {
-        document.getElementById('cashAvail').textContent = formatCurrency(limits.cash || limits.cashmrgnavail || 0);
-        document.getElementById('collateral').textContent = formatCurrency(limits.collateral || limits.collateralvalue || 0);
-        document.getElementById('usedMargin').textContent = formatCurrency(limits.marginused || limits.marginUsed || 0);
-        document.getElementById('availMargin').textContent = formatCurrency(limits.marginAvailable || limits.marginavailable || 0);
-        document.getElementById('netAvail').textContent = formatCurrency(limits.net || limits.payin || 0);
-    }
-    
-    // Start Auto-Refresh
-    function startAutoRefresh() {
-        stopAutoRefresh();
-        autoRefreshTimer = setInterval(() => {
-            updateDashboard(true);
-        }, config.autoRefreshInterval);
-    }
-    
-    // Stop Auto-Refresh
-    function stopAutoRefresh() {
-        if (autoRefreshTimer) {
-            clearInterval(autoRefreshTimer);
-            autoRefreshTimer = null;
-        }
-    }
-    
-    // Update "last updated" text every second
-    setInterval(() => {
-        const seconds = Math.floor((Date.now() - lastUpdate) / 1000);
-        const posRefresh = document.getElementById('posRefresh');
-        
-        if (seconds === 0) {
-            posRefresh.textContent = 'Updated just now';
-        } else if (seconds < 60) {
-            posRefresh.textContent = `Updated ${seconds}s ago`;
-        } else {
-            posRefresh.textContent = `Updated ${Math.floor(seconds / 60)}m ago`;
-        }
+
+    // ─── Last Update Timer ───
+    setInterval(function() {
+        var sec = Math.floor((Date.now() - lastUpdate) / 1000);
+        var el = document.getElementById('lastUpdateText');
+        if (sec === 0) el.textContent = 'just now';
+        else if (sec < 60) el.textContent = sec + 's ago';
+        else el.textContent = Math.floor(sec / 60) + 'm ago';
     }, 1000);
-    
-    // Initialize on load
-    window.addEventListener('load', () => {
-        updateDashboard(false);
-        startAutoRefresh();
-    });
-    
-    // Cleanup on unload
-    window.addEventListener('beforeunload', () => {
-        if (autoRefreshTimer) {
-            clearInterval(autoRefreshTimer);
-        }
-    });
-    
-    // Mobile Navigation Toggle
-    function toggleMobileNav() {
-        document.getElementById('navLinks').classList.toggle('mobile-open');
-    }
+
+    // ─── Cleanup ───
+    window.addEventListener('beforeunload', stopAutoRefresh);
 </script>
 </body>
 </html>

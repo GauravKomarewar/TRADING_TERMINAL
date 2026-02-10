@@ -1058,15 +1058,16 @@ class ShoonyaBot:
             self.risk_manager.heartbeat()
             self._ensure_login()
 
-            if not self.risk_manager.can_execute():
+            parsed = self.parse_alert_data(alert_data)
+            execution_type = parsed.execution_type.upper()
+
+            # Risk check — EXIT alerts always pass (they reduce risk)
+            if execution_type != "EXIT" and not self.risk_manager.can_execute():
                 return {
                     "status": "blocked",
                     "reason": "Risk limits / cooldown",
                     "timestamp": datetime.now().isoformat(),
                 }
-
-            parsed = self.parse_alert_data(alert_data)
-            execution_type = parsed.execution_type.upper()
 
             # -------------------------------------------------
             # TELEGRAM — ALERT RECEIVED

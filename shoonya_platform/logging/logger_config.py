@@ -40,15 +40,45 @@ LOG_FORMAT = '%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s'
 LOG_DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 # Component names - use these consistently
+# Key → (logger_name, log_filename)
+# Loggers using __name__ (e.g. 'shoonya_platform.execution.broker') are
+# children of their parent logger, so we register parent loggers as well.
 COMPONENT_NAMES = {
+    # ---- Core execution ----
     'execution_service': 'EXECUTION_SERVICE',
-    'trading_bot': 'TRADING_BOT',
-    'risk_manager': 'RISK_MANAGER',
-    'order_watcher': 'ORDER_WATCHER',
-    'command_service': 'COMMAND_SERVICE',
-    'execution_guard': 'EXECUTION_GUARD',
-    'dashboard': 'DASHBOARD',
-    'recovery': 'RECOVERY_SERVICE'
+    'trading_bot':       'TRADING_BOT',
+    'risk_manager':      'RISK_MANAGER',
+    'order_watcher':     'ORDER_WATCHER',
+    'command_service':   'COMMAND_SERVICE',
+    'execution_guard':   'EXECUTION_GUARD',
+    'recovery':          'RECOVERY_SERVICE',
+
+    # ---- Dashboard & API ----
+    'dashboard':         'DASHBOARD',          # parent of DASHBOARD.APP, DASHBOARD.INTENT, etc.
+
+    # ---- Market Data ----
+    'market_data':       'shoonya_platform.market_data',   # catches supervisor, store, option_chain, feeds, instruments
+
+    # ---- Strategies ----
+    'strategy':          'STRATEGY_RUNNER',
+    'strategy_db':       'STRATEGY_RUNNER_DB',
+
+    # ---- Broker / Engine ----
+    'broker':            'shoonya_platform.brokers',       # catches shoonya client logs
+    'engine':            'ENGINE',
+    'execution_control': 'EXECUTION.CONTROL',
+
+    # ---- Services ----
+    'services':          'shoonya_platform.services',      # catches service_manager, recovery_service via __name__
+
+    # ---- Execution sub-modules (use __name__) ----
+    'execution':         'shoonya_platform.execution',     # catches position_exit_service, intent_tracker, broker.py, etc.
+
+    # ---- Notifications / Telegram ----
+    'notifications':     'notifications',
+
+    # ---- Core / Config ----
+    'core':              'shoonya_platform.core',
 }
 
 # Global configuration
@@ -109,9 +139,29 @@ def setup_application_logging(
     # Initialize component-specific handlers
     _setup_component_handlers(max_bytes, backup_count, formatter)
 
+    # 🔒 CATCH-ALL: root file handler so NO log message is lost.
+    # When running as a systemd service, console output may be truncated.
+    # This file catches everything that doesn't match a component handler.
+    _root_log_file = _log_dir / "application.log"
+    _root_fh = logging.handlers.RotatingFileHandler(
+        _root_log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding='utf-8',
+    )
+    _root_fh.setLevel(getattr(logging, level.upper()))
+    _root_fh.setFormatter(formatter)
+    root_logger.addHandler(_root_fh)
+
 
 def _setup_component_handlers(max_bytes: int, backup_count: int, formatter: logging.Formatter) -> None:
-    """Setup rotating file handlers for each component."""
+    """
+    Setup rotating file handlers for each component and IMMEDIATELY attach them.
+
+    Previously handlers were created here but only attached in get_component_logger().
+    This meant any module that used logging.getLogger() instead of get_component_logger()
+    would never get a file handler — losing all logs when running as a systemd service.
+    """
     global _component_handlers
     
     for key, component_name in COMPONENT_NAMES.items():
@@ -128,6 +178,15 @@ def _setup_component_handlers(max_bytes: int, backup_count: int, formatter: logg
         handler.setFormatter(formatter)
         
         _component_handlers[component_name] = handler
+
+        # 🔧 IMMEDIATELY attach handler to the named logger.
+        # This covers both:
+        #   - Modules using get_component_logger('trading_bot') → logger name 'TRADING_BOT'
+        #   - Modules using logging.getLogger(__name__)         → logger name 'shoonya_platform.execution.xyz'
+        #     (these propagate up to parent logger 'shoonya_platform.execution')
+        logger = logging.getLogger(component_name)
+        if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers):
+            logger.addHandler(handler)
 
 
 def get_component_logger(component_key: str) -> logging.Logger:

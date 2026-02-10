@@ -68,11 +68,19 @@ class SystemTruthService:
     # RISK STATE (CLIENT-SCOPED)
     # ==================================================
     def get_risk_state(self) -> Optional[dict]:
-        path = Path(self.config.risk_state_file)
+        # Risk manager saves to {base}_{client_id}.json
+        base = self.config.risk_state_file.rstrip('.json')
+        path = Path(f"{base}_{self.client_id}.json")
+        if not path.exists():
+            # Fallback to base path for backward compat
+            path = Path(self.config.risk_state_file)
         if not path.exists():
             return None
-        with open(path) as f:
-            return json.load(f)
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
 
     # ==================================================
     # MARKET DATA HEARTBEAT (SYSTEM-SCOPED)

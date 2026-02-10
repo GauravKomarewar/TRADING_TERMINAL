@@ -154,12 +154,16 @@ class SupremeRiskManager:
         try:
             state_data = {
                 "date": str(self.current_day),
+                "daily_pnl": self.daily_pnl,
                 "dynamic_max_loss": self.dynamic_max_loss,
                 "highest_profit": self.highest_profit,
                 "daily_loss_hit": self.daily_loss_hit,
                 "human_violation_detected": self.human_violation_detected,
+                "force_exit_in_progress": self.force_exit_in_progress,
                 "failed_days": [str(d) for d in self.failed_days],
                 "cooldown_until": str(self.cooldown_until) if self.cooldown_until else None,
+                "base_max_loss": self.BASE_MAX_LOSS,
+                "warning_sent": self.warning_sent,
             }
             with open(self.STATE_FILE, "w") as f:
                 json.dump(state_data, f)
@@ -360,6 +364,7 @@ class SupremeRiskManager:
                 self._update_trailing_max_loss()
                 self._check_warning_threshold()
                 self.track_pnl_ohlc()
+                self._save_state()  # Keep dashboard risk widget up-to-date
                 self._send_periodic_status()
             except RuntimeError:
                 # 🔥 FAIL-HARD: broker/session failure must kill process

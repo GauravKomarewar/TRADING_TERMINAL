@@ -375,8 +375,16 @@
             <div class="mini-title">Risk Manager</div>
             <div class="mini-value" id="riskStatusBadge">SAFE</div>
             <div class="mini-row">
-                <span>Trailing SL</span>
+                <span>Daily PnL</span>
+                <span id="riskDailyPnl">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Max Loss Limit</span>
                 <span id="riskTrailingSl">--</span>
+            </div>
+            <div class="mini-row">
+                <span>Distance to Exit</span>
+                <span id="riskDistanceExit">--</span>
             </div>
             <div class="mini-row">
                 <span>Peak Profit</span>
@@ -844,14 +852,19 @@
 
     function updateRiskWidgets(risk) {
         const riskStatusEl = document.getElementById('riskStatusBadge');
+        const dailyPnlEl = document.getElementById('riskDailyPnl');
         const trailingEl = document.getElementById('riskTrailingSl');
+        const distanceEl = document.getElementById('riskDistanceExit');
         const peakEl = document.getElementById('riskPeakProfit');
         const dailyLossEl = document.getElementById('riskDailyLoss');
         const humanEl = document.getElementById('riskHumanViolation');
 
         if (!risk || Object.keys(risk).length === 0) {
-            riskStatusEl.textContent = 'UNKNOWN';
+            riskStatusEl.textContent = 'NO DATA';
+            riskStatusEl.style.color = 'var(--text-secondary)';
+            if (dailyPnlEl) dailyPnlEl.textContent = '--';
             trailingEl.textContent = '--';
+            if (distanceEl) distanceEl.textContent = '--';
             peakEl.textContent = '--';
             dailyLossEl.textContent = '--';
             humanEl.textContent = '--';
@@ -860,14 +873,56 @@
 
         const dailyLossHit = !!risk.daily_loss_hit;
         const humanViolation = !!risk.human_violation_detected;
-        const status = dailyLossHit || humanViolation ? 'ALERT' : 'SAFE';
+        const forceExit = !!risk.force_exit_in_progress;
+        const pnl = risk.daily_pnl != null ? risk.daily_pnl : null;
+        const maxLoss = risk.dynamic_max_loss != null ? risk.dynamic_max_loss : null;
 
+        // Status badge
+        let status, statusColor;
+        if (forceExit) {
+            status = 'EXIT IN PROGRESS';
+            statusColor = 'var(--danger)';
+        } else if (dailyLossHit) {
+            status = 'LOSS HIT';
+            statusColor = 'var(--danger)';
+        } else if (humanViolation) {
+            status = 'VIOLATION';
+            statusColor = 'var(--danger)';
+        } else if (risk.warning_sent) {
+            status = 'WARNING';
+            statusColor = '#f59e0b';
+        } else {
+            status = 'SAFE';
+            statusColor = 'var(--success)';
+        }
         riskStatusEl.textContent = status;
-        riskStatusEl.style.color = status === 'SAFE' ? 'var(--success)' : 'var(--danger)';
-        trailingEl.textContent = formatCurrency(risk.dynamic_max_loss || 0);
+        riskStatusEl.style.color = statusColor;
+
+        // Daily PnL
+        if (dailyPnlEl && pnl != null) {
+            dailyPnlEl.textContent = formatCurrency(pnl);
+            dailyPnlEl.style.color = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+        } else if (dailyPnlEl) {
+            dailyPnlEl.textContent = '--';
+        }
+
+        // Max loss limit
+        trailingEl.textContent = maxLoss != null ? formatCurrency(maxLoss) : '--';
+
+        // Distance to exit
+        if (distanceEl && pnl != null && maxLoss != null) {
+            const distance = pnl - maxLoss;
+            distanceEl.textContent = formatCurrency(distance);
+            distanceEl.style.color = distance <= 2 ? 'var(--danger)' : distance <= 5 ? '#f59e0b' : 'var(--text-secondary)';
+        } else if (distanceEl) {
+            distanceEl.textContent = '--';
+        }
+
         peakEl.textContent = formatCurrency(risk.highest_profit || 0);
         dailyLossEl.textContent = dailyLossHit ? 'YES' : 'NO';
+        dailyLossEl.style.color = dailyLossHit ? 'var(--danger)' : 'var(--success)';
         humanEl.textContent = humanViolation ? 'YES' : 'NO';
+        humanEl.style.color = humanViolation ? 'var(--danger)' : 'var(--success)';
     }
 
     function updateAlertSummary(stats) {

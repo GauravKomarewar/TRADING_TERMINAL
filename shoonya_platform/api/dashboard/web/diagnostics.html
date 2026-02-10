@@ -361,18 +361,59 @@ window.addEventListener('DOMContentLoaded', function() {
     checkAuth();
 });
 
-// Auto-refresh dashboard status every 1 second for real-time diagnostics
+// Smart refresh for diagnostics - update values only, not full page rebuild
 let diagnosticsAutoTimer = null;
+let lastDiagnosticsData = null;
+let lastIntentData = null;
+let lastDashboardData = null;
+
+function smartUpdateDiagnostics() {
+    fetch('/dashboard/diagnostics', {credentials:'include'})
+        .then(r => r.json())
+        .then(data => {
+            if (JSON.stringify(data) !== JSON.stringify(lastDiagnosticsData)) {
+                lastDiagnosticsData = data;
+                loadDiagnostics();
+            }
+        })
+        .catch(() => {});
+}
+
+function smartUpdateIntent() {
+    fetch('/dashboard/diagnostics/intent-verification', {credentials:'include'})
+        .then(r => r.json())
+        .then(data => {
+            if (JSON.stringify(data) !== JSON.stringify(lastIntentData)) {
+                lastIntentData = data;
+                loadIntentVerification();
+            }
+        })
+        .catch(() => {});
+}
+
+function smartUpdateDashboard() {
+    fetch('/dashboard/home/status', {credentials:'include'})
+        .then(r => r.json())
+        .then(data => {
+            if (JSON.stringify(data) !== JSON.stringify(lastDashboardData)) {
+                lastDashboardData = data;
+                testDashboard();
+            }
+        })
+        .catch(() => {});
+}
+
 window.addEventListener('DOMContentLoaded', function() {
     checkAuth();
     try { testDashboard(); } catch (e) {}
     try { loadDiagnostics(); } catch (e) {}
     try { loadIntentVerification(); } catch (e) {}
+    // Smart refresh that only updates when data changes (5 second interval instead of 1)
     diagnosticsAutoTimer = setInterval(() => {
-        try { testDashboard(); } catch (e) {}
-        try { loadDiagnostics(); } catch (e) {}
-        try { loadIntentVerification(); } catch (e) {}
-    }, 1000);  // 1 second auto-refresh for real-time updates
+        try { smartUpdateDashboard(); } catch (e) {}
+        try { smartUpdateDiagnostics(); } catch (e) {}
+        try { smartUpdateIntent(); } catch (e) {}
+    }, 5000);  // 5 second refresh - only updates if data changed
 });
 
 async function checkAuth() {

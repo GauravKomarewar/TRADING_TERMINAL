@@ -76,4 +76,81 @@
     } else {
         body.insertBefore(header, body.firstChild);
     }
+
+    // Create global index ticker ribbon
+    const ticker = document.createElement('div');
+    ticker.className = 'global-ticker';
+    ticker.id = 'globalTicker';
+    ticker.innerHTML = `
+        <div class="ticker-track">
+            <div class="ticker-items" id="tickerItems">
+                <!-- Index tokens will be loaded here -->
+            </div>
+        </div>
+    `;
+    
+    if (mount) {
+        const headerEl = document.getElementById('app-header');
+        if (headerEl && headerEl.parentNode) {
+            headerEl.parentNode.insertBefore(ticker, headerEl.nextSibling);
+        }
+    } else {
+        body.insertBefore(ticker, header.nextSibling);
+    }
+
+    // Load and refresh index tokens
+    let indexTokensTimer = null;
+    
+    function loadGlobalIndexTokens() {
+        fetch('/dashboard/index-tokens/prices', {credentials:'include'})
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => updateGlobalTicker(data.indices || {}))
+            .catch(() => {});  // Silently fail if not available
+    }
+    
+    function updateGlobalTicker(indicesData) {
+        const itemsContainer = document.getElementById('tickerItems');
+        if (!itemsContainer) return;
+        
+        if (!Object.keys(indicesData).length) {
+            document.getElementById('globalTicker').style.display = 'none';
+            return;
+        }
+        
+        document.getElementById('globalTicker').style.display = 'block';
+        
+        let html = '';
+        const order = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX', 'INDIAVIX', 'BANKEX'];
+        
+        order.forEach(symbol => {
+            if (indicesData[symbol]) {
+                const data = indicesData[symbol];
+                const ltp = data.ltp || 0;
+                const pc = data.pc || 0;
+                const changeClass = pc >= 0 ? 'up' : 'down';
+                const arrow = pc >= 0 ? '▲' : '▼';
+                
+                html += `
+                    <div class="ticker-item">
+                        <span class="ticker-symbol">${symbol}</span>
+                        <span class="ticker-ltp ${changeClass}">₹${ltp.toFixed(2)}</span>
+                        <span class="ticker-change ${changeClass}">${arrow} ${Math.abs(pc).toFixed(2)}%</span>
+                    </div>
+                `;
+            }
+        });
+        
+        if (html) itemsContainer.innerHTML = html;
+    }
+    
+    // Start ticker on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            loadGlobalIndexTokens();
+            indexTokensTimer = setInterval(loadGlobalIndexTokens, 2000);
+        });
+    } else {
+        loadGlobalIndexTokens();
+        indexTokensTimer = setInterval(loadGlobalIndexTokens, 2000);
+    }
 })();

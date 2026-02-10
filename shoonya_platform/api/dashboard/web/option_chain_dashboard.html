@@ -249,61 +249,7 @@
             color: var(--success);
         }
         
-        /* Index Tokens Ticker */
-        .index-tokens-ticker {
-            background: rgba(28, 35, 51, 0.8);
-            border-bottom: 1px solid var(--border);
-            margin-bottom: 8px;
-        }
-        
-        .ticker-content {
-            font-size: 12px;
-        }
-        
-        .ticker-item {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            padding: 8px 12px;
-            border-right: 1px solid var(--border);
-            min-width: 120px;
-        }
-        
-        .ticker-item:last-child {
-            border-right: none;
-        }
-        
-        .ticker-symbol {
-            font-weight: 700;
-            color: var(--text);
-            font-size: 12px;
-        }
-        
-        .ticker-ltp {
-            font-weight: 600;
-            font-variant-numeric: tabular-nums;
-        }
-        
-        .ticker-ltp.up {
-            color: var(--success);
-        }
-        
-        .ticker-ltp.down {
-            color: var(--danger);
-        }
-        
-        .ticker-change {
-            font-size: 10px;
-            color: var(--muted);
-        }
-        
-        .ticker-change.up {
-            color: var(--success);
-        }
-        
-        .ticker-change.down {
-            color: var(--danger);
-        }
+
         
         .future-price {
             color: var(--primary);
@@ -894,13 +840,6 @@
         </div>
     </div>
     
-    <!-- 🔥 NEW: Index Tokens Ticker -->
-    <div class="index-tokens-ticker" id="indexTokensTicker" style="display: none;">
-        <div class="ticker-content" id="tickerContent" style="display: flex; gap: 20px; overflow-x: auto; padding: 8px; white-space: nowrap;">
-            <!-- Index tokens will be loaded here -->
-        </div>
-    </div>
-    
     <!-- Option Chain Table -->
     <div class="chain-container">
         <div class="table-wrapper">
@@ -1074,7 +1013,7 @@
         setupEventListeners();
         loadExpiries();
         startAutoRefresh();
-        startIndexTokensRefresh();  // 🔥 NEW: Load index tokens
+        // Index tokens now handled by shared layout.js
         updateBasketUI();
     }
     
@@ -1147,88 +1086,7 @@
         }
     }
     
-    // 🔥 NEW: Load and update Index Tokens in background
-    let indexTokensTimer = null;
-    
-    function startIndexTokensRefresh() {
-        // Load index token prices every 2 seconds
-        loadIndexTokens();  // Initial load
-        
-        indexTokensTimer = setInterval(() => {
-            loadIndexTokens();  // Continuous update
-        }, 2000);
-        
-        console.log('📊 Index tokens refresh started');
-    }
-    
-    async function loadIndexTokens() {
-        try {
-            const res = await fetch('/dashboard/index-tokens/prices', {
-                credentials: 'include'
-            });
-            
-            if (!res.ok) {
-                console.debug(`Index tokens API unavailable: ${res.status}`);
-                return;
-            }
-            
-            const data = await res.json();
-            updateIndexTokensTicker(data.indices || {});
-            
-        } catch (error) {
-            console.debug(`Error loading index tokens: ${error.message}`);
-            // Silently fail - index tokens are nice-to-have
-        }
-    }
-    
-    function updateIndexTokensTicker(indicesData) {
-        const ticker = document.getElementById('indexTokensTicker');
-        const content = document.getElementById('tickerContent');
-        
-        if (!Object.keys(indicesData).length) {
-            ticker.style.display = 'none';
-            return;
-        }
-        
-        ticker.style.display = 'block';
-        
-        let html = '';
-        
-        // Show in this order: NIFTY, BANKNIFTY, FINNIFTY, SENSEX, INDIAVIX
-        const order = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX', 'INDIAVIX', 'BANKEX'];
-        
-        order.forEach(symbol => {
-            if (indicesData[symbol]) {
-                const data = indicesData[symbol];
-                const ltp = data.ltp || 0;
-                const pc = data.pc || 0;  // Percentage change
-                const changeClass = pc >= 0 ? 'up' : 'down';
-                const arrow = pc >= 0 ? '▲' : '▼';
-                
-                html += `
-                    <div class="ticker-item">
-                        <div class="ticker-symbol">${symbol}</div>
-                        <div class="ticker-ltp ${changeClass}">₹${ltp.toFixed(2)}</div>
-                        <div class="ticker-change ${changeClass}">${arrow} ${Math.abs(pc).toFixed(2)}%</div>
-                    </div>
-                `;
-            }
-        });
-        
-        if (html) {
-            content.innerHTML = html;
-        } else {
-            ticker.style.display = 'none';
-        }
-    }
-    
-    function stopIndexTokensRefresh() {
-        if (indexTokensTimer) {
-            clearInterval(indexTokensTimer);
-            indexTokensTimer = null;
-            console.log('📊 Index tokens refresh stopped');
-        }
-    }
+
     
     // Error Handling
     function showError(message) {

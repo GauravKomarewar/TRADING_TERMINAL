@@ -1055,6 +1055,10 @@
                 // Symbol: Try all possible field names from broker response
                 const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '-';
                 
+                // Symbol Name (cname): Company/instrument name from broker response
+                const cname = h.cname || h.instrumentname || h.company_name || h.instrumenttype || '';
+                const symbolDisplay = cname ? `<strong>${symbol}</strong><br><span style="font-size:11px;color:var(--muted)">${cname}</span>` : symbol;
+                
                 // Quantity: Try all possible quantity field names
                 const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
                 
@@ -1083,7 +1087,7 @@
                 
                 return `
                     <tr data-symbol="${symbol}">
-                        <td style="font-weight: 700" title="${symbol}" data-field="symbol">${symbol}</td>
+                        <td style="font-weight: 700" title="${symbol}" data-field="symbol">${symbolDisplay}</td>
                         <td data-field="ltp">${formatCurrency(ltp)}</td>
                         <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
                         <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(realized)}</td>

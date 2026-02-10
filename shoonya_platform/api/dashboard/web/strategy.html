@@ -8,58 +8,83 @@
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
-        /* Top Navigation */
-        .main-tabs { display: flex; gap: 0; border-bottom: 3px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; background: linear-gradient(180deg, var(--panel-2) 0%, var(--panel) 100%); }
-        .main-tab { padding: 16px 24px; cursor: pointer; border-bottom: 4px solid transparent; color: var(--muted); font-weight: 600; transition: all .25s; white-space: nowrap; font-size: 14px; }
-        .main-tab:hover { color: var(--text); background: var(--panel-2); }
-        .main-tab.active { color: var(--primary); border-bottom-color: var(--primary); margin-bottom: -3px; }
+        /* Professional Grid Layout */
+        .page-container { display: grid; grid-template-columns: 400px 1fr; gap: 24px; }
+        @media(max-width: 1400px) { .page-container { grid-template-columns: 1fr; } }
 
-        .tab-panel { display: none; }
-        .tab-panel.active { display: block; animation: fadeIn 0.2s ease-in; }
+        /* Left Sidebar - Strategy Builder */
+        .builder-panel { background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%); border: 1px solid var(--border); border-radius: 8px; padding: 20px; position: sticky; top: 20px; max-height: calc(100vh - 100px); overflow-y: auto; }
+        .builder-panel h2 { margin-top: 0; font-size: 16px; margin-bottom: 16px; border-bottom: 2px solid var(--border); padding-bottom: 12px; }
+        .builder-panel form { display: flex; flex-direction: column; gap: 20px; }
+        
+        .builder-section { }
+        .builder-section h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--primary); margin-bottom: 12px; letter-spacing: 0.5px; }
+        .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .field label { font-size: 11px; font-weight: 600; color: var(--text); }
+        .field input, .field select, .field textarea { padding: 8px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-2); color: var(--text); transition: all .2s; }
+        .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); outline: none; box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); }
+        
+        .btn-save { width: 100%; padding: 10px; background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; transition: all .2s; }
+        .btn-save:hover { box-shadow: 0 4px 12px rgba(34,197,94,.3); }
+        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        /* Result Card */
+        .result-card { background: linear-gradient(135deg, rgba(34,197,94,.1) 0%, rgba(34,197,94,.05) 100%); border: 2px solid #22c55e; border-radius: 8px; padding: 16px; margin-bottom: 16px; display: none; }
+        .result-card.error { background: linear-gradient(135deg, rgba(239,68,68,.1) 0%, rgba(239,68,68,.05) 100%); border-color: #ef4444; }
+        .result-card.show { display: block; animation: slideDown 0.3s ease-out; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .result-title { font-weight: 700; margin-bottom: 6px; }
+        .result-message { font-size: 12px; line-height: 1.5; font-family: monospace; white-space: pre-wrap; }
 
-        /* Builder Tabs */
-        .builder-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; }
-        .builder-tab { padding: 12px 16px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; transition: all .2s; white-space: nowrap; }
-        .builder-tab:hover { color: var(--text); background: var(--panel-2); }
-        .builder-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-        .builder-pane { display: none; }
-        .builder-pane.active { display: block; }
-
-        /* Strategy Items */
-        .strategy-item { 
+        /* Strategy Items - Production Grade */
+        .strategy-item {
             background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%);
-            border: 1px solid var(--border); 
-            border-radius: var(--radius-md); 
-            padding: 16px; 
-            margin-bottom: 12px; 
-            display: grid; 
-            grid-template-columns: 220px 1fr 200px auto; 
-            gap: 16px; 
-            align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: all .2s;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: all .3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .strategy-item:hover { border-color: var(--primary); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
-        .strategy-name { font-weight: 700; color: var(--text); font-size: 14px; }
-        .strategy-subtitle { font-size: 10px; color: var(--muted); margin-top: 4px; }
-        .strategy-timing { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .strategy-timing select { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); color: var(--text); font-weight: 500; }
-        .strategy-actions { display: flex; gap: 6px; align-items: center; }
-        .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-        .status-idle { background: rgba(255,255,255,.08); color: var(--muted); }
+        .strategy-item:hover { border-color: var(--primary); box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+        .strategy-item.running { border-color: #22c55e; background: linear-gradient(135deg, rgba(34,197,94,.05) 0%, rgba(34,197,94,.02) 100%); }
+
+        .strategy-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 12px; }
+        .strategy-title { flex: 1; }
+        .strategy-name { font-size: 14px; font-weight: 700; color: var(--text); }
+        .strategy-meta { font-size: 10px; color: var(--muted); margin-top: 3px; }
+        
+        .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; white-space: nowrap;  }
+        .status-idle { background: rgba(107,114,128,.15); color: #6b7280; }
         .status-running { background: rgba(34,197,94,.15); color: #22c55e; border: 1px solid #22c55e; }
         .status-paused { background: rgba(234,179,8,.15); color: #eab308; border: 1px solid #eab308; }
 
-        /* Button States */
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-loading { position: relative; }
-        .btn-loading::after { content: ''; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+        .strategy-config { background: var(--panel-2); border-radius: 4px; padding: 10px; margin: 12px 0; font-size: 10px; }
+        .config-row { display: flex; justify-content: space-between; padding: 4px 0; }
+        .config-label { color: var(--muted); font-weight: 600; }
+        .config-value { color: var(--text); font-family: monospace; font-weight: 500; }
 
-        /* Monitor Sections */
-        .monitor-section { margin-bottom: 20px; }
+        .strategy-actions { display: flex; gap: 6px; margin-top: 12px; }
+        .btn-sm { padding: 6px 12px; font-size: 10px; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: all .2s; }
+        .btn-success { background: #22c55e; color: white; }
+        .btn-success:hover:not(:disabled) { background: #16a34a; }
+        .btn-warning { background: #eab308; color: #1a1a1a; }
+        .btn-warning:hover:not(:disabled) { background: #ca8a04; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-danger:hover:not(:disabled) { background: #dc2626; }
+        .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Right Panel - Strategies Control & Monitoring */
+        .control-panel { display: flex; flex-direction: column; gap: 0; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 0; background: linear-gradient(180deg, var(--panel-2) 0%, var(--panel) 100%)); }
+        .tab { padding: 12px 20px; cursor: pointer; border-bottom: 3px solid transparent; color: var(--muted); font-weight: 600; transition: all .2s; position: relative; font-size: 13px; }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--primary); border-bottom-color: var(--primary); margin-bottom: -2px; }
+        .tab-content { display: none; padding: 20px; }
+        .tab-content.active { display: block; animation: fadeIn 0.2s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
         .section-header { 
             display: flex; 
             align-items: center; 
@@ -67,59 +92,32 @@
             padding: 16px; 
             background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%);
             border: 1px solid var(--border); 
-            border-radius: var(--radius-md); 
+            border-radius: 6px; 
             cursor: pointer; 
             user-select: none;
             transition: all .2s;
+            margin-bottom: 12px;
         }
         .section-header:hover { background: var(--panel); border-color: var(--primary); }
-        .section-toggle { display: inline-block; width: 16px; text-align: center; transition: transform .3s; font-weight: bold; }
+        .section-toggle { display: inline-block; width: 14px; text-align: center; transition: transform .3s; font-weight: bold; color: var(--primary); }
         .section-toggle.open { transform: rotate(90deg); }
-        .section-title { font-weight: 700; color: var(--text); flex: 1; font-size: 14px; }
-        .section-summary { font-size: 11px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
-        .section-content { display: none; padding: 16px; background: var(--panel); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+        .section-title { font-weight: 700; color: var(--text); flex: 1; font-size: 13px; }
+        .section-content { display: none; padding: 16px; background: var(--panel); border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; margin-bottom: 12px; }
         .section-content.open { display: block; }
 
-        /* Info Cards */
-        .info-card { background: var(--panel); border-left: 4px solid var(--primary); padding: 12px; border-radius: 4px; font-size: 11px; margin: 12px 0; }
-        .info-card strong { color: var(--primary); }
-
-        /* Tables */
-        .table-compact { width: 100%; border-collapse: collapse; font-size: 11px; }
-        .table-compact th { background: var(--panel-2); padding: 10px; text-align: left; font-weight: 700; border-bottom: 2px solid var(--border); }
-        .table-compact td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+        .table-compact { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 12px; }
+        .table-compact th { background: var(--panel-2); padding: 8px; text-align: left; font-weight: 700; border-bottom: 2px solid var(--border); }
+        .table-compact td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
         .table-compact tr:hover { background: var(--panel-2); }
-        .greek { display: inline-block; padding: 3px 6px; background: var(--panel-2); border-radius: 3px; font-family: monospace; font-size: 10px; font-weight: 600; }
 
-        /* Forms */
-        .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
-        .field { display: flex; flex-direction: column; gap: 6px; }
-        label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text); }
-        input, select, textarea { padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); font-size: 12px; transition: all .2s; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: var(--panel); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); }
-        .card-footer { display: flex; gap: 12px; justify-content: flex-end; padding-top: var(--spacing-md); border-top: 1px solid var(--border); margin-top: var(--spacing-md); }
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+        .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
 
-        /* Audit Styles */
-        .stat-badge { display: inline-block; padding: 4px 8px; background: var(--panel-2); border-radius: 3px; font-size: 10px; font-weight: 600; white-space: nowrap; }
-        .text-center { text-align: center; }
-        h3 { font-size: 18px; font-weight: 700; margin: 20px 0 12px; }
-        h4 { font-size: 13px; font-weight: 700; margin: 16px 0 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-banner { background: linear-gradient(135deg, rgba(34,197,94,.15) 0%, rgba(34,197,94,.05) 100%); border: 2px solid #22c55e; border-radius: 8px; padding: 16px; margin-bottom: 20px; display: none; animation: slideDown 0.3s ease-out; }
+        .banner-title { font-weight: 700; color: #22c55e; font-size: 13px; margin-bottom: 6px; }
+        .banner-text { font-size: 11px; color: var(--text); font-family: monospace; }
 
-        .stat-badge { display: inline-block; padding: 6px 10px; background: var(--panel-2); border-radius: 4px; font-size: 11px; font-weight: 700; margin-right: 8px; margin-bottom: 4px; }
-        .summary-box { background: var(--panel); border: 1px solid var(--border); padding: 12px; border-radius: 4px; text-align: center; }
-        .summary-label { font-size: 11px; color: var(--muted); font-weight: 600; }
-        .summary-value { font-size: 18px; font-weight: 700; color: var(--primary); margin-top: 6px; }
-        .summary-2line { display: flex; justify-content: space-between; font-size: 12px; padding: 8px 0; }
-        .summary-label-2line { color: var(--muted); font-weight: 500; }
-        .summary-value-2line { font-weight: 700; color: var(--text); }
-        .result { padding: 16px; border-radius: var(--radius-md); margin-bottom: var(--spacing-lg); display: none; border-left: 4px solid; animation: slideDown 0.3s ease-out; }
-        .result.success { background: rgba(34, 197, 94, 0.08); color: #22c55e; border-left-color: #22c55e; }
-        .result.error { background: rgba(239, 68, 68, 0.08); color: #ef4444; border-left-color: #ef4444; }
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        .grid { display: grid; gap: var(--spacing-md); }
-        .grid.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-        @media(max-width: 1200px) { .strategy-item { grid-template-columns: 1fr; } }
-        @media(max-width: 768px) { .grid.grid-cols-4 { grid-template-columns: repeat(2, 1fr); } }
+        .info-msg { background: var(--panel); border-left: 4px solid var(--primary); padding: 12px; border-radius: 4px; font-size: 11px; margin-bottom: 16px; }
     </style>
 </head>
 <body data-page="strategy">
@@ -127,487 +125,276 @@
 
     <main>
         <div class="page-header">
-            <h1>Strategy Management</h1>
-            <p class="muted">Build, control, monitor and manage trading strategies</p>
+            <h1>🎯 Strategy Management System</h1>
+            <p class="muted">Production-grade strategy builder, execution & real-time monitoring</p>
         </div>
 
-        <!-- 🔍 EXECUTION VISIBILITY BANNER -->
-        <div id="executionBanner" style="display:none; margin-bottom:20px;">
-            <div id="bannerContent" style="background:linear-gradient(135deg,rgba(34,197,94,.15) 0%,rgba(34,197,94,.05) 100%); border:2px solid #22c55e; border-radius:8px; padding:16px; display:flex; align-items:center; gap:16px;">
-                <div style="font-size:32px;">⚡</div>
-                <div style="flex:1;">
-                    <div style="font-weight:700; color:#22c55e; font-size:14px;">ACTIVE EXECUTION IN SYSTEM</div>
-                    <div id="bannerText" style="font-size:12px; color:var(--text); margin-top:4px; font-family:monospace;"></div>
+        <!-- STATUS BANNER -->
+        <div id="statusBanner" class="status-banner">
+             <div class="banner-title">⚡ ACTIVE EXECUTION</div>
+            <div id="statusText" class="banner-text"></div>
+        </div>
+
+        <div class="page-container">
+            <!-- LEFT PANEL: STRATEGY BUILDER -->
+            <div class="builder-panel">
+                <h2>📝 Strategy Configuration</h2>
+                
+                <div id="resultCard" class="result-card">
+                    <div class="result-title" id="resultTitle">✅ Success</div>
+                    <div class="result-message" id="resultMessage"></div>
                 </div>
-                <button class="btn-sm" onclick="loadExecutionAudit()" style="background:#22c55e; color:black; border:none; padding:8px 16px; font-weight:600; cursor:pointer; border-radius:4px;">View Details</button>
+
+                <form id="strategyForm" onsubmit="submitStrategy(event)">
+                    <div class="builder-section">
+                        <h3>📋 Identity</h3>
+                        <div class="field">
+                            <label>Strategy Name *</label>
+                            <input type="text" id="stratName" placeholder="DNSS NIFTY Weekly" required>
+                        </div>
+                        <div class="field">
+                            <label>Type *</label>
+                            <select id="stratType" onchange="updateStrategyType()">
+                                <option value="dnss">DNSS (Delta Neutral)</option>
+                                <option value="iron_condor">Iron Condor</option>
+                                <option value="butterfly">Butterfly</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Underlying</label>
+                            <select id="underlying">
+                                <option>NIFTY</option>
+                                <option>BANKNIFTY</option>
+                                <option>FINNIFTY</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="builder-section">
+                        <h3>⏰ Schedule</h3>
+                        <div class="field">
+                            <label>Frequency *</label>
+                            <select id="schedule" required>
+                                <option value="">-- Select --</option>
+                                <option value="daily">📅 Daily</option>
+                                <option value="weekly">📆 Weekly</option>
+                                <option value="manual">⚡ Manual</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Entry Time</label>
+                            <input type="time" id="entryTime" value="09:20">
+                        </div>
+                        <div class="field">
+                            <label>Exit Time</label>
+                            <input type="time" id="exitTime" value="15:15">
+                        </div>
+                    </div>
+
+                    <div class="builder-section">
+                        <h3>💰 Risk Parameters</h3>
+                        <div class="field">
+                            <label>Target Profit (₹)</label>
+                            <input type="number" id="targetProfit" placeholder="5000" step="100">
+                        </div>
+                        <div class="field">
+                            <label>Stop Loss (₹)</label>
+                            <input type="number" id="stopLoss" placeholder="3000" step="100">
+                        </div>
+                        <div class="field">
+                            <label>Max Positions</label>
+                            <input type="number" id="maxPositions" value="1" min="1">
+                        </div>
+                    </div>
+
+                    <div class="builder-section" id="legFields"></div>
+
+                    <button type="submit" class="btn-save">💾 Save & Deploy</button>
+                </form>
             </div>
-        </div>
 
-        <!-- Main Navigation Tabs -->
-        <div class="main-tabs">
-            <div class="main-tab active" onclick="switchMainTab('builder')">📋 Strategy Builder</div>
-            <div class="main-tab" onclick="switchMainTab('control')">🎛️ Control & Monitor</div>
-            <div class="main-tab" onclick="switchMainTab('audit')">🔍 Execution Audit</div>
-        </div>
-
-        <!-- ═══ TAB 1: STRATEGY BUILDER ═══ -->
-        <div id="builder" class="tab-panel active">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Create/Edit Strategy</h3>
-                    <div class="flex gap-sm">
-                        <button class="btn-primary btn-sm" onclick="resetBuilder()">+ New</button>
-                    </div>
+            <!-- RIGHT PANEL: CONTROL & MONITORING -->
+            <div class="control-panel">
+                <!-- Tabs -->
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('control')">🎛️ Control</div>
+                    <div class="tab" onclick="switchTab('monitor')">📊 Monitor</div>
+                    <div class="tab" onclick="switchTab('audit')">🔍 Audit</div>
                 </div>
-                <div class="card-body">
-                    <!-- Configuration Tabs -->
-                    <div class="builder-tabs">
-                        <div class="builder-tab active" onclick="switchBuilderTab('identity')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--primary); color:#fff; margin-right:4px;">1</span>Identity</span></div>
-                        <div class="builder-tab" onclick="switchBuilderTab('entry')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">2</span>Entry</span></div>
-                        <div class="builder-tab" onclick="switchBuilderTab('adjustment')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">3</span>Adjustment</span></div>
-                        <div class="builder-tab" onclick="switchBuilderTab('exit')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">4</span>Exit</span></div>
-                        <div class="builder-tab" onclick="switchBuilderTab('risk')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">5</span>Risk</span></div>
-                    </div>
 
-                    <!-- IDENTITY PANE -->
-                    <div id="identity" class="builder-pane active">
-                        <div class="row">
-                            <div class="field">
-                                <label>Strategy Name *</label>
-                                <input type="text" id="stratName" placeholder="e.g., NIFTY Short Strangle Weekly" maxlength="80">
-                            </div>
-                            <div class="field">
-                                <label>Strategy Type *</label>
-                                <select id="stratType" onchange="updateStrategyType()">
-                                    <option value="custom">Custom Strategy</option>
-                                    <option value="dnss">Delta Neutral Straddle/Strangle (DNSS)</option>
-                                    <option value="iron_condor">Iron Condor</option>
-                                    <option value="butterfly">Butterfly</option>
-                                    <option value="short_straddle">Short Straddle</option>
-                                    <option value="directional">Directional Spread</option>
-                                </select>
-                            </div>
+                <!-- CONTROL TAB -->
+                <div id="control" class="tab-content active">
+                    <div id="strategyList"></div>
+                </div>
+
+                <!-- MONITOR TAB -->
+                <div id="monitor" class="tab-content">
+                    <div id="monitorContent"></div>
+                </div>
+
+                <!-- AUDIT TAB -->
+                <div id="audit" class="tab-content">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                        <div class="info-msg" style="border-left-color: #22c55e; text-align: center;">
+                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Running</div>
+                            <div id="stat-running" style="font-size: 24px; font-weight: 700; color: #22c55e; margin-top: 4px;">0</div>
                         </div>
-                        <div class="row">
-                            <div class="field">
-                                <label>Underlying *</label>
-                                <input type="text" id="underlying" placeholder="NIFTY, BANKNIFTY, FINNIFTY" value="NIFTY">
-                            </div>
-                            <div class="field">
-                                <label>Exchange</label>
-                                <select id="exchange"><option value="NFO">NFO</option><option value="BFO">BFO</option><option value="MCX">MCX</option></select>
-                            </div>
-                            <div class="field">
-                                <label>Instrument Type</label>
-                                <select id="instType"><option value="OPTIDX">OPTIDX</option><option value="OPTSTK">OPTSTK</option><option value="FUTIDX">FUTIDX</option></select>
-                            </div>
-                            <div class="field">
-                                <label>Product Type</label>
-                                <select id="product"><option value="NRML">NRML</option><option value="MIS">MIS</option></select>
-                            </div>
+                        <div class="info-msg" style="border-left-color: #eab308; text-align: center;">
+                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Paused</div>
+                            <div id="stat-paused" style="font-size: 24px; font-weight: 700; color: #eab308; margin-top: 4px;">0</div>
                         </div>
-                        <div class="row">
-                            <div class="field">
-                                <label>Description</label>
-                                <textarea id="description" rows="2" placeholder="Brief description of strategy logic..."></textarea>
-                            </div>
+                        <div class="info-msg" style="border-left-color: #3b82f6; text-align: center;">
+                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Intents</div>
+                            <div id="stat-intents" style="font-size: 24px; font-weight: 700; color: #3b82f6; margin-top: 4px;">0</div>
                         </div>
-                        <div class="card-footer">
-                            <button class="btn-primary" onclick="switchBuilderTab('entry')">Next: Entry Rules →</button>
+                        <div class="info-msg" style="border-left-color: #8b5cf6; text-align: center;">
+                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Positions</div>
+                            <div id="stat-positions" style="font-size: 24px; font-weight: 700; color: #8b5cf6; margin-top: 4px;">0</div>
                         </div>
                     </div>
 
-                    <!-- ENTRY PANE -->
-                    <div id="entry" class="builder-pane">
-                        <h4>Entry Timing</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Entry Time</label>
-                                <input type="time" id="entryTime" value="09:20">
-                            </div>
-                            <div class="field">
-                                <label>Entry End Window</label>
-                                <input type="time" id="entryEndTime" value="14:00">
-                            </div>
-                            <div class="field">
-                                <label>Entry Delay (seconds)</label>
-                                <input type="number" id="entryDelay" min="0" value="0">
-                            </div>
-                        </div>
-
-                        <h4>Entry Conditions</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Condition Type</label>
-                                <select id="entryCondition"><option value="time_based">Time Based</option><option value="price_based">Price Level</option><option value="volatility">Volatility</option></select>
-                            </div>
-                            <div class="field">
-                                <label>Position Size (Lots)</label>
-                                <input type="number" id="positionSize" min="1" value="1">
-                            </div>
-                            <div class="field">
-                                <label>Max Positions</label>
-                                <input type="number" id="maxPositions" min="1" value="1">
-                            </div>
-                        </div>
-
-                        <div id="legFields"></div>
-
-                        <div class="card-footer">
-                            <button class="btn-secondary" onclick="switchBuilderTab('identity')">← Back</button>
-                            <button class="btn-primary" onclick="switchBuilderTab('adjustment')">Next: Adjustment →</button>
-                        </div>
-                    </div>
-
-                    <!-- ADJUSTMENT PANE -->
-                    <div id="adjustment" class="builder-pane">
-                        <h4>Delta Adjustment</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Enable Auto Adjustments</label>
-                                <label><input type="checkbox" id="enableAdj" checked style="width:auto; margin-right:8px;">Enable</label>
-                            </div>
-                            <div class="field">
-                                <label>Delta Trigger</label>
-                                <input type="number" id="deltaTrig" step="0.01" placeholder="e.g., 0.15">
-                            </div>
-                            <div class="field">
-                                <label>Target Delta</label>
-                                <input type="number" id="deltaTarget" step="0.01" placeholder="e.g., 0.05">
-                            </div>
-                            <div class="field">
-                                <label>Check Interval (min)</label>
-                                <input type="number" id="adjInterval" min="1" value="5">
-                            </div>
-                        </div>
-
-                        <h4>Profit/Loss Adjustment</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Profit Lock Trigger (₹)</label>
-                                <input type="number" id="profitLock" step="100">
-                            </div>
-                            <div class="field">
-                                <label>Loss Repair Trigger (₹)</label>
-                                <input type="number" id="lossRepair" step="100">
-                            </div>
-                            <div class="field">
-                                <label>Max Adjustments/Day</label>
-                                <input type="number" id="maxAdj" min="0" value="3">
-                            </div>
-                        </div>
-
-                        <div class="card-footer">
-                            <button class="btn-secondary" onclick="switchBuilderTab('entry')">← Back</button>
-                            <button class="btn-primary" onclick="switchBuilderTab('exit')">Next: Exit →</button>
-                        </div>
-                    </div>
-
-                    <!-- EXIT PANE -->
-                    <div id="exit" class="builder-pane">
-                        <h4>Time-Based Exit</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Exit Time</label>
-                                <input type="time" id="exitTime" value="15:15">
-                            </div>
-                            <div class="field">
-                                <label>Force Exit Before Expiry (min)</label>
-                                <input type="number" id="forceExit" min="0" value="10">
-                            </div>
-                        </div>
-
-                        <h4>Profit Target</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Target Profit (₹)</label>
-                                <input type="number" id="targetProfit" step="100">
-                            </div>
-                            <div class="field">
-                                <label>Target Profit (%)</label>
-                                <input type="number" id="targetProfitPct" step="1">
-                            </div>
-                        </div>
-
-                        <h4>Stop Loss</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Stop Loss (₹)</label>
-                                <input type="number" id="stopLoss" step="100">
-                            </div>
-                            <div class="field">
-                                <label>Stop Loss (%)</label>
-                                <input type="number" id="stopLossPct" step="1">
-                            </div>
-                            <div class="field">
-                                <label>Trailing Stop (%)</label>
-                                <input type="number" id="trailingStop" step="1">
-                            </div>
-                        </div>
-
-                        <div class="card-footer">
-                            <button class="btn-secondary" onclick="switchBuilderTab('adjustment')">← Back</button>
-                            <button class="btn-primary" onclick="switchBuilderTab('risk')">Next: Risk →</button>
-                        </div>
-                    </div>
-
-                    <!-- RISK PANE -->
-                    <div id="risk" class="builder-pane">
-                        <h4>Position Limits</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Max Position Value (₹)</label>
-                                <input type="number" id="maxPosValue" step="10000">
-                            </div>
-                            <div class="field">
-                                <label>Max Margin (%)</label>
-                                <input type="number" id="maxMargin" min="0" max="100" value="70">
-                            </div>
-                            <div class="field">
-                                <label>Max Lots/Trade</label>
-                                <input type="number" id="maxLots" min="1" value="10">
-                            </div>
-                        </div>
-
-                        <h4>Daily Limits</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Daily Loss Limit (₹)</label>
-                                <input type="number" id="dailyLoss" step="1000">
-                            </div>
-                            <div class="field">
-                                <label>Daily Profit Target (₹)</label>
-                                <input type="number" id="dailyProfit" step="1000">
-                            </div>
-                            <div class="field">
-                                <label>Max Trades/Day</label>
-                                <input type="number" id="maxTrades" min="1" value="10">
-                            </div>
-                        </div>
-
-                        <h4>Circuit Breaker</h4>
-                        <div class="row">
-                            <div class="field">
-                                <label>Circuit Breaker (₹)</label>
-                                <input type="number" id="circuitBreaker" step="1000">
-                            </div>
-                            <div class="field">
-                                <label><input type="checkbox" id="killSwitch" style="width:auto; margin-right:8px;">Kill Switch (halt all)</label>
-                            </div>
-                        </div>
-
-                        <div class="card-footer">
-                            <button class="btn-secondary" onclick="switchBuilderTab('exit')">← Back</button>
-                            <button class="btn-success" onclick="saveStrategy()" style="min-width:150px;">✓ Save Strategy</button>
-                        </div>
-                    </div>
+                    <div id="auditTableContainer"></div>
                 </div>
             </div>
         </div>
-
-        <!-- ═══ TAB 2: CONTROL & MONITOR ═══ -->
-        <div id="control" class="tab-panel">
-            <!-- Strategy Control Section -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Strategy Control & Scheduling</h3>
-                    <button class="btn-primary btn-sm" onclick="loadStrategies()" style="margin-left:auto;">🔄 Refresh</button>
-                </div>
-                <div class="card-body">
-                    <div id="strategyList" style="min-height: 200px;">
-                        <div class="muted" style="text-align:center; padding:20px;">Loading strategies...</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Strategy Monitor Section -->
-            <div class="card" style="margin-top: var(--spacing-lg);">
-                <div class="card-header">
-                    <h3 class="card-title">Strategy Monitor</h3>
-                    <button class="btn-sm" onclick="refreshMonitor()" style="background:transparent; border:1px solid var(--border); cursor:pointer; margin-left:auto;">🔄 Refresh</button>
-                </div>
-                <div class="card-body">
-                    <!-- Orphan Positions Section -->
-                    <div class="monitor-section">
-                        <div class="section-header" onclick="toggleSection(event, 'orphanContent')">
-                            <span class="section-toggle">▶</span>
-                            <span class="section-title">👻 Orphan Positions</span>
-                            <span class="section-summary" id="orphanBadge">0 positions</span>
-                        </div>
-                        <div id="orphanContent" class="section-content">
-                            <table class="table-compact">
-                                <thead>
-                                    <tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>PnL</th><th>Δ</th><th>Γ</th><th>θ</th><th>ν</th></tr>
-                                </thead>
-                                <tbody id="orphanBody">
-                                    <tr><td colspan="8" class="text-center muted">No orphan positions</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Strategy Monitors -->
-                    <div id="strategyMonitors"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ TAB 3: EXECUTION AUDIT (100% VISIBILITY) ═══ -->
-        <div id="audit" class="tab-panel">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">🔍 System Execution Audit</h3>
-                    <p class="muted" style="margin-top:6px;">Complete visibility of all strategy execution in system - no hidden execution</p>
-                </div>
-
-                <!-- Audit Stats -->
-                <div id="auditStats" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:24px;">
-                    <div class="info-card" style="border-left:4px solid #22c55e;">
-                        <div style="font-size:11px; color:var(--muted);">STRATEGIES RUNNING</div>
-                        <div id="stat-running" style="font-size:28px; font-weight:700; color:#22c55e; margin-top:6px;">0</div>
-                    </div>
-                    <div class="info-card" style="border-left:4px solid #eab308;">
-                        <div style="font-size:11px; color:var(--muted);">PAUSED STRATEGIES</div>
-                        <div id="stat-paused" style="font-size:28px; font-weight:700; color:#eab308; margin-top:6px;">0</div>
-                    </div>
-                    <div class="info-card" style="border-left:4px solid #3b82f6;">
-                        <div style="font-size:11px; color:var(--muted);">INTENTS IN QUEUE</div>
-                        <div id="stat-intents" style="font-size:28px; font-weight:700; color:#3b82f6; margin-top:6px;">0</div>
-                    </div>
-                    <div class="info-card" style="border-left:4px solid #8b5cf6;">
-                        <div style="font-size:11px; color:var(--muted);">ACTIVE POSITIONS</div>
-                        <div id="stat-positions" style="font-size:28px; font-weight:700; color:#8b5cf6; margin-top:6px;">0</div>
-                    </div>
-                </div>
-
-                <!-- Warning for hidden strategies -->
-                <div id="hiddenWarning" style="display:none; background:rgba(239,68,68,.15); border:2px solid #ef4444; border-radius:8px; padding:16px; margin-bottom:20px;">
-                    <div style="font-weight:700; color:#ef4444;">⚠️ HIDDEN STRATEGY DETECTED</div>
-                    <div style="font-size:12px; color:var(--text); margin-top:8px;">Strategy running with active positions but NO saved configuration. See below for details.</div>
-                </div>
-
-                <!-- All Strategies Table -->
-                <div style="margin-top:20px;">
-                    <h4 style="margin-bottom:12px;">📊 All Strategies in System</h4>
-                    <table class="table-compact" style="width:100%;">
-                        <thead>
-                            <tr>
-                                <th style="min-width:150px;">Strategy Name</th>
-                                <th style="min-width:100px;">Status</th>
-                                <th>Underlying</th>
-                                <th>Pending Intents</th>
-                                <th>Active Positions</th>
-                                <th>Created</th>
-                                <th>Update Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="auditTableBody">
-                            <tr><td colspan="7" class="text-center muted">Loading...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Control Intents Queue -->
-                <div style="margin-top:24px;">
-                    <h4 style="margin-bottom:12px;">📋 Control Intents Queue (Execution Order)</h4>
-                    <div style="background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:12px; font-family:monospace; font-size:11px; max-height:300px; overflow-y:auto;">
-                        <div id="intentsQueue" style="color:var(--muted);">No pending intents in queue</div>
-                    </div>
-                </div>
-
-                <!-- Auto-refresh indicator -->
-                <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border); text-align:center;">
-                    <span style="font-size:11px; color:var(--muted);">🔄 Auto-refreshing every 3 seconds</span>
-                    <br/>
-                    <button class="btn-primary btn-sm" onclick="loadExecutionAudit()" style="margin-top:10px;">Refresh Now</button>
-                </div>
-            </div>
-        </div>        <div id="result" class="result" style="margin-top:var(--spacing-lg);"></div>
     </main>
 
     <script>
         const API = '/dashboard';
         let strategies = [];
-        let activeIntents = new Map();  // Track ongoing intent submissions
-        let auditRefreshInterval;
-
-        function switchMainTab(tab) {
-            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-            document.getElementById(tab).classList.add('active');
-            document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-            if (tab === 'control') { loadStrategies(); refreshMonitor(); }
-            if (tab === 'audit') { loadExecutionAudit(); startAuditRefresh(); }
-        }
-
-        function switchBuilderTab(tab) {
-            document.querySelectorAll('.builder-pane').forEach(p => p.classList.remove('active'));
-            document.getElementById(tab).classList.add('active');
-            document.querySelectorAll('.builder-tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-        }
+        let activeIntents = new Map();
 
         function updateStrategyType() {
             const type = document.getElementById('stratType').value;
             const container = document.getElementById('legFields');
-            let html = '<h4 style="margin-top:16px;">Strategy-Specific Parameters</h4><div class="row">';
+            let html = '<h3 style="margin-bottom: 12px;">Strategy Parameters</h3>';
+            
             if (type === 'dnss') {
-                html += `<div class="field"><label>Target Entry Delta</label><input type="number" step="0.01" value="0.20"></div>
-                        <div class="field"><label>CE Offset (pts)</label><input type="number" step="50" value="100"></div>
-                        <div class="field"><label>PE Offset (pts)</label><input type="number" step="50" value="100"></div>`;
-            } else if (type === 'iron_condor') {
-                html += `<div class="field"><label>Short CE Offset</label><input type="number" step="50" value="200"></div>
-                        <div class="field"><label>Long CE Offset</label><input type="number" step="50" value="300"></div>
-                        <div class="field"><label>Short PE Offset</label><input type="number" step="50" value="200"></div>
-                        <div class="field"><label>Long PE Offset</label><input type="number" step="50" value="300"></div>`;
+                html += `
+                    <div class="field">
+                        <label>CE Offset (pts)</label>
+                        <input type="number" value="100" step="50">
+                    </div>
+                    <div class="field">
+                        <label>PE Offset (pts)</label>
+                        <input type="number" value="100" step="50">
+                    </div>
+                    <div class="field">
+                        <label>Entry Delta</label>
+                        <input type="number" value="0.20" step="0.05" min="0" max="1">
+                    </div>
+                `;
             }
-            html += '</div>';
             container.innerHTML = html;
         }
 
-        function resetBuilder() {
-            document.querySelectorAll('input[type="text"], input[type="time"], input[type="number"], textarea').forEach(el => el.value = '');
-            document.querySelectorAll('select').forEach(el => el.selectedIndex = 0);
-            document.getElementById('underlying').value = 'NIFTY';
-            document.getElementById('entryTime').value = '09:20';
-            document.getElementById('entryEndTime').value = '14:00';
-            document.getElementById('exitTime').value = '15:15';
-            document.getElementById('positionSize').value = '1';
-            document.getElementById('maxPositions').value = '1';
-            updateStrategyType();
-            switchBuilderTab('identity');
+        function submitStrategy(event) {
+            event.preventDefault();
+
+            const name = document.getElementById('stratName').value.trim();
+            const schedule = document.getElementById('schedule').value;
+
+            if (!name || !schedule) {
+                showResult(false, '⚠️ Fill all required fields');
+                return;
+            }
+
+            const data = {
+                name: name,
+                schedule: schedule,
+                identity: {
+                    underlying: document.getElementById('underlying').value,
+                    strategy_type: document.getElementById('stratType').value,
+                },
+                timing: {
+                    entry_time: document.getElementById('entryTime').value,
+                    exit_time: document.getElementById('exitTime').value,
+                },
+                risk: {
+                    target_profit: parseFloat(document.getElementById('targetProfit').value) || 0,
+                    stop_loss: parseFloat(document.getElementById('stopLoss').value) || 0,
+                    max_positions: parseInt(document.getElementById('maxPositions').value) || 1,
+                },
+                status: 'IDLE',
+                created_at: new Date().toISOString(),
+            };
+
+            console.log('💾 Saving strategy:', data);
+
+            fetch(`${API}/strategy/config/save-all`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(result => {
+                console.log('✅ Saved:', result);
+                showResult(true, `✅ SAVED\n\n${name}\nSchedule: ${schedule}\nStatus: IDLE\n\nReady for execution`);
+                document.getElementById('strategyForm').reset();
+                updateStrategyType();
+                setTimeout(() => {
+                    loadStrategies();
+                    switchTab('control');
+                }, 1500);
+            })
+            .catch(e => {
+                console.error('❌ Error:', e);
+                showResult(false, `❌ Save Failed\n\n${e.message}`);
+            });
         }
 
-        function saveStrategy() {
-            if (!document.getElementById('stratName').value) { showResult(false, '⚠️ Strategy name is required'); return; }
-            showResult(true, '✅ Strategy saved successfully');
-            setTimeout(() => { loadStrategies(); switchMainTab('control'); }, 1200);
+        function showResult(success, msg) {
+            const card = document.getElementById('resultCard');
+            const title = document.getElementById('resultTitle');
+            const message = document.getElementById('resultMessage');
+            
+            card.className = 'result-card ' + (success ? '' : 'error') + ' show';
+            title.textContent = success ? '✅ SUCCESS' : '❌ ERROR';
+            message.textContent = msg;
+            
+            if (!success) setTimeout(() => card.classList.remove('show'), 5000);
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+
+            if (tabName === 'control') {
+                loadStrategies();
+            } else if (tabName === 'monitor') {
+                refreshMonitor();
+            } else if (tabName === 'audit') {
+                loadAudit();
+            }
         }
 
         async function loadStrategies() {
             try {
-                console.log('📋 Loading strategies...');
                 const r = await fetch(`${API}/strategy/configs`, { credentials: 'include' });
-                if (!r.ok) {
-                    console.error(`❌ Failed to load strategies: HTTP ${r.status}`);
-                    return;
-                }
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                
                 const data = await r.json();
                 strategies = data.configs || [];
-                console.log(`✅ Loaded ${strategies.length} strategies:`, strategies.map(s => s.name));
-                renderStrategyList();
+                console.log(`✅ Loaded ${strategies.length} strategies`);
+                renderStrategies();
             } catch (e) {
-                console.error('❌ Strategy load error:', e);
-                showResult(false, '❌ Error: ' + e.message);
+                console.error('❌ Load error:', e);
+                document.getElementById('strategyList').innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Failed to load</div></div>`;
             }
         }
 
-        function renderStrategyList() {
+        function renderStrategies() {
             const container = document.getElementById('strategyList');
+            
             if (!strategies.length) {
-                container.innerHTML = `<div class="info-card">📭 No saved strategies. Go to <strong>Strategy Builder</strong> to create one!</div>`;
+                container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>No strategies saved<br><small>Create one using builder ←</small></div></div>`;
                 return;
             }
+
             let html = '';
             for (const s of strategies) {
                 const status = s.status || 'IDLE';
@@ -615,343 +402,248 @@
                 const btnKey = `${s.name}-start`;
                 const isLoading = activeIntents.has(btnKey);
                 
-                html += `<div class="strategy-item" data-strategy="${s.name}">
-                    <div>
-                        <div class="strategy-name">${s.name}</div>
-                        <div class="strategy-subtitle">
-                            ${s.identity?.underlying || 'N/A'} · ${(s.identity?.strategy_type || 'custom').toUpperCase()} 
-                            ${s.created_at ? ` · Created: ${new Date(s.created_at).toLocaleDateString()}` : ''}
+                html += `<div class="strategy-item ${isRunning ? 'running' : ''}">
+                    <div class="strategy-header">
+                        <div class="strategy-title">
+                            <div class="strategy-name">${s.name}</div>
+                            <div class="strategy-meta">${s.identity?.underlying} · ${s.identity?.strategy_type?.toUpperCase()} · ${s.schedule || 'Manual'}</div>
+                        </div>
+                        <span class="status-badge status-${status.toLowerCase()}">● ${status}</span>
+                    </div>
+
+                    <div class="strategy-config">
+                        <div class="config-row">
+                            <span class="config-label">Entry:</span>
+                            <span class="config-value">${s.timing?.entry_time || '--:--'}</span>
+                        </div>
+                        <div class="config-row">
+                            <span class="config-label">Exit:</span>
+                            <span class="config-value">${s.timing?.exit_time || '--:--'}</span>
+                        </div>
+                        <div class="config-row">
+                            <span class="config-label">Target / SL:</span>
+                            <span class="config-value">₹${s.risk?.target_profit || 0} / ₹${s.risk?.stop_loss || 0}</span>
                         </div>
                     </div>
-                    <div class="strategy-timing">
-                        <select onchange="updateSchedule('${s.name}', this.value)" ${isLoading ? 'disabled' : ''} style="min-width:150px;">
-                            <option value="disabled">⏸ Disabled</option>
-                            <option value="daily" ${s.schedule === 'daily' ? 'selected' : ''}>📅 Daily</option>
-                            <option value="weekly" ${s.schedule === 'weekly' ? 'selected' : ''}>📆 Weekly</option>
-                            <option value="custom" ${s.schedule === 'custom' ? 'selected' : ''}>⚙️ Custom</option>
-                            <option value="immediate" ${s.schedule === 'immediate' ? 'selected' : ''}>⚡ On Demand</option>
-                        </select>
-                        <span style="font-size:12px; color:var(--muted); font-weight:500; min-width:80px; text-align:center;">
-                            ${s.entry?.timing?.entry_time || '--:--'} IST
-                        </span>
-                    </div>
-                    <div><span class="status-pill status-${status.toLowerCase()}">● ${status}</span></div>
+
                     <div class="strategy-actions">
-                        <button class="btn-success btn-sm ${isLoading ? 'btn-loading' : ''}" 
-                                onclick="actionStrategy('${s.name}', 'start')" 
-                                ${isRunning || isLoading ? 'disabled' : ''} 
-                                title="Start strategy execution">▶ Start</button>
-                        <button class="btn-warning btn-sm" 
-                                onclick="actionStrategy('${s.name}', 'pause')" 
-                                ${status !== 'RUNNING' ? 'disabled' : ''} 
-                                title="Pause ongoing execution">⏸ Pause</button>
-                        <button class="btn-danger btn-sm" 
-                                onclick="actionStrategy('${s.name}', 'stop')" 
-                                ${status === 'IDLE' ? 'disabled' : ''} 
-                                title="Force stop execution">⏹ Stop</button>
+                        <button class="btn-sm btn-success" 
+                                onclick="startStrategy('${s.name}')" 
+                                ${isRunning || isLoading ? 'disabled' : ''}>
+                            ${isLoading ? '⏳' : '▶'} Start
+                        </button>
+                        <button class="btn-sm btn-warning" 
+                                onclick="pauseStrategy('${s.name}')" 
+                                ${status !== 'RUNNING' ? 'disabled' : ''}>
+                            ⏸ Pause
+                        </button>
+                        <button class="btn-sm btn-danger" 
+                                onclick="stopStrategy('${s.name}')" 
+                                ${status === 'IDLE' ? 'disabled' : ''}>
+                            ⏹ Stop
+                        </button>
                     </div>
                 </div>`;
             }
+            
             container.innerHTML = html;
+            updateStatusBanner();
         }
 
-        async function actionStrategy(name, action) {
-            const confirmMsg = action === 'start' ? 
-                `Start "${name}" strategy?\n\n⚠️ This will initialize positions based on configured rules.` :
-                action === 'pause' ?
-                `Pause "${name}" strategy?\n\nPositions will remain open but no new adjustments.` :
-                `Stop "${name}" strategy?\n\n⚠️ All positions will be force-exited!`;
-            
-            if (!confirm(confirmMsg)) return;
+        async function startStrategy(name) {
+            if (!confirm(`Start "${name}" with DAILY schedule?\n\nAutomated execution will begin.`)) return;
 
-            const btnKey = `${name}-${action}`;
-            if (activeIntents.has(btnKey)) {
-                console.warn('⚠️ Intent already in progress for this action');
-                return;
-            }
+            const key = `${name}-start`;
+            if (activeIntents.has(key)) return;
 
-            // Mark as loading
-            activeIntents.set(btnKey, true);
-            updateButtonStates();
+            activeIntents.set(key, true);
+            renderStrategies();
 
             try {
-                const actionMap = { start: 'ENTRY', pause: 'ADJUST', stop: 'FORCE_EXIT' };
-                const payload = { strategy_name: name, action: actionMap[action], reason: 'DASHBOARD_UI' };
-                
-                console.log(`📤 Submitting intent: ${JSON.stringify(payload)}`);
-                
                 const r = await fetch(`${API}/intent/strategy`, {
-                    method: 'POST', 
+                    method: 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ strategy_name: name, action: 'ENTRY', reason: 'DASHBOARD' })
                 });
-                
-                if (!r.ok) {
-                    const errText = await r.text();
-                    console.error(`❌ API error (${r.status}): ${errText}`);
-                    throw new Error(`HTTP ${r.status}: ${errText}`);
-                }
-                
+
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
                 const result = await r.json();
-                console.log(`✅ Intent accepted:`, result);
                 
-                showResult(true, 
-                    `✅ INTENT SUBMITTED SUCCESSFULLY\n\n` +
-                    `Strategy: ${name}\n` +
-                    `Action: ${actionMap[action]}\n` +
-                    `Intent ID: ${result.intent_id || 'pending'}\n\n` +
-                    `⏳ Execution service is now processing...\n` +
-                    `Check Console (F12) for real-time updates.`
-                );
+                // Update status
+                await fetch(`${API}/strategy/config/${name}/status`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'RUNNING' })
+                });
+
+                console.log('✅ Started:', result);
+                showResult(true, `✅ EXECUTION STARTED\n\n${name}\nIntent: ${result.intent_id}\n\n🔄 Status: RUNNING\nMonitor in Monitor tab →`);
                 
-                // Auto-refresh after delay
-                setTimeout(() => { loadStrategies(); refreshMonitor(); loadExecutionAudit(); }, 1500);
+                setTimeout(() => { loadStrategies(); loadAudit(); }, 1000);
             } catch (e) {
-                console.error(`❌ Error:`, e);
-                showResult(false, `❌ FAILED TO SUBMIT\n\n${e.message}`);
+                console.error('❌ Error:', e);
+                showResult(false, `❌ FAILED\n\n${e.message}`);
             } finally {
-                // Clear loading state
-                activeIntents.delete(btnKey);
-                updateButtonStates();
+                activeIntents.delete(key);
+               renderStrategies();
             }
         }
 
-        function updateButtonStates() {
-            renderStrategyList();
-        }
-
-        function updateSchedule(name, schedule) { 
-            showResult(true, `📅 ${name} scheduled: ${schedule}`); 
-        }
-
-        function toggleSection(e, contentId) {
-            e.preventDefault();
-            const header = e.currentTarget;
-            const content = document.getElementById(contentId);
-            const toggle = header.querySelector('.section-toggle');
-            content.classList.toggle('open');
-            toggle.classList.toggle('open');
-        }
-
-        async function loadExecutionAudit() {
+        async function pauseStrategy(name) {
+            if (!confirm(`Pause "${name}"?`)) return;
             try {
-                console.log('🔍 Loading execution audit...');
-                const r = await fetch(`${API}/monitoring/all-strategies-status`, { credentials: 'include' });
-                if (!r.ok) {
-                    console.error(`❌ Audit failed: HTTP ${r.status}`);
-                    return;
-                }
-                const data = await r.json();
-                console.log('✅ Execution audit loaded:', data);
+                await fetch(`${API}/intent/strategy`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy_name: name, action: 'ADJUST' })
+                });
+                await fetch(`${API}/strategy/config/${name}/status`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'PAUSED' })
+                });
+                showResult(true, `⏸ PAUSED\n\n${name}\nPositions: OPEN`);
+                setTimeout(() => loadStrategies(), 800);
+            } catch (e) {
+                showResult(false, `❌ Error: ${e.message}`);
+            }
+        }
+
+        async function stopStrategy(name) {
+            if (!confirm(`STOP "${name}"?\n\n⚠️ All positions will exit!`)) return;
+            try {
+                await fetch(`${API}/intent/strategy`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy_name: name, action: 'FORCE_EXIT' })
+                });
+                await fetch(`${API}/strategy/config/${name}/status`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'STOPPED' })
+                });
+                showResult(true, `🛑 STOPPED\n\n${name}\n⚠️ Positions exited`);
+                setTimeout(() => loadStrategies(), 800);
+            } catch (e) {
+                showResult(false, `❌ Error: ${e.message}`);
+            }
+        }
+
+        async function refreshMonitor() {
+            try {
+                const r = await fetch(`${API}/monitoring/strategy-positions`, { credentials: 'include' });
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 
-                // Update stats
+                const data = await r.json();
+                const strats = data.strategy_positions || [];
+
+                let html = '';
+                if (!strats.length) {
+                    html = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>No running strategies</div></div>`;
+                } else {
+                    for (const s of strats) {
+                        const pnl = s.total_pnl || 0;
+                        const pnlColor = pnl >= 0 ? '#22c55e' : '#ef4444';
+                        const posCount = (s.positions || []).reduce((sum, p) => sum + (p.legs || []).length, 0);
+                        
+                        html += `<div class="section-header" onclick="toggleSection(event)">
+                            <span class="section-toggle">▶</span>
+                            <span class="section-title">${s.strategy_name}</span>
+                            <div style="margin-left: auto; font-size: 10px;">
+                                <span style="color: ${pnlColor}; font-weight: 700; margin-right: 12px;">PnL: ₹${pnl.toFixed(0)}</span>
+                                <span style="color: var(--muted);">Legs: ${posCount}</span>
+                            </div>
+                        </div>
+                        <div class="section-content">
+                            <table class="table-compact">
+                                <thead><tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>P&L</th></tr></thead>
+                                <tbody>`;
+                        
+                        for (const p of (s.positions || [])) {
+                            for (const l of (p.legs || [])) {
+                                const lpnl = l.pnl || 0;
+                                html += `<tr>
+                                    <td><strong>${l.symbol}</strong></td>
+                                    <td>${l.qty}</td>
+                                    <td>${parseFloat(l.ltp || 0).toFixed(2)}</td>
+                                    <td style="color: ${lpnl >= 0 ? '#22c55e' : '#ef4444'}; font-weight: 600;">₹${lpnl.toFixed(0)}</td>
+                                </tr>`;
+                            }
+                        }
+                        
+                        html += `</tbody></table></div>`;
+                    }
+                }
+                
+                document.getElementById('monitorContent').innerHTML = html;
+            } catch (e) {
+                console.error('❌ Monitor error:', e);
+            }
+        }
+
+        async function loadAudit() {
+            try {
+                const r = await fetch(`${API}/monitoring/all-strategies-status`, { credentials: 'include' });
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                
+                const data = await r.json();
                 const audit = data.audit || {};
+                const strats = data.strategies || [];
+
                 document.getElementById('stat-running').textContent = audit.strategies_running || 0;
                 document.getElementById('stat-paused').textContent = audit.strategies_paused || 0;
                 document.getElementById('stat-intents').textContent = audit.pending_intents_in_queue || 0;
                 document.getElementById('stat-positions').textContent = audit.active_positions_total || 0;
 
-                // Show banner if running
-                const banner = document.getElementById('executionBanner');
-                if (audit.strategies_running > 0 || audit.pending_intents_in_queue > 0) {
-                    banner.style.display = 'block';
-                    const bannerText = document.getElementById('bannerText');
-                    bannerText.textContent = `${audit.strategies_running} running · ${audit.pending_intents_in_queue} intents queued · ${audit.active_positions_total} positions`;
-                } else {
-                    banner.style.display = 'none';
-                }
-
-                // Show hidden warning
-                const hiddenWarning = document.getElementById('hiddenWarning');
-                if (audit.has_hidden_strategies) {
-                    hiddenWarning.style.display = 'block';
-                } else {
-                    hiddenWarning.style.display = 'none';
-                }
-
-                // Update strategies table
-                let tableHtml = '';
-                const strategies = data.strategies || [];
-                for (const s of strategies) {
-                    const statusColor = s.status === 'RUNNING' ? '#22c55e' : 
-                                       s.status === 'PAUSED' ? '#eab308' :
-                                       s.status === 'IDLE' ? 'var(--muted)' : '#ef4444';
-                    const hiddenBadge = s.is_hidden ? ' <strong style="color:#ef4444;">HIDDEN</strong>' : '';
-                    
+                let tableHtml = '<table class="table-compact" style="margin-top: 20px;"><thead><tr><th>Strategy</th><th>Status</th><th>Pending</th><th>Positions</th></tr></thead><tbody>';
+                
+                for (const s of strats) {
                     tableHtml += `<tr>
-                        <td><strong>${s.name}</strong>${hiddenBadge}</td>
-                        <td><span class="status-pill status-${s.status.toLowerCase()}">● ${s.status}</span></td>
-                        <td>${s.underlying}</td>
-                        <td><span class="greek" style="background:#3b82f6; color:white;">${s.intent_count}</span></td>
-                        <td><span class="greek" style="background:#8b5cf6; color:white;">${s.position_count}</span></td>
-                        <td style="font-size:10px;">${s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A'}</td>
-                        <td>
-                            <select onchange="updateStrategyStatus('${s.name}', this.value)" style="padding:4px 8px; font-size:11px; border:1px solid var(--border); border-radius:3px; background:var(--panel-2);">
-                                <option value="${s.status}">${s.status}</option>
-                                <option value="IDLE">→ IDLE</option>
-                                ${s.status !== 'RUNNING' ? '<option value="RUNNING">→ RUNNING</option>' : ''}
-                                ${s.status === 'RUNNING' ? '<option value="PAUSED">→ PAUSED</option>' : ''}
-                                ${s.status !== 'IDLE' ? '<option value="STOPPED">→ STOPPED</option>' : ''}
-                            </select>
-                        </td>
+                        <td><strong>${s.name}</strong></td>
+                        <td><span class="status-badge status-${s.status.toLowerCase()}">● ${s.status}</span></td>
+                        <td>${s.intent_count}</td>
+                        <td>${s.position_count}</td>
                     </tr>`;
                 }
-                if (!tableHtml) {
-                    tableHtml = '<tr><td colspan="7" class="text-center muted">No strategies found</td></tr>';
-                }
-                document.getElementById('auditTableBody').innerHTML = tableHtml;
-
-                // Update intents queue
-                const intents = data.control_intents || [];
-                let intentsHtml = '';
-                if (intents.length === 0) {
-                    intentsHtml = '— No pending intents in queue';
-                } else {
-                    for (const i of intents) {
-                        intentsHtml += `<div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">
-                            <strong style="color:#3b82f6;">${i.intent_id}</strong> | 
-                            <span style="color:#eab308;">${i.strategy_name}</span> | 
-                            <span style="color:#22c55e;">${i.action}</span> | 
-                            <span style="color:var(--muted);">Created: ${new Date(i.created_at || '').toLocaleString()}</span>
-                        </div>`;
-                    }
-                }
-                document.getElementById('intentsQueue').innerHTML = intentsHtml;
-
-            } catch (e) {
-                console.error('❌ Audit load error:', e);
-            }
-        }
-
-        function updateStrategyStatus(name, newStatus) {
-            if (newStatus === name) return; // No change
-            // This would call an API to update status - for now just show result
-            showResult(true, `📊 Strategy "${name}" status will be updated to: ${newStatus}`);
-        }
-
-        function startAuditRefresh() {
-            // Clear any existing interval
-            if (auditRefreshInterval) clearInterval(auditRefreshInterval);
-            // Refresh every 3 seconds when audit tab is active
-            auditRefreshInterval = setInterval(() => {
-                if (document.getElementById('audit').classList.contains('active')) {
-                    loadExecutionAudit();
-                }
-            }, 3000);
-        }
-
-        async function refreshMonitor() {
-            try {
-                console.log('🔄 Refreshing monitor data...');
                 
-                const orphanR = await fetch(`${API}/orphan-positions`, { credentials: 'include' });
-                if (orphanR.ok) {
-                    const orphanData = await orphanR.json();
-                    const count = orphanData.positions?.length || 0;
-                    console.log(`👻 Orphan positions: ${count}`);
-                    let html = '<tr><td colspan="8" class="text-center muted">No orphan positions found</td></tr>';
-                    if (orphanData.positions?.length) {
-                        html = '';
-                        for (const p of orphanData.positions) {
-                            const pnl = parseFloat(p.pnl || 0);
-                            html += `<tr>
-                                <td><strong>${p.symbol}</strong></td>
-                                <td>${p.netqty}</td>
-                                <td>${parseFloat(p.ltp || 0).toFixed(2)}</td>
-                                <td style="color:${pnl >= 0 ? '#22c55e' : '#ef4444'}; font-weight:600;">₹${pnl.toFixed(0)}</td>
-                                <td><span class="greek">${parseFloat(p.delta || 0).toFixed(3)}</span></td>
-                                <td><span class="greek">${parseFloat(p.gamma || 0).toFixed(4)}</span></td>
-                                <td><span class="greek">${parseFloat(p.theta || 0).toFixed(2)}</span></td>
-                                <td><span class="greek">${parseFloat(p.vega || 0).toFixed(2)}</span></td>
-                            </tr>`;
-                        }
-                    }
-                    document.getElementById('orphanBody').innerHTML = html;
-                    document.getElementById('orphanBadge').innerHTML = `<span class="stat-badge">${count} position${count !== 1 ? 's' : ''}</span>`;
-                }
-
-                const monR = await fetch(`${API}/monitoring/strategy-positions`, { credentials: 'include' });
-                if (monR.ok) {
-                    const monData = await monR.json();
-                    const runningCount = (monData.strategies || []).length;
-                    console.log(`📊 Running strategies: ${runningCount}`);
-                    
-                    let html = '';
-                    if (!runningCount) {
-                        html = '<div class="info-card">📊 No running strategies. Start one from the <strong>Strategy Control</strong> section above.</div>';
-                    } else {
-                        for (const s of (monData.strategies || [])) {
-                            const totalPnL = s.total_pnl || 0;
-                            const delta = (s.combined_greeks?.delta || 0).toFixed(3);
-                            const theta = (s.combined_greeks?.theta || 0).toFixed(2);
-                            const posCount = s.positions?.reduce((sum, p) => sum + (p.legs || []).length, 0) || 0;
-                            const pnlColor = totalPnL >= 0 ? '#22c55e' : '#ef4444';
-                            
-                            html += `<div class="monitor-section">
-                                <div class="section-header" onclick="toggleSection(event, 'strat-${s.strategy_name.replace(/\s+/g, '-')}')">
-                                    <span class="section-toggle">▶</span>
-                                    <span class="section-title">📊 ${s.strategy_name}</span>
-                                    <span class="section-summary">
-                                        <span class="stat-badge">Legs: ${posCount}</span>
-                                        <span class="stat-badge" style="color: ${pnlColor}; font-weight: 700;">PnL: ₹${totalPnL.toFixed(0)}</span>
-                                        <span class="stat-badge">Δ: ${delta}</span>
-                                        <span class="stat-badge">θ: ${theta}</span>
-                                    </span>
-                                </div>
-                                <div id="strat-${s.strategy_name.replace(/\s+/g, '-')}" class="section-content">
-                                    <div class="info-card"><strong>Strategy Status:</strong> RUNNING | <strong>Positions:</strong> ${posCount} active legs | <strong>Total Risk:</strong> ₹${Math.abs(totalPnL).toFixed(0)}</div>
-                                    
-                                    <div class="summary-2line"><span class="summary-label-2line">Total P&L:</span><span class="summary-value-2line" style="color:${pnlColor}">₹${totalPnL.toFixed(0)}</span></div>
-                                    <div class="summary-2line"><span class="summary-label-2line">Combined Greeks:</span><span class="summary-value-2line">Δ ${delta} | Θ ${theta}</span></div>
-                                    
-                                    <table class="table-compact" style="margin-top:16px;">
-                                        <thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>LTP</th><th>Avg Price</th><th>PnL</th><th>Δ</th><th>Γ</th><th>Θ</th></tr></thead>
-                                        <tbody>`;
-                            
-                            for (const p of (s.positions || [])) {
-                                for (const l of (p.legs || [])) {
-                                    const lpnl = parseFloat(l.pnl || 0);
-                                    html += `<tr>
-                                        <td><strong>${l.symbol || '?'}</strong></td>
-                                        <td>${l.type || '?'}</td>
-                                        <td>${l.qty || 0}</td>
-                                        <td><strong>${parseFloat(l.ltp || 0).toFixed(2)}</strong></td>
-                                        <td>${parseFloat(l.avg_price || 0).toFixed(2)}</td>
-                                        <td style="color:${lpnl >= 0 ? '#22c55e' : '#ef4444'}; font-weight:600;">₹${lpnl.toFixed(0)}</td>
-                                        <td><span class="greek">${parseFloat(l.delta || 0).toFixed(3)}</span></td>
-                                        <td><span class="greek">${parseFloat(l.gamma || 0).toFixed(4)}</span></td>
-                                        <td><span class="greek">${parseFloat(l.theta || 0).toFixed(2)}</span></td>
-                                    </tr>`;
-                                }
-                            }
-                            html += '</tbody></table></div></div>';
-                        }
-                    }
-                    document.getElementById('strategyMonitors').innerHTML = html;
-                } else {
-                    console.warn(`⚠️ Monitoring endpoint returned ${monR.status}`);
-                }
+                tableHtml += '</tbody></table>';
+                document.getElementById('auditTableContainer').innerHTML = tableHtml;
+                
+                updateStatusBanner();
             } catch (e) {
-                console.error('❌ Monitor refresh error:', e);
+                console.error('❌ Audit error:', e);
             }
         }
 
-        function showResult(success, message) {
-            const resultDiv = document.getElementById('result');
-            resultDiv.className = success ? 'result success' : 'result error';
-            resultDiv.innerHTML = `<div style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; font-size: 13px; line-height: 1.6;">${message}</div>`;
-            resultDiv.style.display = 'block';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => { resultDiv.style.display = 'none'; }, 7000);
+        function toggleSection(e) {
+            const content = e.currentTarget.nextElementSibling;
+            const toggle = e.currentTarget.querySelector('.section-toggle');
+            content.classList.toggle('open');
+            toggle.classList.toggle('open');
+        }
+
+        function updateStatusBanner() {
+            const running = strategies.filter(s => s.status === 'RUNNING').length;
+            const banner = document.getElementById('statusBanner');
+            
+            if (running > 0) {
+                banner.style.display = 'block';
+                document.getElementById('statusText').textContent = `${running} strateg${running > 1 ? 'ies' : 'y'} executing | Monitor active positions`;
+            } else {
+                banner.style.display = 'none';
+            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Strategy Manager loaded');
-            console.log(`📡 API endpoint: ${API}`);
-            console.log('💡 TIP: Open DevTools (F12) → Console for detailed intent tracking');
+            console.log('🚀 Strategy Manager initialized');
             updateStrategyType();
-            loadExecutionAudit();  // Load audit on startup
         });
     </script>
 </body>

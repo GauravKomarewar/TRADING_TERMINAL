@@ -1042,9 +1042,27 @@
         
         console.log('[Dashboard] Processing', holdings.length, 'holdings');
         
+        // Helper: Extract fields from nested broker response
+        // Broker sends exch_tsym as array: [{exch, token, tsym, cname}, ...]
+        function extractHoldingFields(h) {
+            const exchTsym = (h.exch_tsym && h.exch_tsym.length) ? h.exch_tsym[0] : {};
+            const symbol = exchTsym.tsym || h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '-';
+            const cname = exchTsym.cname || h.cname || h.instrumentname || h.company_name || '';
+            const exchange = exchTsym.exch || h.exch || h.exchange || h.exchangetype || '-';
+            const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
+            const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
+            const ltp = parseFloat(h.c || h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
+            const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
+            const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
+            const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
+            const netPnl = realized + unrealized;
+            const product = h.s_prdt_ali || h.prd || h.product || h.producttype || '';
+            return { symbol, cname, exchange, qty, avgPrice, ltp, realized, unrealized, netPnl, product };
+        }
+        
         // Check if we need full rebuild
         const currentSymbols = Array.from(tbody.querySelectorAll('tr[data-symbol]')).map(tr => tr.dataset.symbol);
-        const newSymbols = holdings.map(h => h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '');
+        const newSymbols = holdings.map(h => extractHoldingFields(h).symbol);
         const needsRebuild = currentSymbols.length !== newSymbols.length || 
                              !newSymbols.every((s, i) => s === currentSymbols[i]);
         
@@ -1052,50 +1070,25 @@
             console.log('[Dashboard] Rebuilding holdings table');
             // Full rebuild
             tbody.innerHTML = holdings.map(h => {
-                // Symbol: Try all possible field names from broker response
-                const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '-';
+                const f = extractHoldingFields(h);
+                const symbolDisplay = f.cname ? `<strong>${f.symbol}</strong><br><span style="font-size:11px;color:var(--muted)">${f.cname}</span>` : f.symbol;
                 
-                // Symbol Name (cname): Company/instrument name from broker response
-                const cname = h.cname || h.instrumentname || h.company_name || h.instrumenttype || '';
-                const symbolDisplay = cname ? `<strong>${symbol}</strong><br><span style="font-size:11px;color:var(--muted)">${cname}</span>` : symbol;
-                
-                // Quantity: Try all possible quantity field names
-                const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
-                
-                // Average Price: Try all possible price field names
-                const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
-                
-                // LTP: Latest Trade Price (includes 'c' field from broker)
-                const ltp = parseFloat(h.c || h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
-                
-                // Calculate PnL values
-                const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
-                const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
-                const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
-                const netPnl = realized + unrealized;
-                
-                const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
-                const rpnlClass = realized >= 0 ? 'success' : 'danger';
-                const urmtomClass = unrealized >= 0 ? 'success' : 'danger';
-                
-                // Product: Try all possible product field names
-                const product = h.prd || h.product || h.producttype || '';
-                const productCell = product ? `<span class="badge ok">${product}</span>` : '-';
-                
-                // Exchange: Try all possible exchange field names
-                const exchange = h.exch || h.exchange || h.exchangetype || '-';
+                const netPnlClass = f.netPnl >= 0 ? 'success' : 'danger';
+                const rpnlClass = f.realized >= 0 ? 'success' : 'danger';
+                const urmtomClass = f.unrealized >= 0 ? 'success' : 'danger';
+                const productCell = f.product ? `<span class="badge ok">${f.product}</span>` : '-';
                 
                 return `
-                    <tr data-symbol="${symbol}">
-                        <td style="font-weight: 700" title="${symbol}" data-field="symbol">${symbolDisplay}</td>
-                        <td data-field="ltp">${formatCurrency(ltp)}</td>
-                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
-                        <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(realized)}</td>
-                        <td data-field="urmtom" style="color: var(--${urmtomClass})">${formatCurrency(unrealized)}</td>
-                        <td>${exchange}</td>
+                    <tr data-symbol="${f.symbol}">
+                        <td style="font-weight: 700" title="${f.symbol}" data-field="symbol">${symbolDisplay}</td>
+                        <td data-field="ltp">${formatCurrency(f.ltp)}</td>
+                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(f.netPnl)}</td>
+                        <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(f.realized)}</td>
+                        <td data-field="urmtom" style="color: var(--${urmtomClass})">${formatCurrency(f.unrealized)}</td>
+                        <td>${f.exchange}</td>
                         <td>${productCell}</td>
-                        <td data-field="qty">${qty}</td>
-                        <td data-field="avgprc">${formatCurrency(avgPrice)}</td>
+                        <td data-field="qty">${f.qty}</td>
+                        <td data-field="avgprc">${formatCurrency(f.avgPrice)}</td>
                     </tr>
                 `;
             }).join('');
@@ -1103,24 +1096,16 @@
             console.log('[Dashboard] Smart update for holdings');
             // Smart update - only update values that changed
             holdings.forEach(h => {
-                const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '';
-                const row = tbody.querySelector(`tr[data-symbol="${symbol}"]`);
+                const f = extractHoldingFields(h);
+                const row = tbody.querySelector(`tr[data-symbol="${f.symbol}"]`);
                 if (!row) return;
                 
-                const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
-                const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
-                const ltp = parseFloat(h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
-                const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
-                const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
-                const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
-                const netPnl = realized + unrealized;
-                
-                updateCellValue(row.querySelector('[data-field="qty"]'), qty, false, 0);
-                updateCellValue(row.querySelector('[data-field="avgprc"]'), avgPrice);
-                updateCellValue(row.querySelector('[data-field="ltp"]'), ltp);
-                updateCellValue(row.querySelector('[data-field="rpnl"]'), realized, true);
-                updateCellValue(row.querySelector('[data-field="urmtom"]'), unrealized, true);
-                updateCellValue(row.querySelector('[data-field="netpnl"]'), netPnl, true);
+                updateCellValue(row.querySelector('[data-field="qty"]'), f.qty, false, 0);
+                updateCellValue(row.querySelector('[data-field="avgprc"]'), f.avgPrice);
+                updateCellValue(row.querySelector('[data-field="ltp"]'), f.ltp);
+                updateCellValue(row.querySelector('[data-field="rpnl"]'), f.realized, true);
+                updateCellValue(row.querySelector('[data-field="urmtom"]'), f.unrealized, true);
+                updateCellValue(row.querySelector('[data-field="netpnl"]'), f.netPnl, true);
             });
         }
     }

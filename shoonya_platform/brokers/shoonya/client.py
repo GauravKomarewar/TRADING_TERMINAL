@@ -832,7 +832,7 @@ class ShoonyaClient(NorenApi):
                     if self._subscribed_tokens:
                         with self._api_lock:
                             token_list = list(self._subscribed_tokens)
-                            super().subscribe(token_list)
+                            NorenApi.subscribe(self, token_list)
                         logger.info("✅ Re-subscribed %d tokens", len(token_list))
                     
                     # Reset attempts on success

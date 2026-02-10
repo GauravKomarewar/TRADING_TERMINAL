@@ -87,38 +87,86 @@
             font-weight: 600;
         }
         
-        /* Main Container */
+        /* Main Layout */
         main {
             margin-top: 56px;
             padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 100vh;
         }
         
-        /* Controls Bar */
-        .controls-bar {
+        /* Top Controls Container */
+        .top-controls-container {
+            display: grid;
+            grid-template-columns: 160px 1fr;
+            gap: 10px;
+            min-height: 120px;
+        }
+        
+        /* Left Control Panel */
+        .control-panel {
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 6px;
-            padding: 8px 12px;
-            margin-bottom: 8px;
+            padding: 10px;
             display: flex;
+            flex-direction: column;
+            gap: 8px;
+            height: fit-content;
+        }
+        
+        .control-panel select,
+        .control-panel button {
+            width: 100%;
+        }
+        
+        /* Info Panel */
+        .info-panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
             gap: 12px;
-            align-items: center;
-            flex-wrap: nowrap;
+            grid-template-rows: auto auto;
+        }
+        
+        .info-panel .info-item {
+            min-width: 0;
+        }
+        
+        .info-label {
+            font-size: 9px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 3px;
+        }
+        
+        .info-value {
+            font-size: 14px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            word-break: break-word;
         }
         
         select {
-            padding: 5px 8px;
+            padding: 6px 8px;
             background: #1c2333;
             border: 1px solid var(--border);
             color: var(--text);
             border-radius: 4px;
-            font-size: 12px;
-            height: 30px;
-            min-width: 130px;
+            font-size: 11px;
+            height: 28px;
+            width: 100%;
         }
         
-        .column-selector {
-            position: relative;
+        select:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
         
         .column-dropdown {
@@ -636,8 +684,13 @@
         
         /* Responsive */
         @media (max-width: 1200px) {
-            .info-bar {
-                grid-template-columns: repeat(4, 1fr);
+            .top-controls-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .info-panel {
+                grid-template-columns: repeat(2, 1fr);
+                max-height: none;
             }
         }
         
@@ -646,20 +699,14 @@
                 padding: 8px;
             }
             
-            .controls-bar {
-                padding: 6px 8px;
+            .top-controls-container {
+                grid-template-columns: 1fr;
                 gap: 8px;
-                flex-wrap: wrap;
             }
             
-            select {
-                min-width: 100px;
-                flex: 1;
-            }
-            
-            .info-bar {
+            .info-panel {
                 grid-template-columns: repeat(2, 1fr);
-                padding: 6px 8px;
+                padding: 8px;
                 gap: 8px;
             }
         }
@@ -671,100 +718,104 @@
 <main>
     <div id="errorMsg" class="error-msg"></div>
     
-    <!-- Controls Bar -->
-    <div class="controls-bar">
-        <select id="symbol">
-            <option value="NIFTY" selected>NIFTY</option>
-            <option value="BANKNIFTY">BANKNIFTY</option>
-            <option value="FINNIFTY">FINNIFTY</option>
-            <option value="SENSEX">SENSEX</option>
-        </select>
-        
-        <select id="expiry">
-            <option>Loading...</option>
-        </select>
-        
-        <div class="column-selector">
-            <button id="columnSelectorBtn" style="padding: 5px 10px; background: #1c2333; border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 12px; height: 30px; cursor: pointer; white-space: nowrap;">
-                📊 Columns
-            </button>
-            <div id="columnDropdown" class="column-dropdown">
-                <div class="column-option">
-                    <input type="checkbox" id="col-oi" checked>
-                    <label for="col-oi">Open Interest (OI)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-volume" checked>
-                    <label for="col-volume">Volume</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-iv" checked>
-                    <label for="col-iv">IV%</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-delta" checked>
-                    <label for="col-delta">Delta (Δ)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-gamma" checked>
-                    <label for="col-gamma">Gamma (Γ)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-theta" checked>
-                    <label for="col-theta">Theta (Θ)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-vega" checked>
-                    <label for="col-vega">Vega (ν)</label>
-                </div>
-                <div class="column-option">
-                    <input type="checkbox" id="col-change" checked>
-                    <label for="col-change">Change %</label>
+    <!-- Top Controls and Info Container -->
+    <div class="top-controls-container">
+        <!-- Left Control Panel -->
+        <div class="control-panel">
+            <select id="symbol">
+                <option value="NIFTY" selected>NIFTY</option>
+                <option value="BANKNIFTY">BANKNIFTY</option>
+                <option value="FINNIFTY">FINNIFTY</option>
+                <option value="SENSEX">SENSEX</option>
+            </select>
+            
+            <select id="expiry">
+                <option>Loading...</option>
+            </select>
+            
+            <div class="column-selector" style="position: relative;">
+                <button id="columnSelectorBtn" style="padding: 6px 8px; background: #1c2333; border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 11px; height: 28px; cursor: pointer; width: 100%;">
+                    📊 Columns
+                </button>
+                <div id="columnDropdown" class="column-dropdown" style="width: 180px;">
+                    <div class="column-option">
+                        <input type="checkbox" id="col-oi" checked>
+                        <label for="col-oi">Open Interest (OI)</label>
+                    </div>
+                    <div class="column-option">
+                        <input type="checkbox" id="col-volume" checked>
+                        <label for="col-volume">Volume</label>
+                    </div>
+                    <div class="column-option">
+                        <input type="checkbox" id="col-iv" checked>
+                        <label for="col-iv">IV%</label>
+                    </div>
+                    <div class="column-option">
+                        <input type="checkbox" id="col-delta" checked>
+                        <label for="col-delta">Delta (Δ)</label>
+                    </div>
+                    <div class="column-option">
+                        <input type="checkbox" id="col-gamma" checked>
+                        <label for="col-gamma">Gamma (Γ)</label>
+                    </div>
+                    <div class="column-option">
+                        <input type="checkbox" id="col-theta" checked>
+                        <label for="col-theta">Theta (Θ)</label>
+                    </div>
+                    <div class="column-option">
+                        <input type="checkbox" id="col-vega" checked>
+                        <label for="col-vega">Vega (ν)</label>
+                    </div>
+                    <div class="column-option">
+                        <input type="checkbox" id="col-change" checked>
+                        <label for="col-change">Change %</label>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
-            <div class="basket-indicator" onclick="openBasketModal()" style="padding: 5px 10px; height: 30px; line-height: 30px;">
+            
+            <div class="basket-indicator" onclick="openBasketModal()" style="padding: 6px 8px; font-size: 11px; text-align: center;">
                 🛒 Basket
                 <span id="basketCount" class="basket-count"></span>
             </div>
         </div>
-    </div>
-    
-    <!-- Info Bar -->
-    <div class="info-bar" id="infoBar">
-        <div class="info-item">
-            <div class="info-label">Spot LTP</div>
-            <div class="info-value spot-price" id="spotPrice">₹0.00</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">Future LTP</div>
-            <div class="info-value future-price" id="futurePrice">₹0.00</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">ATM Strike</div>
-            <div class="info-value atm-price" id="atmStrike">0</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">CE OI</div>
-            <div class="info-value" id="ceOi">0</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">PE OI</div>
-            <div class="info-value" id="peOi">0</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">Total OI</div>
-            <div class="info-value" id="totalOI">0</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">PCR</div>
-            <div class="info-value" id="pcr">0.00</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">Updated</div>
-            <div class="info-value" id="lastUpdated">--:--:--</div>
+        
+        <!-- Right Info Panel - Row 1: Spot LTP, Future LTP, ATM Strike, PCR -->
+        <!-- Row 2: Total OI, CE OI, PE OI, Last Updated -->
+        <div class="info-panel">
+            <div class="info-item">
+                <div class="info-label">Spot LTP</div>
+                <div class="info-value spot-price" id="spotPrice">₹0.00</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Future LTP</div>
+                <div class="info-value future-price" id="futurePrice">₹0.00</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">ATM Strike</div>
+                <div class="info-value atm-price" id="atmStrike">0</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Call/Put Ratio</div>
+                <div class="info-value" id="pcr">0.00</div>
+            </div>
+            
+            <!-- Row 2 -->
+            <div class="info-item">
+                <div class="info-label">Total OI</div>
+                <div class="info-value" id="totalOI">0</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">CE OI</div>
+                <div class="info-value" id="ceOi">0</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">PE OI</div>
+                <div class="info-value" id="peOi">0</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Last Updated</div>
+                <div class="info-value" id="lastUpdated">--:--:--</div>
+            </div>
         </div>
     </div>
     
@@ -1287,15 +1338,18 @@
         currentSpotPrice = parseFloat(meta.spot_price) || parseFloat(meta.spot_ltp) || 0;
         currentFuturePrice = parseFloat(meta.future_price) || parseFloat(meta.fut_ltp) || 0;
         
+        // Update display values
         elements.spotPrice.textContent = `₹${formatNumber(currentSpotPrice, 2)}`;
         elements.futurePrice.textContent = `₹${formatNumber(currentFuturePrice, 2)}`;
         
+        // Calculate ATM Strike based on FUTURE LTP (not spot)
         const strikes = Object.keys(chainData).map(Number).sort((a, b) => a - b);
-        if (strikes.length > 0 && currentSpotPrice > 0) {
-            atmStrike = findATMStrike(strikes, currentSpotPrice);
+        if (strikes.length > 0 && currentFuturePrice > 0) {
+            atmStrike = findATMStrike(strikes, currentFuturePrice);
             elements.atmStrikeEl.textContent = atmStrike;
         }
         
+        // Update timestamp
         elements.lastUpdated.textContent = new Date().toLocaleTimeString('en-IN', {
             hour12: false,
             hour: '2-digit',

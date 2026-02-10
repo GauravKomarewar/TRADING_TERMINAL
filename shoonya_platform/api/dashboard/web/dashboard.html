@@ -1057,8 +1057,15 @@
                 // Average Price: Try all possible price field names
                 const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
                 
-            // LTP: Latest Trade Price (includes 'c' field from broker)
-            const ltp = parseFloat(h.c || h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
+                // LTP: Latest Trade Price (includes 'c' field from broker)
+                const ltp = parseFloat(h.c || h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
+                
+                // Calculate PnL values
+                const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
+                const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
+                const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
+                const netPnl = realized + unrealized;
+                
                 const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
                 const rpnlClass = realized >= 0 ? 'success' : 'danger';
                 const urmtomClass = unrealized >= 0 ? 'success' : 'danger';

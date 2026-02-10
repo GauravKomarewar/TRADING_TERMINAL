@@ -20,56 +20,52 @@
         { id: 'diagnostics',  label: 'Diagnostics',   href: '/dashboard/web/diagnostics.html' },
     ];
 
-    /* Ticker — sticky symbols always visible, rest rotate */
-    const STICKY_SYMBOLS  = ['INDIAVIX', 'NIFTY'];
-    const ROTATE_SYMBOLS  = ['SENSEX', 'BANKNIFTY', 'GOLDPETAL', 'SILVERMIC', 'NATGASMINI', 'CRUDEOILM', 'FINNIFTY'];
-    const ALL_SYMBOLS     = [...STICKY_SYMBOLS, ...ROTATE_SYMBOLS];
+    /* Ticker — all symbols scroll continuously like stock exchange ticker */
+    const ALL_SYMBOLS = ['INDIAVIX', 'NIFTY', 'SENSEX', 'BANKNIFTY', 'GOLDPETAL', 'SILVERMIC', 'NATGASMINI', 'CRUDEOILM', 'FINNIFTY'];
 
-    /* How many rotating items visible at a time (adapts on mobile) */
-    function getRotateVisible() {
-        if (window.innerWidth <= 480)  return 1;
-        if (window.innerWidth <= 768)  return 2;
-        if (window.innerWidth <= 1024) return 3;
-        return 4;
-    }
-
-    const ROTATE_INTERVAL_MS = 4000;
-
-    /* Display names for ticker */
+    /* Full display names */
     const DISPLAY_NAMES = {
-        INDIAVIX:    'VIX',
-        NIFTY:       'NIFTY',
+        INDIAVIX:    'INDIA VIX',
+        NIFTY:       'NIFTY 50',
         SENSEX:      'SENSEX',
-        BANKNIFTY:   'BNKNIFTY',
-        GOLDPETAL:   'GOLDPETL',
-        SILVERMIC:   'SILVMIC',
-        NATGASMINI:  'NATGAS',
-        CRUDEOILM:   'CRUDE',
-        FINNIFTY:    'FINNIFTY',
+        BANKNIFTY:   'BANK NIFTY',
+        GOLDPETAL:   'GOLD PETAL',
+        SILVERMIC:   'SILVER MIC',
+        NATGASMINI:  'NAT GAS MINI',
+        CRUDEOILM:   'CRUDE OIL',
+        FINNIFTY:    'FIN NIFTY',
     };
 
     /* ────────────────────────────────────────────────────
-       BUILD: Ticker Ribbon (top of page)
+       BUILD: Ticker Ribbon — Continuous marquee (top of page)
        ──────────────────────────────────────────────────── */
     const ticker = document.createElement('div');
     ticker.className = 'global-ticker';
     ticker.id = 'globalTicker';
 
-    // Sticky section
-    const stickyDiv = document.createElement('div');
-    stickyDiv.className = 'ticker-sticky';
-    stickyDiv.id = 'tickerSticky';
+    // Single marquee track — contains TWO identical copies for seamless loop
+    const marqueeTrack = document.createElement('div');
+    marqueeTrack.className = 'ticker-marquee-track';
+    marqueeTrack.id = 'tickerMarqueeTrack';
 
-    // Rotating section
-    const rotateWrap = document.createElement('div');
-    rotateWrap.className = 'ticker-rotate-wrap';
-    const rotateTrack = document.createElement('div');
-    rotateTrack.className = 'ticker-rotate-track';
-    rotateTrack.id = 'tickerRotateTrack';
-    rotateWrap.appendChild(rotateTrack);
+    // Build chip HTML for one copy of all symbols
+    function buildChipPlaceholder(symbol, copyIdx) {
+        const name = DISPLAY_NAMES[symbol] || symbol;
+        return `<div class="ticker-chip" data-symbol="${symbol}" data-copy="${copyIdx}">` +
+            `<span class="ticker-sym">${name}</span>` +
+            `<span class="ticker-ltp" style="color:rgba(255,255,255,0.3)">--</span>` +
+            `<span class="ticker-pct" style="color:rgba(255,255,255,0.2)">—</span>` +
+            `</div><span class="ticker-sep">•</span>`;
+    }
 
-    ticker.appendChild(stickyDiv);
-    ticker.appendChild(rotateWrap);
+    // Two copies for seamless marquee loop
+    let copyHTML = '';
+    for (let c = 0; c < 2; c++) {
+        ALL_SYMBOLS.forEach(s => { copyHTML += buildChipPlaceholder(s, c); });
+    }
+    marqueeTrack.innerHTML = copyHTML;
+
+    ticker.appendChild(marqueeTrack);
     body.insertBefore(ticker, body.firstChild);
 
     /* ────────────────────────────────────────────────────
@@ -181,77 +177,45 @@
     }
 
     /* ────────────────────────────────────────────────────
-       TICKER: Data & Rendering
+       TICKER: Data & Rendering (Marquee)
        ──────────────────────────────────────────────────── */
     let tickerData = {};   // symbol → { ltp, pc }
-    let rotateIndex = 0;
-    let rotateTimer = null;
 
-    function renderChip(symbol, data) {
-        const name = DISPLAY_NAMES[symbol] || symbol;
+    // Update all chip instances for a given symbol (both copies)
+    function updateChip(symbol, data) {
+        const chips = document.querySelectorAll(`.ticker-chip[data-symbol="${symbol}"]`);
+        if (!chips.length) return;
+
         const ltp = data && data.ltp != null ? data.ltp : null;
         const pc  = data && data.pc  != null ? data.pc  : null;
 
-        if (ltp == null) {
-            return `<div class="ticker-chip">
-                <span class="ticker-sym">${name}</span>
-                <span class="ticker-ltp" style="color:rgba(255,255,255,0.3)">--</span>
-            </div>`;
-        }
+        chips.forEach(chip => {
+            const ltpEl = chip.querySelector('.ticker-ltp');
+            const pctEl = chip.querySelector('.ticker-pct');
 
-        const cls = pc >= 0 ? 'up' : 'down';
-        const arrow = pc >= 0 ? '▲' : '▼';
-        const ltpStr = ltp >= 1000 ? ltp.toLocaleString('en-IN', {maximumFractionDigits:2}) : ltp.toFixed(2);
-        const pctStr = Math.abs(pc).toFixed(2);
+            if (ltp == null) {
+                ltpEl.textContent = '--';
+                ltpEl.className = 'ticker-ltp';
+                ltpEl.style.color = 'rgba(255,255,255,0.3)';
+                pctEl.textContent = '—';
+                pctEl.className = 'ticker-pct';
+                pctEl.style.color = 'rgba(255,255,255,0.2)';
+                return;
+            }
 
-        return `<div class="ticker-chip">
-            <span class="ticker-sym">${name}</span>
-            <span class="ticker-ltp ${cls}">${ltpStr}</span>
-            <span class="ticker-pct ${cls}">${arrow} ${pctStr}%</span>
-        </div>`;
-    }
+            const cls = pc >= 0 ? 'up' : 'down';
+            const arrow = pc >= 0 ? '▲' : '▼';
+            const ltpStr = ltp >= 1000 ? ltp.toLocaleString('en-IN', {maximumFractionDigits:2}) : ltp.toFixed(2);
+            const pctStr = Math.abs(pc).toFixed(2);
 
-    function renderStickySection() {
-        const el = document.getElementById('tickerSticky');
-        if (!el) return;
-        el.innerHTML = STICKY_SYMBOLS.map(s => renderChip(s, tickerData[s])).join('');
-    }
+            ltpEl.textContent = ltpStr;
+            ltpEl.className = 'ticker-ltp ' + cls;
+            ltpEl.style.color = '';
 
-    function getRotatingSlice() {
-        const vis = getRotateVisible();
-        const items = [];
-        for (let i = 0; i < vis; i++) {
-            const idx = (rotateIndex + i) % ROTATE_SYMBOLS.length;
-            items.push(ROTATE_SYMBOLS[idx]);
-        }
-        return items;
-    }
-
-    function renderRotatingSection(animate) {
-        const track = document.getElementById('tickerRotateTrack');
-        if (!track) return;
-
-        if (animate) {
-            track.classList.add('fade-out');
-            setTimeout(() => {
-                const slice = getRotatingSlice();
-                track.innerHTML = slice.map(s => renderChip(s, tickerData[s])).join('');
-                track.classList.remove('fade-out');
-            }, 350); // matches CSS transition
-        } else {
-            const slice = getRotatingSlice();
-            track.innerHTML = slice.map(s => renderChip(s, tickerData[s])).join('');
-        }
-    }
-
-    function advanceRotation() {
-        rotateIndex = (rotateIndex + 1) % ROTATE_SYMBOLS.length;
-        renderRotatingSection(true);
-    }
-
-    function startRotation() {
-        if (rotateTimer) clearInterval(rotateTimer);
-        rotateTimer = setInterval(advanceRotation, ROTATE_INTERVAL_MS);
+            pctEl.textContent = `${arrow} ${pctStr}%`;
+            pctEl.className = 'ticker-pct ' + cls;
+            pctEl.style.color = '';
+        });
     }
 
     /* ── Fetch prices ── */
@@ -261,37 +225,27 @@
             .then(r => r.ok ? r.json() : Promise.reject())
             .then(data => {
                 const indices = data.indices || {};
-                // Merge into tickerData
                 ALL_SYMBOLS.forEach(s => {
-                    if (indices[s]) tickerData[s] = indices[s];
+                    if (indices[s]) {
+                        tickerData[s] = indices[s];
+                        updateChip(s, indices[s]);
+                    }
                 });
-                // Re-render sticky (prices may have changed)
-                renderStickySection();
-                // Re-render current rotating slice (in-place, no animation)
-                const track = document.getElementById('tickerRotateTrack');
-                if (track && !track.classList.contains('fade-out')) {
-                    const slice = getRotatingSlice();
-                    track.innerHTML = slice.map(s => renderChip(s, tickerData[s])).join('');
-                }
             })
             .catch(() => {}); // fail silently
     }
 
-    /* ── Responsive: re-render on resize ── */
+    /* ── Responsive: close mobile nav on resize ── */
     let resizeDebounce = null;
     window.addEventListener('resize', () => {
         clearTimeout(resizeDebounce);
         resizeDebounce = setTimeout(() => {
-            renderRotatingSection(false);
             closeMobileNav();
         }, 200);
     });
 
     /* ── Initialize ── */
     function initTicker() {
-        renderStickySection();
-        renderRotatingSection(false);
-        startRotation();
         fetchTickerPrices();
         setInterval(fetchTickerPrices, 2000);
     }

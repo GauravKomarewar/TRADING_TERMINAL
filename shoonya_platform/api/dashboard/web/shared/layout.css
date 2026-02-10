@@ -4,11 +4,11 @@ body.dashboard-shell {
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
-    padding-top: 64px;  /* Space for fixed ticker (28px) + fixed header (36px) */
+    padding-top: 77px;  /* Space for fixed ticker (28px) + fixed header (49px) */
 }
 
 .app-header {
-    height: 36px;  /* Compact navigation bar */
+    height: 49px;  /* 1.75x ticker height (28px × 1.75 = 49px) */
     background: var(--panel);
     display: flex;
     align-items: center;
@@ -38,7 +38,7 @@ body.dashboard-shell {
     gap: 4px;  /* Reduced gap */
     align-items: center;
     flex: 1;
-    height: 36px;
+    height: 49px;
 }
 
 .app-actions {
@@ -240,7 +240,7 @@ body.dashboard-shell {
 
 @media (max-width: 768px) {
     body.dashboard-shell {
-        padding-top: 61px;  /* 25px ticker + 36px header */
+        padding-top: 69px;  /* 25px ticker + 44px header (25 × 1.75) */
     }
 
     .global-ticker {
@@ -249,7 +249,7 @@ body.dashboard-shell {
     
     .app-header {
         top: 25px;
-        height: 36px;
+        height: 44px;
     }
     
     .ticker-frozen-left {

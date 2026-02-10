@@ -4,6 +4,7 @@ body.dashboard-shell {
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
+    padding-top: 68px;  /* Space for fixed ticker (28px) + fixed header (40px) */
 }
 
 .app-header {
@@ -13,10 +14,13 @@ body.dashboard-shell {
     align-items: center;
     padding: 0 var(--spacing-lg);
     border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 1000;
+    position: fixed;
+    top: 28px;  /* Below fixed ticker */
+    left: 0;
+    right: 0;
+    z-index: 999;
     gap: var(--spacing-md);
+    width: 100%;
 }
 
 .app-brand {
@@ -78,11 +82,10 @@ body.dashboard-shell {
 
 /* Global Index Ticker Ribbon - Always on Top */
 .global-ticker {
-    background: linear-gradient(90deg, var(--panel), rgba(28,35,51,0.9));
+    background: linear-gradient(90deg, var(--panel), rgba(28,35,51,0.95));
     border-bottom: 1px solid var(--border);
-    overflow: hidden;
     z-index: 10000;  /* On top of everything */
-    height: 40px;
+    height: 28px;
     display: flex;
     align-items: center;
     position: fixed;
@@ -92,24 +95,51 @@ body.dashboard-shell {
     width: 100%;
 }
 
+/* Frozen NIFTY column on left */
+.ticker-frozen-left {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    border-right: 2px solid var(--border);
+    flex-shrink: 0;
+    min-width: 150px;
+}
+
+.ticker-frozen-left .ticker-item {
+    gap: 6px;
+    padding: 0;
+    border-right: none;
+    min-width: auto;
+}
+
+.ticker-frozen-left .ticker-symbol {
+    min-width: 45px;
+}
+
+/* Rotating symbols area */
 .ticker-track {
-    width: 100%;
+    flex: 1;
     overflow: hidden;
     position: relative;
+    height: 28px;
+    display: flex;
+    align-items: center;
 }
 
 .ticker-items {
     display: flex;
-    gap: 20px;
-    padding: 0 20px;
+    gap: 16px;
+    padding: 0 12px;
     white-space: nowrap;
     min-width: max-content;
+    height: 28px;
+    align-items: center;
     transition: transform 0.1s linear;
 }
 
 /* Only animate when content is wider than container */
 .ticker-items.animate-scroll {
-    animation: scrollTicker 60s linear infinite;
+    animation: scrollTicker 50s linear infinite;
 }
 
 @keyframes scrollTicker {
@@ -121,7 +151,7 @@ body.dashboard-shell {
     }
 }
 
-/* Pause animation on hover */
+/* Pause animation on hover over ticker track */
 .ticker-track:hover .ticker-items.animate-scroll {
     animation-play-state: paused;
 }
@@ -129,11 +159,11 @@ body.dashboard-shell {
 .ticker-item {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 6px;
+    padding: 4px 8px;
     border-right: 1px solid var(--border);
-    font-size: 12px;
-    min-width: 140px;
+    font-size: 11px;
+    min-width: 130px;
     flex-shrink: 0;
 }
 
@@ -144,12 +174,13 @@ body.dashboard-shell {
 .ticker-symbol {
     font-weight: 700;
     color: var(--text);
-    min-width: 60px;
+    min-width: 55px;
 }
 
 .ticker-ltp {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    font-size: 11px;
 }
 
 .ticker-ltp.up {
@@ -161,7 +192,7 @@ body.dashboard-shell {
 }
 
 .ticker-change {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
 }
 
@@ -173,37 +204,47 @@ body.dashboard-shell {
     color: var(--danger);
 }
 
-/* Adjust content for fixed top ribbon */
-body.dashboard-shell {
-    padding-top: 40px;  /* Space for fixed ticker */
-}
-
-.app-header {
-    position: relative;  /* Not sticky anymore since ticker is fixed */
-}
-
 @media (max-width: 768px) {
+    body.dashboard-shell {
+        padding-top: 63px;  /* 25px ticker + 38px header */
+    }
+
     .global-ticker {
-        height: 35px;
+        height: 25px;
     }
     
-    body.dashboard-shell {
-        padding-top: 35px;
+    .app-header {
+        top: 25px;
+        height: 38px;
+    }
+    
+    .ticker-frozen-left {
+        min-width: 120px;
+        padding: 0 8px;
     }
     
     .ticker-item {
-        font-size: 11px;
-        gap: 6px;
-        padding: 6px 10px;
-        min-width: 120px;
+        font-size: 10px;
+        gap: 4px;
+        padding: 3px 6px;
+        min-width: 110px;
     }
     
     .ticker-items {
-        gap: 15px;
-        padding: 0 15px;
+        gap: 12px;
+        padding: 0 8px;
     }
     
     .ticker-symbol {
-        min-width: 50px;
+        min-width: 45px;
+    }
+    
+    .app-brand {
+        font-size: 14px;
+    }
+    
+    .nav-link {
+        font-size: 12px;
+        padding: 4px 8px;
     }
 }

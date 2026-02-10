@@ -77,14 +77,17 @@
         body.insertBefore(header, body.firstChild);
     }
 
-    // Create global index ticker ribbon at top of page
+    // Create global index ticker ribbon at top of page (fixed)
     const ticker = document.createElement('div');
     ticker.className = 'global-ticker';
     ticker.id = 'globalTicker';
     ticker.innerHTML = `
+        <div class="ticker-frozen-left" id="tickerFrozen">
+            <!-- NIFTY will be locked here -->
+        </div>
         <div class="ticker-track" id="tickerTrack">
             <div class="ticker-items" id="tickerItems">
-                <!-- Index tokens will be loaded here -->
+                <!-- Rotating symbols will be loaded here -->
             </div>
         </div>
     `;
@@ -103,25 +106,47 @@
     }
     
     function updateGlobalTicker(indicesData, subscribedList) {
+        const frozenContainer = document.getElementById('tickerFrozen');
         const itemsContainer = document.getElementById('tickerItems');
         const tickerTrack = document.getElementById('tickerTrack');
-        if (!itemsContainer || !tickerTrack) return;
+        if (!itemsContainer || !frozenContainer || !tickerTrack) return;
         
         if (!subscribedList.length) {
             document.getElementById('globalTicker').style.display = 'none';
             return;
         }
         
-        document.getElementById('globalTicker').style.display = 'block';
+        document.getElementById('globalTicker').style.display = 'flex';
         
-        // Sort: INDIAVIX first, then NIFTY, BANKNIFTY, SENSEX, then rest alphabetically
-        const priority = ['INDIAVIX', 'NIFTY', 'BANKNIFTY', 'SENSEX'];
+        // Separate NIFTY from others
+        let niftyHtml = '';
+        let rotatingHtml = '';
+        
+        // Always show NIFTY frozen on left (if available)
+        if (indicesData['NIFTY']) {
+            const data = indicesData['NIFTY'];
+            const ltp = data.ltp || 0;
+            const pc = data.pc || 0;
+            const changeClass = pc >= 0 ? 'up' : 'down';
+            const arrow = pc >= 0 ? '▲' : '▼';
+            
+            niftyHtml = `
+                <div class="ticker-item">
+                    <span class="ticker-symbol">NIFTY</span>
+                    <span class="ticker-ltp ${changeClass}">₹${ltp.toFixed(2)}</span>
+                    <span class="ticker-change ${changeClass}">${arrow} ${Math.abs(pc).toFixed(2)}%</span>
+                </div>
+            `;
+        }
+        
+        // Sort remaining: INDIAVIX, BANKNIFTY, SENSEX, then rest alphabetically
+        const priority = ['INDIAVIX', 'BANKNIFTY', 'SENSEX'];
+        const otherSymbols = subscribedList.filter(s => s !== 'NIFTY');
         const sorted = [
-            ...priority.filter(s => subscribedList.includes(s)),
-            ...subscribedList.filter(s => !priority.includes(s)).sort()
+            ...priority.filter(s => otherSymbols.includes(s)),
+            ...otherSymbols.filter(s => !priority.includes(s)).sort()
         ];
         
-        let html = '';
         sorted.forEach(symbol => {
             if (indicesData[symbol]) {
                 const data = indicesData[symbol];
@@ -130,7 +155,7 @@
                 const changeClass = pc >= 0 ? 'up' : 'down';
                 const arrow = pc >= 0 ? '▲' : '▼';
                 
-                html += `
+                rotatingHtml += `
                     <div class="ticker-item">
                         <span class="ticker-symbol">${symbol}</span>
                         <span class="ticker-ltp ${changeClass}">₹${ltp.toFixed(2)}</span>
@@ -140,8 +165,10 @@
             }
         });
         
-        if (html) {
-            itemsContainer.innerHTML = html;
+        frozenContainer.innerHTML = niftyHtml;
+        
+        if (rotatingHtml) {
+            itemsContainer.innerHTML = rotatingHtml;
             // Check if animation is needed (items overflow container)
             setTimeout(() => {
                 const itemsWidth = itemsContainer.scrollWidth;

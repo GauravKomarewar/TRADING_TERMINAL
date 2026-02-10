@@ -34,8 +34,7 @@ USAGE:
 """
 
 import logging
-from typing import Dict, Optional, Any, Set, Tuple
-from shoonya_platform.brokers.shoonya.client import ShoonyaClient
+from typing import Dict, Optional, Any, Set, Tuple, List, Union
 from shoonya_platform.market_data.feeds.live_feed import (
     subscribe_livedata,
     get_tick_data,
@@ -88,7 +87,7 @@ _subscribed_indices: Set[str] = set()
 # =============================================================================
 
 def subscribe_index_tokens(
-    api_client: ShoonyaClient,
+    api_client: Any,  # ShoonyaClient or ShoonyaApiProxy
     indices: Optional[list] = None,
     auto_start: bool = True,
 ) -> Tuple[int, List[str]]:

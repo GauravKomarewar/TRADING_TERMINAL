@@ -332,7 +332,7 @@ def stop_strategy(
 _STRATEGY_CONFIGS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "strategies" / "saved_configs"
 _STRATEGY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
 
-_VALID_SECTIONS = {"entry", "adjustment", "exit", "rms"}
+_VALID_SECTIONS = {"identity", "entry", "adjustment", "exit", "rms"}
 
 def _slugify(name: str) -> str:
     """Convert strategy name to safe filename slug."""
@@ -411,13 +411,17 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             configs.append({
+                "schema_version": data.get("schema_version", "1.0"),
                 "name": data.get("name", f.stem),
                 "id": data.get("id", f.stem),
+                "description": data.get("description", ""),
+                "tags": data.get("tags", []),
                 "file": f.name,
                 "updated_at": data.get("updated_at", ""),
                 "created_at": data.get("created_at", ""),
                 "status": data.get("status", "IDLE"),
                 "sections": [s for s in _VALID_SECTIONS if s in data and data[s]],
+                "identity": data.get("identity", {}),
                 "entry": data.get("entry", {}),
                 "adjustment": data.get("adjustment", {}),
                 "exit": data.get("exit", {}),
@@ -434,8 +438,10 @@ def save_strategy_config_all(
     ctx=Depends(require_dashboard_auth),
 ):
     """Save a complete strategy config (all sections at once).
-    
-    payload: { "name": "...", "id": "...", "entry": {...}, "adjustment": {...}, "exit": {...}, "rms": {...} }
+
+    Schema v2.0 — stores identity/entry/adjustment/exit/rms plus
+    description, tags, schema_version.  Files are self-contained JSON
+    in strategies/saved_configs/ and can be edited directly on disk.
     """
     name = payload.get("name", "").strip()
     strat_id = payload.get("id", "").strip()
@@ -443,7 +449,7 @@ def save_strategy_config_all(
     if not name:
         raise HTTPException(400, "Strategy name is required")
     if not strat_id:
-        strat_id = _slugify(name)
+        strat_id = _slugify(name).upper()
 
     slug = _slugify(name)
     filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
@@ -456,8 +462,12 @@ def save_strategy_config_all(
         except Exception:
             existing = {}
 
+    existing["schema_version"] = "2.0"
     existing["name"] = name
     existing["id"] = strat_id
+    existing["description"] = payload.get("description", existing.get("description", ""))
+    existing["tags"] = payload.get("tags", existing.get("tags", []))
+
     for section in _VALID_SECTIONS:
         if section in payload and isinstance(payload[section], dict):
             existing[section] = payload[section]
@@ -519,6 +529,91 @@ def update_strategy_status(
     filepath.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
 
     return {"updated": True, "name": name, "status": new_status}
+
+
+@router.post("/strategy/config/{name}/rename")
+def rename_strategy_config(
+    name: str,
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Rename a saved strategy config (changes filename + internal name/id)."""
+    new_name = payload.get("new_name", "").strip()
+    if not new_name:
+        raise HTTPException(400, "new_name is required")
+
+    old_slug = _slugify(name)
+    new_slug = _slugify(new_name)
+    old_path = _STRATEGY_CONFIGS_DIR / f"{old_slug}.json"
+    new_path = _STRATEGY_CONFIGS_DIR / f"{new_slug}.json"
+
+    if not old_path.exists():
+        raise HTTPException(404, f"Config '{name}' not found")
+    if new_path.exists() and old_slug != new_slug:
+        raise HTTPException(409, f"Config '{new_name}' already exists")
+
+    try:
+        data = json.loads(old_path.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+
+    data["name"] = new_name
+    data["id"] = new_name.upper().replace(" ", "_").strip("_")
+    data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    new_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    if old_slug != new_slug and old_path.exists():
+        old_path.unlink()
+
+    logger.info("Strategy config renamed: %s -> %s", name, new_name)
+    return {"renamed": True, "old_name": name, "new_name": new_name, "file": new_slug + ".json"}
+
+
+@router.post("/strategy/config/{name}/clone")
+def clone_strategy_config(
+    name: str,
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Clone a saved strategy config with a new name (optionally new underlying)."""
+    new_name = payload.get("new_name", "").strip()
+    if not new_name:
+        raise HTTPException(400, "new_name is required")
+
+    src_slug = _slugify(name)
+    dst_slug = _slugify(new_name)
+    src_path = _STRATEGY_CONFIGS_DIR / f"{src_slug}.json"
+    dst_path = _STRATEGY_CONFIGS_DIR / f"{dst_slug}.json"
+
+    if not src_path.exists():
+        raise HTTPException(404, f"Config '{name}' not found")
+    if dst_path.exists():
+        raise HTTPException(409, f"Config '{new_name}' already exists")
+
+    try:
+        data = json.loads(src_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(500, f"Failed to read source: {e}")
+
+    data["name"] = new_name
+    data["id"] = new_name.upper().replace(" ", "_").strip("_")
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    data["created_at"] = now
+    data["updated_at"] = now
+    data["status"] = "IDLE"
+    data.pop("status_updated_at", None)
+
+    # Apply instrument override if provided
+    new_underlying = payload.get("underlying", "").strip()
+    if new_underlying:
+        if isinstance(data.get("identity"), dict):
+            data["identity"]["underlying"] = new_underlying
+        if isinstance(data.get("entry"), dict):
+            data["entry"]["underlying"] = new_underlying
+
+    dst_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    logger.info("Strategy config cloned: %s -> %s", name, new_name)
+    return {"cloned": True, "source": name, "new_name": new_name, "file": dst_slug + ".json"}
 
 
 @router.post(

@@ -1,678 +1,1000 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strategy Management | Shoonya Platform</title>
-    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
-    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
-    <script src="/dashboard/web/shared/layout.js" defer></script>
-    <style>
-        /* ── Strategy Page Layout ── */
-        .strat-layout { display: grid; grid-template-columns: 340px 1fr; gap: var(--spacing-lg); align-items: start; }
-        @media (max-width: 1024px) { .strat-layout { grid-template-columns: 1fr; } }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Strategy Builder | Shoonya Platform</title>
+<link rel="stylesheet" href="/dashboard/web/styles/common.css">
+<link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+<script src="/dashboard/web/shared/layout.js" defer></script>
+<style>
+/* ── Layout ── */
+.strat-layout{display:grid;grid-template-columns:360px 1fr;gap:var(--spacing-lg);align-items:start}
+@media(max-width:1100px){.strat-layout{grid-template-columns:1fr}}
 
-        /* Sidebar */
-        .strat-sidebar .card { position: sticky; top: 96px; max-height: calc(100vh - 110px); overflow-y: auto; }
-        .strat-list { display: flex; flex-direction: column; gap: 8px; }
-        .strat-card {
-            background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md);
-            padding: 12px; cursor: pointer; transition: var(--transition);
-        }
-        .strat-card:hover { border-color: var(--primary); }
-        .strat-card.active { border-color: var(--primary); background: rgba(59,130,246,0.06); }
-        .strat-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-        .strat-card-name { font-weight: 600; font-size: 13px; color: var(--text); }
-        .strat-card-id { font-size: 11px; color: var(--muted); font-family: monospace; margin-bottom: 6px; }
-        .strat-card-meta { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
-        .strat-card-controls { display: flex; gap: 6px; }
-        .strat-card-controls button { padding: 4px 10px; font-size: 11px; border-radius: 4px; }
+/* ── Sidebar ── */
+.strat-sidebar .card{position:sticky;top:96px;max-height:calc(100vh - 110px);overflow-y:auto}
+.strat-list{display:flex;flex-direction:column;gap:8px;padding:8px}
+.strat-card{background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;cursor:pointer;transition:var(--transition)}
+.strat-card:hover{border-color:var(--primary)}
+.strat-card.active{border-color:var(--primary);background:rgba(59,130,246,.06)}
+.sc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.sc-name{font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.sc-id{font-size:10px;color:var(--muted);font-family:monospace;margin-bottom:4px}
+.sc-meta{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
+.sc-desc{font-size:10px;color:var(--muted);margin-bottom:6px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sc-row{display:flex;gap:5px;flex-wrap:wrap}
+.sc-row button{padding:3px 8px;font-size:10px;border-radius:4px}
+.sc-actions{display:flex;gap:4px;margin-top:6px}
+.sc-actions button{padding:2px 7px;font-size:10px;border-radius:4px;background:transparent;border:1px solid var(--border);color:var(--muted)}
+.sc-actions button:hover{color:var(--text);border-color:var(--text)}
 
-        .status-pill {
-            display: inline-block; padding: 2px 8px; border-radius: 10px;
-            font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
-        }
-        .status-pill.idle { background: rgba(255,255,255,0.06); color: var(--muted); }
-        .status-pill.running { background: rgba(34,197,94,0.12); color: #22c55e; }
-        .status-pill.paused { background: rgba(234,179,8,0.12); color: #eab308; }
-        .status-pill.stopped { background: rgba(239,68,68,0.12); color: #ef4444; }
+.sp{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.sp.idle{background:rgba(255,255,255,.06);color:var(--muted)}
+.sp.running{background:rgba(34,197,94,.12);color:#22c55e}
+.sp.paused{background:rgba(234,179,8,.12);color:#eab308}
+.sp.stopped{background:rgba(239,68,68,.12);color:#ef4444}
+.sec-pill{display:inline-block;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:600;text-transform:uppercase;background:rgba(59,130,246,.1);color:var(--primary)}
 
-        .section-pill {
-            display: inline-block; padding: 1px 6px; border-radius: 4px;
-            font-size: 9px; font-weight: 600; text-transform: uppercase;
-            background: rgba(59,130,246,0.1); color: var(--primary);
-        }
+/* ── Builder ── */
+.btabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:var(--spacing-lg);overflow-x:auto}
+.btab{padding:10px 14px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:var(--transition);white-space:nowrap;user-select:none}
+.btab:hover{color:var(--text)}
+.btab.active{color:var(--primary);border-bottom-color:var(--primary)}
+.btab .n{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;font-size:9px;font-weight:700;background:var(--border);color:var(--muted);margin-right:4px}
+.btab.active .n{background:var(--primary);color:#fff}
+.btab.done .n{background:#22c55e;color:#fff}
+.bpane{display:none}.bpane.active{display:block}
 
-        /* Builder tabs */
-        .builder-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; }
-        .builder-tab {
-            padding: 10px 16px; font-size: 13px; font-weight: 500; color: var(--muted);
-            cursor: pointer; border-bottom: 2px solid transparent; transition: var(--transition);
-            white-space: nowrap; user-select: none;
-        }
-        .builder-tab:hover { color: var(--text); }
-        .builder-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-        .builder-tab .sn {
-            display: inline-flex; align-items: center; justify-content: center;
-            width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
-            background: var(--border); color: var(--muted); margin-right: 5px;
-        }
-        .builder-tab.active .sn { background: var(--primary); color: #fff; }
-        .builder-tab.done .sn { background: #22c55e; color: #fff; }
+.sec-hdr{font-size:13px;font-weight:600;color:var(--text-secondary);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px dotted var(--border)}
+.sec-hdr:first-child{margin-top:0}
 
-        .builder-pane { display: none; }
-        .builder-pane.active { display: block; }
+/* Summary */
+.sum-sec{margin-bottom:16px}
+.sum-sec h4{font-size:12px;font-weight:600;color:var(--primary);margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.sum-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px}
+.sum-item{display:flex;justify-content:space-between;padding:4px 8px;background:var(--panel-2);border-radius:var(--radius-sm);font-size:11px}
+.sum-item .l{color:var(--muted)}.sum-item .v{color:var(--text);font-weight:600;text-align:right;max-width:140px;overflow:hidden;text-overflow:ellipsis}
 
-        /* Summary */
-        .summary-section { margin-bottom: 20px; }
-        .summary-section h4 { font-size: 13px; font-weight: 600; color: var(--primary); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-        .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
-        .summary-item { display: flex; justify-content: space-between; padding: 5px 10px; background: var(--panel-2); border-radius: var(--radius-sm); font-size: 12px; }
-        .summary-item .lbl { color: var(--muted); }
-        .summary-item .val { color: var(--text); font-weight: 600; }
+/* Monitor */
+.mon-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.mon-stat{background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px;text-align:center}
+.mon-stat .v{font-size:16px;font-weight:700;margin-top:2px}.mon-stat .l{font-size:10px;color:var(--muted)}
+@media(max-width:768px){.mon-stats{grid-template-columns:repeat(2,1fr)}}
 
-        /* Monitor */
-        .mon-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
-        .mon-stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px; text-align: center; }
-        .mon-stat .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
-        .mon-stat .l { font-size: 11px; color: var(--muted); }
-        @media (max-width: 768px) { .mon-stats { grid-template-columns: repeat(2, 1fr); } }
+.empty-state{text-align:center;padding:28px 14px;color:var(--muted);font-size:12px}
+.factions{display:flex;gap:8px;justify-content:flex-end;padding-top:var(--spacing-md);border-top:1px solid var(--border);margin-top:var(--spacing-md)}
 
-        .empty-state { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 13px; }
-        .form-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: var(--spacing-md); border-top: 1px solid var(--border); margin-top: var(--spacing-md); }
+/* Days checkboxes */
+.day-grid{display:flex;gap:4px;flex-wrap:wrap}
+.day-grid label{display:flex;align-items:center;gap:3px;font-size:11px;background:var(--panel-2);padding:3px 8px;border-radius:4px;cursor:pointer;border:1px solid var(--border)}
+.day-grid label:has(input:checked){border-color:var(--primary);background:rgba(59,130,246,.08)}
+.day-grid input{width:auto;margin:0}
 
-        /* Toast */
-        .toast {
-            position: fixed; bottom: 24px; right: 24px; z-index: 20000;
-            padding: 12px 20px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500;
-            transform: translateY(100px); opacity: 0; transition: all 0.3s ease; pointer-events: none;
-        }
-        .toast.show { transform: translateY(0); opacity: 1; }
-        .toast.ok { background: #166534; color: #bbf7d0; border: 1px solid #22c55e; }
-        .toast.err { background: #7f1d1d; color: #fecaca; border: 1px solid #ef4444; }
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;z-index:20000;padding:12px 20px;border-radius:var(--radius-md);font-size:13px;font-weight:500;transform:translateY(100px);opacity:0;transition:all .3s ease;pointer-events:none}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.ok{background:#166534;color:#bbf7d0;border:1px solid #22c55e}
+.toast.err{background:#7f1d1d;color:#fecaca;border:1px solid #ef4444}
+.btn-ghost{background:transparent;border:1px solid transparent;padding:4px 10px;font-size:11px}
+.btn-ghost:hover{border-color:var(--border)}
+.btn-ghost-danger{background:transparent;color:var(--danger);border:1px solid transparent;padding:4px 10px;font-size:11px}
+.btn-ghost-danger:hover{border-color:var(--danger);background:rgba(239,68,68,.08)}
 
-        .btn-ghost-danger { background: transparent; color: var(--danger); border: 1px solid transparent; padding: 4px 10px; font-size: 11px; }
-        .btn-ghost-danger:hover { border-color: var(--danger); background: rgba(239,68,68,0.08); }
-    </style>
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:15000;display:none;align-items:center;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;min-width:340px;max-width:480px}
+.modal h3{margin:0 0 12px;font-size:16px}.modal .mf{margin-bottom:12px}
+.modal .mactions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+</style>
 </head>
 <body data-page="strategy">
-    <div id="app-header"></div>
+<div id="app-header"></div>
+<main>
+<div class="page-header"><h1>Strategy Builder</h1><p class="muted">Build, save, clone, monitor and control strategies &mdash; files in <code>strategies/saved_configs/</code></p></div>
 
-    <main>
-        <div class="page-header">
-            <h1>Strategy Management</h1>
-            <p class="muted">Build, save, monitor, and control trading strategies</p>
+<div class="strat-layout">
+<!-- ═══ LEFT SIDEBAR ═══ -->
+<div class="strat-sidebar">
+<div class="card">
+    <div class="card-header"><h3 class="card-title">My Strategies</h3><button class="btn-primary btn-sm" onclick="S.reset()">+ New</button></div>
+    <div class="card-body" style="padding:0"><div id="sList" class="strat-list"><div class="empty-state">No saved strategies</div></div></div>
+</div>
+<!-- Monitor -->
+<div id="monP" class="card" style="display:none;margin-top:var(--spacing-lg)">
+    <div class="card-header"><h3 class="card-title">Live Monitor</h3><span class="badge badge-success" style="font-size:10px">LIVE</span></div>
+    <div class="card-body" style="padding-top:0">
+        <div class="mon-stats">
+            <div class="mon-stat"><div class="l">Positions</div><div class="v" id="mPos">0</div></div>
+            <div class="mon-stat"><div class="l">PnL</div><div class="v" id="mPnl">&mdash;</div></div>
+            <div class="mon-stat"><div class="l">Orders</div><div class="v" id="mOrd">0</div></div>
+            <div class="mon-stat"><div class="l">Risk</div><div class="v" id="mRisk" style="font-size:11px">OK</div></div>
         </div>
+        <div style="max-height:200px;overflow-y:auto"><table style="font-size:10px"><thead><tr><th>Symbol</th><th>Qty</th><th>PnL</th></tr></thead><tbody id="mTb"><tr><td colspan="3" class="text-center muted">—</td></tr></tbody></table></div>
+    </div>
+</div>
+</div>
 
-        <div class="strat-layout">
-            <!-- ══════ LEFT: Saved Strategies + Monitor ══════ -->
-            <div class="strat-sidebar">
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">My Strategies</h3>
-                        <button class="btn-primary btn-sm" onclick="S.newStrategy()">+ New</button>
-                    </div>
-                    <div class="card-body" style="padding:0;">
-                        <div id="stratList" class="strat-list">
-                            <div class="empty-state">No saved strategies yet</div>
-                        </div>
-                    </div>
-                </div>
+<!-- ═══ RIGHT BUILDER ═══ -->
+<div>
+<div class="card">
+<div class="card-header">
+    <h3 class="card-title" id="bTitle">New Strategy</h3>
+    <div id="bActs" class="flex gap-sm" style="display:none">
+        <button class="btn-ghost" onclick="S.exportJSON()" title="Download JSON">Export</button>
+        <button class="btn-ghost-danger" onclick="S.delCur()">Delete</button>
+    </div>
+</div>
+<div class="card-body" style="padding-top:0">
 
-                <!-- Live Monitor -->
-                <div id="monPanel" class="card" style="display:none; margin-top:var(--spacing-lg);">
-                    <div class="card-header">
-                        <h3 class="card-title">Live Monitor</h3>
-                        <span class="badge badge-success" style="font-size:10px">LIVE</span>
-                    </div>
-                    <div class="card-body" style="padding-top:0">
-                        <div class="mon-stats">
-                            <div class="mon-stat"><div class="l">Positions</div><div class="v" id="mPos">0</div></div>
-                            <div class="mon-stat"><div class="l">Today PnL</div><div class="v" id="mPnl">₹0</div></div>
-                            <div class="mon-stat"><div class="l">Open Orders</div><div class="v" id="mOrd">0</div></div>
-                            <div class="mon-stat"><div class="l">Risk</div><div class="v" id="mRisk" style="font-size:12px">OK</div></div>
-                        </div>
-                        <div style="max-height:220px; overflow-y:auto;">
-                            <table style="font-size:11px">
-                                <thead><tr><th>Symbol</th><th>Qty</th><th>PnL</th></tr></thead>
-                                <tbody id="mPosTb"><tr><td colspan="3" class="text-center muted" style="font-size:11px">No positions</td></tr></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<!-- Tabs -->
+<div class="btabs" id="bTabs">
+    <div class="btab active" onclick="S.go(0)"><span class="n">1</span>Identity</div>
+    <div class="btab" onclick="S.go(1)"><span class="n">2</span>Entry</div>
+    <div class="btab" onclick="S.go(2)"><span class="n">3</span>Adjust</div>
+    <div class="btab" onclick="S.go(3)"><span class="n">4</span>Exit</div>
+    <div class="btab" onclick="S.go(4)"><span class="n">5</span>Risk</div>
+    <div class="btab" onclick="S.go(5)"><span class="n">6</span>Summary</div>
+</div>
 
-            <!-- ══════ RIGHT: Strategy Builder ══════ -->
-            <div>
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title" id="bldTitle">New Strategy</h3>
-                        <div id="bldActions" class="flex gap-sm" style="display:none">
-                            <button class="btn-ghost-danger" onclick="S.deleteCurrent()">Delete</button>
-                        </div>
-                    </div>
-                    <div class="card-body" style="padding-top:0">
+<!-- ═══ STEP 0 : Identity & Instrument ═══ -->
+<div class="bpane active" id="p0">
+    <div class="sec-hdr">Strategy Identity</div>
+    <div class="row">
+        <div class="field"><label>Strategy Name *</label><input id="fName" placeholder="e.g. NIFTY Short Strangle Weekly" maxlength="80"></div>
+        <div class="field"><label>Strategy ID (auto)</label><input id="fId" readonly style="opacity:.55"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Description</label><textarea id="fDesc" rows="2" placeholder="Brief description of strategy logic&hellip;"></textarea></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Tags (comma separated)</label><input id="fTags" placeholder="nifty, strangle, weekly, delta-neutral"></div>
+    </div>
 
-                        <!-- Tabs -->
-                        <div class="builder-tabs" id="bldTabs">
-                            <div class="builder-tab active" onclick="S.go(0)"><span class="sn">1</span>Identity</div>
-                            <div class="builder-tab" onclick="S.go(1)"><span class="sn">2</span>Entry</div>
-                            <div class="builder-tab" onclick="S.go(2)"><span class="sn">3</span>Adjust</div>
-                            <div class="builder-tab" onclick="S.go(3)"><span class="sn">4</span>Exit</div>
-                            <div class="builder-tab" onclick="S.go(4)"><span class="sn">5</span>Risk</div>
-                            <div class="builder-tab" onclick="S.go(5)"><span class="sn">6</span>Summary</div>
-                        </div>
+    <div class="sec-hdr">Instrument Configuration</div>
+    <div class="row">
+        <div class="field"><label>Strategy Type *</label>
+            <select id="fStratType" onchange="S.typeChg()">
+                <option value="custom">Custom / Manual</option>
+                <option value="dnss">Delta Neutral Short Strangle</option>
+                <option value="short_straddle">Short Straddle</option>
+                <option value="iron_condor">Iron Condor</option>
+                <option value="iron_butterfly">Iron Butterfly</option>
+                <option value="butterfly">Butterfly Spread</option>
+                <option value="calendar">Calendar Spread</option>
+                <option value="ratio">Ratio Spread</option>
+                <option value="jade_lizard">Jade Lizard</option>
+                <option value="directional">Directional Spread</option>
+                <option value="covered_call">Covered Call / Put</option>
+            </select>
+        </div>
+        <div class="field"><label>Exchange *</label>
+            <select id="fExchange"><option value="NFO">NFO</option><option value="BFO">BFO</option><option value="MCX">MCX</option><option value="CDS">CDS</option><option value="NSE">NSE (Cash)</option></select>
+        </div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Underlying *</label>
+            <input id="fUnderlying" list="dlUnderlying" value="NIFTY">
+            <datalist id="dlUnderlying"><option value="NIFTY"><option value="BANKNIFTY"><option value="FINNIFTY"><option value="MIDCPNIFTY"><option value="SENSEX"><option value="BANKEX"><option value="CRUDEOIL"><option value="GOLD"><option value="SILVER"><option value="USDINR"></datalist>
+        </div>
+        <div class="field"><label>Instrument Type</label>
+            <select id="fInstType"><option value="OPTIDX">OPTIDX</option><option value="OPTSTK">OPTSTK</option><option value="FUTIDX">FUTIDX</option><option value="FUTSTK">FUTSTK</option><option value="CASH">CASH</option></select>
+        </div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Expiry Mode</label>
+            <select id="fExpMode" onchange="document.getElementById('fExpCustom').style.display=this.value==='custom'?'':'none'">
+                <option value="weekly_current">Weekly Current</option><option value="weekly_next">Weekly Next</option>
+                <option value="monthly_current">Monthly Current</option><option value="monthly_next">Monthly Next</option>
+                <option value="custom">Custom Date</option>
+            </select>
+        </div>
+        <div class="field" id="fExpCustom" style="display:none"><label>Custom Expiry</label><input type="date" id="fExpDate"></div>
+        <div class="field"><label>Product Type</label><select id="fProduct"><option value="NRML">NRML</option><option value="MIS">MIS</option><option value="CNC">CNC</option></select></div>
+        <div class="field"><label>Order Type</label><select id="fOrdType"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option><option value="SL-LIMIT">SL-LIMIT</option></select></div>
+    </div>
+    <div class="factions"><button class="btn-primary" onclick="S.go(1)">Next: Entry Rules &rarr;</button></div>
+</div>
 
-                        <!-- STEP 0: Identity -->
-                        <div class="builder-pane active" id="p0">
-                            <div class="row">
-                                <div class="field"><label>Strategy Name *</label><input type="text" id="fName" placeholder="e.g., NIFTY Short Strangle Weekly" maxlength="80"></div>
-                                <div class="field"><label>Strategy ID (auto)</label><input type="text" id="fId" readonly style="opacity:0.6"></div>
-                            </div>
-                            <div class="row">
-                                <div class="field"><label>Strategy Type</label>
-                                    <select id="fType" onchange="S.typeChanged()">
-                                        <option value="custom">Custom Strategy</option>
-                                        <option value="dnss">Delta Neutral Short Strangle</option>
-                                        <option value="iron_condor">Iron Condor</option>
-                                        <option value="butterfly">Butterfly</option>
-                                        <option value="short_straddle">Short Straddle</option>
-                                        <option value="directional">Directional Spread</option>
-                                    </select>
-                                </div>
-                                <div class="field"><label>Underlying *</label><input type="text" id="fUnderlying" value="NIFTY" placeholder="NIFTY, BANKNIFTY..."></div>
-                            </div>
-                            <div class="form-actions"><button class="btn-primary" onclick="S.go(1)">Next: Entry Rules →</button></div>
-                        </div>
-
-                        <!-- STEP 1: Entry -->
-                        <div class="builder-pane" id="p1">
-                            <div class="row">
-                                <div class="field"><label>Entry Time</label><input type="time" id="fEntryTime" value="09:20"></div>
-                                <div class="field"><label>Entry Condition</label>
-                                    <select id="fEntryCondition">
-                                        <option value="time_based">Time Based</option>
-                                        <option value="price_based">Price Level</option>
-                                        <option value="volatility_based">Volatility Threshold</option>
-                                        <option value="indicator_based">Technical Indicator</option>
-                                    </select>
-                                </div>
-                                <div class="field"><label>Position Size (Lots)</label><input type="number" id="fLots" min="1" value="1"></div>
-                                <div class="field"><label>Max Positions</label><input type="number" id="fMaxPos" min="1" value="1"></div>
-                            </div>
-                            <div id="typeFields"></div>
-                            <div class="row">
-                                <div class="field"><label><input type="checkbox" id="fHedge" style="width:auto;margin-right:8px">Enable Hedging on Entry</label></div>
-                                <div class="field"><label><input type="checkbox" id="fAutoConfirm" style="width:auto;margin-right:8px">Auto-confirm Orders</label></div>
-                            </div>
-                            <div class="form-actions">
-                                <button class="btn-secondary" onclick="S.go(0)">← Back</button>
-                                <button class="btn-primary" onclick="S.go(2)">Next: Adjustment →</button>
-                            </div>
-                        </div>
-
-                        <!-- STEP 2: Adjustment -->
-                        <div class="builder-pane" id="p2">
-                            <div class="row"><div class="field"><label><input type="checkbox" id="fEnableAdj" style="width:auto;margin-right:8px" checked>Enable Auto Adjustments</label></div></div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">Delta Adjustment</h3>
-                            <div class="row">
-                                <div class="field"><label>Delta Trigger</label><input type="number" id="fDeltaTrigger" step="0.01" placeholder="0.15"></div>
-                                <div class="field"><label>Target Delta</label><input type="number" id="fTargetDelta" step="0.01" placeholder="0.05"></div>
-                                <div class="field"><label>Max Adj / Day</label><input type="number" id="fMaxAdj" min="0" value="3"></div>
-                            </div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">PnL Adjustment</h3>
-                            <div class="row">
-                                <div class="field"><label>Profit Lock (₹)</label><input type="number" id="fProfitLock" step="100" placeholder="Lock at profit"></div>
-                                <div class="field"><label>Loss Repair (₹)</label><input type="number" id="fLossRepair" step="100" placeholder="Adjust at loss"></div>
-                                <div class="field"><label>Action</label>
-                                    <select id="fAdjAction">
-                                        <option value="add_hedge">Add Hedge</option><option value="roll_strike">Roll Strike</option>
-                                        <option value="reduce_position">Reduce Position</option><option value="inverse_spread">Inverse Spread</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="field"><label>Check Interval (min)</label><input type="number" id="fAdjInterval" min="1" value="5"></div>
-                                <div class="field"><label>Max Leg Delta</label><input type="number" id="fMaxLegDelta" step="0.01" placeholder="Max per leg"></div>
-                            </div>
-                            <div class="form-actions">
-                                <button class="btn-secondary" onclick="S.go(1)">← Back</button>
-                                <button class="btn-primary" onclick="S.go(3)">Next: Exit →</button>
-                            </div>
-                        </div>
-
-                        <!-- STEP 3: Exit -->
-                        <div class="builder-pane" id="p3">
-                            <h3 style="margin:0 0 8px;font-size:14px">Time Exit</h3>
-                            <div class="row">
-                                <div class="field"><label>Exit Time</label><input type="time" id="fExitTime" value="15:15"></div>
-                                <div class="field"><label>Force Exit Before Expiry (min)</label><input type="number" id="fForceExit" min="0" value="10"></div>
-                            </div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">Profit Target</h3>
-                            <div class="row">
-                                <div class="field"><label>Target Profit (₹)</label><input type="number" id="fTargetProfit" step="100"></div>
-                                <div class="field"><label>Target Profit (%)</label><input type="number" id="fTargetPct" step="1"></div>
-                                <div class="field"><label>Partial Exit</label>
-                                    <select id="fPartialExit">
-                                        <option value="100">Full (100%)</option><option value="75">75%</option><option value="50">50%</option><option value="25">25%</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">Stop Loss</h3>
-                            <div class="row">
-                                <div class="field"><label>SL (₹)</label><input type="number" id="fSL" step="100"></div>
-                                <div class="field"><label>SL (%)</label><input type="number" id="fSLPct" step="1"></div>
-                                <div class="field"><label>Trailing Stop (%)</label><input type="number" id="fTrail" step="1"></div>
-                            </div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">Per-Leg Exit</h3>
-                            <div class="row">
-                                <div class="field"><label>Leg SL (₹)</label><input type="number" id="fLegSL" step="50"></div>
-                                <div class="field"><label>Leg Target (₹)</label><input type="number" id="fLegTarget" step="50"></div>
-                                <div class="field"><label><input type="checkbox" id="fExitAllBreach" style="width:auto;margin-right:8px">Exit All If One Breaches</label></div>
-                            </div>
-                            <div class="form-actions">
-                                <button class="btn-secondary" onclick="S.go(2)">← Back</button>
-                                <button class="btn-primary" onclick="S.go(4)">Next: Risk →</button>
-                            </div>
-                        </div>
-
-                        <!-- STEP 4: Risk -->
-                        <div class="builder-pane" id="p4">
-                            <h3 style="margin:0 0 8px;font-size:14px">Position Limits</h3>
-                            <div class="row">
-                                <div class="field"><label>Max Position Value (₹)</label><input type="number" id="fMaxVal" step="10000"></div>
-                                <div class="field"><label>Max Margin (%)</label><input type="number" id="fMaxMargin" min="0" max="100" value="70"></div>
-                                <div class="field"><label>Max Lots/Trade</label><input type="number" id="fMaxLots" min="1" value="10"></div>
-                            </div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">Daily Limits</h3>
-                            <div class="row">
-                                <div class="field"><label>Daily Loss Limit (₹)</label><input type="number" id="fDailyLoss" step="1000"></div>
-                                <div class="field"><label>Daily Profit Target (₹)</label><input type="number" id="fDailyProfit" step="1000"></div>
-                                <div class="field"><label>Max Trades/Day</label><input type="number" id="fMaxTrades" min="1" value="10"></div>
-                            </div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">Risk Controls</h3>
-                            <div class="row">
-                                <div class="field"><label>Circuit Breaker (₹)</label><input type="number" id="fCircuit" step="1000"></div>
-                                <div class="field"><label>Drawdown Limit (%)</label><input type="number" id="fDrawdown" step="5"></div>
-                                <div class="field"><label>Concentration (%)</label><input type="number" id="fConcentration" min="0" max="100" value="30"></div>
-                            </div>
-                            <h3 style="margin:12px 0 8px;font-size:14px">Combined Legs</h3>
-                            <div class="row">
-                                <div class="field"><label><input type="checkbox" id="fTrackCombined" style="width:auto;margin-right:8px" checked>Track Combined PnL</label></div>
-                                <div class="field"><label>Combined SL (₹)</label><input type="number" id="fCombSL" step="100"></div>
-                                <div class="field"><label>Combined Target (₹)</label><input type="number" id="fCombTarget" step="100"></div>
-                            </div>
-                            <div class="row">
-                                <div class="field"><label><input type="checkbox" id="fAutoSquare" style="width:auto;margin-right:8px">Auto Square-Off on Breach</label></div>
-                                <div class="field"><label><input type="checkbox" id="fNotify" style="width:auto;margin-right:8px" checked>Telegram Alert on Breach</label></div>
-                            </div>
-                            <div class="form-actions">
-                                <button class="btn-secondary" onclick="S.go(3)">← Back</button>
-                                <button class="btn-primary" onclick="S.go(5)">Review Summary →</button>
-                            </div>
-                        </div>
-
-                        <!-- STEP 5: Summary & Save -->
-                        <div class="builder-pane" id="p5">
-                            <div id="summaryContent"></div>
-                            <div class="form-actions">
-                                <button class="btn-secondary" onclick="S.go(4)">← Edit</button>
-                                <button class="btn-success" onclick="S.save()" style="min-width:180px">Save Strategy</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+<!-- ═══ STEP 1 : Entry Rules ═══ -->
+<div class="bpane" id="p1">
+    <div class="sec-hdr">Entry Timing</div>
+    <div class="row">
+        <div class="field"><label>Entry Time</label><input type="time" id="eTime" value="09:20"></div>
+        <div class="field"><label>Entry End Window</label><input type="time" id="eEndTime" value="14:00"></div>
+        <div class="field"><label>Entry Delay After Open (sec)</label><input type="number" id="eDelay" min="0" value="0"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Active Days</label>
+            <div class="day-grid">
+                <label><input type="checkbox" id="eMon" checked>Mon</label>
+                <label><input type="checkbox" id="eTue" checked>Tue</label>
+                <label><input type="checkbox" id="eWed" checked>Wed</label>
+                <label><input type="checkbox" id="eThu" checked>Thu</label>
+                <label><input type="checkbox" id="eFri" checked>Fri</label>
             </div>
         </div>
-    </main>
+        <div class="field"><label><input type="checkbox" id="eSkipExp" style="width:auto;margin-right:6px">Skip Expiry Day Entry</label></div>
+    </div>
 
-    <div id="toast" class="toast"></div>
+    <div class="sec-hdr">Entry Conditions</div>
+    <div class="row">
+        <div class="field"><label>Condition Type</label>
+            <select id="eCondType"><option value="time_based">Time Based</option><option value="price_level">Price Level / Range</option><option value="iv_based">IV Threshold</option><option value="vix_based">VIX Range</option><option value="indicator">Technical Indicator</option><option value="premium">Premium Based</option><option value="oi_pcr">OI / PCR Based</option></select>
+        </div>
+        <div class="field"><label>Price Above</label><input type="number" id="ePrAbove" step="10"></div>
+        <div class="field"><label>Price Below</label><input type="number" id="ePrBelow" step="10"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>IV Above (%)</label><input type="number" id="eIvAbove" step="0.5"></div>
+        <div class="field"><label>IV Below (%)</label><input type="number" id="eIvBelow" step="0.5"></div>
+        <div class="field"><label>VIX Min</label><input type="number" id="eVixMin" step="0.5"></div>
+        <div class="field"><label>VIX Max</label><input type="number" id="eVixMax" step="0.5"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>OI Min (Lakhs)</label><input type="number" id="eOiMin" step="1"></div>
+        <div class="field"><label>PCR Min</label><input type="number" id="ePcrMin" step="0.1"></div>
+        <div class="field"><label>PCR Max</label><input type="number" id="ePcrMax" step="0.1"></div>
+        <div class="field"><label>Premium Min (&#8377;)</label><input type="number" id="ePremMin" step="1"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Indicator</label>
+            <select id="eIndicator"><option value="">None</option><option value="rsi">RSI</option><option value="macd">MACD</option><option value="supertrend">SuperTrend</option><option value="ema_cross">EMA Crossover</option><option value="bb">Bollinger Bands</option><option value="vwap">VWAP</option></select>
+        </div>
+        <div class="field"><label>Indicator Period</label><input type="number" id="eIndPeriod" min="1" value="14"></div>
+        <div class="field"><label>Indicator Threshold</label><input type="number" id="eIndThresh" step="0.1"></div>
+    </div>
 
-    <script>
-    const S = (function() {
-        'use strict';
-        const API = '/dashboard';
-        let strategies = [];
-        let step = 0;
-        let editing = null; // name of strategy being edited
+    <div class="sec-hdr">Position Sizing</div>
+    <div class="row">
+        <div class="field"><label>Lots *</label><input type="number" id="eLots" min="1" value="1"></div>
+        <div class="field"><label>Max Open Positions</label><input type="number" id="eMaxPos" min="1" value="1"></div>
+        <div class="field"><label>Lot Size Override</label><input type="number" id="eLotSz" min="1" placeholder="Auto from exchange"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="eScaleIn" style="width:auto;margin-right:6px">Scale-In Enabled</label></div>
+        <div class="field"><label>Scale-In Lots</label><input type="number" id="eScaleLots" min="1" value="1"></div>
+        <div class="field"><label>Scale-In Trigger (%)</label><input type="number" id="eScaleTrig" step="1"></div>
+    </div>
 
-        // ── Helpers ──
-        const $ = id => document.getElementById(id);
-        const gv = id => { const e = $(id); return e ? e.value : ''; };
-        const gn = id => { const v = parseFloat(gv(id)); return isNaN(v) ? null : v; };
-        const gi = id => { const v = parseInt(gv(id)); return isNaN(v) ? null : v; };
-        const gc = id => { const e = $(id); return e ? e.checked : false; };
-        const sv = (id, v) => { const e = $(id); if (e && v != null) e.value = v; };
-        const sc = (id, v) => { const e = $(id); if (e && v != null) e.checked = !!v; };
+    <div class="sec-hdr">Entry Hedging</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="eHedge" style="width:auto;margin-right:6px">Hedge on Entry</label></div>
+        <div class="field"><label>Hedge Type</label><select id="eHedgeType"><option value="far_otm_buy">Far OTM Buy</option><option value="atm_buy">ATM Buy</option><option value="fixed_offset">Fixed Offset</option></select></div>
+        <div class="field"><label>Hedge Offset (pts)</label><input type="number" id="eHedgeOff" step="50" value="500"></div>
+        <div class="field"><label>Hedge Lots</label><input type="number" id="eHedgeLot" min="1" value="1"></div>
+    </div>
 
-        function toast(msg, ok) {
-            const el = $('toast');
-            el.textContent = msg;
-            el.className = 'toast ' + (ok !== false ? 'ok' : 'err');
-            el.classList.add('show');
-            clearTimeout(el._t);
-            el._t = setTimeout(() => el.classList.remove('show'), 4000);
+    <div class="sec-hdr">Execution</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="eAutoConf" style="width:auto;margin-right:6px">Auto-Confirm Orders</label></div>
+        <div class="field"><label><input type="checkbox" id="eRetry" style="width:auto;margin-right:6px">Retry on Reject</label></div>
+        <div class="field"><label>Retry Count</label><input type="number" id="eRetryCnt" min="0" max="10" value="2"></div>
+        <div class="field"><label>Slippage Tolerance (pts)</label><input type="number" id="eSlip" step="0.5" value="2"></div>
+    </div>
+
+    <!-- Strategy-Specific Legs (dynamic) -->
+    <div id="legFields"></div>
+
+    <div class="factions">
+        <button class="btn-secondary" onclick="S.go(0)">&larr; Back</button>
+        <button class="btn-primary" onclick="S.go(2)">Next: Adjustment &rarr;</button>
+    </div>
+</div>
+
+<!-- ═══ STEP 2 : Adjustment Rules ═══ -->
+<div class="bpane" id="p2">
+    <div class="sec-hdr">General</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="aEnable" style="width:auto;margin-right:6px" checked>Enable Auto Adjustments</label></div>
+        <div class="field"><label>Check Interval (min)</label><input type="number" id="aInterval" min="1" value="5"></div>
+        <div class="field"><label>Max Adj / Day</label><input type="number" id="aMaxDay" min="0" value="5"></div>
+        <div class="field"><label>Max Adj / Session</label><input type="number" id="aMaxSess" min="0" value="10"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Cooldown Between Adj (sec)</label><input type="number" id="aCooldown" min="0" value="60"></div>
+    </div>
+
+    <div class="sec-hdr">Delta Adjustment</div>
+    <div class="row">
+        <div class="field"><label>Delta Trigger</label><input type="number" id="aDeltaTrig" step="0.01" placeholder="e.g. 0.15"></div>
+        <div class="field"><label>Target Delta</label><input type="number" id="aTargetDelta" step="0.01" placeholder="e.g. 0.05"></div>
+        <div class="field"><label>Emergency Delta Trigger</label><input type="number" id="aEmergDelta" step="0.01" placeholder="e.g. 0.30"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Delta Mode</label><select id="aDeltaMode"><option value="shift">Shift Strike</option><option value="add">Add Position</option><option value="reduce">Reduce Position</option><option value="roll">Roll to ATM</option></select></div>
+    </div>
+
+    <div class="sec-hdr">Gamma &amp; Theta</div>
+    <div class="row">
+        <div class="field"><label>Max Gamma</label><input type="number" id="aMaxGamma" step="0.01"></div>
+        <div class="field"><label>Min Theta (&#8377;)</label><input type="number" id="aMinTheta" step="1"></div>
+        <div class="field"><label>Gamma Hedge Trigger</label><input type="number" id="aGammaHedge" step="0.01"></div>
+        <div class="field"><label>Theta Rebalance Time</label><input type="time" id="aThetaRebal"></div>
+    </div>
+
+    <div class="sec-hdr">PnL Adjustment</div>
+    <div class="row">
+        <div class="field"><label>Profit Lock Trigger (&#8377;)</label><input type="number" id="aProfitLock" step="100"></div>
+        <div class="field"><label>Loss Repair Trigger (&#8377;)</label><input type="number" id="aLossRepair" step="100"></div>
+        <div class="field"><label>Trailing Adj Start (&#8377;)</label><input type="number" id="aTrailStart" step="100"></div>
+        <div class="field"><label>Trailing Adj Step (&#8377;)</label><input type="number" id="aTrailStep" step="50"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>PnL Action</label>
+            <select id="aPnlAction"><option value="add_hedge">Add Hedge</option><option value="roll_strike">Roll Strike</option><option value="reduce_position">Reduce Position</option><option value="close_losing_leg">Close Losing Leg</option><option value="inverse_spread">Inverse Spread</option></select>
+        </div>
+    </div>
+
+    <div class="sec-hdr">IV Adjustment</div>
+    <div class="row">
+        <div class="field"><label>IV Spike Threshold (%)</label><input type="number" id="aIvSpike" step="1"></div>
+        <div class="field"><label>IV Spike Action</label><select id="aIvAction"><option value="close">Close Positions</option><option value="hedge">Add Hedge</option><option value="reduce">Reduce Size</option><option value="wait">Wait & Monitor</option></select></div>
+        <div class="field"><label>IV Crush Action</label><select id="aIvCrush"><option value="none">None</option><option value="book_profit">Book Profit</option><option value="add_position">Add Position</option></select></div>
+    </div>
+
+    <div class="sec-hdr">Roll Rules</div>
+    <div class="row">
+        <div class="field"><label>Roll When ITM By (pts)</label><input type="number" id="aRollItm" step="50"></div>
+        <div class="field"><label>Roll To ATM Offset</label><input type="number" id="aRollOff" step="50" value="0"></div>
+        <div class="field"><label>Roll Only After Time</label><input type="time" id="aRollAfter"></div>
+        <div class="field"><label><input type="checkbox" id="aAutoRoll" style="width:auto;margin-right:6px">Auto-Roll Before Expiry</label></div>
+    </div>
+
+    <div class="sec-hdr">Leg-Level Adjustments</div>
+    <div class="row">
+        <div class="field"><label>Per-Leg SL (&#8377;)</label><input type="number" id="aLegSL" step="50"></div>
+        <div class="field"><label>Per-Leg Target (&#8377;)</label><input type="number" id="aLegTarget" step="50"></div>
+        <div class="field"><label>Per-Leg Delta Max</label><input type="number" id="aLegDelta" step="0.01"></div>
+        <div class="field"><label><input type="checkbox" id="aRebalLegs" style="width:auto;margin-right:6px">Rebalance Individual Legs</label></div>
+    </div>
+
+    <div class="factions">
+        <button class="btn-secondary" onclick="S.go(1)">&larr; Back</button>
+        <button class="btn-primary" onclick="S.go(3)">Next: Exit &rarr;</button>
+    </div>
+</div>
+
+<!-- ═══ STEP 3 : Exit Rules ═══ -->
+<div class="bpane" id="p3">
+    <div class="sec-hdr">Time-Based Exit</div>
+    <div class="row">
+        <div class="field"><label>Exit Time</label><input type="time" id="xTime" value="15:15"></div>
+        <div class="field"><label>Force Exit Before Expiry (min)</label><input type="number" id="xForceExp" min="0" value="10"></div>
+        <div class="field"><label><input type="checkbox" id="xExpDay" style="width:auto;margin-right:6px">Exit on Expiry Day</label></div>
+        <div class="field"><label>Early Exit If Profitable After</label><input type="time" id="xEarlyProf"></div>
+    </div>
+
+    <div class="sec-hdr">Profit Target</div>
+    <div class="row">
+        <div class="field"><label>Target Profit (&#8377;)</label><input type="number" id="xProfAbs" step="100"></div>
+        <div class="field"><label>Target Profit (%)</label><input type="number" id="xProfPct" step="1"></div>
+        <div class="field"><label>Target Per-Lot (&#8377;)</label><input type="number" id="xProfLot" step="50"></div>
+        <div class="field"><label>Target Premium (%)</label><input type="number" id="xProfPrem" step="5" placeholder="% of premium collected"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label>Min Profit to Book (&#8377;)</label><input type="number" id="xMinProf" step="50"></div>
+    </div>
+
+    <div class="sec-hdr">Stop Loss</div>
+    <div class="row">
+        <div class="field"><label>Stop Loss (&#8377;)</label><input type="number" id="xSlAbs" step="100"></div>
+        <div class="field"><label>Stop Loss (%)</label><input type="number" id="xSlPct" step="1"></div>
+        <div class="field"><label>SL Per-Lot (&#8377;)</label><input type="number" id="xSlLot" step="50"></div>
+        <div class="field"><label>SL Premium (%)</label><input type="number" id="xSlPrem" step="5" placeholder="% of premium collected"></div>
+    </div>
+
+    <div class="sec-hdr">Trailing Stop</div>
+    <div class="row">
+        <div class="field"><label>Trail Type</label><select id="xTrailType"><option value="none">Disabled</option><option value="fixed_pct">Fixed %</option><option value="step">Step-Up (&#8377;)</option><option value="atr">ATR Based</option></select></div>
+        <div class="field"><label>Trail Value</label><input type="number" id="xTrailVal" step="1"></div>
+        <div class="field"><label>Trail Step (&#8377;)</label><input type="number" id="xTrailStep" step="50"></div>
+        <div class="field"><label>Trail Activate At (&#8377; profit)</label><input type="number" id="xTrailAct" step="100"></div>
+    </div>
+
+    <div class="sec-hdr">Per-Leg Exit</div>
+    <div class="row">
+        <div class="field"><label>Leg SL (&#8377;)</label><input type="number" id="xLegSL" step="50"></div>
+        <div class="field"><label>Leg SL (%)</label><input type="number" id="xLegSLPct" step="5"></div>
+        <div class="field"><label>Leg Target (&#8377;)</label><input type="number" id="xLegTgt" step="50"></div>
+        <div class="field"><label>Leg Target (%)</label><input type="number" id="xLegTgtPct" step="5"></div>
+    </div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="xExitAllBreach" style="width:auto;margin-right:6px">Exit All Legs If One Breaches</label></div>
+    </div>
+
+    <div class="sec-hdr">Combined Legs</div>
+    <div class="row">
+        <div class="field"><label>Combined SL (&#8377;)</label><input type="number" id="xCombSL" step="100"></div>
+        <div class="field"><label>Combined Target (&#8377;)</label><input type="number" id="xCombTgt" step="100"></div>
+    </div>
+
+    <div class="sec-hdr">Partial Exit</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="xPartialEn" style="width:auto;margin-right:6px">Enable Partial Profit Booking</label></div>
+        <div class="field"><label>Partial At (% profit)</label><input type="number" id="xPartialAt" step="5" value="50"></div>
+        <div class="field"><label>Exit % of Position</label>
+            <select id="xPartialPct"><option value="25">25%</option><option value="50" selected>50%</option><option value="75">75%</option></select>
+        </div>
+    </div>
+
+    <div class="sec-hdr">Re-Entry</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="xReEntry" style="width:auto;margin-right:6px">Re-Entry After Exit</label></div>
+        <div class="field"><label>Re-Entry Cooldown (min)</label><input type="number" id="xReCool" min="0" value="15"></div>
+        <div class="field"><label>Max Re-Entries</label><input type="number" id="xReMax" min="0" value="1"></div>
+        <div class="field"><label><input type="checkbox" id="xReProfOnly" style="width:auto;margin-right:6px">Re-Enter Only After Profit</label></div>
+    </div>
+
+    <div class="sec-hdr">Emergency Exit</div>
+    <div class="row">
+        <div class="field"><label>Emergency VIX Above</label><input type="number" id="xEmVix" step="1"></div>
+        <div class="field"><label>Emergency Gap (%)</label><input type="number" id="xEmGap" step="0.5"></div>
+        <div class="field"><label>Emergency MTM Below (&#8377;)</label><input type="number" id="xEmMtm" step="1000"></div>
+    </div>
+
+    <div class="factions">
+        <button class="btn-secondary" onclick="S.go(2)">&larr; Back</button>
+        <button class="btn-primary" onclick="S.go(4)">Next: Risk &rarr;</button>
+    </div>
+</div>
+
+<!-- ═══ STEP 4 : Risk Management ═══ -->
+<div class="bpane" id="p4">
+    <div class="sec-hdr">Position Limits</div>
+    <div class="row">
+        <div class="field"><label>Max Position Value (&#8377;)</label><input type="number" id="rMaxVal" step="10000"></div>
+        <div class="field"><label>Max Open Lots</label><input type="number" id="rMaxLots" min="1" value="10"></div>
+        <div class="field"><label>Max Margin Used (%)</label><input type="number" id="rMaxMargin" min="0" max="100" value="70"></div>
+        <div class="field"><label>Max Notional Value (&#8377;)</label><input type="number" id="rMaxNotional" step="100000"></div>
+    </div>
+
+    <div class="sec-hdr">Daily Limits</div>
+    <div class="row">
+        <div class="field"><label>Daily Loss Limit (&#8377;)</label><input type="number" id="rDailyLoss" step="1000"></div>
+        <div class="field"><label>Daily Profit Target (&#8377;)</label><input type="number" id="rDailyProfit" step="1000"></div>
+        <div class="field"><label>Max Trades / Day</label><input type="number" id="rMaxTrades" min="1" value="10"></div>
+        <div class="field"><label>Max Adjustments / Day</label><input type="number" id="rMaxAdjDay" min="0" value="5"></div>
+    </div>
+
+    <div class="sec-hdr">Weekly / Monthly Limits</div>
+    <div class="row">
+        <div class="field"><label>Weekly Loss Limit (&#8377;)</label><input type="number" id="rWeekLoss" step="5000"></div>
+        <div class="field"><label>Weekly Profit Target (&#8377;)</label><input type="number" id="rWeekProfit" step="5000"></div>
+        <div class="field"><label>Monthly Loss Limit (&#8377;)</label><input type="number" id="rMonthLoss" step="10000"></div>
+        <div class="field"><label>Monthly Max Drawdown (%)</label><input type="number" id="rMonthDD" step="5"></div>
+    </div>
+
+    <div class="sec-hdr">Greeks Limits</div>
+    <div class="row">
+        <div class="field"><label>Max Portfolio Delta</label><input type="number" id="rGkDelta" step="0.1"></div>
+        <div class="field"><label>Max Portfolio Gamma</label><input type="number" id="rGkGamma" step="0.01"></div>
+        <div class="field"><label>Max Portfolio Vega</label><input type="number" id="rGkVega" step="1"></div>
+        <div class="field"><label>Max Portfolio Theta</label><input type="number" id="rGkTheta" step="1"></div>
+    </div>
+
+    <div class="sec-hdr">Circuit Breaker</div>
+    <div class="row">
+        <div class="field"><label>Circuit Breaker (&#8377;)</label><input type="number" id="rCircuit" step="1000"></div>
+        <div class="field"><label>Circuit Breaker (%)</label><input type="number" id="rCircuitPct" step="5"></div>
+        <div class="field"><label>Cooldown After Circuit (min)</label><input type="number" id="rCircuitCool" min="0" value="30"></div>
+        <div class="field"><label><input type="checkbox" id="rKillSwitch" style="width:auto;margin-right:6px">Kill Switch (halt all)</label></div>
+    </div>
+
+    <div class="sec-hdr">Margin Safety</div>
+    <div class="row">
+        <div class="field"><label>Margin Buffer (%)</label><input type="number" id="rMargBuf" step="5" value="20"></div>
+        <div class="field"><label>Block New Orders If Margin Above (%)</label><input type="number" id="rMargBlock" step="5" value="85"></div>
+    </div>
+
+    <div class="sec-hdr">Combined Leg Tracking</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="rTrackComb" style="width:auto;margin-right:6px" checked>Track Combined PnL</label></div>
+        <div class="field"><label>Combined SL (&#8377;)</label><input type="number" id="rCombSL" step="100"></div>
+        <div class="field"><label>Combined Target (&#8377;)</label><input type="number" id="rCombTgt" step="100"></div>
+    </div>
+
+    <div class="sec-hdr">Auto Actions</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="rAutoSqOff" style="width:auto;margin-right:6px">Auto Square-Off on Breach</label></div>
+        <div class="field"><label><input type="checkbox" id="rAutoReduce" style="width:auto;margin-right:6px">Auto Reduce Position</label></div>
+        <div class="field"><label>Reduce To (Lots)</label><input type="number" id="rReduceTo" min="0" value="0"></div>
+    </div>
+
+    <div class="sec-hdr">Notifications</div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="rTgAlert" style="width:auto;margin-right:6px" checked>Telegram Alert</label></div>
+        <div class="field"><label><input type="checkbox" id="rEmailAlert" style="width:auto;margin-right:6px">Email Alert</label></div>
+        <div class="field"><label>Webhook URL</label><input id="rWebhook" placeholder="https://..."></div>
+    </div>
+    <div class="row">
+        <div class="field"><label><input type="checkbox" id="rAlertEntry" style="width:auto;margin-right:6px" checked>Alert on Entry</label></div>
+        <div class="field"><label><input type="checkbox" id="rAlertExit" style="width:auto;margin-right:6px" checked>Alert on Exit</label></div>
+        <div class="field"><label><input type="checkbox" id="rAlertAdj" style="width:auto;margin-right:6px" checked>Alert on Adjustment</label></div>
+        <div class="field"><label><input type="checkbox" id="rAlertRisk" style="width:auto;margin-right:6px" checked>Alert on Risk Breach</label></div>
+    </div>
+
+    <div class="factions">
+        <button class="btn-secondary" onclick="S.go(3)">&larr; Back</button>
+        <button class="btn-primary" onclick="S.go(5)">Review Summary &rarr;</button>
+    </div>
+</div>
+
+<!-- ═══ STEP 5 : Summary & Save ═══ -->
+<div class="bpane" id="p5">
+    <div id="sumContent"></div>
+    <div class="factions">
+        <button class="btn-secondary" onclick="S.go(4)">&larr; Edit</button>
+        <button class="btn-ghost" onclick="S.exportJSON()">Export JSON</button>
+        <button class="btn-success" onclick="S.save()" style="min-width:180px">Save Strategy</button>
+    </div>
+</div>
+
+</div></div></div></div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<!-- Clone/Rename Modal -->
+<div id="modalBg" class="modal-bg">
+<div class="modal">
+    <h3 id="modalTitle">Clone Strategy</h3>
+    <div class="mf"><label>New Name *</label><input id="mNewName" placeholder="Strategy name"></div>
+    <div class="mf" id="mUndRow"><label>Override Underlying (optional)</label><input id="mUnderlying" placeholder="Leave empty to keep same"></div>
+    <div class="mactions">
+        <button class="btn-secondary" onclick="S.closeModal()">Cancel</button>
+        <button class="btn-primary" id="mBtn" onclick="S.modalOk()">Clone</button>
+    </div>
+</div>
+</div>
+
+<script>
+const S=(function(){'use strict';
+const API='/dashboard';
+let strategies=[],step=0,editing=null,modalMode='clone',modalName='';
+
+const $=id=>document.getElementById(id);
+const gv=id=>{const e=$(id);return e?e.value.trim():''};
+const gn=id=>{const v=parseFloat(gv(id));return isNaN(v)?null:v};
+const gi=id=>{const v=parseInt(gv(id));return isNaN(v)?null:v};
+const gc=id=>{const e=$(id);return e?e.checked:false};
+const sv=(id,v)=>{const e=$(id);if(e&&v!=null)e.value=v};
+const sc=(id,v)=>{const e=$(id);if(e&&v!=null)e.checked=!!v};
+
+function toast(m,ok){const el=$('toast');el.textContent=m;el.className='toast '+(ok!==false?'ok':'err');el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),4000)}
+
+// ── Navigation ──
+function go(n){
+    if(n>0&&!$('fName').value.trim()){toast('Strategy name is required',false);n=0}
+    const nm=$('fName').value.trim();
+    if(nm)$('fId').value=nm.toUpperCase().replace(/[^A-Z0-9]+/g,'_').replace(/^_|_$/g,'');
+    step=n;
+    for(let i=0;i<6;i++){const p=$('p'+i);if(p)p.classList.toggle('active',i===n)}
+    document.querySelectorAll('#bTabs .btab').forEach((t,i)=>{t.classList.toggle('active',i===n);if(i<n)t.classList.add('done');else if(i>n)t.classList.remove('done')});
+    if(n===5)buildSummary();
+}
+
+// ── Type-specific leg fields ──
+function typeChg(){
+    const t=gv('fStratType'),c=$('legFields');let h='';
+    if(t==='dnss'||t==='short_straddle'){
+        h=`<div class="sec-hdr">${t==='dnss'?'DNSS':'Straddle'} Legs</div><div class="row">
+        <div class="field"><label>Type</label><select id="xLegType"><option value="strangle">Strangle</option><option value="straddle">Straddle</option></select></div>
+        <div class="field"><label>Target Entry Delta</label><input type="number" id="xTgtDelta" step="0.01" value="0.20"></div>
+        <div class="field"><label>ATM Offset</label><input type="number" id="xAtmOff" step="50" value="0"></div></div>
+        <div class="row"><div class="field"><label>CE Offset</label><input type="number" id="xCeOff" step="50" value="100"></div>
+        <div class="field"><label>PE Offset</label><input type="number" id="xPeOff" step="50" value="100"></div>
+        <div class="field"><label>Strike Selection</label><select id="xStrikeSel"><option value="delta">By Delta</option><option value="offset">By Offset</option><option value="premium">By Premium</option><option value="atm">ATM</option></select></div>
+        <div class="field"><label>Premium Target (&#8377;)</label><input type="number" id="xPremTgt" step="1"></div></div>`;
+    }else if(t==='iron_condor'||t==='iron_butterfly'){
+        h=`<div class="sec-hdr">${t==='iron_condor'?'Iron Condor':'Iron Butterfly'} Legs</div><div class="row">
+        <div class="field"><label>Short CE Offset</label><input type="number" id="xSCE" step="50" value="200"></div>
+        <div class="field"><label>Long CE Offset</label><input type="number" id="xLCE" step="50" value="300"></div>
+        <div class="field"><label>Short PE Offset</label><input type="number" id="xSPE" step="50" value="200"></div>
+        <div class="field"><label>Long PE Offset</label><input type="number" id="xLPE" step="50" value="300"></div></div>
+        <div class="row"><div class="field"><label>Strike Selection</label><select id="xStrikeSel"><option value="offset">By Offset</option><option value="delta">By Delta</option><option value="premium">By Premium</option></select></div>
+        <div class="field"><label>Short CE Delta</label><input type="number" id="xSCEd" step="0.01"></div>
+        <div class="field"><label>Short PE Delta</label><input type="number" id="xSPEd" step="0.01"></div></div>`;
+    }else if(t==='butterfly'){
+        h=`<div class="sec-hdr">Butterfly Legs</div><div class="row">
+        <div class="field"><label>Direction</label><select id="xBfDir"><option value="long">Long</option><option value="short">Short</option></select></div>
+        <div class="field"><label>Wing Width (pts)</label><input type="number" id="xWing" step="50" value="100"></div>
+        <div class="field"><label>Option</label><select id="xBfOpt"><option value="CE">Call</option><option value="PE">Put</option></select></div>
+        <div class="field"><label>Center Strike</label><select id="xBfCenter"><option value="atm">ATM</option><option value="offset">ATM + Offset</option></select></div></div>`;
+    }else if(t==='calendar'){
+        h=`<div class="sec-hdr">Calendar Spread Legs</div><div class="row">
+        <div class="field"><label>Front Expiry</label><select id="xFrontExp"><option value="weekly_current">Weekly Current</option><option value="weekly_next">Weekly Next</option></select></div>
+        <div class="field"><label>Back Expiry</label><select id="xBackExp"><option value="monthly_current">Monthly Current</option><option value="monthly_next">Monthly Next</option></select></div>
+        <div class="field"><label>Strike Mode</label><select id="xCalStrike"><option value="atm">ATM</option><option value="otm_ce">OTM CE</option><option value="otm_pe">OTM PE</option></select></div>
+        <div class="field"><label>Option</label><select id="xCalOpt"><option value="CE">Call</option><option value="PE">Put</option></select></div></div>`;
+    }else if(t==='ratio'){
+        h=`<div class="sec-hdr">Ratio Spread Legs</div><div class="row">
+        <div class="field"><label>Buy Lots</label><input type="number" id="xRBuy" min="1" value="1"></div>
+        <div class="field"><label>Sell Lots</label><input type="number" id="xRSell" min="1" value="2"></div>
+        <div class="field"><label>Strike Offset (pts)</label><input type="number" id="xROff" step="50" value="100"></div>
+        <div class="field"><label>Option</label><select id="xROpt"><option value="CE">Call</option><option value="PE">Put</option></select></div></div>`;
+    }else if(t==='jade_lizard'){
+        h=`<div class="sec-hdr">Jade Lizard Legs</div><div class="row">
+        <div class="field"><label>Put Offset</label><input type="number" id="xJPut" step="50" value="200"></div>
+        <div class="field"><label>CE Short Offset</label><input type="number" id="xJCES" step="50" value="200"></div>
+        <div class="field"><label>CE Long Offset</label><input type="number" id="xJCEL" step="50" value="300"></div></div>`;
+    }else if(t==='directional'){
+        h=`<div class="sec-hdr">Directional Spread Legs</div><div class="row">
+        <div class="field"><label>Direction</label><select id="xDDir"><option value="bullish">Bullish</option><option value="bearish">Bearish</option></select></div>
+        <div class="field"><label>Spread Type</label><select id="xDSpread"><option value="debit">Debit</option><option value="credit">Credit</option></select></div>
+        <div class="field"><label>Width (pts)</label><input type="number" id="xDWidth" step="50" value="100"></div>
+        <div class="field"><label>Option</label><select id="xDOpt"><option value="CE">Call</option><option value="PE">Put</option></select></div></div>`;
+    }else if(t==='covered_call'){
+        h=`<div class="sec-hdr">Covered Call / Put Legs</div><div class="row">
+        <div class="field"><label>Type</label><select id="xCCType"><option value="covered_call">Covered Call</option><option value="covered_put">Covered Put</option></select></div>
+        <div class="field"><label>Call/Put Offset</label><input type="number" id="xCCOff" step="50" value="200"></div>
+        <div class="field"><label>Underlying Position</label><select id="xCCUnd"><option value="futures">Futures</option><option value="cash">Cash Equity</option></select></div></div>`;
+    }
+    c.innerHTML=h;
+}
+
+// ── Collect: Identity ──
+function cIdentity(){
+    return {strategy_type:gv('fStratType'),exchange:gv('fExchange'),underlying:gv('fUnderlying'),
+        instrument_type:gv('fInstType'),expiry_mode:gv('fExpMode'),expiry_custom:gv('fExpDate')||null,
+        product_type:gv('fProduct'),order_type:gv('fOrdType')};
+}
+
+// ── Collect: Entry ──
+function cEntry(){
+    const days=[];['eMon','eTue','eWed','eThu','eFri'].forEach((id,i)=>{if(gc(id))days.push(['mon','tue','wed','thu','fri'][i])});
+    const b={
+        timing:{entry_time:gv('eTime'),entry_end_time:gv('eEndTime'),entry_delay_seconds:gi('eDelay'),
+            active_days:days,skip_expiry_day:gc('eSkipExp')},
+        condition:{type:gv('eCondType'),price_above:gn('ePrAbove'),price_below:gn('ePrBelow'),
+            iv_above:gn('eIvAbove'),iv_below:gn('eIvBelow'),vix_min:gn('eVixMin'),vix_max:gn('eVixMax'),
+            oi_min_lakhs:gn('eOiMin'),pcr_min:gn('ePcrMin'),pcr_max:gn('ePcrMax'),premium_min:gn('ePremMin'),
+            indicator:gv('eIndicator')||null,indicator_period:gi('eIndPeriod'),indicator_threshold:gn('eIndThresh')},
+        position:{lots:gi('eLots'),max_open_positions:gi('eMaxPos'),lot_size_override:gi('eLotSz'),
+            scale_in_enabled:gc('eScaleIn'),scale_in_lots:gi('eScaleLots'),scale_in_trigger_pct:gn('eScaleTrig')},
+        hedging:{hedge_on_entry:gc('eHedge'),hedge_type:gv('eHedgeType'),hedge_offset:gi('eHedgeOff'),hedge_lots:gi('eHedgeLot')},
+        execution:{auto_confirm:gc('eAutoConf'),retry_on_reject:gc('eRetry'),retry_count:gi('eRetryCnt'),slippage_points:gn('eSlip')},
+        legs:cLegs()
+    };
+    return b;
+}
+function cLegs(){
+    const t=gv('fStratType'),o={};
+    if(t==='dnss'||t==='short_straddle'){
+        o.leg_type=gv('xLegType');o.target_entry_delta=gn('xTgtDelta');o.atm_offset=gi('xAtmOff');
+        o.ce_offset=gi('xCeOff');o.pe_offset=gi('xPeOff');o.strike_selection=gv('xStrikeSel');o.premium_target=gn('xPremTgt');
+    }else if(t==='iron_condor'||t==='iron_butterfly'){
+        o.short_ce_offset=gi('xSCE');o.long_ce_offset=gi('xLCE');o.short_pe_offset=gi('xSPE');o.long_pe_offset=gi('xLPE');
+        o.strike_selection=gv('xStrikeSel');o.short_ce_delta=gn('xSCEd');o.short_pe_delta=gn('xSPEd');
+    }else if(t==='butterfly'){
+        o.direction=gv('xBfDir');o.wing_width=gi('xWing');o.option_type=gv('xBfOpt');o.center_strike=gv('xBfCenter');
+    }else if(t==='calendar'){
+        o.front_expiry=gv('xFrontExp');o.back_expiry=gv('xBackExp');o.strike_mode=gv('xCalStrike');o.option_type=gv('xCalOpt');
+    }else if(t==='ratio'){
+        o.buy_lots=gi('xRBuy');o.sell_lots=gi('xRSell');o.strike_offset=gi('xROff');o.option_type=gv('xROpt');
+    }else if(t==='jade_lizard'){
+        o.put_offset=gi('xJPut');o.ce_short_offset=gi('xJCES');o.ce_long_offset=gi('xJCEL');
+    }else if(t==='directional'){
+        o.direction=gv('xDDir');o.spread_type=gv('xDSpread');o.width=gi('xDWidth');o.option_type=gv('xDOpt');
+    }else if(t==='covered_call'){
+        o.type=gv('xCCType');o.offset=gi('xCCOff');o.underlying_position=gv('xCCUnd');
+    }
+    return o;
+}
+
+// ── Collect: Adjustment ──
+function cAdj(){
+    return {
+        general:{enabled:gc('aEnable'),check_interval_min:gi('aInterval'),max_adj_per_day:gi('aMaxDay'),
+            max_adj_per_session:gi('aMaxSess'),cooldown_seconds:gi('aCooldown')},
+        delta:{trigger:gn('aDeltaTrig'),target:gn('aTargetDelta'),emergency_trigger:gn('aEmergDelta'),mode:gv('aDeltaMode')},
+        gamma_theta:{max_gamma:gn('aMaxGamma'),min_theta:gn('aMinTheta'),gamma_hedge_trigger:gn('aGammaHedge'),theta_rebalance_time:gv('aThetaRebal')||null},
+        pnl:{profit_lock_trigger:gn('aProfitLock'),loss_repair_trigger:gn('aLossRepair'),
+            trailing_adj_start:gn('aTrailStart'),trailing_adj_step:gn('aTrailStep'),pnl_action:gv('aPnlAction')},
+        iv:{iv_spike_threshold:gn('aIvSpike'),iv_spike_action:gv('aIvAction'),iv_crush_action:gv('aIvCrush')},
+        roll:{roll_when_itm_by:gn('aRollItm'),roll_to_atm_offset:gi('aRollOff'),roll_only_after:gv('aRollAfter')||null,auto_roll_before_expiry:gc('aAutoRoll')},
+        leg_level:{per_leg_sl:gn('aLegSL'),per_leg_target:gn('aLegTarget'),per_leg_delta_max:gn('aLegDelta'),rebalance_individual:gc('aRebalLegs')}
+    };
+}
+
+// ── Collect: Exit ──
+function cExit(){
+    return {
+        time:{exit_time:gv('xTime'),force_exit_before_expiry_min:gi('xForceExp'),exit_on_expiry_day:gc('xExpDay'),early_exit_if_profitable_after:gv('xEarlyProf')||null},
+        profit:{target_rupees:gn('xProfAbs'),target_pct:gn('xProfPct'),target_per_lot:gn('xProfLot'),target_premium_pct:gn('xProfPrem'),min_profit_to_book:gn('xMinProf')},
+        stop_loss:{sl_rupees:gn('xSlAbs'),sl_pct:gn('xSlPct'),sl_per_lot:gn('xSlLot'),sl_premium_pct:gn('xSlPrem')},
+        trailing:{type:gv('xTrailType'),value:gn('xTrailVal'),step:gn('xTrailStep'),activate_at:gn('xTrailAct')},
+        per_leg:{leg_sl:gn('xLegSL'),leg_sl_pct:gn('xLegSLPct'),leg_target:gn('xLegTgt'),leg_target_pct:gn('xLegTgtPct'),exit_all_on_breach:gc('xExitAllBreach')},
+        combined:{combined_sl:gn('xCombSL'),combined_target:gn('xCombTgt')},
+        partial:{enabled:gc('xPartialEn'),partial_at_pct:gn('xPartialAt'),exit_pct:gi('xPartialPct')},
+        re_entry:{enabled:gc('xReEntry'),cooldown_min:gi('xReCool'),max_count:gi('xReMax'),profit_only:gc('xReProfOnly')},
+        emergency:{vix_above:gn('xEmVix'),gap_pct:gn('xEmGap'),mtm_below:gn('xEmMtm')}
+    };
+}
+
+// ── Collect: RMS ──
+function cRms(){
+    return {
+        position:{max_value:gn('rMaxVal'),max_lots:gi('rMaxLots'),max_margin_pct:gi('rMaxMargin'),max_notional:gn('rMaxNotional')},
+        daily:{loss_limit:gn('rDailyLoss'),profit_target:gn('rDailyProfit'),max_trades:gi('rMaxTrades'),max_adjustments:gi('rMaxAdjDay')},
+        weekly:{loss_limit:gn('rWeekLoss'),profit_target:gn('rWeekProfit')},
+        monthly:{loss_limit:gn('rMonthLoss'),max_drawdown_pct:gn('rMonthDD')},
+        greeks:{max_delta:gn('rGkDelta'),max_gamma:gn('rGkGamma'),max_vega:gn('rGkVega'),max_theta:gn('rGkTheta')},
+        circuit:{amount:gn('rCircuit'),pct:gn('rCircuitPct'),cooldown_min:gi('rCircuitCool'),kill_switch:gc('rKillSwitch')},
+        margin:{buffer_pct:gi('rMargBuf'),block_above_pct:gi('rMargBlock')},
+        combined:{track:gc('rTrackComb'),sl:gn('rCombSL'),target:gn('rCombTgt')},
+        auto:{square_off_on_breach:gc('rAutoSqOff'),auto_reduce:gc('rAutoReduce'),reduce_to_lots:gi('rReduceTo')},
+        notifications:{telegram:gc('rTgAlert'),email:gc('rEmailAlert'),webhook:gv('rWebhook')||null,
+            on_entry:gc('rAlertEntry'),on_exit:gc('rAlertExit'),on_adjustment:gc('rAlertAdj'),on_risk_breach:gc('rAlertRisk')}
+    };
+}
+
+function collectAll(){
+    const tags=gv('fTags')?gv('fTags').split(',').map(t=>t.trim()).filter(Boolean):[];
+    return {name:$('fName').value.trim(),id:$('fId').value.trim(),description:gv('fDesc'),tags:tags,
+        identity:cIdentity(),entry:cEntry(),adjustment:cAdj(),exit:cExit(),rms:cRms()};
+}
+
+// ── Summary Builder ──
+function fv(v){if(v===true)return'✓';if(v===false)return'✗';if(v==null||v==='')return'—';if(Array.isArray(v))return v.join(', ')||'—';return String(v)}
+function flatKV(obj,prefix){
+    const out=[];
+    for(const[k,v]of Object.entries(obj||{})){
+        if(v&&typeof v==='object'&&!Array.isArray(v)){out.push(...flatKV(v,prefix?prefix+'.'+k:k))}
+        else{out.push([(prefix?prefix+'.':'')+k,v])}
+    }return out;
+}
+function buildSummary(){
+    const d=collectAll();let h='';
+    const sections=[['Identity',{Name:d.name,ID:d.id,Description:d.description||'—',Tags:(d.tags||[]).join(', ')||'—',...d.identity}],
+        ['Entry Rules',d.entry],['Adjustment Rules',d.adjustment],['Exit Rules',d.exit],['Risk Management',d.rms]];
+    for(const[title,data]of sections){
+        h+=`<div class="sum-sec"><h4>${title}</h4><div class="sum-grid">`;
+        for(const[k,v]of flatKV(data)){
+            const lbl=k.split('.').pop().replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+            h+=`<div class="sum-item"><span class="l">${lbl}</span><span class="v">${fv(v)}</span></div>`;
         }
+        h+='</div></div>';
+    }
+    $('sumContent').innerHTML=h;
+}
 
-        // ── Step navigation ──
-        function go(n) {
-            if (n > 0 && !$('fName').value.trim()) { toast('Strategy name is required', false); n = 0; }
-            const name = $('fName').value.trim();
-            if (name) $('fId').value = name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
-            step = n;
-            for (let i = 0; i < 6; i++) {
-                const pane = $('p' + i);
-                if (pane) pane.classList.toggle('active', i === n);
-            }
-            document.querySelectorAll('#bldTabs .builder-tab').forEach((t, i) => {
-                t.classList.toggle('active', i === n);
-                if (i < n) t.classList.add('done'); else if (i > n) t.classList.remove('done');
-            });
-            if (n === 5) buildSummary();
-        }
+// ── Save ──
+async function save(){
+    const p=collectAll();if(!p.name){toast('Name required',false);return}
+    try{
+        const r=await fetch(`${API}/strategy/config/save-all`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+        if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||`HTTP ${r.status}`)}
+        toast(`"${p.name}" saved`);editing=p.name;$('bActs').style.display='flex';await loadList();
+    }catch(e){toast('Save failed: '+e.message,false)}
+}
 
-        // ── Strategy-specific fields ──
-        function typeChanged() {
-            const type = gv('fType');
-            const c = $('typeFields');
-            let h = '';
-            if (type === 'dnss') {
-                h = `<h3 style="margin:12px 0 8px;font-size:14px">DNSS Parameters</h3><div class="row">
-                    <div class="field"><label>Type</label><select id="xDnssType"><option value="straddle">Straddle</option><option value="strangle">Strangle</option></select></div>
-                    <div class="field"><label>ATM Offset</label><input type="number" id="xAtmOff" step="50" value="0"></div>
-                    <div class="field"><label>CE Offset</label><input type="number" id="xCeOff" step="50" value="100"></div>
-                    <div class="field"><label>PE Offset</label><input type="number" id="xPeOff" step="50" value="100"></div></div>`;
-            } else if (type === 'iron_condor') {
-                h = `<h3 style="margin:12px 0 8px;font-size:14px">Iron Condor Params</h3><div class="row">
-                    <div class="field"><label>Short CE</label><input type="number" id="xSCE" step="50" value="200"></div>
-                    <div class="field"><label>Long CE</label><input type="number" id="xLCE" step="50" value="300"></div>
-                    <div class="field"><label>Short PE</label><input type="number" id="xSPE" step="50" value="200"></div>
-                    <div class="field"><label>Long PE</label><input type="number" id="xLPE" step="50" value="300"></div></div>`;
-            } else if (type === 'butterfly') {
-                h = `<h3 style="margin:12px 0 8px;font-size:14px">Butterfly Params</h3><div class="row">
-                    <div class="field"><label>Type</label><select id="xBfType"><option value="long">Long</option><option value="short">Short</option></select></div>
-                    <div class="field"><label>Wing Width</label><input type="number" id="xWing" step="50" value="100"></div>
-                    <div class="field"><label>Option</label><select id="xBfOpt"><option value="CE">Call</option><option value="PE">Put</option></select></div></div>`;
-            } else if (type === 'directional') {
-                h = `<h3 style="margin:12px 0 8px;font-size:14px">Directional Params</h3><div class="row">
-                    <div class="field"><label>Direction</label><select id="xDir"><option value="bullish">Bullish</option><option value="bearish">Bearish</option></select></div>
-                    <div class="field"><label>Spread</label><select id="xSpread"><option value="debit">Debit</option><option value="credit">Credit</option></select></div>
-                    <div class="field"><label>Width</label><input type="number" id="xWidth" step="50" value="100"></div></div>`;
-            }
-            c.innerHTML = h;
-        }
+// ── Export JSON ──
+function exportJSON(){
+    const d=collectAll();if(!d.name){toast('Name required',false);return}
+    d.schema_version='2.0';d.exported_at=new Date().toISOString();
+    const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(d.id||'strategy')+'.json';a.click();
+    toast('JSON exported');
+}
 
-        // ── Collect all fields ──
-        function collectEntry() {
-            const b = {
-                strategy_type: gv('fType'), underlying: gv('fUnderlying'), entry_time: gv('fEntryTime'),
-                entry_condition: gv('fEntryCondition'), position_size: gi('fLots'), max_positions: gi('fMaxPos'),
-                hedge_entry: gc('fHedge'), auto_confirm: gc('fAutoConfirm'),
-            };
-            const t = b.strategy_type;
-            if (t === 'dnss') { b.dnss_type = gv('xDnssType'); b.atm_offset = gi('xAtmOff'); b.ce_offset = gi('xCeOff'); b.pe_offset = gi('xPeOff'); }
-            else if (t === 'iron_condor') { b.short_ce_offset = gi('xSCE'); b.long_ce_offset = gi('xLCE'); b.short_pe_offset = gi('xSPE'); b.long_pe_offset = gi('xLPE'); }
-            else if (t === 'butterfly') { b.butterfly_type = gv('xBfType'); b.wing_width = gi('xWing'); b.butterfly_option_type = gv('xBfOpt'); }
-            else if (t === 'directional') { b.direction = gv('xDir'); b.spread_type = gv('xSpread'); b.spread_width = gi('xWidth'); }
-            return b;
-        }
-        function collectAdj() {
-            return { enable_adjustments: gc('fEnableAdj'), delta_trigger: gn('fDeltaTrigger'), target_delta: gn('fTargetDelta'),
-                max_adjustments: gi('fMaxAdj'), profit_lock_trigger: gn('fProfitLock'), loss_repair_trigger: gn('fLossRepair'),
-                adjustment_action: gv('fAdjAction'), adjust_check_interval: gi('fAdjInterval'), max_leg_delta: gn('fMaxLegDelta') };
-        }
-        function collectExit() {
-            return { exit_time: gv('fExitTime'), force_exit_minutes: gi('fForceExit'), target_profit: gn('fTargetProfit'),
-                target_profit_percent: gn('fTargetPct'), partial_exit_percent: gi('fPartialExit'), stop_loss: gn('fSL'),
-                stop_loss_percent: gn('fSLPct'), trailing_stop: gn('fTrail'), leg_stop_loss: gn('fLegSL'),
-                leg_target: gn('fLegTarget'), exit_all_on_leg_breach: gc('fExitAllBreach') };
-        }
-        function collectRMS() {
-            return { max_position_value: gn('fMaxVal'), max_margin_percent: gi('fMaxMargin'), max_lots_per_trade: gi('fMaxLots'),
-                daily_loss_limit: gn('fDailyLoss'), daily_profit_target: gn('fDailyProfit'), max_trades_per_day: gi('fMaxTrades'),
-                circuit_breaker: gn('fCircuit'), drawdown_limit: gn('fDrawdown'), concentration_limit: gi('fConcentration'),
-                track_combined_pnl: gc('fTrackCombined'), combined_stop_loss: gn('fCombSL'), combined_target: gn('fCombTarget'),
-                auto_square_off: gc('fAutoSquare'), notify_on_risk_breach: gc('fNotify') };
-        }
-        function collectAll() {
-            return { name: $('fName').value.trim(), id: $('fId').value.trim(),
-                entry: collectEntry(), adjustment: collectAdj(), exit: collectExit(), rms: collectRMS() };
-        }
+// ── Delete ──
+async function delCur(){
+    if(!editing||!confirm(`Delete "${editing}"?`))return;
+    try{
+        const r=await fetch(`${API}/strategy/config/${encodeURIComponent(editing)}`,{method:'DELETE',credentials:'include'});
+        if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||`HTTP ${r.status}`)}
+        toast(`"${editing}" deleted`);reset();await loadList();
+    }catch(e){toast('Delete failed: '+e.message,false)}
+}
 
-        // ── Summary ──
-        const LBL = {
-            strategy_type:'Type',underlying:'Symbol',entry_time:'Entry Time',entry_condition:'Condition',
-            position_size:'Lots',max_positions:'Max Pos',hedge_entry:'Hedge',auto_confirm:'Auto-Confirm',
-            dnss_type:'DNSS Type',atm_offset:'ATM Offset',ce_offset:'CE Offset',pe_offset:'PE Offset',
-            short_ce_offset:'Short CE',long_ce_offset:'Long CE',short_pe_offset:'Short PE',long_pe_offset:'Long PE',
-            butterfly_type:'Butterfly',wing_width:'Wing Width',butterfly_option_type:'Option',
-            direction:'Direction',spread_type:'Spread',spread_width:'Width',
-            enable_adjustments:'Enabled',delta_trigger:'Delta Trigger',target_delta:'Target Delta',
-            max_adjustments:'Max Adj/Day',profit_lock_trigger:'Profit Lock ₹',loss_repair_trigger:'Loss Repair ₹',
-            adjustment_action:'Action',adjust_check_interval:'Interval (min)',max_leg_delta:'Max Leg Delta',
-            exit_time:'Exit Time',force_exit_minutes:'Force Exit (min)',target_profit:'Target ₹',
-            target_profit_percent:'Target %',partial_exit_percent:'Partial Exit %',stop_loss:'SL ₹',
-            stop_loss_percent:'SL %',trailing_stop:'Trail %',leg_stop_loss:'Leg SL ₹',leg_target:'Leg Target ₹',
-            exit_all_on_leg_breach:'Exit All on Breach',
-            max_position_value:'Max Value ₹',max_margin_percent:'Max Margin %',max_lots_per_trade:'Max Lots',
-            daily_loss_limit:'Daily Loss ₹',daily_profit_target:'Daily Target ₹',max_trades_per_day:'Max Trades',
-            circuit_breaker:'Circuit Breaker ₹',drawdown_limit:'Drawdown %',concentration_limit:'Concentration %',
-            track_combined_pnl:'Track Combined',combined_stop_loss:'Combined SL ₹',combined_target:'Combined Target ₹',
-            auto_square_off:'Auto Square-Off',notify_on_risk_breach:'Telegram Alert',
-        };
-        function fv(v) { return v === true ? '✓ Yes' : v === false ? '✗ No' : (v == null || v === '') ? '—' : String(v); }
-        function sumSec(title, data) {
-            let h = `<div class="summary-section"><h4>${title}</h4><div class="summary-grid">`;
-            for (const [k,v] of Object.entries(data)) h += `<div class="summary-item"><span class="lbl">${LBL[k]||k}</span><span class="val">${fv(v)}</span></div>`;
-            return h + '</div></div>';
-        }
-        function buildSummary() {
-            const d = collectAll();
-            let h = `<div class="summary-section"><h4>Identity</h4><div class="summary-grid">
-                <div class="summary-item"><span class="lbl">Name</span><span class="val">${d.name||'—'}</span></div>
-                <div class="summary-item"><span class="lbl">ID</span><span class="val" style="font-family:monospace">${d.id||'—'}</span></div></div></div>`;
-            h += sumSec('Entry Rules', d.entry);
-            h += sumSec('Adjustment Rules', d.adjustment);
-            h += sumSec('Exit Rules', d.exit);
-            h += sumSec('Risk Management', d.rms);
-            $('summaryContent').innerHTML = h;
-        }
+// ── Reset / New ──
+function reset(){
+    editing=null;$('bTitle').textContent='New Strategy';$('bActs').style.display='none';
+    document.querySelectorAll('input[type="text"],input[type="number"],input[type="time"],input[type="date"],textarea').forEach(el=>{
+        if(el.id==='fUnderlying'){el.value='NIFTY'}else if(el.defaultValue){el.value=el.defaultValue}else{el.value=''}
+    });
+    document.querySelectorAll('select').forEach(el=>el.selectedIndex=0);
+    // Reset checkboxes to defaults
+    ['eMon','eTue','eWed','eThu','eFri','aEnable','rTrackComb','rTgAlert','rAlertEntry','rAlertExit','rAlertAdj','rAlertRisk'].forEach(id=>sc(id,true));
+    ['eSkipExp','eScaleIn','eHedge','eAutoConf','eRetry','aAutoRoll','aRebalLegs','xExpDay','xPartialEn','xReEntry','xReProfOnly','xExitAllBreach',
+     'rAutoSqOff','rAutoReduce','rKillSwitch','rEmailAlert'].forEach(id=>sc(id,false));
+    sv('eTime','09:20');sv('eEndTime','14:00');sv('xTime','15:15');sv('eLots','1');sv('eMaxPos','1');
+    typeChg();go(0);
+    document.querySelectorAll('.strat-card').forEach(c=>c.classList.remove('active'));
+    $('monP').style.display='none';
+}
 
-        // ── Save ──
-        async function save() {
-            const payload = collectAll();
-            if (!payload.name) { toast('Name required', false); return; }
-            try {
-                const r = await fetch(`${API}/strategy/config/save-all`, {
-                    method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-                if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${r.status}`); }
-                toast(`"${payload.name}" saved`);
-                editing = payload.name;
-                $('bldActions').style.display = 'flex';
-                await loadList();
-            } catch(e) { toast('Save failed: '+e.message, false); }
-        }
+// ── Load List ──
+async function loadList(){
+    try{const r=await fetch(`${API}/strategy/configs`,{credentials:'include'});if(!r.ok)return;const d=await r.json();strategies=d.configs||[];renderList()}catch(e){console.error(e)}
+}
+function esc(s){return s.replace(/'/g,"\\'")}
+function renderList(){
+    const c=$('sList');
+    if(!strategies.length){c.innerHTML='<div class="empty-state">No saved strategies.<br>Build your first →</div>';return}
+    c.innerHTML=strategies.map(s=>{
+        const st=(s.status||'IDLE').toLowerCase(),active=editing===s.name;
+        const secs=(s.sections||[]).map(x=>`<span class="sec-pill">${x}</span>`).join(' ');
+        const und=s.identity?.underlying||s.entry?.position?.underlying||'';
+        const typ=s.identity?.strategy_type||'';
+        const desc=s.description||'';
+        return`<div class="strat-card${active?' active':''}" data-name="${s.name}" onclick="S.load('${esc(s.name)}')">
+            <div class="sc-head"><span class="sc-name">${s.name}</span><span class="sp ${st}">${s.status||'IDLE'}</span></div>
+            <div class="sc-id">${s.id||s.name}${und?' · '+und:''}${typ?' · '+typ:''}</div>
+            ${desc?`<div class="sc-desc">${desc}</div>`:''}
+            <div class="sc-meta">${secs||'<span class="muted" style="font-size:9px">No sections</span>'}</div>
+            <div class="sc-row" onclick="event.stopPropagation()">
+                <button class="btn-success" onclick="S.ctrl('${esc(s.name)}','start')"${st==='running'?' disabled':''}>▶</button>
+                <button class="btn-warning" onclick="S.ctrl('${esc(s.name)}','pause')"${st!=='running'?' disabled':''}>⏸</button>
+                <button class="btn-danger" onclick="S.ctrl('${esc(s.name)}','stop')"${st==='idle'||st==='stopped'?' disabled':''}>⏹</button>
+            </div>
+            <div class="sc-actions" onclick="event.stopPropagation()">
+                <button onclick="S.openModal('rename','${esc(s.name)}')">Rename</button>
+                <button onclick="S.openModal('clone','${esc(s.name)}')">Clone</button>
+                <button onclick="S.exportSaved('${esc(s.name)}')">Export</button>
+            </div></div>`;
+    }).join('');
+}
 
-        // ── Delete ──
-        async function deleteCurrent() {
-            if (!editing || !confirm(`Delete "${editing}"?`)) return;
-            try {
-                const r = await fetch(`${API}/strategy/config/${encodeURIComponent(editing)}`, { method:'DELETE', credentials:'include' });
-                if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${r.status}`); }
-                toast(`"${editing}" deleted`);
-                newStrategy();
-                await loadList();
-            } catch(e) { toast('Delete failed: '+e.message, false); }
-        }
+// ── Load into builder ──
+async function load(name){
+    try{
+        const r=await fetch(`${API}/strategy/config/${encodeURIComponent(name)}`,{credentials:'include'});if(!r.ok)return;
+        const d=await r.json();editing=name;$('bTitle').textContent='Edit: '+name;$('bActs').style.display='flex';
 
-        // ── New ──
-        function newStrategy() {
-            editing = null;
-            $('bldTitle').textContent = 'New Strategy';
-            $('bldActions').style.display = 'none';
-            // Reset all
-            const resets = {fName:'',fId:'',fType:'custom',fUnderlying:'NIFTY',fEntryTime:'09:20',fEntryCondition:'time_based',
-                fLots:'1',fMaxPos:'1',fDeltaTrigger:'',fTargetDelta:'',fMaxAdj:'3',fProfitLock:'',fLossRepair:'',
-                fAdjAction:'add_hedge',fAdjInterval:'5',fMaxLegDelta:'',fExitTime:'15:15',fForceExit:'10',
-                fTargetProfit:'',fTargetPct:'',fPartialExit:'100',fSL:'',fSLPct:'',fTrail:'',fLegSL:'',fLegTarget:'',
-                fMaxVal:'',fMaxMargin:'70',fMaxLots:'10',fDailyLoss:'',fDailyProfit:'',fMaxTrades:'10',
-                fCircuit:'',fDrawdown:'',fConcentration:'30',fCombSL:'',fCombTarget:''};
-            for (const [id,v] of Object.entries(resets)) sv(id, v);
-            sc('fHedge',false); sc('fAutoConfirm',false); sc('fEnableAdj',true);
-            sc('fExitAllBreach',false); sc('fTrackCombined',true); sc('fAutoSquare',false); sc('fNotify',true);
-            typeChanged();
-            go(0);
-            document.querySelectorAll('.strat-card').forEach(c => c.classList.remove('active'));
-            $('monPanel').style.display = 'none';
-        }
+        sv('fName',d.name||name);sv('fId',d.id||'');sv('fDesc',d.description||'');
+        sv('fTags',(d.tags||[]).join(', '));
 
-        // ── Load list ──
-        async function loadList() {
-            try {
-                const r = await fetch(`${API}/strategy/configs`, { credentials:'include' });
-                if (!r.ok) return;
-                const d = await r.json();
-                strategies = d.configs || [];
-                renderList();
-            } catch(e) { console.error(e); }
-        }
+        const id=d.identity||{};
+        sv('fStratType',id.strategy_type);sv('fExchange',id.exchange);sv('fUnderlying',id.underlying);
+        sv('fInstType',id.instrument_type);sv('fExpMode',id.expiry_mode);sv('fExpDate',id.expiry_custom);
+        if(id.expiry_mode==='custom')$('fExpCustom').style.display='';
+        sv('fProduct',id.product_type);sv('fOrdType',id.order_type);
+        typeChg();
 
-        function esc(s) { return s.replace(/'/g, "\\'"); }
+        const en=d.entry||{};const et=en.timing||{};const ec=en.condition||{};const ep=en.position||{};const eh=en.hedging||{};const ex=en.execution||{};
+        sv('eTime',et.entry_time);sv('eEndTime',et.entry_end_time);sv('eDelay',et.entry_delay_seconds);
+        const days=et.active_days||[];['eMon','eTue','eWed','eThu','eFri'].forEach((id,i)=>sc(id,days.includes(['mon','tue','wed','thu','fri'][i])));
+        sc('eSkipExp',et.skip_expiry_day);
+        sv('eCondType',ec.type);sv('ePrAbove',ec.price_above);sv('ePrBelow',ec.price_below);
+        sv('eIvAbove',ec.iv_above);sv('eIvBelow',ec.iv_below);sv('eVixMin',ec.vix_min);sv('eVixMax',ec.vix_max);
+        sv('eOiMin',ec.oi_min_lakhs);sv('ePcrMin',ec.pcr_min);sv('ePcrMax',ec.pcr_max);sv('ePremMin',ec.premium_min);
+        sv('eIndicator',ec.indicator);sv('eIndPeriod',ec.indicator_period);sv('eIndThresh',ec.indicator_threshold);
+        sv('eLots',ep.lots);sv('eMaxPos',ep.max_open_positions);sv('eLotSz',ep.lot_size_override);
+        sc('eScaleIn',ep.scale_in_enabled);sv('eScaleLots',ep.scale_in_lots);sv('eScaleTrig',ep.scale_in_trigger_pct);
+        sc('eHedge',eh.hedge_on_entry);sv('eHedgeType',eh.hedge_type);sv('eHedgeOff',eh.hedge_offset);sv('eHedgeLot',eh.hedge_lots);
+        sc('eAutoConf',ex.auto_confirm);sc('eRetry',ex.retry_on_reject);sv('eRetryCnt',ex.retry_count);sv('eSlip',ex.slippage_points);
 
-        function renderList() {
-            const c = $('stratList');
-            if (!strategies.length) { c.innerHTML = '<div class="empty-state">No saved strategies yet.<br>Build your first →</div>'; return; }
-            c.innerHTML = strategies.map(s => {
-                const st = (s.status||'IDLE').toLowerCase();
-                const active = editing === s.name;
-                const secs = (s.sections||[]).map(x=>`<span class="section-pill">${x}</span>`).join(' ');
-                const sub = [s.entry?.underlying, s.entry?.strategy_type].filter(Boolean).join(' · ');
-                return `<div class="strat-card${active?' active':''}" data-name="${s.name}" onclick="S.load('${esc(s.name)}')">
-                    <div class="strat-card-head"><span class="strat-card-name">${s.name}</span><span class="status-pill ${st}">${s.status||'IDLE'}</span></div>
-                    <div class="strat-card-id">${s.id||s.name}${sub?' · '+sub:''}</div>
-                    <div class="strat-card-meta">${secs||'<span class="muted" style="font-size:10px">No rules</span>'}</div>
-                    <div class="strat-card-controls" onclick="event.stopPropagation()">
-                        <button class="btn-success" onclick="S.ctrl('${esc(s.name)}','start')" ${st==='running'?'disabled':''}>▶ Start</button>
-                        <button class="btn-warning" onclick="S.ctrl('${esc(s.name)}','pause')" ${st!=='running'?'disabled':''}>⏸</button>
-                        <button class="btn-danger" onclick="S.ctrl('${esc(s.name)}','stop')" ${st==='idle'||st==='stopped'?'disabled':''}>⏹</button>
-                    </div></div>`;
-            }).join('');
-        }
+        setTimeout(()=>{
+            const lg=en.legs||{};
+            sv('xLegType',lg.leg_type);sv('xTgtDelta',lg.target_entry_delta);sv('xAtmOff',lg.atm_offset);sv('xCeOff',lg.ce_offset);sv('xPeOff',lg.pe_offset);sv('xStrikeSel',lg.strike_selection);sv('xPremTgt',lg.premium_target);
+            sv('xSCE',lg.short_ce_offset);sv('xLCE',lg.long_ce_offset);sv('xSPE',lg.short_pe_offset);sv('xLPE',lg.long_pe_offset);sv('xSCEd',lg.short_ce_delta);sv('xSPEd',lg.short_pe_delta);
+            sv('xBfDir',lg.direction);sv('xWing',lg.wing_width);sv('xBfOpt',lg.option_type);sv('xBfCenter',lg.center_strike);
+            sv('xFrontExp',lg.front_expiry);sv('xBackExp',lg.back_expiry);sv('xCalStrike',lg.strike_mode);sv('xCalOpt',lg.option_type);
+            sv('xRBuy',lg.buy_lots);sv('xRSell',lg.sell_lots);sv('xROff',lg.strike_offset);sv('xROpt',lg.option_type);
+            sv('xJPut',lg.put_offset);sv('xJCES',lg.ce_short_offset);sv('xJCEL',lg.ce_long_offset);
+            sv('xDDir',lg.direction);sv('xDSpread',lg.spread_type);sv('xDWidth',lg.width);sv('xDOpt',lg.option_type);
+            sv('xCCType',lg.type);sv('xCCOff',lg.offset);sv('xCCUnd',lg.underlying_position);
+        },40);
 
-        // ── Load into builder ──
-        async function load(name) {
-            try {
-                const r = await fetch(`${API}/strategy/config/${encodeURIComponent(name)}`, { credentials:'include' });
-                if (!r.ok) return;
-                const d = await r.json();
-                editing = name;
-                $('bldTitle').textContent = 'Edit: ' + name;
-                $('bldActions').style.display = 'flex';
+        const ad=d.adjustment||{};const ag=ad.general||{};const adl=ad.delta||{};const agt=ad.gamma_theta||{};const apn=ad.pnl||{};const aiv=ad.iv||{};const arl=ad.roll||{};const all=ad.leg_level||{};
+        sc('aEnable',ag.enabled);sv('aInterval',ag.check_interval_min);sv('aMaxDay',ag.max_adj_per_day);sv('aMaxSess',ag.max_adj_per_session);sv('aCooldown',ag.cooldown_seconds);
+        sv('aDeltaTrig',adl.trigger);sv('aTargetDelta',adl.target);sv('aEmergDelta',adl.emergency_trigger);sv('aDeltaMode',adl.mode);
+        sv('aMaxGamma',agt.max_gamma);sv('aMinTheta',agt.min_theta);sv('aGammaHedge',agt.gamma_hedge_trigger);sv('aThetaRebal',agt.theta_rebalance_time);
+        sv('aProfitLock',apn.profit_lock_trigger);sv('aLossRepair',apn.loss_repair_trigger);sv('aTrailStart',apn.trailing_adj_start);sv('aTrailStep',apn.trailing_adj_step);sv('aPnlAction',apn.pnl_action);
+        sv('aIvSpike',aiv.iv_spike_threshold);sv('aIvAction',aiv.iv_spike_action);sv('aIvCrush',aiv.iv_crush_action);
+        sv('aRollItm',arl.roll_when_itm_by);sv('aRollOff',arl.roll_to_atm_offset);sv('aRollAfter',arl.roll_only_after);sc('aAutoRoll',arl.auto_roll_before_expiry);
+        sv('aLegSL',all.per_leg_sl);sv('aLegTarget',all.per_leg_target);sv('aLegDelta',all.per_leg_delta_max);sc('aRebalLegs',all.rebalance_individual);
 
-                sv('fName', d.name||name); sv('fId', d.id||'');
-                const e = d.entry||{};
-                sv('fType', e.strategy_type); sv('fUnderlying', e.underlying); sv('fEntryTime', e.entry_time);
-                sv('fEntryCondition', e.entry_condition); sv('fLots', e.position_size); sv('fMaxPos', e.max_positions);
-                sc('fHedge', e.hedge_entry); sc('fAutoConfirm', e.auto_confirm);
-                typeChanged();
-                setTimeout(() => {
-                    sv('xDnssType',e.dnss_type); sv('xAtmOff',e.atm_offset); sv('xCeOff',e.ce_offset); sv('xPeOff',e.pe_offset);
-                    sv('xSCE',e.short_ce_offset); sv('xLCE',e.long_ce_offset); sv('xSPE',e.short_pe_offset); sv('xLPE',e.long_pe_offset);
-                    sv('xBfType',e.butterfly_type); sv('xWing',e.wing_width); sv('xBfOpt',e.butterfly_option_type);
-                    sv('xDir',e.direction); sv('xSpread',e.spread_type); sv('xWidth',e.spread_width);
-                }, 30);
+        const xt=d.exit||{};const xti=xt.time||{};const xpr=xt.profit||{};const xsl=xt.stop_loss||{};const xtr=xt.trailing||{};const xpl=xt.per_leg||{};const xcb=xt.combined||{};const xpa=xt.partial||{};const xre=xt.re_entry||{};const xem=xt.emergency||{};
+        sv('xTime',xti.exit_time);sv('xForceExp',xti.force_exit_before_expiry_min);sc('xExpDay',xti.exit_on_expiry_day);sv('xEarlyProf',xti.early_exit_if_profitable_after);
+        sv('xProfAbs',xpr.target_rupees);sv('xProfPct',xpr.target_pct);sv('xProfLot',xpr.target_per_lot);sv('xProfPrem',xpr.target_premium_pct);sv('xMinProf',xpr.min_profit_to_book);
+        sv('xSlAbs',xsl.sl_rupees);sv('xSlPct',xsl.sl_pct);sv('xSlLot',xsl.sl_per_lot);sv('xSlPrem',xsl.sl_premium_pct);
+        sv('xTrailType',xtr.type);sv('xTrailVal',xtr.value);sv('xTrailStep',xtr.step);sv('xTrailAct',xtr.activate_at);
+        sv('xLegSL',xpl.leg_sl);sv('xLegSLPct',xpl.leg_sl_pct);sv('xLegTgt',xpl.leg_target);sv('xLegTgtPct',xpl.leg_target_pct);sc('xExitAllBreach',xpl.exit_all_on_breach);
+        sv('xCombSL',xcb.combined_sl);sv('xCombTgt',xcb.combined_target);
+        sc('xPartialEn',xpa.enabled);sv('xPartialAt',xpa.partial_at_pct);sv('xPartialPct',xpa.exit_pct);
+        sc('xReEntry',xre.enabled);sv('xReCool',xre.cooldown_min);sv('xReMax',xre.max_count);sc('xReProfOnly',xre.profit_only);
+        sv('xEmVix',xem.vix_above);sv('xEmGap',xem.gap_pct);sv('xEmMtm',xem.mtm_below);
 
-                const a = d.adjustment||{};
-                sc('fEnableAdj',a.enable_adjustments); sv('fDeltaTrigger',a.delta_trigger); sv('fTargetDelta',a.target_delta);
-                sv('fMaxAdj',a.max_adjustments); sv('fProfitLock',a.profit_lock_trigger); sv('fLossRepair',a.loss_repair_trigger);
-                sv('fAdjAction',a.adjustment_action); sv('fAdjInterval',a.adjust_check_interval); sv('fMaxLegDelta',a.max_leg_delta);
+        const rm=d.rms||{};const rp=rm.position||{};const rd=rm.daily||{};const rw=rm.weekly||{};const rmm=rm.monthly||{};const rg=rm.greeks||{};const rc=rm.circuit||{};const rmg=rm.margin||{};const rcb=rm.combined||{};const rau=rm.auto||{};const rn=rm.notifications||{};
+        sv('rMaxVal',rp.max_value);sv('rMaxLots',rp.max_lots);sv('rMaxMargin',rp.max_margin_pct);sv('rMaxNotional',rp.max_notional);
+        sv('rDailyLoss',rd.loss_limit);sv('rDailyProfit',rd.profit_target);sv('rMaxTrades',rd.max_trades);sv('rMaxAdjDay',rd.max_adjustments);
+        sv('rWeekLoss',rw.loss_limit);sv('rWeekProfit',rw.profit_target);sv('rMonthLoss',rmm.loss_limit);sv('rMonthDD',rmm.max_drawdown_pct);
+        sv('rGkDelta',rg.max_delta);sv('rGkGamma',rg.max_gamma);sv('rGkVega',rg.max_vega);sv('rGkTheta',rg.max_theta);
+        sv('rCircuit',rc.amount);sv('rCircuitPct',rc.pct);sv('rCircuitCool',rc.cooldown_min);sc('rKillSwitch',rc.kill_switch);
+        sv('rMargBuf',rmg.buffer_pct);sv('rMargBlock',rmg.block_above_pct);
+        sc('rTrackComb',rcb.track);sv('rCombSL',rcb.sl);sv('rCombTgt',rcb.target);
+        sc('rAutoSqOff',rau.square_off_on_breach);sc('rAutoReduce',rau.auto_reduce);sv('rReduceTo',rau.reduce_to_lots);
+        sc('rTgAlert',rn.telegram);sc('rEmailAlert',rn.email);sv('rWebhook',rn.webhook);
+        sc('rAlertEntry',rn.on_entry);sc('rAlertExit',rn.on_exit);sc('rAlertAdj',rn.on_adjustment);sc('rAlertRisk',rn.on_risk_breach);
 
-                const x = d.exit||{};
-                sv('fExitTime',x.exit_time); sv('fForceExit',x.force_exit_minutes); sv('fTargetProfit',x.target_profit);
-                sv('fTargetPct',x.target_profit_percent); sv('fPartialExit',x.partial_exit_percent); sv('fSL',x.stop_loss);
-                sv('fSLPct',x.stop_loss_percent); sv('fTrail',x.trailing_stop); sv('fLegSL',x.leg_stop_loss);
-                sv('fLegTarget',x.leg_target); sc('fExitAllBreach',x.exit_all_on_leg_breach);
+        go(0);
+        document.querySelectorAll('.strat-card').forEach(c=>c.classList.toggle('active',c.dataset.name===name));
+        $('monP').style.display='';
+    }catch(e){toast('Load failed: '+e.message,false)}
+}
 
-                const rm = d.rms||{};
-                sv('fMaxVal',rm.max_position_value); sv('fMaxMargin',rm.max_margin_percent); sv('fMaxLots',rm.max_lots_per_trade);
-                sv('fDailyLoss',rm.daily_loss_limit); sv('fDailyProfit',rm.daily_profit_target); sv('fMaxTrades',rm.max_trades_per_day);
-                sv('fCircuit',rm.circuit_breaker); sv('fDrawdown',rm.drawdown_limit); sv('fConcentration',rm.concentration_limit);
-                sc('fTrackCombined',rm.track_combined_pnl); sv('fCombSL',rm.combined_stop_loss); sv('fCombTarget',rm.combined_target);
-                sc('fAutoSquare',rm.auto_square_off); sc('fNotify',rm.notify_on_risk_breach);
+// ── Control ──
+async function ctrl(name,action){
+    const iMap={start:'ENTRY',pause:'ADJUST',stop:'FORCE_EXIT'};
+    const sMap={start:'RUNNING',pause:'PAUSED',stop:'STOPPED'};
+    if(action==='stop'&&!confirm(`Stop "${name}" and square off?`))return;
+    if(action==='start'&&!confirm(`Start "${name}"?`))return;
+    try{
+        const ir=await fetch(`${API}/intent/strategy`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({strategy_name:name,action:iMap[action],reason:'DASHBOARD_'+action.toUpperCase()})});
+        if(!ir.ok){const e=await ir.json().catch(()=>({}));throw new Error(e.detail||`HTTP ${ir.status}`)}
+        await fetch(`${API}/strategy/config/${encodeURIComponent(name)}/status`,{method:'POST',credentials:'include',
+            headers:{'Content-Type':'application/json'},body:JSON.stringify({status:sMap[action]})});
+        toast(`"${name}" ${action==='start'?'started':action==='pause'?'paused':'stopped'}`);await loadList();
+    }catch(e){toast(`${action} failed: ${e.message}`,false)}
+}
 
-                go(0);
-                document.querySelectorAll('.strat-card').forEach(c => c.classList.toggle('active', c.dataset.name===name));
-                $('monPanel').style.display = '';
-            } catch(e) { toast('Load failed: '+e.message, false); }
-        }
+// ── Modal (rename/clone) ──
+function openModal(mode,name){
+    modalMode=mode;modalName=name;
+    $('modalTitle').textContent=mode==='clone'?'Clone Strategy':'Rename Strategy';
+    $('mBtn').textContent=mode==='clone'?'Clone':'Rename';
+    $('mUndRow').style.display=mode==='clone'?'':'none';
+    $('mNewName').value=mode==='clone'?name+' Copy':'';
+    $('mUnderlying').value='';
+    $('modalBg').classList.add('show');$('mNewName').focus();
+}
+function closeModal(){$('modalBg').classList.remove('show')}
+async function modalOk(){
+    const nn=$('mNewName').value.trim();if(!nn){toast('Name required',false);return}
+    const url=`${API}/strategy/config/${encodeURIComponent(modalName)}/${modalMode}`;
+    const body={new_name:nn};
+    if(modalMode==='clone'){const und=$('mUnderlying').value.trim();if(und)body.underlying=und}
+    try{
+        const r=await fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||`HTTP ${r.status}`)}
+        toast(`Strategy ${modalMode==='clone'?'cloned':'renamed'}`);closeModal();await loadList();
+        if(modalMode==='rename'&&editing===modalName){editing=nn;$('bTitle').textContent='Edit: '+nn;sv('fName',nn)}
+    }catch(e){toast(`${modalMode} failed: ${e.message}`,false)}
+}
 
-        // ── Control (start/pause/stop) ──
-        async function ctrl(name, action) {
-            const iMap = {start:'ENTRY',pause:'ADJUST',stop:'FORCE_EXIT'};
-            const sMap = {start:'RUNNING',pause:'PAUSED',stop:'STOPPED'};
-            if (action==='stop' && !confirm(`Stop "${name}" and square off?`)) return;
-            if (action==='start' && !confirm(`Start "${name}"?`)) return;
-            try {
-                const ir = await fetch(`${API}/intent/strategy`, {
-                    method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({strategy_name:name, action:iMap[action], reason:'DASHBOARD_'+action.toUpperCase()})
-                });
-                if (!ir.ok) { const e = await ir.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${ir.status}`); }
-                await fetch(`${API}/strategy/config/${encodeURIComponent(name)}/status`, {
-                    method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({status:sMap[action]})
-                });
-                toast(`"${name}" ${action==='start'?'started':action==='pause'?'paused':'stopped'}`);
-                await loadList();
-            } catch(e) { toast(`${action} failed: ${e.message}`, false); }
-        }
+// ── Export saved strategy directly ──
+async function exportSaved(name){
+    try{
+        const r=await fetch(`${API}/strategy/config/${encodeURIComponent(name)}`,{credentials:'include'});if(!r.ok)return;
+        const d=await r.json();
+        const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(d.id||name)+'.json';a.click();
+        toast('Exported '+name);
+    }catch(e){toast('Export failed',false)}
+}
 
-        // ── Monitor ──
-        async function monitor() {
-            try {
-                const r = await fetch(`${API}/home/status`, { credentials:'include' });
-                if (!r.ok) return;
-                const d = await r.json();
-                const pos = (d.broker&&d.broker.positions)||[];
-                const sum = (d.broker&&d.broker.positions_summary)||{};
-                const ord = (d.system&&d.system.open_orders)||0;
-                const risk = (d.system&&d.system.risk)||{};
+// ── Monitor ──
+async function monitor(){
+    try{
+        const r=await fetch(`${API}/home/status`,{credentials:'include'});if(!r.ok)return;const d=await r.json();
+        const pos=(d.broker&&d.broker.positions)||[];const sum=(d.broker&&d.broker.positions_summary)||{};
+        const ord=(d.system&&d.system.open_orders)||0;const risk=(d.system&&d.system.risk)||{};
+        $('mPos').textContent=pos.length;
+        const pnl=sum.net_pnl||sum.total_pnl||0;const pe=$('mPnl');
+        pe.textContent='₹'+pnl.toLocaleString('en-IN',{maximumFractionDigits:0});
+        pe.style.color=pnl>=0?'var(--success)':'var(--danger)';
+        $('mOrd').textContent=ord;
+        const re=$('mRisk');
+        if(risk.daily_loss_hit){re.textContent='BREACH';re.style.color='var(--danger)'}
+        else if(risk.force_exit_in_progress){re.textContent='EXITING';re.style.color='var(--warning)'}
+        else{re.textContent='OK';re.style.color='var(--success)'}
+        const tb=$('mTb'),open=pos.filter(p=>parseInt(p.netqty||0)!==0);
+        if(open.length){tb.innerHTML=open.map(p=>{const pl=parseFloat(p.urmtom||p.rpnl||0);
+            return`<tr><td style="font-size:10px">${p.tsym||'?'}</td><td style="font-size:10px">${p.netqty||0}</td><td style="font-size:10px;color:${pl>=0?'var(--success)':'var(--danger)'}">₹${pl.toFixed(0)}</td></tr>`}).join('')}
+        else{tb.innerHTML='<tr><td colspan="3" class="text-center muted">—</td></tr>'}
+    }catch(e){}
+}
 
-                $('mPos').textContent = pos.length;
-                const pnl = sum.net_pnl||sum.total_pnl||0;
-                const pe = $('mPnl');
-                pe.textContent = '₹'+pnl.toLocaleString('en-IN',{maximumFractionDigits:0});
-                pe.style.color = pnl>=0?'var(--success)':'var(--danger)';
-                $('mOrd').textContent = ord;
-                const re = $('mRisk');
-                if (risk.daily_loss_hit) { re.textContent='BREACH'; re.style.color='var(--danger)'; }
-                else if (risk.force_exit_in_progress) { re.textContent='EXITING'; re.style.color='var(--warning)'; }
-                else { re.textContent='OK'; re.style.color='var(--success)'; }
+// ── Init ──
+document.addEventListener('DOMContentLoaded',()=>{typeChg();loadList();monitor();setInterval(monitor,3000)});
 
-                const tb = $('mPosTb');
-                const open = pos.filter(p => parseInt(p.netqty||0) !== 0);
-                if (open.length) {
-                    tb.innerHTML = open.map(p => {
-                        const pl = parseFloat(p.urmtom||p.rpnl||0);
-                        return `<tr><td style="font-size:11px">${p.tsym||p.symbol||'?'}</td><td style="font-size:11px">${p.netqty||0}</td>
-                            <td style="font-size:11px;color:${pl>=0?'var(--success)':'var(--danger)'}">₹${pl.toFixed(0)}</td></tr>`;
-                    }).join('');
-                } else {
-                    tb.innerHTML = '<tr><td colspan="3" class="text-center muted" style="font-size:11px">No open positions</td></tr>';
-                }
-            } catch(e) {}
-        }
-
-        // ── Init ──
-        document.addEventListener('DOMContentLoaded', () => {
-            typeChanged();
-            loadList();
-            monitor();
-            setInterval(monitor, 3000);
-        });
-
-        return { go, typeChanged, save, deleteCurrent, newStrategy, load, ctrl };
-    })();
-    </script>
+return{go,typeChg,save,delCur,reset,load,ctrl,exportJSON,exportSaved,openModal,closeModal,modalOk};
+})();
+</script>
 </body>
 </html>

@@ -167,7 +167,7 @@ class OrphanPositionManager:
         - trailing: position LTP <= (entry_price - trailing_amount)
         """
         condition = rule.get("condition")
-        threshold = rule.get("threshold")
+        threshold = rule.get("threshold", 0.0)
         
         for pos in positions:
             ltp = float(pos.get("ltp", 0) or 0)
@@ -305,9 +305,9 @@ class OrphanPositionManager:
         - EXIT: Full exit of all positions
         - REDUCE: Reduce qty by specified amount
         """
-        rule_id = rule.get("rule_id")
+        rule_id = rule.get("rule_id", "UNKNOWN")
         action = rule.get("action", "EXIT")
-        reduce_qty = rule.get("reduce_qty")
+        reduce_qty = rule.get("reduce_qty", 0)
         
         execution_count = 0
         
@@ -315,13 +315,13 @@ class OrphanPositionManager:
             symbol = pos.get("tsym")
             netqty = int(pos.get("netqty", 0))
             
-            if netqty == 0:
+            if netqty == 0 or not symbol:
                 continue
             
             try:
                 # Determine exit side
                 side = "SELL" if netqty > 0 else "BUY"
-                exit_qty = netqty if action == "EXIT" else reduce_qty
+                exit_qty = netqty if action == "EXIT" else int(reduce_qty or 0)
                 
                 if action == "EXIT":
                     logger.warning(
@@ -339,7 +339,7 @@ class OrphanPositionManager:
                 
                 cmd = UniversalOrderCommand.from_order_params(
                     order_params={
-                        "exchange": pos.get("exch"),
+                        "exchange": pos.get("exch", "NSE"),
                         "symbol": symbol,
                         "side": side,
                         "quantity": exit_qty,

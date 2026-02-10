@@ -1,11 +1,11 @@
 [Unit]
 Description=Trading Platform Start Service
-Documentation=Starts trading platform
+Documentation=man:systemctl(1)
 After=network.target
 
 [Service]
 Type=oneshot
-User=ec2-user
+User=root
 WorkingDirectory=/home/ec2-user/shoonya_platform
 ExecStart=/usr/bin/systemctl start trading.service
 StandardOutput=journal

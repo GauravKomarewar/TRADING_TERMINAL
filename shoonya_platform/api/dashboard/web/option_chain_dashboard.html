@@ -1270,6 +1270,10 @@
         console.log('[OptionChain] Parsed', Object.keys(newStrikeMap).length, 'strikes from data');
         console.log('[OptionChain] Sample strikes parsed:', Object.keys(newStrikeMap).slice(0, 3));
         
+        // CRITICAL FIX: Compare newStrikeMap against what's ACTUALLY displayed in DOM, not chainData
+        // This ensures we detect real changes even if chainData is out of sync
+        let forcedUpdateCount = 0;
+        
         // Update info bar values
         elements.ceOi.textContent = formatNumber(totalCeOiNew, 0);
         elements.peOi.textContent = formatNumber(totalPeOiNew, 0);
@@ -1306,12 +1310,17 @@
                 return;
             }
             
-            updateStrikeRow(strike, newData, oldData);
-            chainData[strike] = { ...chainData[strike], ...newData };
+            // FORCE UPDATE: Always update strike row, even if values look unchanged
+            // This fixes the synchronization issue when DOM is out of sync with chainData
+            updateStrikeRow(strike, newData, oldData, true);
+            chainData[strike] = { ...newData };
             updateCount++;
         });
         
         console.log(`%c✓ Updated ${updateCount} rows | ✗ ${failCount} rows NOT FOUND`, 'color: green; font-weight: bold');
+        if (forcedUpdateCount > 0) {
+            console.log(`%c⚠️ Force-synced ${forcedUpdateCount} cells that were out of sync`, 'color: gold; font-weight: bold');
+        }
         
         if (failCount > 0) {
             console.error('[OptionChain] ERROR: Table rows not found! Check data-strike attributes!');
@@ -1338,7 +1347,7 @@
         }
     }
     
-    function updateStrikeRow(strike, newData, oldData) {
+    function updateStrikeRow(strike, newData, oldData, forceUpdate = false) {
         const row = document.querySelector(`tr[data-strike="${strike}"]`);
         if (!row) {
             console.warn('[OptionChain] Row not found for strike:', strike);
@@ -1348,17 +1357,19 @@
         console.log(`[OptionChain] Updating strike ${strike}:`, {
             newData: newData,
             oldData: oldData,
-            rowElement: row
+            rowElement: row,
+            forceUpdate: forceUpdate
         });
         
-        updateCellGroup(row, newData, oldData, 'ce');
-        updateCellGroup(row, newData, oldData, 'pe');
+        updateCellGroup(row, newData, oldData, 'ce', forceUpdate);
+        updateCellGroup(row, newData, oldData, 'pe', forceUpdate);
     }
     
-    function updateCellGroup(row, newData, oldData, prefix) {
+    function updateCellGroup(row, newData, oldData, prefix, forceUpdate = false) {
         console.log(`[OptionChain] updateCellGroup called for ${prefix}:`, {
             newData: newData,
-            oldData: oldData
+            oldData: oldData,
+            forceUpdate: forceUpdate
         });
         
         // LTP - Always present
@@ -1368,7 +1379,7 @@
             const newVal = newData[`${prefix}_ltp`];
             const oldVal = oldData[`${prefix}_ltp`];
             console.log(`[OptionChain] LTP - New: ${newVal}, Old: ${oldVal}`);
-            updateCellValue(ltpCell, newVal, oldVal, 'ltp');
+            updateCellValue(ltpCell, newVal, oldVal, 'ltp', forceUpdate);
         }
         
         // Change %
@@ -1376,7 +1387,7 @@
             const changeCell = row.querySelector(`.${prefix}-change-cell`);
             console.log(`[OptionChain] ${prefix}-change-cell search:`, changeCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (changeCell) {
-                updateCellValue(changeCell, newData[`${prefix}_change_pct`], oldData[`${prefix}_change_pct`], 'change');
+                updateCellValue(changeCell, newData[`${prefix}_change_pct`], oldData[`${prefix}_change_pct`], 'change', forceUpdate);
             }
         }
         
@@ -1385,7 +1396,7 @@
             const oiCell = row.querySelector(`.${prefix}-oi-cell`);
             console.log(`[OptionChain] ${prefix}-oi-cell search:`, oiCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (oiCell) {
-                updateOiCell(oiCell, newData[`${prefix}_oi`], oldData[`${prefix}_oi`]);
+                updateOiCell(oiCell, newData[`${prefix}_oi`], oldData[`${prefix}_oi`], forceUpdate);
             }
         }
         
@@ -1394,7 +1405,7 @@
             const volumeCell = row.querySelector(`.${prefix}-volume-cell`);
             console.log(`[OptionChain] ${prefix}-volume-cell search:`, volumeCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (volumeCell) {
-                updateCellValue(volumeCell, newData[`${prefix}_volume`], oldData[`${prefix}_volume`], 'volume');
+                updateCellValue(volumeCell, newData[`${prefix}_volume`], oldData[`${prefix}_volume`], 'volume', forceUpdate);
             }
         }
         
@@ -1403,7 +1414,7 @@
             const ivCell = row.querySelector(`.${prefix}-iv-cell`);
             console.log(`[OptionChain] ${prefix}-iv-cell search:`, ivCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (ivCell) {
-                updateCellValue(ivCell, newData[`${prefix}_iv`], oldData[`${prefix}_iv`], 'iv');
+                updateCellValue(ivCell, newData[`${prefix}_iv`], oldData[`${prefix}_iv`], 'iv', forceUpdate);
             }
         }
         
@@ -1412,7 +1423,7 @@
             const deltaCell = row.querySelector(`.${prefix}-delta-cell`);
             console.log(`[OptionChain] ${prefix}-delta-cell search:`, deltaCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (deltaCell) {
-                updateCellValue(deltaCell, newData[`${prefix}_delta`], oldData[`${prefix}_delta`], 'delta');
+                updateCellValue(deltaCell, newData[`${prefix}_delta`], oldData[`${prefix}_delta`], 'delta', forceUpdate);
             }
         }
         
@@ -1421,7 +1432,7 @@
             const gammaCell = row.querySelector(`.${prefix}-gamma-cell`);
             console.log(`[OptionChain] ${prefix}-gamma-cell search:`, gammaCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (gammaCell) {
-                updateCellValue(gammaCell, newData[`${prefix}_gamma`], oldData[`${prefix}_gamma`], 'gamma');
+                updateCellValue(gammaCell, newData[`${prefix}_gamma`], oldData[`${prefix}_gamma`], 'gamma', forceUpdate);
             }
         }
         
@@ -1430,7 +1441,7 @@
             const thetaCell = row.querySelector(`.${prefix}-theta-cell`);
             console.log(`[OptionChain] ${prefix}-theta-cell search:`, thetaCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (thetaCell) {
-                updateCellValue(thetaCell, newData[`${prefix}_theta`], oldData[`${prefix}_theta`], 'theta');
+                updateCellValue(thetaCell, newData[`${prefix}_theta`], oldData[`${prefix}_theta`], 'theta', forceUpdate);
             }
         }
         
@@ -1444,7 +1455,7 @@
         }
     }
     
-    function updateCellValue(cell, newValue, oldValue, column) {
+    function updateCellValue(cell, newValue, oldValue, column, forceUpdate = false) {
         if (!cell) {
             console.warn('[OptionChain] Cell element is null for column:', column);
             return;
@@ -1452,10 +1463,10 @@
         
         const newNum = parseFloat(newValue) || 0;
         const oldNum = parseFloat(oldValue) || 0;
-        const hasChanged = Math.abs(newNum - oldNum) > 0.0001;
+        const hasChanged = Math.abs(newNum - oldNum) > 0.0001 || forceUpdate;
         
         const cellText = cell.textContent.trim();
-        console.log(`[OptionChain] Cell Update - Column: ${column} | Old: ${oldNum} | New: ${newNum} | Changed: ${hasChanged} | Current Text: "${cellText}"`);
+        console.log(`[OptionChain] Cell Update - Column: ${column} | Old: ${oldNum} | New: ${newNum} | Changed: ${hasChanged} | Current Text: "${cellText}" | ForceUpdate: ${forceUpdate}`);
         
         if (hasChanged) {
             let displayValue;
@@ -1480,8 +1491,8 @@
         }
     }
     
-    function updateOiCell(cell, newValue, oldValue) {
-        const hasChanged = Math.abs((newValue || 0) - (oldValue || 0)) > 0.0001;
+    function updateOiCell(cell, newValue, oldValue, forceUpdate = false) {
+        const hasChanged = Math.abs((newValue || 0) - (oldValue || 0)) > 0.0001 || forceUpdate;
         
         if (hasChanged) {
             const barText = cell.querySelector('.bar-text');

@@ -533,14 +533,14 @@
             display: none;
         }
         
-        /* Value change animation */
+        /* Value change animation - subtle and transparent */
         @keyframes valueChange {
-            0% { background-color: rgba(59, 130, 246, 0.4); }
+            0% { background-color: rgba(59, 130, 246, 0.08); }
             100% { background-color: transparent; }
         }
         
         .value-changed {
-            animation: valueChange 0.5s ease-out;
+            animation: valueChange 0.6s ease-out;
         }
         
         /* Modal Styles */
@@ -1508,16 +1508,22 @@
     }
     
     function updateInfoBar(meta) {
-        const newSpotPrice = parseFloat(meta.spot_price) || parseFloat(meta.spot_ltp) || 0;
-        const newFuturePrice = parseFloat(meta.future_price) || parseFloat(meta.fut_ltp) || 0;
+        const newSpotPrice = parseFloat(meta.spot_price) || parseFloat(meta.spot_ltp) || parseFloat(meta.ltp) || 0;
+        const newFuturePrice = parseFloat(meta.future_price) || parseFloat(meta.fut_ltp) || parseFloat(meta.fut) || 0;
         
-        console.log('[OptionChain] updateInfoBar called with meta:', { 
+        console.log('%c[OptionChain] updateInfoBar - API Meta Data:', 'color: cyan; font-weight: bold');
+        console.log('Raw API Response:', meta);
+        console.log('Parsed Values:', { 
             spot_price: meta.spot_price, 
             spot_ltp: meta.spot_ltp,
+            ltp: meta.ltp,
             future_price: meta.future_price,
             fut_ltp: meta.fut_ltp,
+            fut: meta.fut,
             parsedSpot: newSpotPrice,
-            parsedFuture: newFuturePrice
+            parsedFuture: newFuturePrice,
+            currentSpotPrice: currentSpotPrice,
+            changed: newSpotPrice !== currentSpotPrice
         });
         
         // Update spot price with animation

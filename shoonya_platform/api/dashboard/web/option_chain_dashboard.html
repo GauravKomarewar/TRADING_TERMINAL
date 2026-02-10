@@ -796,6 +796,13 @@
                 </div>
             </div>
             <div class="order-form-group">
+                <label class="order-form-label">Execution Type</label>
+                <div class="order-form-row">
+                    <button id="orderExecEntry" class="order-form-input" onclick="setOrderExecution('ENTRY')" style="background:var(--primary)">ENTRY</button>
+                    <button id="orderExecExit" class="order-form-input" style="opacity:0.5;background:var(--muted)" onclick="setOrderExecution('EXIT')">EXIT</button>
+                </div>
+            </div>
+            <div class="order-form-group">
                 <label class="order-form-label">Price Type</label>
                 <div class="order-form-row">
                     <button id="orderPriceTypeMKT" class="order-form-input" onclick="setOrderPriceType('MARKET')">MARKET</button>
@@ -834,7 +841,7 @@
 <script>
     // Configuration
     const config = {
-        autoRefreshInterval: 2000,
+        autoRefreshInterval: 1000,  // 1 second for real-time background updates
         lastChainData: {}
     };
     
@@ -906,6 +913,7 @@
         qtyLots: 1,
         qty: 1,
         side: 'BUY',
+        execution: 'ENTRY',  // NEW: Execution type (ENTRY/EXIT)
         product: 'MIS',
         priceType: 'LIMIT',
         price: null
@@ -966,21 +974,24 @@
         });
     }
     
-    // Auto Refresh
+    // Auto Refresh - Background data update
     function startAutoRefresh() {
         stopAutoRefresh();
         
         autoRefreshTimer = setInterval(() => {
             if (elements.symbol.value && elements.expiry.value) {
-                loadOptionChain(true);
+                loadOptionChain(true);  // Auto-refresh with smart update
             }
         }, config.autoRefreshInterval);
+        
+        console.log(`Auto-refresh started: ${config.autoRefreshInterval}ms interval`);
     }
     
     function stopAutoRefresh() {
         if (autoRefreshTimer) {
             clearInterval(autoRefreshTimer);
             autoRefreshTimer = null;
+            console.log('Auto-refresh stopped');
         }
     }
     
@@ -1497,6 +1508,7 @@
         elements.orderPrice.value = ltp;
         
         setOrderSide('BUY');
+        setOrderExecution('ENTRY');
         setOrderProduct('MIS');
         setOrderPriceType('LIMIT');
         
@@ -1533,6 +1545,14 @@
         currentOrderEntry.product = product;
         elements.orderProductMIS.style.opacity = product === 'MIS' ? '1' : '0.5';
         elements.orderProductNRML.style.opacity = product === 'NRML' ? '1' : '0.5';
+    }
+    
+    function setOrderExecution(execution) {
+        currentOrderEntry.execution = execution;
+        const entryBtn = document.getElementById('orderExecEntry');
+        const exitBtn = document.getElementById('orderExecExit');
+        if (entryBtn) entryBtn.style.opacity = execution === 'ENTRY' ? '1' : '0.5';
+        if (exitBtn) exitBtn.style.opacity = execution === 'EXIT' ? '1' : '0.5';
     }
     
     function setOrderPriceType(priceType) {
@@ -1597,6 +1617,7 @@
             qty,
             qtyLots,
             lotSize,
+            execution: currentOrderEntry.execution,  // NEW: Capture execution type
             product,
             orderType,
             price
@@ -1672,7 +1693,7 @@
                     </button>
                 </div>
                 <div style="font-size: 11px; color: var(--muted)">
-                    ${item.side} | ${item.qtyLots} Lots (Qty ${item.qty}) | ${item.product} | ${item.orderType} ${item.orderType === 'LIMIT' ? '@ ₹' + item.price : ''}
+                    ${item.side} ${item.execution || 'ENTRY'} | ${item.qtyLots} Lots (Qty ${item.qty}) | ${item.product} | ${item.orderType} ${item.orderType === 'LIMIT' ? '@ ₹' + item.price : ''}
                 </div>
             </div>
         `).join('');
@@ -1694,7 +1715,7 @@
                 product: item.product,
                 order_type: item.orderType,
                 price: item.orderType === 'LIMIT' ? item.price : null,
-                execution_type: 'ENTRY',
+                execution_type: item.execution || 'ENTRY',  // NEW: Use basket item execution type
                 test_mode: null,
                 triggered_order: 'NO',
                 trigger_value: null,

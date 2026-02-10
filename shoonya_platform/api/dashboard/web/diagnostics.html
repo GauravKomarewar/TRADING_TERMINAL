@@ -10,15 +10,16 @@
     <style>
         :root{--bg:#0a0e13;--panel:#151b26;--panel-2:#1c2333;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444;--warning:#f59e0b}
         *{box-sizing:border-box;margin:0;padding:0}
-        body{font-family:monospace;background:var(--bg);color:var(--text);padding:20px;line-height:1.6}
-        h1{color:var(--primary);margin-bottom:20px}
-        h2{color:var(--text);font-size:16px;margin-bottom:12px}
-        h3{color:var(--text);font-size:14px;margin-bottom:8px}
+        body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;background:var(--bg);color:var(--text);padding:72px 20px 20px;line-height:1.6}
+        main{max-width:1200px;margin:0 auto}
+        h1{color:var(--primary);margin-bottom:20px;font-size:28px;font-weight:700}
+        h2{color:var(--text);font-size:16px;margin:24px 0 12px;font-weight:600}
+        h3{color:var(--text);font-size:14px;margin:16px 0 8px;font-weight:600}
         .section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:20px}
-        select{padding:8px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer}
-        button{background:var(--primary);color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;margin:5px}
+        select{padding:8px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer;font-size:13px}
+        button{background:var(--primary);color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;margin:5px;font-weight:600;transition:background 0.2s}
         button:hover{background:#2563eb}
-        pre{background:#0a0e13;padding:15px;border-radius:6px;overflow-x:auto;border:1px solid var(--border);color:var(--text)}
+        pre{background:#0a0e13;padding:15px;border-radius:6px;overflow-x:auto;border:1px solid var(--border);color:var(--muted);font-size:11px;max-height:300px;overflow-y:auto}
         .error{color:var(--danger)}
         .success{color:var(--success)}
         .status{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
@@ -26,54 +27,59 @@
         .status.SENT_TO_BROKER{background:rgba(59,130,246,.1);color:var(--primary);border:1px solid var(--primary)}
         .status.EXECUTED{background:rgba(16,185,129,.12);color:var(--success);border:1px solid var(--success)}
         .status.FAILED{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid var(--danger)}
-        .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px}
-        .info-card{background:var(--panel-2);padding:12px;border-radius:8px;border-left:4px solid var(--primary)}
+        .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:12px}
+        .info-card{background:var(--panel-2);padding:16px;border-radius:8px;border-left:4px solid var(--primary);transition:all 0.2s}
         .info-card.warning{border-left-color:var(--warning);background:rgba(245,158,11,.05)}
         .info-card.danger{border-left-color:var(--danger);background:rgba(239,68,68,.05)}
         .info-card.success{border-left-color:var(--success);background:rgba(16,185,129,.05)}
-        .info-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;margin-bottom:4px}
-        .info-value{font-size:18px;font-weight:700;color:var(--text)}
-        .list-item{padding:12px;background:var(--panel-2);border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--border)}
+        .info-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;margin-bottom:6px;letter-spacing:0.3px}
+        .info-value{font-size:20px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+        .list-item{padding:12px;background:var(--panel-2);border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--border);font-size:13px}
         .list-item.error{border-left-color:var(--danger);background:rgba(239,68,68,.05)}
         .list-item.warning{border-left-color:var(--warning);background:rgba(245,158,11,.05)}
         .list-item.success{border-left-color:var(--success);background:rgba(16,185,129,.05)}
-        .pipeline-step{display:flex;align-items:center;gap:12px;padding:12px;background:var(--panel-2);border-radius:8px;margin-bottom:8px;border-left:4px solid var(--border)}
+        .pipeline-step{display:flex;align-items:center;gap:12px;padding:12px;background:var(--panel-2);border-radius:8px;margin-bottom:8px;border-left:4px solid var(--border);transition:all 0.2s}
         .pipeline-step.active{background:rgba(16,185,129,.05);border-left-color:var(--success)}
         .pipeline-step.pending{background:rgba(245,158,11,.05);border-left-color:var(--warning)}
         .pipeline-step.failed{background:rgba(239,68,68,.05);border-left-color:var(--danger)}
-        .step-icon{font-size:20px;font-weight:700}
+        .step-icon{font-size:20px;font-weight:700;color:var(--primary);min-width:28px;text-align:center}
         .step-content{flex:1}
-        .step-label{font-weight:600;font-size:12px;color:var(--text)}
-        .step-desc{font-size:11px;color:var(--muted);margin-top:2px}
-        .loading{text-align:center;padding:20px;color:var(--muted)}
+        .step-label{font-weight:600;font-size:13px;color:var(--text)}
+        .step-desc{font-size:12px;color:var(--muted);margin-top:4px}
+        .loading{text-align:center;padding:20px;color:var(--muted);font-size:14px}
     </style>
 </head>
 <body data-page="diagnostics">
 <div id="app-header"></div>
-    <h1>🔍 API Diagnostics Tool</h1>
+<main>
+    <h1>🔍 API Diagnostics & System Status</h1>
     
     <div class="section">
-        <h2>Test Dashboard Status API</h2>
-        <div style="margin-bottom:8px;color:#94a3b8">Auto-refreshing status every 2s</div>
+        <h2>Dashboard Status (Live)</h2>
+        <div style="margin-bottom:8px;color:var(--success);font-weight:600">✓ Auto-refreshing every 1s</div>
         <pre id="dashboardResult">Initializing...</pre>
     </div>
 
     <div class="section">
-        <h2>Test Expiries API</h2>
-        <select id="symbolSelect">
-            <option>NIFTY</option>
-            <option>BANKNIFTY</option>
-            <option>FINNIFTY</option>
-        </select>
-        <button onclick="testExpiries()">Test /dashboard/symbols/expiries</button>
-        <pre id="expiriesResult">Click button to test...</pre>
-    </div>
-
-    <div class="section">
-        <h2>Test Option Chain API</h2>
-        <input id="expiryInput" placeholder="e.g., 27-FEB-2025" style="padding:8px;background:#1c2333;border:1px solid var(--border);color:#fff;border-radius:6px">
-        <button onclick="testOptionChain()">Test /dashboard/option-chain</button>
-        <pre id="optionChainResult">Click button to test...</pre>
+        <h2>Test Endpoints</h2>
+        <div style="margin-bottom:12px">
+            <label style="font-size:12px;color:var(--muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:6px">Symbol</label>
+            <select id="symbolSelect">
+                <option>NIFTY</option>
+                <option>BANKNIFTY</option>
+                <option>FINNIFTY</option>
+            </select>
+        </div>
+        <div style="margin-bottom:12px">
+            <button onclick="testExpiries()" style="margin-right:8px">📊 Test Expiries</button>
+            <button onclick="testOptionChain()">📋 Test Option Chain</button>
+        </div>
+        <div style="margin-bottom:8px">
+            <label style="font-size:12px;color:var(--muted);text-transform:uppercase;font-weight:600;display:block;margin-bottom:6px">Expiry (e.g., 27-FEB-2025)</label>
+            <input id="expiryInput" placeholder="27-FEB-2025" type="text" style="padding:8px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;width:200px">
+        </div>
+        <pre id="expiriesResult">Click button to test endpoint...</pre>
+        <pre id="optionChainResult">Click button to test endpoint...</pre>
     </div>
 
     <div class="section">
@@ -355,9 +361,10 @@ window.addEventListener('DOMContentLoaded', function() {
     checkAuth();
 });
 
-// Auto-refresh dashboard status every 2s
+// Auto-refresh dashboard status every 1 second for real-time diagnostics
 let diagnosticsAutoTimer = null;
 window.addEventListener('DOMContentLoaded', function() {
+    checkAuth();
     try { testDashboard(); } catch (e) {}
     try { loadDiagnostics(); } catch (e) {}
     try { loadIntentVerification(); } catch (e) {}
@@ -365,7 +372,7 @@ window.addEventListener('DOMContentLoaded', function() {
         try { testDashboard(); } catch (e) {}
         try { loadDiagnostics(); } catch (e) {}
         try { loadIntentVerification(); } catch (e) {}
-    }, 5000);
+    }, 1000);  // 1 second auto-refresh for real-time updates
 });
 
 async function checkAuth() {
@@ -381,5 +388,6 @@ async function checkAuth() {
     }
 }
 </script>
+</main>
 </body>
 </html>

@@ -1039,53 +1039,84 @@
             return;
         }
         
-        tbody.innerHTML = holdings.map(h => {
-            // Symbol: Try all possible field names from broker response
-            const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '-';
-            
-            // Quantity: Try all possible quantity field names
-            const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
-            
-            // Average Price: Try all possible price field names
-            const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
-            
-            // LTP: Latest Trade Price
-            const ltp = parseFloat(h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
-            
-            // Realized P&L
-            const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
-            
-            // Unrealized P&L
-            const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
-            const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
-            
-            // Net P&L
-            const netPnl = realized + unrealized;
-            const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
-            const rpnlClass = realized >= 0 ? 'success' : 'danger';
-            const urmtomClass = unrealized >= 0 ? 'success' : 'danger';
-            
-            // Product: Try all possible product field names
-            const product = h.prd || h.product || h.producttype || '';
-            const productCell = product ? `<span class="badge ok">${product}</span>` : '-';
-            
-            // Exchange: Try all possible exchange field names
-            const exchange = h.exch || h.exchange || h.exchangetype || '-';
-            
-            return `
-                <tr>
-                    <td style="font-weight: 700" title="${symbol}">${symbol}</td>
-                    <td>${formatCurrency(ltp)}</td>
-                    <td style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
-                    <td style="color: var(--${rpnlClass})">${formatCurrency(realized)}</td>
-                    <td style="color: var(--${urmtomClass})">${formatCurrency(unrealized)}</td>
-                    <td>${exchange}</td>
-                    <td>${productCell}</td>
-                    <td>${qty}</td>
-                    <td>${formatCurrency(avgPrice)}</td>
-                </tr>
-            `;
-        }).join('');
+        // Check if we need full rebuild
+        const currentSymbols = Array.from(tbody.querySelectorAll('tr[data-symbol]')).map(tr => tr.dataset.symbol);
+        const newSymbols = holdings.map(h => h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '');
+        const needsRebuild = currentSymbols.length !== newSymbols.length || 
+                             !newSymbols.every((s, i) => s === currentSymbols[i]);
+        
+        if (needsRebuild) {
+            // Full rebuild
+            tbody.innerHTML = holdings.map(h => {
+                // Symbol: Try all possible field names from broker response
+                const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '-';
+                
+                // Quantity: Try all possible quantity field names
+                const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
+                
+                // Average Price: Try all possible price field names
+                const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
+                
+                // LTP: Latest Trade Price
+                const ltp = parseFloat(h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
+                
+                // Realized P&L
+                const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
+                
+                // Unrealized P&L
+                const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
+                const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
+                
+                // Net P&L
+                const netPnl = realized + unrealized;
+                const netPnlClass = netPnl >= 0 ? 'success' : 'danger';
+                const rpnlClass = realized >= 0 ? 'success' : 'danger';
+                const urmtomClass = unrealized >= 0 ? 'success' : 'danger';
+                
+                // Product: Try all possible product field names
+                const product = h.prd || h.product || h.producttype || '';
+                const productCell = product ? `<span class="badge ok">${product}</span>` : '-';
+                
+                // Exchange: Try all possible exchange field names
+                const exchange = h.exch || h.exchange || h.exchangetype || '-';
+                
+                return `
+                    <tr data-symbol="${symbol}">
+                        <td style="font-weight: 700" title="${symbol}" data-field="symbol">${symbol}</td>
+                        <td data-field="ltp">${formatCurrency(ltp)}</td>
+                        <td data-field="netpnl" style="color: var(--${netPnlClass}); font-weight: 700">${formatCurrency(netPnl)}</td>
+                        <td data-field="rpnl" style="color: var(--${rpnlClass})">${formatCurrency(realized)}</td>
+                        <td data-field="urmtom" style="color: var(--${urmtomClass})">${formatCurrency(unrealized)}</td>
+                        <td>${exchange}</td>
+                        <td>${productCell}</td>
+                        <td data-field="qty">${qty}</td>
+                        <td data-field="avgprc">${formatCurrency(avgPrice)}</td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            // Smart update - only update values that changed
+            holdings.forEach(h => {
+                const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '';
+                const row = tbody.querySelector(`tr[data-symbol="${symbol}"]`);
+                if (!row) return;
+                
+                const qty = parseInt(h.holdqty || h.quantity || h.qty || h.netqty || h.net_qty || h.netQuantity || 0, 10);
+                const avgPrice = parseFloat(h.upldprc || h.avg_price || h.avgprc || h.avgPrice || h.avgprice || h.untilprc || h.price || 0);
+                const ltp = parseFloat(h.lp || h.ltp || h.last_price || h.lastprice || h.clp || 0);
+                const realized = parseFloat(h.rpnl || h.realized_pnl || h.realised_pnl || h.bookprofit || 0);
+                const unrealizedRaw = parseFloat(h.urmtom || h.unrealized_pnl || h.unrealised_pnl || h.markettomarketpl || NaN);
+                const unrealized = Number.isFinite(unrealizedRaw) ? unrealizedRaw : (ltp - avgPrice) * qty;
+                const netPnl = realized + unrealized;
+                
+                updateCellValue(row.querySelector('[data-field="qty"]'), qty, false, 0);
+                updateCellValue(row.querySelector('[data-field="avgprc"]'), avgPrice);
+                updateCellValue(row.querySelector('[data-field="ltp"]'), ltp);
+                updateCellValue(row.querySelector('[data-field="rpnl"]'), realized, true);
+                updateCellValue(row.querySelector('[data-field="urmtom"]'), unrealized, true);
+                updateCellValue(row.querySelector('[data-field="netpnl"]'), netPnl, true);
+            });
+        }
     }
     
     // Update System Status

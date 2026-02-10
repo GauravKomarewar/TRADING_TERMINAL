@@ -117,18 +117,37 @@ class ExecutionGuard:
             if i.qty <= 0:
                 raise RuntimeError(f"Invalid qty {i.qty} for {i.symbol}")
 
-    # -----------------------------------------------------
-    # RULE B — CROSS STRATEGY CONFLICT
+# -----------------------------------------------------
+    # RULE B — CROSS STRATEGY CONFLICT (BOTH DIRECTIONS)
+    # 🔥 FIX: NOW BLOCKS SAME DIRECTION TOO (PRODUCTION SAFETY)
     # -----------------------------------------------------
     def _check_cross_strategy_conflicts(self, intents: List[LegIntent]):
+        """
+        Prevent multi-strategy exposure on same symbol.
+        
+        Blocks:
+        - Strategy A BUY + Strategy B SELL (opposite) ❌
+        - Strategy A BUY + Strategy B BUY (same direction) ❌ [NEW IN v1.4]
+        - Strategy A SELL + Strategy B SELL (same direction) ❌ [NEW IN v1.4]
+        
+        Only allows:
+        - Strategy A fully exited, then Strategy B enters
+        """
         for i in intents:
-            if i.symbol in self._global_positions:
-                for dir_, qty in self._global_positions[i.symbol].items():
-                    if qty > 0 and dir_ != i.direction:
-                        raise RuntimeError(
-                            f"Cross-strategy conflict: {i.symbol} "
-                            f"{dir_} exists, attempted {i.direction}"
-                        )
+            if i.symbol not in self._global_positions:
+                continue
+                
+            # Check if ANY (opposite OR same direction) position exists
+            for existing_dir, existing_qty in self._global_positions[i.symbol].items():
+                if existing_qty <= 0:
+                    continue
+                    
+                # 🔥 NEW: Block both opposite AND same direction
+                raise RuntimeError(
+                    f"Cross-strategy conflict: {i.symbol} has existing "
+                    f"{existing_dir} qty={existing_qty} from different strategy. "
+                    f"Multi-strategy exposure on same symbol is not allowed."
+                )
 
     def _validate_broker_contract(
         self,

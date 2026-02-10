@@ -1443,6 +1443,16 @@ class ShoonyaBot:
         # 5️⃣ Store metadata on strategy object (FROZEN CONTRACT)
         strategy.run_id = run_id
         strategy.run_writer = writer
+        
+        # 5️⃣-B 💾 ATTEMPT TO LOAD PERSISTED STATE FROM PREVIOUS RUN
+        # This handles recovery from crashes mid-strategy
+        try:
+            if strategy._load_persisted_state():
+                logger.info(f"✅ Strategy recovered from persistent state | {strategy_name}")
+            else:
+                logger.info(f"ℹ️ No persisted state found, starting fresh | {strategy_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load persisted state, continuing fresh: {e}")
 
         # 6️⃣ Register with runner (CLOCK)
         self.strategy_runner.register(

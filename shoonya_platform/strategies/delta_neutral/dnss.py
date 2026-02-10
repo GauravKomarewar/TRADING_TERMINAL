@@ -210,6 +210,206 @@ class DeltaNeutralShortStrangleStrategy:
         return 0
 
     # ========================================================
+    # 🔥 NEW: STATE PERSISTENCE FOR RECOVERY
+    # ========================================================
+    
+    def serialize_state(self) -> dict:
+        """
+        Serialize strategy state to JSON-compatible dict for storage.
+        Called when orders fill to persist progress.
+        """
+        def serialize_leg(leg: Optional[Leg]) -> Optional[dict]:
+            if not leg:
+                return None
+            return {
+                "symbol": leg.symbol,
+                "option_type": leg.option_type,
+                "qty": leg.qty,
+                "entry_price": leg.entry_price,
+                "current_price": leg.current_price,
+                "delta": leg.delta,
+                "entry_time": leg.entry_time.isoformat() if leg.entry_time else None,
+            }
+        
+        return {
+            "ce_leg": serialize_leg(self.state.ce_leg),
+            "pe_leg": serialize_leg(self.state.pe_leg),
+            "entry_sent": self.state.entry_sent,
+            "active": self.state.active,
+            "failed": self.state.failed,
+            "exited": self.state.exited,
+            "entry_confirmed": self.state.entry_confirmed,
+            "expiry": self.state.expiry,
+            "realized_pnl": self.state.realized_pnl,
+            "entry_pnl_base": self.state.entry_pnl_base,
+            "next_profit_target": self.state.next_profit_target,
+            "adjustment_phase": self.state.adjustment_phase,
+            "adjustment_leg_type": self.state.adjustment_leg_type,
+            "adjustment_target_delta": self.state.adjustment_target_delta,
+            "last_adjustment_time": self.state.last_adjustment_time.isoformat() if self.state.last_adjustment_time else None,
+        }
+    
+    def restore_state(self, state_dict: dict) -> None:
+        """
+        Restore strategy state from serialized dict.
+        Called on recovery after restart.
+        """
+        def restore_leg(leg_dict: Optional[dict]) -> Optional[Leg]:
+            if not leg_dict:
+                return None
+            return Leg(
+                symbol=leg_dict["symbol"],
+                option_type=leg_dict["option_type"],
+                qty=leg_dict["qty"],
+                entry_price=leg_dict["entry_price"],
+                current_price=leg_dict["current_price"],
+                delta=leg_dict["delta"],
+                entry_time=datetime.fromisoformat(leg_dict["entry_time"]) if leg_dict.get("entry_time") else datetime.now(),
+            )
+        
+        self.state.ce_leg = restore_leg(state_dict.get("ce_leg"))
+        self.state.pe_leg = restore_leg(state_dict.get("pe_leg"))
+        self.state.entry_sent = state_dict.get("entry_sent", False)
+        self.state.active = state_dict.get("active", False)
+        self.state.failed = state_dict.get("failed", False)
+        self.state.exited = state_dict.get("exited", False)
+        self.state.entry_confirmed = state_dict.get("entry_confirmed", False)
+        self.state.expiry = state_dict.get("expiry")
+        self.state.realized_pnl = state_dict.get("realized_pnl", 0.0)
+        self.state.entry_pnl_base = state_dict.get("entry_pnl_base", 0.0)
+        self.state.next_profit_target = state_dict.get("next_profit_target", self.config.profit_step)
+        self.state.adjustment_phase = state_dict.get("adjustment_phase")
+        self.state.adjustment_leg_type = state_dict.get("adjustment_leg_type")
+        self.state.adjustment_target_delta = state_dict.get("adjustment_target_delta", 0.0)
+        
+        last_adj_time = state_dict.get("last_adjustment_time")
+        self.state.last_adjustment_time = datetime.fromisoformat(last_adj_time) if last_adj_time else None
+        
+        logger.warning(
+            f"♻️ Strategy state restored | ce={self.state.ce_leg is not None} "
+            f"pe={self.state.pe_leg is not None} | active={self.state.active}"
+        )
+    
+    def restore_from_broker_positions(self, broker_symbols: dict) -> None:
+        """
+        Reconstruct strategy legs from broker position data.
+        
+        broker_symbols example:
+        {
+            "NIFTY24FEB24C21200": {"qty": 75, "current_price": 100, "delta": 0.65},
+            "NIFTY24FEB24P21200": {"qty": 75, "current_price": 98, "delta": -0.35}
+        }
+        
+        Used during recovery to rebuild state when internal state was lost.
+        """
+        for symbol, broker_data in broker_symbols.items():
+            option_type = "CE" if "C" in symbol else "PE"
+            
+            leg = Leg(
+                symbol=symbol,
+                option_type=option_type,
+                qty=broker_data.get("qty", 0),
+                entry_price=broker_data.get("entry_price", broker_data.get("current_price", 0)),
+                current_price=broker_data.get("current_price", 0),
+                delta=broker_data.get("delta", 0),
+                entry_time=datetime.now(),
+            )
+            
+            if option_type == "CE":
+                self.state.ce_leg = leg
+            else:
+                self.state.pe_leg = leg
+        
+        # Mark as partially filled if any leg exists
+        if self.state.has_any_leg():
+            self.state.entry_sent = True
+            self.state.entry_confirmed = True
+        
+        # Mark as fully active if both legs exist
+        if self.state.has_both_legs():
+            self.state.active = True
+        
+        logger.warning(
+            f"♻️ Strategy legs restored from broker | "
+            f"ce={self.state.ce_leg is not None} pe={self.state.pe_leg is not None}"
+        )
+
+    def _persist_state_snapshot(self, phase: str = "checkpoint") -> None:
+        """
+        Save serialized state to file for crash recovery.
+        
+        Overwrites previous snapshot - only LATEST state is preserved.
+        If strategy has run_id, saves with run_id prefix for easy lookup.
+        
+        Args:
+            phase: Lifecycle phase (entry_complete, exit_fill, adjustment, etc.)
+        
+        Returns: None (logs errors but continues)
+        """
+        try:
+            import json
+            from pathlib import Path
+            
+            # Determine file path
+            run_id = getattr(self, 'run_id', None)
+            if run_id:
+                state_file = Path(f"logs/strategy_states/{run_id}.json")
+            else:
+                import time
+                state_file = Path(f"logs/strategy_states/{self.symbol}_{int(time.time())}.json")
+            
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Serialize + save
+            state_dict = self.serialize_state()
+            state_dict['phase'] = phase
+            state_dict['persist_time'] = datetime.now().isoformat()
+            
+            with open(state_file, 'w') as f:
+                json.dump(state_dict, f, indent=2, default=str)
+            
+            logger.debug(f"💾 State persisted | {state_file} | phase={phase}")
+            
+        except Exception as e:
+            # Non-fatal: log but continue
+            logger.warning(f"⚠️ Failed to persist state: {e}")
+
+    def _load_persisted_state(self) -> bool:
+        """
+        Load the latest persisted state from file at startup.
+        
+        Returns:
+            True if state was loaded, False otherwise
+        """
+        try:
+            import json
+            from pathlib import Path
+            
+            run_id = getattr(self, 'run_id', None)
+            if not run_id:
+                return False
+            
+            state_file = Path(f"logs/strategy_states/{run_id}.json")
+            if not state_file.exists():
+                return False
+            
+            with open(state_file, 'r') as f:
+                state_dict = json.load(f)
+            
+            # Remove metadata before restore
+            state_dict.pop('phase', None)
+            state_dict.pop('persist_time', None)
+            
+            self.restore_state(state_dict)
+            logger.info(f"♻️ Persisted state loaded from {state_file}")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load persisted state: {e}")
+            return False
+
+    # ========================================================
+
     # ENGINE HOOKS - TIME-BASED EXECUTION
     # ========================================================
     
@@ -405,6 +605,10 @@ class DeltaNeutralShortStrangleStrategy:
             self.state.active = True
             self.state.entry_pnl_base = 0.0
             logger.info("✅ ENTRY COMPLETE | Both legs filled")
+            
+            # 💾 PERSIST STATE (recovery safety)
+            self._persist_state_snapshot("entry_complete")
+            
             return []
         
         # Only ONE leg filled so far — wait for the second fill.
@@ -443,6 +647,9 @@ class DeltaNeutralShortStrangleStrategy:
             self.state.realized_pnl += pnl
             logger.info(f"💰 ADJ Exit PE | PnL={pnl:.2f}")
             self.state.pe_leg = None
+        
+        # 💾 PERSIST STATE (recovery safety - after leg exit)
+        self._persist_state_snapshot("adjustment_exit")
         
         # IMMEDIATE RE-ENTRY (Phase 2 of atomic adjustment)
         # This ensures NO naked exposure period
@@ -517,6 +724,9 @@ class DeltaNeutralShortStrangleStrategy:
         self.state.active = True
         
         logger.info(f"✅ ADJUSTMENT COMPLETE | New {leg.option_type} leg | ATOMIC")
+        
+        # 💾 PERSIST STATE (recovery safety)
+        self._persist_state_snapshot("adjustment_entry")
     
     def _handle_exit_fill(self, symbol: str, price: float):
         """Handle normal exit fill and update realized PnL"""
@@ -539,6 +749,9 @@ class DeltaNeutralShortStrangleStrategy:
             self.state.active = False
             self.state.exited = True
             logger.info(f"🏁 ALL POSITIONS CLOSED | Total PnL={self.state.realized_pnl:.2f}")
+            
+            # 💾 PERSIST STATE (recovery safety)
+            self._persist_state_snapshot("exit_complete")
     
     # ========================================================
     # MONITORING & ADJUSTMENT (Rules 7, 8, 14)

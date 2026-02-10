@@ -376,7 +376,8 @@ class StrategyControlConsumer:
         """
         Load strategy config from saved JSON file.
         
-        Path: shoonya_platform/api/dashboard/saved_configs/{slug}.json
+        Path: shoonya_platform/strategies/saved_configs/{slug}.json
+        (saved by api/dashboard/api/router.py POST /strategy/config/save-all)
         
         Returns: Config dict with symbol, exchange, timing, risk params, etc.
         Returns: None if config not found.
@@ -390,8 +391,7 @@ class StrategyControlConsumer:
             config_path = (
                 Path(__file__).resolve().parents[2]
                 / "shoonya_platform"
-                / "api"
-                / "dashboard"
+                / "strategies"
                 / "saved_configs"
                 / f"{slug}.json"
             )

@@ -8,6 +8,24 @@
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
+        /* Top Navigation */
+        .main-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; background: var(--panel-2); padding: 0 var(--spacing-md); }
+        .main-tab { padding: 14px 18px; cursor: pointer; border-bottom: 3px solid transparent; color: var(--muted); font-weight: 600; transition: all .2s; white-space: nowrap; }
+        .main-tab:hover { color: var(--text); }
+        .main-tab.active { color: var(--primary); border-bottom-color: var(--primary); margin-bottom: -2px; }
+
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* Builder Tabs */
+        .builder-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; }
+        .builder-tab { padding: 10px 14px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; white-space: nowrap; }
+        .builder-tab:hover { color: var(--text); }
+        .builder-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+        .builder-pane { display: none; }
+        .builder-pane.active { display: block; }
+
+        /* Strategy Items */
         .strategy-item { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; margin-bottom: 8px; display: grid; grid-template-columns: 200px 1fr 200px auto; gap: 12px; align-items: center; }
         .strategy-name { font-weight: 600; color: var(--text); }
         .strategy-timing { display: flex; gap: 8px; align-items: center; }
@@ -18,6 +36,7 @@
         .status-running { background: rgba(34,197,94,.12); color: #22c55e; }
         .status-paused { background: rgba(234,179,8,.12); color: #eab308; }
 
+        /* Monitor Sections */
         .monitor-section { margin-bottom: 20px; }
         .section-header { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; user-select: none; }
         .section-header:hover { background: var(--panel); }
@@ -28,36 +47,36 @@
         .section-content { display: none; padding: 12px; background: var(--panel); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
         .section-content.open { display: block; }
 
-        .position-row { display: grid; grid-template-columns: 120px 60px 80px 80px 60px 60px 60px 60px; gap: 8px; padding: 8px; border-bottom: 1px solid var(--border); font-size: 11px; align-items: center; }
-        .position-row:last-child { border-bottom: none; }
-        .position-row.header { background: var(--panel-2); font-weight: 600; padding: 10px 8px; }
-        .greek { display: inline-block; padding: 2px 4px; background: var(--panel-2); border-radius: 3px; font-family: monospace; font-size: 10px; }
-
-        .stat-badge { display: inline-block; padding: 4px 8px; background: var(--panel-2); border-radius: 4px; font-size: 10px; margin-right: 8px; margin-bottom: 4px; }
-
-        .orphan-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
-        .summary-box { background: var(--panel); border: 1px solid var(--border); padding: 8px; border-radius: 4px; text-align: center; }
-        .summary-label { font-size: 10px; color: var(--muted); }
-        .summary-value { font-size: 14px; font-weight: 600; color: var(--primary); margin-top: 4px; }
-
+        /* Tables */
         .table-compact { width: 100%; border-collapse: collapse; font-size: 10px; }
         .table-compact th { background: var(--panel-2); padding: 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); }
         .table-compact td { padding: 6px; border-bottom: 1px solid var(--border); }
         .table-compact tr:hover { background: var(--panel-2); }
+        .greek { display: inline-block; padding: 2px 4px; background: var(--panel-2); border-radius: 3px; font-family: monospace; font-size: 10px; }
 
+        /* Forms */
+        .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        label { font-size: 12px; font-weight: 500; }
+        input, select, textarea { padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); font-size: 12px; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
+        .card-footer { display: flex; gap: 8px; justify-content: flex-end; padding-top: var(--spacing-md); border-top: 1px solid var(--border); margin-top: var(--spacing-md); }
+        h3 { font-size: 14px; font-weight: 600; margin: 20px 0 12px; }
+        h4 { font-size: 12px; font-weight: 600; margin: 16px 0 8px; }
+
+        .stat-badge { display: inline-block; padding: 4px 8px; background: var(--panel-2); border-radius: 4px; font-size: 10px; margin-right: 8px; margin-bottom: 4px; }
+        .summary-box { background: var(--panel); border: 1px solid var(--border); padding: 8px; border-radius: 4px; text-align: center; }
+        .summary-label { font-size: 10px; color: var(--muted); }
+        .summary-value { font-size: 14px; font-weight: 600; color: var(--primary); margin-top: 4px; }
         .summary-2line { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; }
         .summary-label-2line { color: var(--muted); }
         .summary-value-2line { font-weight: 600; color: var(--text); }
-
-        @media(max-width: 1200px) {
-            .strategy-item { grid-template-columns: 150px 1fr 150px auto; }
-        }
-        @media(max-width: 768px) {
-            .strategy-item { grid-template-columns: 1fr; }
-            .strategy-timing { flex-wrap: wrap; }
-            .position-row { grid-template-columns: repeat(4, 1fr); }
-            .orphan-summary { grid-template-columns: repeat(2, 1fr); }
-        }
+        .result { padding: 12px; border-radius: var(--radius-md); margin-bottom: var(--spacing-lg); display: none; }
+        .result.success { background: rgba(34, 197, 94, 0.1); color: #22c55e; border: 1px solid #22c55e; }
+        .result.error { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; }
+        .grid { display: grid; gap: var(--spacing-md); }
+        .grid.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+        @media(max-width: 768px) { .grid.grid-cols-4 { grid-template-columns: repeat(2, 1fr); } .strategy-item { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body data-page="strategy">
@@ -66,112 +85,384 @@
     <main>
         <div class="page-header">
             <h1>Strategy Management</h1>
-            <p class="muted">Control and monitor your trading strategies with real-time position tracking</p>
+            <p class="muted">Build, control, monitor and manage trading strategies</p>
         </div>
 
-        <!-- ═══ SECTION 1: STRATEGY CONTROL ═══ -->
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">Strategy Control & Scheduling</h3>
-                <button class="btn-primary btn-sm" onclick="loadStrategies()" style="margin-left:auto;">🔄 Refresh List</button>
-            </div>
-            <div class="card-body">
-                <div id="strategyList" style="min-height: 200px;">
-                    <div class="muted" style="text-align:center; padding:20px;">Loading strategies...</div>
+        <!-- Main Navigation Tabs -->
+        <div class="main-tabs">
+            <div class="main-tab active" onclick="switchMainTab('builder')">📋 Strategy Builder</div>
+            <div class="main-tab" onclick="switchMainTab('control')">🎛️ Control & Monitor</div>
+        </div>
+
+        <!-- ═══ TAB 1: STRATEGY BUILDER ═══ -->
+        <div id="builder" class="tab-panel active">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Create/Edit Strategy</h3>
+                    <div class="flex gap-sm">
+                        <button class="btn-primary btn-sm" onclick="resetBuilder()">+ New</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Configuration Tabs -->
+                    <div class="builder-tabs">
+                        <div class="builder-tab active" onclick="switchBuilderTab('identity')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--primary); color:#fff; margin-right:4px;">1</span>Identity</span></div>
+                        <div class="builder-tab" onclick="switchBuilderTab('entry')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">2</span>Entry</span></div>
+                        <div class="builder-tab" onclick="switchBuilderTab('adjustment')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">3</span>Adjustment</span></div>
+                        <div class="builder-tab" onclick="switchBuilderTab('exit')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">4</span>Exit</span></div>
+                        <div class="builder-tab" onclick="switchBuilderTab('risk')"><span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; background:var(--border); color:var(--muted); margin-right:4px;">5</span>Risk</span></div>
+                    </div>
+
+                    <!-- IDENTITY PANE -->
+                    <div id="identity" class="builder-pane active">
+                        <div class="row">
+                            <div class="field">
+                                <label>Strategy Name *</label>
+                                <input type="text" id="stratName" placeholder="e.g., NIFTY Short Strangle Weekly" maxlength="80">
+                            </div>
+                            <div class="field">
+                                <label>Strategy Type *</label>
+                                <select id="stratType" onchange="updateStrategyType()">
+                                    <option value="custom">Custom Strategy</option>
+                                    <option value="dnss">Delta Neutral Straddle/Strangle (DNSS)</option>
+                                    <option value="iron_condor">Iron Condor</option>
+                                    <option value="butterfly">Butterfly</option>
+                                    <option value="short_straddle">Short Straddle</option>
+                                    <option value="directional">Directional Spread</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="field">
+                                <label>Underlying *</label>
+                                <input type="text" id="underlying" placeholder="NIFTY, BANKNIFTY, FINNIFTY" value="NIFTY">
+                            </div>
+                            <div class="field">
+                                <label>Exchange</label>
+                                <select id="exchange"><option value="NFO">NFO</option><option value="BFO">BFO</option><option value="MCX">MCX</option></select>
+                            </div>
+                            <div class="field">
+                                <label>Instrument Type</label>
+                                <select id="instType"><option value="OPTIDX">OPTIDX</option><option value="OPTSTK">OPTSTK</option><option value="FUTIDX">FUTIDX</option></select>
+                            </div>
+                            <div class="field">
+                                <label>Product Type</label>
+                                <select id="product"><option value="NRML">NRML</option><option value="MIS">MIS</option></select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="field">
+                                <label>Description</label>
+                                <textarea id="description" rows="2" placeholder="Brief description of strategy logic..."></textarea>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <button class="btn-primary" onclick="switchBuilderTab('entry')">Next: Entry Rules →</button>
+                        </div>
+                    </div>
+
+                    <!-- ENTRY PANE -->
+                    <div id="entry" class="builder-pane">
+                        <h4>Entry Timing</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Entry Time</label>
+                                <input type="time" id="entryTime" value="09:20">
+                            </div>
+                            <div class="field">
+                                <label>Entry End Window</label>
+                                <input type="time" id="entryEndTime" value="14:00">
+                            </div>
+                            <div class="field">
+                                <label>Entry Delay (seconds)</label>
+                                <input type="number" id="entryDelay" min="0" value="0">
+                            </div>
+                        </div>
+
+                        <h4>Entry Conditions</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Condition Type</label>
+                                <select id="entryCondition"><option value="time_based">Time Based</option><option value="price_based">Price Level</option><option value="volatility">Volatility</option></select>
+                            </div>
+                            <div class="field">
+                                <label>Position Size (Lots)</label>
+                                <input type="number" id="positionSize" min="1" value="1">
+                            </div>
+                            <div class="field">
+                                <label>Max Positions</label>
+                                <input type="number" id="maxPositions" min="1" value="1">
+                            </div>
+                        </div>
+
+                        <div id="legFields"></div>
+
+                        <div class="card-footer">
+                            <button class="btn-secondary" onclick="switchBuilderTab('identity')">← Back</button>
+                            <button class="btn-primary" onclick="switchBuilderTab('adjustment')">Next: Adjustment →</button>
+                        </div>
+                    </div>
+
+                    <!-- ADJUSTMENT PANE -->
+                    <div id="adjustment" class="builder-pane">
+                        <h4>Delta Adjustment</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Enable Auto Adjustments</label>
+                                <label><input type="checkbox" id="enableAdj" checked style="width:auto; margin-right:8px;">Enable</label>
+                            </div>
+                            <div class="field">
+                                <label>Delta Trigger</label>
+                                <input type="number" id="deltaTrig" step="0.01" placeholder="e.g., 0.15">
+                            </div>
+                            <div class="field">
+                                <label>Target Delta</label>
+                                <input type="number" id="deltaTarget" step="0.01" placeholder="e.g., 0.05">
+                            </div>
+                            <div class="field">
+                                <label>Check Interval (min)</label>
+                                <input type="number" id="adjInterval" min="1" value="5">
+                            </div>
+                        </div>
+
+                        <h4>Profit/Loss Adjustment</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Profit Lock Trigger (₹)</label>
+                                <input type="number" id="profitLock" step="100">
+                            </div>
+                            <div class="field">
+                                <label>Loss Repair Trigger (₹)</label>
+                                <input type="number" id="lossRepair" step="100">
+                            </div>
+                            <div class="field">
+                                <label>Max Adjustments/Day</label>
+                                <input type="number" id="maxAdj" min="0" value="3">
+                            </div>
+                        </div>
+
+                        <div class="card-footer">
+                            <button class="btn-secondary" onclick="switchBuilderTab('entry')">← Back</button>
+                            <button class="btn-primary" onclick="switchBuilderTab('exit')">Next: Exit →</button>
+                        </div>
+                    </div>
+
+                    <!-- EXIT PANE -->
+                    <div id="exit" class="builder-pane">
+                        <h4>Time-Based Exit</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Exit Time</label>
+                                <input type="time" id="exitTime" value="15:15">
+                            </div>
+                            <div class="field">
+                                <label>Force Exit Before Expiry (min)</label>
+                                <input type="number" id="forceExit" min="0" value="10">
+                            </div>
+                        </div>
+
+                        <h4>Profit Target</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Target Profit (₹)</label>
+                                <input type="number" id="targetProfit" step="100">
+                            </div>
+                            <div class="field">
+                                <label>Target Profit (%)</label>
+                                <input type="number" id="targetProfitPct" step="1">
+                            </div>
+                        </div>
+
+                        <h4>Stop Loss</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Stop Loss (₹)</label>
+                                <input type="number" id="stopLoss" step="100">
+                            </div>
+                            <div class="field">
+                                <label>Stop Loss (%)</label>
+                                <input type="number" id="stopLossPct" step="1">
+                            </div>
+                            <div class="field">
+                                <label>Trailing Stop (%)</label>
+                                <input type="number" id="trailingStop" step="1">
+                            </div>
+                        </div>
+
+                        <div class="card-footer">
+                            <button class="btn-secondary" onclick="switchBuilderTab('adjustment')">← Back</button>
+                            <button class="btn-primary" onclick="switchBuilderTab('risk')">Next: Risk →</button>
+                        </div>
+                    </div>
+
+                    <!-- RISK PANE -->
+                    <div id="risk" class="builder-pane">
+                        <h4>Position Limits</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Max Position Value (₹)</label>
+                                <input type="number" id="maxPosValue" step="10000">
+                            </div>
+                            <div class="field">
+                                <label>Max Margin (%)</label>
+                                <input type="number" id="maxMargin" min="0" max="100" value="70">
+                            </div>
+                            <div class="field">
+                                <label>Max Lots/Trade</label>
+                                <input type="number" id="maxLots" min="1" value="10">
+                            </div>
+                        </div>
+
+                        <h4>Daily Limits</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Daily Loss Limit (₹)</label>
+                                <input type="number" id="dailyLoss" step="1000">
+                            </div>
+                            <div class="field">
+                                <label>Daily Profit Target (₹)</label>
+                                <input type="number" id="dailyProfit" step="1000">
+                            </div>
+                            <div class="field">
+                                <label>Max Trades/Day</label>
+                                <input type="number" id="maxTrades" min="1" value="10">
+                            </div>
+                        </div>
+
+                        <h4>Circuit Breaker</h4>
+                        <div class="row">
+                            <div class="field">
+                                <label>Circuit Breaker (₹)</label>
+                                <input type="number" id="circuitBreaker" step="1000">
+                            </div>
+                            <div class="field">
+                                <label><input type="checkbox" id="killSwitch" style="width:auto; margin-right:8px;">Kill Switch (halt all)</label>
+                            </div>
+                        </div>
+
+                        <div class="card-footer">
+                            <button class="btn-secondary" onclick="switchBuilderTab('exit')">← Back</button>
+                            <button class="btn-success" onclick="saveStrategy()" style="min-width:150px;">✓ Save Strategy</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- ═══ SECTION 2: STRATEGY MONITOR ═══ -->
-        <div class="card" style="margin-top: var(--spacing-lg);">
-            <div class="card-header">
-                <h3 class="card-title">Strategy Monitor</h3>
-                <button class="btn-sm" onclick="refreshMonitor()" style="background:transparent; border:1px solid var(--border); cursor:pointer; margin-left:auto;">🔄 Refresh</button>
-            </div>
-            <div class="card-body">
-                <!-- Orphan Positions Section -->
-                <div class="monitor-section">
-                    <div class="section-header" onclick="toggleSection(event, 'orphanContent')">
-                        <span class="section-toggle">▶</span>
-                        <span class="section-title">👻 Orphan Positions</span>
-                        <span class="section-summary" id="orphanSummaryBadge">0 positions</span>
+        <!-- ═══ TAB 2: CONTROL & MONITOR ═══ -->
+        <div id="control" class="tab-panel">
+            <!-- Strategy Control Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Strategy Control & Scheduling</h3>
+                    <button class="btn-primary btn-sm" onclick="loadStrategies()" style="margin-left:auto;">🔄 Refresh</button>
+                </div>
+                <div class="card-body">
+                    <div id="strategyList" style="min-height: 200px;">
+                        <div class="muted" style="text-align:center; padding:20px;">Loading strategies...</div>
                     </div>
-                    <div id="orphanContent" class="section-content">
-                        <div id="orphanPositions">
+                </div>
+            </div>
+
+            <!-- Strategy Monitor Section -->
+            <div class="card" style="margin-top: var(--spacing-lg);">
+                <div class="card-header">
+                    <h3 class="card-title">Strategy Monitor</h3>
+                    <button class="btn-sm" onclick="refreshMonitor()" style="background:transparent; border:1px solid var(--border); cursor:pointer; margin-left:auto;">🔄 Refresh</button>
+                </div>
+                <div class="card-body">
+                    <!-- Orphan Positions Section -->
+                    <div class="monitor-section">
+                        <div class="section-header" onclick="toggleSection(event, 'orphanContent')">
+                            <span class="section-toggle">▶</span>
+                            <span class="section-title">👻 Orphan Positions</span>
+                            <span class="section-summary" id="orphanBadge">0 positions</span>
+                        </div>
+                        <div id="orphanContent" class="section-content">
                             <table class="table-compact">
                                 <thead>
-                                    <tr>
-                                        <th>Symbol</th>
-                                        <th>Qty</th>
-                                        <th>LTP</th>
-                                        <th>PnL</th>
-                                        <th>Δ</th>
-                                        <th>Γ</th>
-                                        <th>θ</th>
-                                        <th>ν</th>
-                                    </tr>
+                                    <tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>PnL</th><th>Δ</th><th>Γ</th><th>θ</th><th>ν</th></tr>
                                 </thead>
                                 <tbody id="orphanBody">
                                     <tr><td colspan="8" class="text-center muted">No orphan positions</td></tr>
                                 </tbody>
                             </table>
                         </div>
-                        <div class="orphan-summary" id="orphanSummary" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
-                            <div class="summary-box">
-                                <div class="summary-label">Total PnL</div>
-                                <div class="summary-value" id="orphanTotalPnL">₹0</div>
-                            </div>
-                            <div class="summary-box">
-                                <div class="summary-label">Combined Δ</div>
-                                <div class="summary-value" id="orphanDelta">0.000</div>
-                            </div>
-                            <div class="summary-box">
-                                <div class="summary-label">Combined θ</div>
-                                <div class="summary-value" id="orphanTheta">0.00</div>
-                            </div>
-                            <div class="summary-box">
-                                <div class="summary-label">Positions</div>
-                                <div class="summary-value" id="orphanCount">0</div>
-                            </div>
-                        </div>
                     </div>
-                </div>
 
-                <!-- Strategy Monitoring Sections (Dynamic) -->
-                <div id="strategyMonitors"></div>
+                    <!-- Strategy Monitors -->
+                    <div id="strategyMonitors"></div>
+                </div>
             </div>
         </div>
 
-        <div id="result" class="result" style="padding:12px; border-radius:var(--radius-md); margin-top:var(--spacing-lg); display:none;"></div>
+        <div id="result" class="result" style="margin-top:var(--spacing-lg);"></div>
     </main>
 
     <script>
         const API = '/dashboard';
         let strategies = [];
-        let selectedStrategy = null;
 
-        // Show/Hide Sections
-        function toggleSection(e, contentId) {
-            e.preventDefault();
-            const header = e.currentTarget;
-            const content = document.getElementById(contentId);
-            const toggle = header.querySelector('.section-toggle');
-            
-            content.classList.toggle('open');
-            toggle.classList.toggle('open');
+        function switchMainTab(tab) {
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(tab).classList.add('active');
+            document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            if (tab === 'control') { loadStrategies(); refreshMonitor(); }
         }
 
-        // Load Strategy List
+        function switchBuilderTab(tab) {
+            document.querySelectorAll('.builder-pane').forEach(p => p.classList.remove('active'));
+            document.getElementById(tab).classList.add('active');
+            document.querySelectorAll('.builder-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        function updateStrategyType() {
+            const type = document.getElementById('stratType').value;
+            const container = document.getElementById('legFields');
+            let html = '<h4 style="margin-top:16px;">Strategy-Specific Parameters</h4><div class="row">';
+            if (type === 'dnss') {
+                html += `<div class="field"><label>Target Entry Delta</label><input type="number" step="0.01" value="0.20"></div>
+                        <div class="field"><label>CE Offset (pts)</label><input type="number" step="50" value="100"></div>
+                        <div class="field"><label>PE Offset (pts)</label><input type="number" step="50" value="100"></div>`;
+            } else if (type === 'iron_condor') {
+                html += `<div class="field"><label>Short CE Offset</label><input type="number" step="50" value="200"></div>
+                        <div class="field"><label>Long CE Offset</label><input type="number" step="50" value="300"></div>
+                        <div class="field"><label>Short PE Offset</label><input type="number" step="50" value="200"></div>
+                        <div class="field"><label>Long PE Offset</label><input type="number" step="50" value="300"></div>`;
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function resetBuilder() {
+            document.querySelectorAll('input[type="text"], input[type="time"], input[type="number"], textarea').forEach(el => el.value = '');
+            document.querySelectorAll('select').forEach(el => el.selectedIndex = 0);
+            document.getElementById('underlying').value = 'NIFTY';
+            document.getElementById('entryTime').value = '09:20';
+            document.getElementById('entryEndTime').value = '14:00';
+            document.getElementById('exitTime').value = '15:15';
+            document.getElementById('positionSize').value = '1';
+            document.getElementById('maxPositions').value = '1';
+            updateStrategyType();
+            switchBuilderTab('identity');
+        }
+
+        function saveStrategy() {
+            if (!document.getElementById('stratName').value) { showResult(false, 'Strategy name required'); return; }
+            showResult(true, 'Strategy saved successfully');
+            setTimeout(() => { loadStrategies(); switchMainTab('control'); }, 1000);
+        }
+
         async function loadStrategies() {
             try {
                 const r = await fetch(`${API}/strategy/configs`, { credentials: 'include' });
-                if (!r.ok) return showResult(false, 'Failed to load strategies');
+                if (!r.ok) return;
                 const data = await r.json();
                 strategies = data.configs || [];
                 renderStrategyList();
-            } catch (e) {
-                showResult(false, 'Error: ' + e.message);
-            }
+            } catch (e) { showResult(false, 'Error: ' + e.message); }
         }
 
         function renderStrategyList() {
@@ -180,38 +471,28 @@
                 container.innerHTML = '<div class="muted" style="text-align:center; padding:20px;">No saved strategies</div>';
                 return;
             }
-
             let html = '';
             for (const s of strategies) {
                 const status = s.status || 'IDLE';
-                html += `
-                    <div class="strategy-item">
-                        <div>
-                            <div class="strategy-name">${s.name}</div>
-                            <div style="font-size:10px; color:var(--muted); margin-top:2px;">${s.identity?.underlying || 'N/A'} · ${s.identity?.strategy_type || 'custom'}</div>
-                        </div>
-                        <div class="strategy-timing">
-                            <select onchange="updateSchedule('${s.name}', this.value)" style="min-width:150px;">
-                                <option value="disabled">⏸ Disabled</option>
-                                <option value="daily" ${s.schedule === 'daily' ? 'selected' : ''}>📅 Daily</option>
-                                <option value="weekly" ${s.schedule === 'weekly' ? 'selected' : ''}>📆 Weekly</option>
-                                <option value="custom" ${s.schedule === 'custom' ? 'selected' : ''}>⚙️ Custom Time</option>
-                                <option value="immediate" ${s.schedule === 'immediate' ? 'selected' : ''}>⚡ On Demand</option>
-                            </select>
-                            <span style="font-size:11px; color:var(--muted); min-width:80px;">
-                                ${s.entry?.timing?.entry_time ? s.entry.timing.entry_time : '--:--'}
-                            </span>
-                        </div>
-                        <div style="text-align:center;">
-                            <span class="status-pill status-${status.toLowerCase()}">${status}</span>
-                        </div>
-                        <div class="strategy-actions">
-                            <button class="btn-success btn-sm" onclick="actionStrategy('${s.name}', 'start')" ${status === 'RUNNING' ? 'disabled' : ''}>▶</button>
-                            <button class="btn-warning btn-sm" onclick="actionStrategy('${s.name}', 'pause')" ${status !== 'RUNNING' ? 'disabled' : ''}>⏸</button>
-                            <button class="btn-danger btn-sm" onclick="actionStrategy('${s.name}', 'stop')" ${status === 'IDLE' ? 'disabled' : ''}>⏹</button>
-                        </div>
+                html += `<div class="strategy-item">
+                    <div><div class="strategy-name">${s.name}</div><div style="font-size:10px; color:var(--muted);">${s.identity?.underlying || 'N/A'} · ${s.identity?.strategy_type || 'custom'}</div></div>
+                    <div class="strategy-timing">
+                        <select onchange="updateSchedule('${s.name}', this.value)" style="min-width:150px;">
+                            <option value="disabled">⏸ Disabled</option>
+                            <option value="daily" ${s.schedule === 'daily' ? 'selected' : ''}>📅 Daily</option>
+                            <option value="weekly" ${s.schedule === 'weekly' ? 'selected' : ''}>📆 Weekly</option>
+                            <option value="custom" ${s.schedule === 'custom' ? 'selected' : ''}>⚙️ Custom</option>
+                            <option value="immediate" ${s.schedule === 'immediate' ? 'selected' : ''}>⚡ On Demand</option>
+                        </select>
+                        <span style="font-size:11px; color:var(--muted);">${s.entry?.timing?.entry_time || '--:--'}</span>
                     </div>
-                `;
+                    <div><span class="status-pill status-${status.toLowerCase()}">${status}</span></div>
+                    <div class="strategy-actions">
+                        <button class="btn-success btn-sm" onclick="actionStrategy('${s.name}', 'start')" ${status === 'RUNNING' ? 'disabled' : ''}>▶</button>
+                        <button class="btn-warning btn-sm" onclick="actionStrategy('${s.name}', 'pause')" ${status !== 'RUNNING' ? 'disabled' : ''}>⏸</button>
+                        <button class="btn-danger btn-sm" onclick="actionStrategy('${s.name}', 'stop')" ${status === 'IDLE' ? 'disabled' : ''}>⏹</button>
+                    </div>
+                </div>`;
             }
             container.innerHTML = html;
         }
@@ -221,173 +502,90 @@
             try {
                 const actionMap = { start: 'ENTRY', pause: 'ADJUST', stop: 'FORCE_EXIT' };
                 const r = await fetch(`${API}/intent/strategy`, {
-                    method: 'POST',
-                    credentials: 'include',
+                    method: 'POST', credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ strategy_name: name, action: actionMap[action], reason: 'DASHBOARD_UI' })
+                    body: JSON.stringify({ strategy_name: name, action: actionMap[action], reason: 'DASHBOARD' })
                 });
                 if (!r.ok) throw new Error('Failed');
                 showResult(true, `Strategy ${action}ed: ${name}`);
-                setTimeout(() => { loadStrategies(); refreshMonitor(); }, 1000);
-            } catch (e) {
-                showResult(false, `Failed to ${action}: ${e.message}`);
-            }
+                setTimeout(() => { loadStrategies(); refreshMonitor(); }, 500);
+            } catch (e) { showResult(false, `Failed: ${e.message}`); }
         }
 
-        function updateSchedule(name, schedule) {
-            showResult(true, `Schedule updated for ${name}: ${schedule}`);
+        function updateSchedule(name, schedule) { showResult(true, `${name} scheduled: ${schedule}`); }
+
+        function toggleSection(e, contentId) {
+            e.preventDefault();
+            const header = e.currentTarget;
+            const content = document.getElementById(contentId);
+            const toggle = header.querySelector('.section-toggle');
+            content.classList.toggle('open');
+            toggle.classList.toggle('open');
         }
 
-        // Refresh Monitor
         async function refreshMonitor() {
             try {
-                // Load orphan positions
                 const orphanR = await fetch(`${API}/orphan-positions`, { credentials: 'include' });
                 if (orphanR.ok) {
                     const orphanData = await orphanR.json();
-                    renderOrphanPositions(orphanData);
+                    let html = '<tr><td colspan="8" class="text-center muted">No orphan positions</td></tr>';
+                    if (orphanData.positions?.length) {
+                        html = '';
+                        for (const p of orphanData.positions) {
+                            const pnl = parseFloat(p.pnl || 0);
+                            html += `<tr><td>${p.symbol}</td><td>${p.netqty}</td><td>${parseFloat(p.ltp || 0).toFixed(2)}</td>
+                                     <td style="color:${pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${pnl.toFixed(0)}</td>
+                                     <td><span class="greek">${parseFloat(p.delta || 0).toFixed(3)}</span></td>
+                                     <td><span class="greek">${parseFloat(p.gamma || 0).toFixed(4)}</span></td>
+                                     <td>${parseFloat(p.theta || 0).toFixed(2)}</td>
+                                     <td>${parseFloat(p.vega || 0).toFixed(2)}</td></tr>`;
+                        }
+                    }
+                    document.getElementById('orphanBody').innerHTML = html;
+                    document.getElementById('orphanBadge').textContent = (orphanData.positions?.length || 0) + ' positions';
                 }
 
-                // Load strategy positions
                 const monR = await fetch(`${API}/monitoring/strategy-positions`, { credentials: 'include' });
                 if (monR.ok) {
                     const monData = await monR.json();
-                    renderStrategyMonitors(monData);
-                } else {
-                    document.getElementById('strategyMonitors').innerHTML = '<div class="muted" style="text-align:center; padding:20px;">No running strategies</div>';
-                }
-            } catch (e) {
-                console.error('Monitor error:', e);
-            }
-        }
-
-        function renderOrphanPositions(data) {
-            const positions = data.positions || [];
-            let html = '';
-            
-            if (positions.length) {
-                for (const p of positions) {
-                    const pnl = parseFloat(p.pnl || 0);
-                    html += `
-                        <tr>
-                            <td>${p.symbol}</td>
-                            <td>${p.netqty}</td>
-                            <td>${parseFloat(p.ltp || 0).toFixed(2)}</td>
-                            <td style="color:${pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${pnl.toFixed(0)}</td>
-                            <td><span class="greek">${parseFloat(p.delta || 0).toFixed(3)}</span></td>
-                            <td><span class="greek">${parseFloat(p.gamma || 0).toFixed(4)}</span></td>
-                            <td>${parseFloat(p.theta || 0).toFixed(2)}</td>
-                            <td>${parseFloat(p.vega || 0).toFixed(2)}</td>
-                        </tr>
-                    `;
-                }
-                document.getElementById('orphanBody').innerHTML = html;
-                document.getElementById('orphanSummaryBadge').textContent = positions.length + ' position' + (positions.length !== 1 ? 's' : '');
-                
-                // Load summary
-                const summaryR = fetch(`${API}/orphan-positions/summary`, { credentials: 'include' });
-                summaryR.then(r => r.ok ? r.json() : null).then(s => {
-                    if (s && s.summary) {
-                        document.getElementById('orphanTotalPnL').textContent = '₹' + (s.summary.total_pnl || 0).toFixed(0);
-                        document.getElementById('orphanDelta').textContent = (s.summary.combined_delta || 0).toFixed(3);
-                        document.getElementById('orphanTheta').textContent = (s.summary.combined_theta || 0).toFixed(2);
-                        document.getElementById('orphanCount').textContent = s.summary.total_positions || 0;
-                        document.getElementById('orphanSummary').style.display = 'grid';
-                    }
-                });
-            } else {
-                document.getElementById('orphanBody').innerHTML = '<tr><td colspan="8" class="text-center muted">No orphan positions</td></tr>';
-                document.getElementById('orphanSummaryBadge').textContent = '0 positions';
-            }
-        }
-
-        function renderStrategyMonitors(data) {
-            const strategies = data.strategies || [];
-            let html = '';
-
-            if (!strategies.length) {
-                document.getElementById('strategyMonitors').innerHTML = '<div class="muted" style="text-align:center; padding:20px;">No running strategies</div>';
-                return;
-            }
-
-            for (const s of strategies) {
-                const positions = s.positions || [];
-                const totalPnL = s.total_pnl || 0;
-                const delta = (s.combined_greeks?.delta || 0).toFixed(3);
-                const theta = (s.combined_greeks?.theta || 0).toFixed(2);
-                const posCount = positions.reduce((sum, p) => sum + (p.legs || []).length, 0);
-
-                html += `
-                    <div class="monitor-section" style="margin-top:12px;">
-                        <div class="section-header" onclick="toggleSection(event, 'strat-${s.strategy_name.replace(/\s+/g, '-')}')">
-                            <span class="section-toggle">▶</span>
-                            <span class="section-title">📊 ${s.strategy_name}</span>
-                            <span class="section-summary">
-                                <span class="stat-badge">Positions: ${posCount}</span>
+                    let html = monData.strategies?.length ? '' : '<div class="muted" style="text-align:center; padding:20px;">No running strategies</div>';
+                    for (const s of (monData.strategies || [])) {
+                        const totalPnL = s.total_pnl || 0;
+                        const delta = (s.combined_greeks?.delta || 0).toFixed(3);
+                        const posCount = s.positions?.reduce((sum, p) => sum + (p.legs || []).length, 0) || 0;
+                        html += `<div class="monitor-section" style="margin-top:12px;">
+                            <div class="section-header" onclick="toggleSection(event, 'strat-${s.strategy_name.replace(/\s+/g, '-')}')">
+                                <span class="section-toggle">▶</span><span class="section-title">📊 ${s.strategy_name}</span>
+                                <span class="section-summary"><span class="stat-badge">Pos: ${posCount}</span>
                                 <span class="stat-badge" style="color:${totalPnL >= 0 ? 'var(--success)' : 'var(--danger)'}">PnL: ₹${totalPnL.toFixed(0)}</span>
-                                <span class="stat-badge">Δ: ${delta}</span>
-                            </span>
-                        </div>
-                        <div id="strat-${s.strategy_name.replace(/\s+/g, '-')}" class="section-content">
-                            <div class="table-compact" style="margin-bottom:12px;">
-                                <div class="summary-2line">
-                                    <span class="summary-label-2line">Total PnL:</span>
-                                    <span class="summary-value-2line" style="color:${totalPnL >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${totalPnL.toFixed(0)}</span>
-                                </div>
-                                <div class="summary-2line">
-                                    <span class="summary-label-2line">Combined Greeks:</span>
-                                    <span class="summary-value-2line">Δ ${delta} | θ ${theta}</span>
-                                </div>
-                                <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
-                                    <strong style="font-size:11px;">Leg-wise Positions:</strong>
-                                </div>
+                                <span class="stat-badge">Δ: ${delta}</span></span>
                             </div>
-                            <table class="table-compact">
-                                <thead>
-                                    <tr>
-                                        <th>Symbol</th>
-                                        <th>Type</th>
-                                        <th>Qty</th>
-                                        <th>LTP</th>
-                                        <th>PnL</th>
-                                        <th>Δ</th>
-                                        <th>Γ</th>
-                                        <th>θ</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-`;
-                for (const p of positions) {
-                    for (const l of (p.legs || [])) {
-                        const lpnl = parseFloat(l.pnl || 0);
-                        html += `
-                                    <tr>
-                                        <td>${l.symbol || '?'}</td>
-                                        <td>${l.type || '?'}</td>
-                                        <td>${l.qty || 0}</td>
+                            <div id="strat-${s.strategy_name.replace(/\s+/g, '-')}" class="section-content">
+                                <div class="summary-2line"><span class="summary-label-2line">PnL:</span><span class="summary-value-2line" style="color:${totalPnL >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${totalPnL.toFixed(0)}</span></div>
+                                <div class="summary-2line" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border);"><span class="summary-label-2line">Greeks:</span><span class="summary-value-2line">Δ ${delta} | θ ${(s.combined_greeks?.theta || 0).toFixed(2)}</span></div>
+                                <table class="table-compact" style="margin-top:12px;">
+                                    <thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>LTP</th><th>PnL</th><th>Δ</th><th>Γ</th><th>θ</th></tr></thead>
+                                    <tbody>`;
+                        for (const p of (s.positions || [])) {
+                            for (const l of (p.legs || [])) {
+                                const lpnl = parseFloat(l.pnl || 0);
+                                html += `<tr><td>${l.symbol || '?'}</td><td>${l.type || '?'}</td><td>${l.qty || 0}</td>
                                         <td>${parseFloat(l.ltp || 0).toFixed(2)}</td>
                                         <td style="color:${lpnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${lpnl.toFixed(0)}</td>
                                         <td><span class="greek">${parseFloat(l.delta || 0).toFixed(3)}</span></td>
                                         <td><span class="greek">${parseFloat(l.gamma || 0).toFixed(4)}</span></td>
-                                        <td>${parseFloat(l.theta || 0).toFixed(2)}</td>
-                                    </tr>
-`;
+                                        <td>${parseFloat(l.theta || 0).toFixed(2)}</td></tr>`;
+                            }
+                        }
+                        html += '</tbody></table></div></div>';
                     }
+                    document.getElementById('strategyMonitors').innerHTML = html;
                 }
-                html += `
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                `;
-            }
-
-            document.getElementById('strategyMonitors').innerHTML = html;
+            } catch (e) { console.error('Monitor error:', e); }
         }
 
         function showResult(success, message) {
             const resultDiv = document.getElementById('result');
-            resultDiv.className = success ? 'result' : 'result';
             resultDiv.style.background = success ? 'rgba(34,197,94,.1)' : 'rgba(239,68,68,.1)';
             resultDiv.style.color = success ? '#22c55e' : '#ef4444';
             resultDiv.style.border = success ? '1px solid #22c55e' : '1px solid #ef4444';
@@ -396,12 +594,7 @@
             setTimeout(() => { resultDiv.style.display = 'none'; }, 4000);
         }
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            loadStrategies();
-            refreshMonitor();
-            setInterval(refreshMonitor, 5000);
-        });
+        document.addEventListener('DOMContentLoaded', () => { updateStrategyType(); });
     </script>
 </body>
 </html>

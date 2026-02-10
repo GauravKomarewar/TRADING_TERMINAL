@@ -35,6 +35,8 @@ from shoonya_platform.api.dashboard.services.option_chain_service import (
     get_active_expiries,
     find_nearest_option,
 )
+from shoonya_platform.market_data.feeds import index_tokens_subscriber
+
 from shoonya_platform.api.dashboard.api.schemas import (
     StrategyIntentRequest,
     StrategyAction,
@@ -770,3 +772,131 @@ def verify_intent_generation(
             for o in all_orders[:20]
         ],
     }
+
+
+# ======================================================================
+# 🔥 INDEX TOKENS API
+# ======================================================================
+
+@router.get("/index-tokens/prices")
+def get_index_tokens_prices(
+    symbols: Optional[str] = Query(
+        None,
+        description="Comma-separated list (e.g., 'NIFTY,BANKNIFTY,SENSEX'). If None, returns all subscribed."
+    )
+):
+    """
+    Get live index token prices from the live feed.
+    
+    Pull-based API: Returns whatever data is currently in tick_data_store.
+    No guarantees on freshness - depends on whether indices are subscribed.
+    
+    Returns:
+        {
+            "subscribed": ["NIFTY", "BANKNIFTY", ...],
+            "indices": {
+                "NIFTY": {
+                    "ltp": 25912.5,
+                    "pc": 0.25,
+                    "v": 12345,
+                    "o": 25900,
+                    "h": 25950,
+                    "l": 25850,
+                    "c": 25912,
+                    "oi": 0,
+                    "exchange": "NSE",
+                    "token": "26000"
+                },
+                "BANKNIFTY": { ... },
+                ...
+            }
+        }
+    """
+    try:
+        # Parse requested symbols
+        requested = []
+        if symbols:
+            requested = [s.strip().upper() for s in symbols.split(",")]
+        
+        # Get subscribed indices
+        subscribed = index_tokens_subscriber.get_subscribed_indices()
+        
+        # Get prices
+        indices_data = index_tokens_subscriber.get_index_prices(
+            indices=requested if requested else None,
+            include_missing=False
+        )
+        
+        # Transform for API response
+        result = {}
+        for symbol, data in indices_data.items():
+            if data:
+                result[symbol] = {
+                    "ltp": data.get("ltp"),
+                    "pc": data.get("pc"),
+                    "v": data.get("v"),
+                    "o": data.get("o"),
+                    "h": data.get("h"),
+                    "l": data.get("l"),
+                    "c": data.get("c"),
+                    "ap": data.get("ap"),
+                    "oi": data.get("oi"),
+                    "tt": data.get("tt"),
+                    "exchange": data.get("exchange"),
+                    "token": data.get("token"),
+                }
+        
+        return {
+            "subscribed": subscribed,
+            "indices": result,
+            "timestamp": time.time(),
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching index tokens: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching index prices: {str(e)}"
+        )
+
+
+@router.get("/index-tokens/list")
+def list_available_indices():
+    """
+    Get list of all available index tokens.
+    
+    Returns:
+        {
+            "all": {
+                "NIFTY": {"exchange": "NSE", "token": "26000", "name": "Nifty 50"},
+                "BANKNIFTY": {...},
+                ...
+            },
+            "subscribed": ["NIFTY", "BANKNIFTY", "SENSEX", "INDIAVIX"],
+            "major": ["NIFTY", "BANKNIFTY", "SENSEX", "INDIAVIX"]
+        }
+    """
+    try:
+        all_indices = index_tokens_subscriber.get_all_available_indices()
+        subscribed = index_tokens_subscriber.get_subscribed_indices()
+        major = index_tokens_subscriber.MAJOR_INDICES
+        
+        # Enrich all indices with metadata
+        enriched = {}
+        for symbol, friendly_name in all_indices.items():
+            meta = index_tokens_subscriber.get_index_metadata(symbol)
+            if meta:
+                enriched[symbol] = meta
+        
+        return {
+            "all": enriched,
+            "subscribed": subscribed,
+            "major": major,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing indices: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error listing indices: {str(e)}"
+        )

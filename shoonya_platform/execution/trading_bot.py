@@ -111,6 +111,7 @@ from shoonya_platform.api.dashboard.services.broker_service import BrokerView
 #---------------------- option data writer ----------------
 from shoonya_platform.market_data.option_chain.supervisor import OptionChainSupervisor
 from shoonya_platform.market_data.feeds.live_feed import start_live_feed
+from shoonya_platform.market_data.feeds import index_tokens_subscriber
 
 #---------------------- strategies runner  ----------------
 from shoonya_platform.strategies.strategy_runner import StrategyRunner
@@ -265,6 +266,17 @@ class ShoonyaBot:
                 
                 if start_live_feed(self.api_proxy, timeout=timeout):
                     logger.info("✅ Live feed initialized successfully")
+                    
+                    # 🔥 NEW: Subscribe to index tokens for live dashboard
+                    try:
+                        count, symbols = index_tokens_subscriber.subscribe_index_tokens(
+                            self.api_proxy
+                        )
+                        logger.info(f"📊 Index tokens subscribed: {count} indices ({symbols})")
+                    except Exception as e:
+                        logger.warning(f"⚠️  Index token subscription failed: {e}")
+                        # Continue anyway - index tokens are nice-to-have, not critical
+                    
                     break
                 
                 if attempt < max_feed_attempts:

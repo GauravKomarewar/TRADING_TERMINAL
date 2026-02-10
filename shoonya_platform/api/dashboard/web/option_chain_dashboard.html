@@ -1508,19 +1508,58 @@
     }
     
     function updateInfoBar(meta) {
-        currentSpotPrice = parseFloat(meta.spot_price) || parseFloat(meta.spot_ltp) || 0;
-        currentFuturePrice = parseFloat(meta.future_price) || parseFloat(meta.fut_ltp) || 0;
+        const newSpotPrice = parseFloat(meta.spot_price) || parseFloat(meta.spot_ltp) || 0;
+        const newFuturePrice = parseFloat(meta.future_price) || parseFloat(meta.fut_ltp) || 0;
         
-        // Update display values
-        elements.spotPrice.textContent = `₹${formatNumber(currentSpotPrice, 2)}`;
-        elements.futurePrice.textContent = `₹${formatNumber(currentFuturePrice, 2)}`;
+        console.log('[OptionChain] updateInfoBar called with meta:', { 
+            spot_price: meta.spot_price, 
+            spot_ltp: meta.spot_ltp,
+            future_price: meta.future_price,
+            fut_ltp: meta.fut_ltp,
+            parsedSpot: newSpotPrice,
+            parsedFuture: newFuturePrice
+        });
+        
+        // Update spot price with animation
+        if (newSpotPrice !== currentSpotPrice) {
+            console.log(`[OptionChain] Spot price changed: ${currentSpotPrice} → ${newSpotPrice}`);
+            currentSpotPrice = newSpotPrice;
+            const formattedSpot = `₹${formatNumber(currentSpotPrice, 2)}`;
+            if (elements.spotPrice.textContent !== formattedSpot) {
+                elements.spotPrice.textContent = formattedSpot;
+                elements.spotPrice.classList.remove('value-changed');
+                void elements.spotPrice.offsetWidth; // Force reflow
+                elements.spotPrice.classList.add('value-changed');
+            }
+        } else {
+            console.log(`[OptionChain] Spot price unchanged: ${currentSpotPrice}`);
+        }
+        
+        // Update future price with animation
+        if (newFuturePrice !== currentFuturePrice) {
+            console.log(`[OptionChain] Future price changed: ${currentFuturePrice} → ${newFuturePrice}`);
+            currentFuturePrice = newFuturePrice;
+            const formattedFuture = `₹${formatNumber(currentFuturePrice, 2)}`;
+            if (elements.futurePrice.textContent !== formattedFuture) {
+                elements.futurePrice.textContent = formattedFuture;
+                elements.futurePrice.classList.remove('value-changed');
+                void elements.futurePrice.offsetWidth; // Force reflow
+                elements.futurePrice.classList.add('value-changed');
+            }
+        } else {
+            console.log(`[OptionChain] Future price unchanged: ${currentFuturePrice}`);
+        }
         
         // Calculate Spot-Future Spread
         const spread = currentFuturePrice - currentSpotPrice;
         const spreadEl = document.getElementById('spreadValue');
         if (spreadEl) {
-            spreadEl.textContent = `₹${formatNumber(spread, 2)}`;
+            const formattedSpread = `₹${formatNumber(spread, 2)}`;
+            spreadEl.textContent = formattedSpread;
             spreadEl.style.color = spread >= 0 ? 'var(--success)' : 'var(--danger)';
+            spreadEl.classList.remove('value-changed');
+            void spreadEl.offsetWidth;
+            spreadEl.classList.add('value-changed');
         }
         
         // Calculate ATM Strike based on FUTURE LTP (not spot)

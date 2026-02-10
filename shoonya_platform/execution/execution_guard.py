@@ -118,36 +118,39 @@ class ExecutionGuard:
                 raise RuntimeError(f"Invalid qty {i.qty} for {i.symbol}")
 
 # -----------------------------------------------------
-    # RULE B — CROSS STRATEGY CONFLICT (BOTH DIRECTIONS)
-    # 🔥 FIX: NOW BLOCKS SAME DIRECTION TOO (PRODUCTION SAFETY)
+    # RULE B — CROSS STRATEGY CONFLICT (OPPOSITE DIRECTION ONLY)
+    # ✅ INTENTIONAL DESIGN: Same-direction positions ALLOWED
+    # (Each strategy manages its own position independently)
+    # Conflict = opposite exposure on same symbol (BUY + SELL)
+    # Allowed = same direction from multiple strategies (BUY + BUY)
     # -----------------------------------------------------
     def _check_cross_strategy_conflicts(self, intents: List[LegIntent]):
         """
-        Prevent multi-strategy exposure on same symbol.
+        Prevent opposite-direction conflict on same symbol from different strategies.
         
-        Blocks:
-        - Strategy A BUY + Strategy B SELL (opposite) ❌
-        - Strategy A BUY + Strategy B BUY (same direction) ❌ [NEW IN v1.4]
-        - Strategy A SELL + Strategy B SELL (same direction) ❌ [NEW IN v1.4]
+        BLOCKS:
+        - Strategy A BUY 100 NIFTY + Strategy B SELL 100 NIFTY → ❌ Conflict
         
-        Only allows:
-        - Strategy A fully exited, then Strategy B enters
+        ALLOWS:
+        - Strategy A BUY 100 NIFTY + Strategy B BUY 100 NIFTY → ✅ OK
+        (Each strategy manages its own independent position)
         """
         for i in intents:
             if i.symbol not in self._global_positions:
                 continue
                 
-            # Check if ANY (opposite OR same direction) position exists
+            # Check only for OPPOSITE direction conflicts
             for existing_dir, existing_qty in self._global_positions[i.symbol].items():
                 if existing_qty <= 0:
                     continue
-                    
-                # 🔥 NEW: Block both opposite AND same direction
-                raise RuntimeError(
-                    f"Cross-strategy conflict: {i.symbol} has existing "
-                    f"{existing_dir} qty={existing_qty} from different strategy. "
-                    f"Multi-strategy exposure on same symbol is not allowed."
-                )
+                
+                # Only block opposite direction (original design)
+                if i.direction != existing_dir:
+                    raise RuntimeError(
+                        f"Cross-strategy conflict: {i.symbol} has existing "
+                        f"{existing_dir} qty={existing_qty} from different strategy. "
+                        f"Cannot take opposite direction on same symbol."
+                    )
 
     def _validate_broker_contract(
         self,

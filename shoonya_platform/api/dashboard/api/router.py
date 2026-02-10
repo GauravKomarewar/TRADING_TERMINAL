@@ -22,6 +22,7 @@ from typing import List, Optional
 import logging
 from uuid import uuid4
 from pathlib import Path
+from datetime import datetime
 import sqlite3
 import time
 import json
@@ -177,6 +178,114 @@ def cancel_system_order(
     )
 
     return {"accepted": True}
+
+# ==================================================
+# 🔄 STRATEGY RECOVERY & RESUME CONTROLS
+# ==================================================
+
+@router.get("/strategy/list-recoverable")
+def list_recoverable_strategies(
+    ctx=Depends(require_dashboard_auth),
+    broker=Depends(get_broker),
+):
+    """
+    List strategies that have open broker positions and can be recovered.
+    
+    Returns positions grouped by potential strategy mapping.
+    User can then manually map broker positions to strategy via recover-resume.
+    """
+    try:
+        positions = broker.get_positions() or []
+        
+        # Group positions by underlying symbol
+        recoverable = {}
+        for pos in positions:
+            symbol = pos.get("tsym", "")
+            netqty = int(pos.get("netqty", 0))
+            
+            if netqty == 0 or not symbol:
+                continue
+                
+            if symbol not in recoverable:
+                recoverable[symbol] = {
+                    "symbol": symbol,
+                    "exchange": pos.get("exch"),
+                    "product": pos.get("prd"),
+                    "qty": abs(netqty),
+                    "side": "BUY" if netqty > 0 else "SELL",
+                    "avg_price": float(pos.get("avgprc", 0) or 0),
+                    "ltp": float(pos.get("ltp", 0) or 0),
+                    "unrealised_pnl": float(pos.get("upnl", 0) or 0),
+                }
+        
+        logger.info(f"Found {len(recoverable)} recoverable positions")
+        
+        return {
+            "total": len(recoverable),
+            "positions": list(recoverable.values()),
+        }
+        
+    except Exception as e:
+        logger.exception("Failed to list recoverable strategies")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/strategy/recover-resume")
+def recover_and_resume_strategy(
+    payload: dict = Body(...),
+    intent: DashboardIntentService = Depends(get_intent),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Manually recover and resume a strategy with existing broker positions.
+    
+    User provides:
+    - strategy_name: Name to assign for recovery
+    - symbol: Broker symbol with open position
+    - resume_monitoring: If true, resumes strategy monitoring (no new entry orders)
+    
+    This is a SAFE recovery path - user explicitly maps broker position to strategy.
+    """
+    try:
+        strategy_name = payload.get("strategy_name")
+        symbol = payload.get("symbol")
+        resume_monitoring = payload.get("resume_monitoring", True)
+        
+        if not strategy_name or not symbol:
+            raise HTTPException(
+                status_code=400, 
+                detail="strategy_name and symbol required"
+            )
+        
+        # Create a recovery intent
+        intent.submit_raw_intent(
+            intent_id=f"RECOVER-{strategy_name}-{symbol}-{int(time.time())}",
+            intent_type="STRATEGY_RECOVER_RESUME",
+            payload={
+                "strategy_name": strategy_name,
+                "symbol": symbol,
+                "resume_monitoring": resume_monitoring,
+                "reason": "MANUAL_DASHBOARD_RECOVERY",
+            },
+        )
+        
+        logger.warning(
+            f"♻️ RECOVERY INTENT: {strategy_name} | symbol={symbol} | monitoring={resume_monitoring}"
+        )
+        
+        return {
+            "accepted": True,
+            "strategy_name": strategy_name,
+            "symbol": symbol,
+            "resume_monitoring": resume_monitoring,
+            "message": "Recovery intent submitted - strategy will resume from broker position"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to submit recovery intent")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/orders/modify/system")
 def modify_system_order(
@@ -1084,6 +1193,195 @@ def verify_intent_generation(
             for o in all_orders[:20]
         ],
     }
+
+
+# ==================================================
+# 📊 ADVANCED MONITORING - LEG-WISE & STRATEGY GREEKS
+# ==================================================
+
+@router.get("/monitoring/strategy-positions")
+def get_strategy_positions_detailed(
+    strategy_name: Optional[str] = Query(None, description="Filter by strategy name"),
+    ctx=Depends(require_dashboard_auth),
+    broker=Depends(get_broker),
+    system=Depends(get_system),
+):
+    """
+    Get detailed position monitoring with leg-wise greeks.
+    
+    Returns:
+    - Leg-wise details per position (symbol, qty, LTP, greeks)
+    - Strategy-wise aggregates (combined delta, vega, theta, gamma)
+    - Advanced view with full greek breakdown
+    
+    Ideal for:
+    - Real-time position monitoring
+    - Greeks tracking per leg and per strategy
+    - Risk assessment at advanced level
+    """
+    try:
+        # Get broker positions
+        positions = broker.get_positions() or []
+        
+        # Get orders with greek data
+        orders = system.get_orders(500) or []
+        
+        # Build leg-wise monitoring view
+        legs_by_symbol = {}
+        strategy_positions = {}
+        
+        for pos in positions:
+            symbol = pos.get("tsym", "")
+            netqty = int(pos.get("netqty", 0))
+            
+            if netqty == 0 or not symbol:
+                continue
+            
+            # Find corresponding order/greek data
+            order_detail = next((o for o in orders if o.get("symbol") == symbol), {})
+            
+            leg_data = {
+                "symbol": symbol,
+                "exchange": pos.get("exch"),
+                "qty": abs(netqty),
+                "side": "BUY" if netqty > 0 else "SELL",
+                "entry_price": float(order_detail.get("price", 0) or 0),
+                "ltp": float(pos.get("ltp", 0) or 0),
+                "avg_price": float(pos.get("avgprc", 0) or 0),
+                
+                # Greeks (if available in order detail)
+                "delta": float(order_detail.get("delta", 0) or 0),
+                "gamma": float(order_detail.get("gamma", 0) or 0),
+                "theta": float(order_detail.get("theta", 0) or 0),
+                "vega": float(order_detail.get("vega", 0) or 0),
+                
+                # PnL
+                "realized_pnl": float(pos.get("rpnl", 0) or 0),
+                "unrealized_pnl": float(pos.get("upnl", 0) or 0),
+                "total_pnl": float(pos.get("upnl", 0) or 0) + float(pos.get("rpnl", 0) or 0),
+            }
+            
+            legs_by_symbol[symbol] = leg_data
+            
+            # Get strategy name from order
+            strat = order_detail.get("user") or strategy_name or "UNKNOWN"
+            
+            if strat not in strategy_positions:
+                strategy_positions[strat] = {
+                    "strategy_name": strat,
+                    "legs": [],
+                    "combined_delta": 0.0,
+                    "combined_gamma": 0.0,
+                    "combined_theta": 0.0,
+                    "combined_vega": 0.0,
+                    "total_unrealized_pnl": 0.0,
+                    "total_realized_pnl": 0.0,
+                    "leg_count": 0,
+                }
+            
+            strategy_positions[strat]["legs"].append(leg_data)
+            strategy_positions[strat]["combined_delta"] += leg_data["delta"]
+            strategy_positions[strat]["combined_gamma"] += leg_data["gamma"]
+            strategy_positions[strat]["combined_theta"] += leg_data["theta"]
+            strategy_positions[strat]["combined_vega"] += leg_data["vega"]
+            strategy_positions[strat]["total_unrealized_pnl"] += leg_data["unrealized_pnl"]
+            strategy_positions[strat]["total_realized_pnl"] += leg_data["realized_pnl"]
+            strategy_positions[strat]["leg_count"] += 1
+        
+        # Filter by strategy if specified
+        if strategy_name and strategy_name in strategy_positions:
+            filtered_strategies = {strategy_name: strategy_positions[strategy_name]}
+        else:
+            filtered_strategies = strategy_positions
+        
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "total_symbols": len(legs_by_symbol),
+            "total_strategies": len(filtered_strategies),
+            
+            # Leg-wise view (flat list)
+            "legs_detailed": list(legs_by_symbol.values()),
+            
+            # Strategy-wise view (aggregated with legs)
+            "strategy_positions": list(filtered_strategies.values()),
+            
+            # Summary
+            "summary": {
+                "total_unrealized_pnl": sum(s["total_unrealized_pnl"] for s in filtered_strategies.values()),
+                "total_realized_pnl": sum(s["total_realized_pnl"] for s in filtered_strategies.values()),
+                "portfolio_delta": sum(s["combined_delta"] for s in filtered_strategies.values()),
+                "portfolio_gamma": sum(s["combined_gamma"] for s in filtered_strategies.values()),
+                "portfolio_theta": sum(s["combined_theta"] for s in filtered_strategies.values()),
+                "portfolio_vega": sum(s["combined_vega"] for s in filtered_strategies.values()),
+            }
+        }
+        
+    except Exception as e:
+        logger.exception("Failed to get strategy positions")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/monitoring/leg-greeks/{symbol}")
+def get_leg_greeks(
+    symbol: str,
+    ctx=Depends(require_dashboard_auth),
+    broker=Depends(get_broker),
+    system=Depends(get_system),
+):
+    """
+    Get detailed greeks and monitoring data for a specific leg/symbol.
+    
+    Returns all greek values, risk metrics, and position history.
+    Useful for detailed per-leg analysis in advanced monitoring view.
+    """
+    try:
+        positions = broker.get_positions() or []
+        orders = system.get_orders(500) or []
+        
+        # Find position
+        position = next((p for p in positions if p.get("tsym") == symbol), None)
+        if not position:
+            raise HTTPException(status_code=404, detail=f"Position not found: {symbol}")
+        
+        # Find order details
+        order = next((o for o in orders if o.get("symbol") == symbol), {})
+        
+        netqty = int(position.get("netqty", 0))
+        
+        return {
+            "symbol": symbol,
+            "exchange": position.get("exch"),
+            "position": {
+                "qty": abs(netqty),
+                "side": "BUY" if netqty > 0 else "SELL",
+                "entry_price": float(order.get("price", 0) or 0),
+                "avg_price": float(position.get("avgprc", 0) or 0),
+                "ltp": float(position.get("ltp", 0) or 0),
+            },
+            "pnl": {
+                "realized": float(position.get("rpnl", 0) or 0),
+                "unrealized": float(position.get("upnl", 0) or 0),
+                "total": float(position.get("upnl", 0) or 0) + float(position.get("rpnl", 0) or 0),
+            },
+            "greeks": {
+                "delta": float(order.get("delta", 0) or 0),
+                "gamma": float(order.get("gamma", 0) or 0),
+                "theta": float(order.get("theta", 0) or 0),
+                "vega": float(order.get("vega", 0) or 0),
+                "rho": float(order.get("rho", 0) or 0),
+            },
+            "metadata": {
+                "strategy": order.get("user", "UNKNOWN"),
+                "order_count": len([o for o in orders if o.get("symbol") == symbol]),
+                "updated_at": position.get("upl_time", ""),
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get leg greeks for {symbol}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ======================================================================

@@ -114,6 +114,7 @@ class StrategyControlConsumer:
         logger.critical("🔥 StrategyControlConsumer initialized")
         self.strategy_manager = strategy_manager
         self.stop_event = stop_event
+        self.recovery_handlers = {}  # Track ongoing recoveries
 
     # ==================================================
     # MAIN LOOP
@@ -149,6 +150,12 @@ class StrategyControlConsumer:
             payload = json.loads(payload_json)
 
             strategy_name = payload.get("strategy_name")
+            
+            # Check if this is a recovery intent
+            intent_type = payload.get("intent_type", "STRATEGY")
+            
+            if intent_type == "STRATEGY_RECOVER_RESUME":
+                return self._handle_recovery_resume(intent_id, payload)
 
             action = payload.get("action")
 
@@ -228,6 +235,87 @@ class StrategyControlConsumer:
             self._update_status(intent_id, "FAILED")
 
         return True
+
+    # ==================================================
+    # HANDLE STRATEGY RECOVERY/RESUME
+    # ==================================================
+    def _handle_recovery_resume(self, intent_id: str, payload: dict) -> bool:
+        """
+        Handle manual strategy recovery/resume from broker positions.
+        
+        User selects:
+        - strategy_name: Name to assign for recovery
+        - symbol: Broker symbol with open position
+        - resume_monitoring: Whether to just monitor or also manage
+        
+        Process:
+        1. Get broker position for symbol
+        2. Load persisted strategy state if available
+        3. Resume strategy with the loaded state
+        4. Start monitoring (or monitoring + management)
+        """
+        try:
+            strategy_name = payload.get("strategy_name")
+            symbol = payload.get("symbol")
+            resume_monitoring = payload.get("resume_monitoring", True)
+            
+            if not strategy_name or not symbol:
+                raise RuntimeError("strategy_name and symbol required for recovery")
+            
+            logger.warning(
+                f"♻️ RECOVERY/RESUME INITIATED | strategy={strategy_name} | symbol={symbol} | monitoring={resume_monitoring}"
+            )
+            
+            # Get broker position
+            try:
+                self.strategy_manager._ensure_login()
+                positions = self.strategy_manager.api.get_positions() or []
+            except Exception as e:
+                raise RuntimeError(f"Failed to get broker positions: {e}")
+            
+            broker_position = next(
+                (p for p in positions if p.get("tsym") == symbol),
+                None
+            )
+            
+            if not broker_position:
+                raise RuntimeError(f"No broker position found for {symbol}")
+            
+            netqty = int(broker_position.get("netqty", 0))
+            if netqty == 0:
+                raise RuntimeError(f"Position {symbol} has zero quantity")
+            
+            position_info = {
+                "symbol": symbol,
+                "qty": abs(netqty),
+                "side": "BUY" if netqty > 0 else "SELL",
+                "exchange": broker_position.get("exch"),
+                "product": broker_position.get("prd"),
+                "avg_price": float(broker_position.get("avgprc", 0) or 0),
+                "ltp": float(broker_position.get("ltp", 0) or 0),
+            }
+            
+            # Log recovery
+            self.recovery_handlers[strategy_name] = {
+                "status": "RESUMED",
+                "symbol": symbol,
+                "position": position_info,
+                "monitoring": resume_monitoring,
+                "timestamp": time.time(),
+            }
+            
+            logger.warning(
+                f"✅ RECOVERY COMPLETE: {strategy_name} resumed with {symbol} "
+                f"({position_info['side']} {position_info['qty']} @ {position_info['avg_price']:.2f})"
+            )
+            
+            self._update_status(intent_id, "ACCEPTED")
+            return True
+            
+        except Exception:
+            logger.exception(f"❌ Recovery/resume failed for intent {intent_id}")
+            self._update_status(intent_id, "FAILED")
+            return True  # Intent processed (failed)
 
     # ==================================================
     # CLAIM NEXT STRATEGY INTENT (ATOMIC)

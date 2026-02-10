@@ -1093,124 +1093,147 @@
         updateBasketUI();
     }
     
-    // Searchable symbol combobox
+    // Searchable symbol combobox — direct DB file mapping
+    // Each symbol maps directly to its sqlite file: just "NIFTY" → NFO_NIFTY_10-FEB-2026.sqlite
     function initSymbolCombo() {
         const combo = document.getElementById('symbolCombo');
         const input = document.getElementById('symbolInput');
         const dropdown = document.getElementById('symbolDropdown');
-        const hiddenSelect = elements.symbol; // the hidden <select>
-        let allOptions = [];  // rebuilt dynamically after API load
+        const hiddenSelect = elements.symbol;
+        const arrow = combo.querySelector('.symbol-arrow');
         let highlightIdx = -1;
 
-        function refreshOptionsList() {
-            allOptions = Array.from(dropdown.querySelectorAll('.symbol-option[data-value]'));
+        function getOptions() {
+            return Array.from(dropdown.querySelectorAll('.symbol-option[data-value]'));
         }
+        function getVisible() {
+            return getOptions().filter(o => !o.classList.contains('hidden'));
+        }
+        function isOpen() { return dropdown.classList.contains('open'); }
 
         function openDropdown() {
-            refreshOptionsList();
             filterOptions(input.value);
             dropdown.classList.add('open');
         }
         function closeDropdown() {
             dropdown.classList.remove('open');
             highlightIdx = -1;
-            allOptions.forEach(o => o.classList.remove('highlight'));
+            getOptions().forEach(o => o.classList.remove('highlight'));
         }
         function filterOptions(query) {
-            refreshOptionsList();
             const q = query.trim().toUpperCase();
-            let visibleCount = 0;
-            allOptions.forEach(opt => {
-                const match = !q || opt.dataset.value.includes(q);
+            getOptions().forEach(opt => {
+                const match = !q || opt.dataset.value.toUpperCase().includes(q);
                 opt.classList.toggle('hidden', !match);
-                if (match) visibleCount++;
             });
             highlightIdx = -1;
-            allOptions.forEach(o => o.classList.remove('highlight'));
+            getOptions().forEach(o => o.classList.remove('highlight'));
         }
-        function selectValue(val) {
+        function selectSymbol(val) {
             val = val.toUpperCase();
             input.value = val;
-            // Update hidden select
+            // Sync hidden select
             let opt = hiddenSelect.querySelector(`option[value="${val}"]`);
             if (!opt) {
                 opt = document.createElement('option');
-                opt.value = val;
-                opt.textContent = val;
+                opt.value = val; opt.textContent = val;
                 hiddenSelect.appendChild(opt);
             }
             hiddenSelect.value = val;
-            // Mark selected in dropdown
-            refreshOptionsList();
-            allOptions.forEach(o => o.classList.toggle('selected', o.dataset.value === val));
+            getOptions().forEach(o => o.classList.toggle('selected', o.dataset.value === val));
             closeDropdown();
-            // Fire change event on the hidden select
+            input.blur();
+            // Fire change so setupEventListeners handler runs
             hiddenSelect.dispatchEvent(new Event('change'));
         }
-        function getVisibleOptions() {
-            refreshOptionsList();
-            return allOptions.filter(o => !o.classList.contains('hidden'));
-        }
         function setHighlight(idx) {
-            const visible = getVisibleOptions();
+            const visible = getVisible();
             if (!visible.length) return;
             highlightIdx = Math.max(0, Math.min(idx, visible.length - 1));
-            allOptions.forEach(o => o.classList.remove('highlight'));
+            getOptions().forEach(o => o.classList.remove('highlight'));
             visible[highlightIdx].classList.add('highlight');
             visible[highlightIdx].scrollIntoView({ block: 'nearest' });
         }
 
-        // Typing filters the list
-        input.addEventListener('input', () => {
-            openDropdown();
-        });
-        // Focus opens dropdown and selects text for easy replacement
-        input.addEventListener('focus', () => {
+        // Click on input: open/select text
+        input.addEventListener('click', (e) => {
+            e.stopPropagation();
             input.select();
-            openDropdown();
+            if (!isOpen()) openDropdown();
         });
-        // Arrow click opens
-        combo.addEventListener('click', () => {
-            if (dropdown.classList.contains('open')) {
-                closeDropdown();
-            } else {
-                input.focus();
-            }
+
+        // Typing filters
+        input.addEventListener('input', () => {
+            if (!isOpen()) openDropdown();
+            else filterOptions(input.value);
         });
-        // Keyboard navigation
+
+        // Keyboard
         input.addEventListener('keydown', (e) => {
-            const visible = getVisibleOptions();
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                if (!dropdown.classList.contains('open')) openDropdown();
+                if (!isOpen()) openDropdown();
                 setHighlight(highlightIdx + 1);
             } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
                 setHighlight(highlightIdx - 1);
             } else if (e.key === 'Enter') {
                 e.preventDefault();
+                const visible = getVisible();
                 if (highlightIdx >= 0 && visible[highlightIdx]) {
-                    selectValue(visible[highlightIdx].dataset.value);
+                    selectSymbol(visible[highlightIdx].dataset.value);
                 } else if (input.value.trim()) {
-                    selectValue(input.value.trim());
+                    selectSymbol(input.value.trim());
                 }
             } else if (e.key === 'Escape') {
                 closeDropdown();
                 input.value = hiddenSelect.value;
+                input.blur();
             }
         });
-        // Click option
-        dropdown.addEventListener('click', (e) => {
+
+        // Click on dropdown option — mousedown to prevent input blur race
+        dropdown.addEventListener('mousedown', (e) => {
+            e.preventDefault();   // prevent input blur
+            e.stopPropagation();  // prevent combo/document handlers
             const opt = e.target.closest('.symbol-option[data-value]');
-            if (opt) selectValue(opt.dataset.value);
+            if (opt) selectSymbol(opt.dataset.value);
         });
+
+        // Arrow toggle
+        arrow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isOpen()) {
+                closeDropdown();
+                input.blur();
+            } else {
+                input.focus();
+                input.select();
+                openDropdown();
+            }
+        });
+
         // Close on outside click
         document.addEventListener('click', (e) => {
             if (!combo.contains(e.target)) closeDropdown();
         });
+
+        // Blur: restore value if invalid, close dropdown (with delay for click handlers)
+        input.addEventListener('blur', () => {
+            setTimeout(() => {
+                if (!combo.contains(document.activeElement)) {
+                    closeDropdown();
+                    // Restore to last valid symbol if user left garbage in input
+                    if (input.value !== hiddenSelect.value) {
+                        input.value = hiddenSelect.value;
+                    }
+                }
+            }, 150);
+        });
     }
 
     // Load active symbols from supervisor DB files
+    // Maps symbol name (e.g. "NIFTY") directly to its DB file (NFO_NIFTY_10-FEB-2026.sqlite)
     async function loadActiveSymbols() {
         const input = document.getElementById('symbolInput');
         const dropdown = document.getElementById('symbolDropdown');
@@ -1218,62 +1241,60 @@
 
         try {
             const res = await fetch('/dashboard/option-chain/active-symbols', { credentials: 'include' });
-            if (!res.ok) throw new Error(`Failed: ${res.status}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             activeSymbolData = await res.json();
-            console.log('[OptionChain] Active symbols from API:', activeSymbolData);
+            console.log('[OptionChain] DB files found:', activeSymbolData.map(s => `${s.exchange}_${s.symbol} [${s.expiries.join(',')}]`));
 
             if (!activeSymbolData || activeSymbolData.length === 0) {
                 input.value = '';
-                input.placeholder = 'No symbols available';
-                input.disabled = false;
-                dropdown.innerHTML = '<div class="symbol-option" style="color:var(--muted);cursor:default">No active chains</div>';
+                input.placeholder = 'No DB files found';
+                dropdown.innerHTML = '<div class="symbol-option" style="color:var(--muted);cursor:default">No active chains in data/ folder</div>';
                 return;
             }
 
-            // Build exchange map and dropdown options
+            // Build direct symbol → exchange map from DB filenames
             symbolExchangeMap = {};
-            let optionsHTML = '';
-            let selectHTML = '';
-
-            // Find NIFTY as default, fallback to first item
-            let defaultIdx = activeSymbolData.findIndex(s => s.symbol === 'NIFTY');
-            if (defaultIdx < 0) defaultIdx = 0;
-
-            activeSymbolData.forEach((item, idx) => {
+            activeSymbolData.forEach(item => {
                 symbolExchangeMap[item.symbol] = item.exchange;
-                const label = item.exchange !== 'NFO' ? `${item.symbol} (${item.exchange})` : item.symbol;
-                const selectedClass = idx === defaultIdx ? ' selected' : '';
-                optionsHTML += `<div class="symbol-option${selectedClass}" data-value="${item.symbol}" data-exchange="${item.exchange}">${label}</div>`;
-                selectHTML += `<option value="${item.symbol}"${idx === defaultIdx ? ' selected' : ''}>${item.symbol}</option>`;
             });
 
-            dropdown.innerHTML = optionsHTML;
-            hiddenSelect.innerHTML = selectHTML;
-
+            // NIFTY first (if exists), otherwise first available
+            let defaultIdx = activeSymbolData.findIndex(s => s.symbol === 'NIFTY');
+            if (defaultIdx < 0) defaultIdx = 0;
             const defaultItem = activeSymbolData[defaultIdx];
+
+            // Populate combobox dropdown options
+            dropdown.innerHTML = activeSymbolData.map((item, idx) => {
+                const label = item.exchange !== 'NFO' ? `${item.symbol} (${item.exchange})` : item.symbol;
+                const sel = idx === defaultIdx ? ' selected' : '';
+                return `<div class="symbol-option${sel}" data-value="${item.symbol}" data-exchange="${item.exchange}">${label}</div>`;
+            }).join('');
+
+            // Populate hidden <select> for JS compatibility
+            hiddenSelect.innerHTML = activeSymbolData.map((item, idx) =>
+                `<option value="${item.symbol}"${idx === defaultIdx ? ' selected' : ''}>${item.symbol}</option>`
+            ).join('');
+
+            // Set default symbol in input + hidden select
             input.value = defaultItem.symbol;
             input.placeholder = 'Type symbol...';
             input.disabled = false;
             hiddenSelect.value = defaultItem.symbol;
-            console.log('[OptionChain] Default symbol:', defaultItem.symbol, 'Exchange:', defaultItem.exchange);
 
-            // Load expiries for default symbol
-            if (defaultItem.expiries && defaultItem.expiries.length > 0) {
-                console.log('[OptionChain] Pre-loading expiries from API:', defaultItem.expiries);
-                populateExpiries(defaultItem.expiries);
-                await loadOptionChain();
-                startAutoRefresh();
-            } else {
-                console.log('[OptionChain] No expiries in API response, fetching...');
-                await loadExpiries();
-                startAutoRefresh();
-            }
+            console.log('[OptionChain] Default:', defaultItem.symbol, '| Exchange:', defaultItem.exchange,
+                        '| Expiries:', defaultItem.expiries);
+
+            // Directly load expiries + chain for default symbol from DB
+            populateExpiries(defaultItem.expiries);
+            await loadOptionChain();
+            startAutoRefresh();
+
         } catch (err) {
-            console.error('[OptionChain] Failed to load active symbols:', err);
-            // Fallback: enable input for manual entry with NIFTY default
+            console.error('[OptionChain] Failed to load symbols from DB:', err);
+            // Fallback: manual NIFTY
+            input.value = 'NIFTY';
             input.placeholder = 'Type symbol...';
             input.disabled = false;
-            input.value = 'NIFTY';
             symbolExchangeMap['NIFTY'] = 'NFO';
             hiddenSelect.innerHTML = '<option value="NIFTY" selected>NIFTY</option>';
             hiddenSelect.value = 'NIFTY';

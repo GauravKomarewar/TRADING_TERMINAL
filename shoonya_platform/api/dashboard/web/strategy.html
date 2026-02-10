@@ -8,116 +8,477 @@
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
-        /* Professional Grid Layout */
-        .page-container { display: grid; grid-template-columns: 400px 1fr; gap: 24px; }
-        @media(max-width: 1400px) { .page-container { grid-template-columns: 1fr; } }
+        :root {
+            --primary: #3b82f6;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
+            --panel: #1f2937;
+            --panel-2: #111827;
+            --border: #374151;
+            --text: #f3f4f6;
+            --muted: #9ca3af;
+        }
 
-        /* Left Sidebar - Strategy Builder */
-        .builder-panel { background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%); border: 1px solid var(--border); border-radius: 8px; padding: 20px; position: sticky; top: 20px; max-height: calc(100vh - 100px); overflow-y: auto; }
-        .builder-panel h2 { margin-top: 0; font-size: 16px; margin-bottom: 16px; border-bottom: 2px solid var(--border); padding-bottom: 12px; }
-        .builder-panel form { display: flex; flex-direction: column; gap: 20px; }
-        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-        .builder-section h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--primary); margin-bottom: 12px; letter-spacing: 0.5px; }
-        .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
-        .field label { font-size: 11px; font-weight: 600; color: var(--text); }
-        .field input, .field select, .field textarea { padding: 8px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-2); color: var(--text); transition: all .2s; }
-        .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--primary); background: var(--panel); outline: none; box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); }
-        
-        .btn-save { width: 100%; padding: 10px; background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; transition: all .2s; }
-        .btn-save:hover { box-shadow: 0 4px 12px rgba(34,197,94,.3); }
-        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+        body {
+            background: #0f172a;
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
 
-        /* Result Card */
-        .result-card { background: linear-gradient(135deg, rgba(34,197,94,.1) 0%, rgba(34,197,94,.05) 100%); border: 2px solid #22c55e; border-radius: 8px; padding: 16px; margin-bottom: 16px; display: none; }
-        .result-card.error { background: linear-gradient(135deg, rgba(239,68,68,.1) 0%, rgba(239,68,68,.05) 100%); border-color: #ef4444; }
-        .result-card.show { display: block; animation: slideDown 0.3s ease-out; }
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        .result-title { font-weight: 700; margin-bottom: 6px; }
-        .result-message { font-size: 12px; line-height: 1.5; font-family: monospace; white-space: pre-wrap; }
+        main {
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
 
-        /* Strategy Items - Production Grade */
+        /* Header */
+        .page-header {
+            margin-bottom: 24px;
+        }
+
+        .page-header h1 {
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+
+        .page-header p {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        /* Main Container */
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            max-height: calc(100vh - 180px);
+        }
+
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+                max-height: none;
+            }
+        }
+
+        /* === LEFT PANEL: BUILDER === */
+        .builder {
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .builder-header {
+            padding: 16px;
+            background: linear-gradient(135deg, var(--panel) 0%, var(--panel-2) 100%);
+            border-bottom: 1px solid var(--border);
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .builder-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .form-section:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .form-section-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--primary);
+            letter-spacing: 0.5px;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-field label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .form-field input,
+        .form-field select,
+        .form-field textarea {
+            padding: 8px 12px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .form-field input:focus,
+        .form-field select:focus,
+        .form-field textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, var(--success) 0%, #16a34a 100%);
+            color: white;
+            font-weight: 700;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 12px;
+        }
+
+        .btn-submit:hover {
+            box-shadow: 0 8px 16px rgba(34, 197, 94, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-bottom: 12px;
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .alert.show {
+            display: flex;
+        }
+
+        .alert-success {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid var(--success);
+            color: var(--success);
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+        }
+
+        .alert-title {
+            font-weight: 700;
+        }
+
+        /* === RIGHT PANEL: CONTROL & MONITOR === */
+        .monitor {
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            background: var(--panel);
+            border-bottom: 2px solid var(--border);
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px 16px;
+            cursor: pointer;
+            text-align: center;
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--muted);
+            border: none;
+            background: transparent;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+            position: relative;
+            margin-bottom: -2px;
+        }
+
+        .tab:hover {
+            color: var(--text);
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.2s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Strategy Item */
         .strategy-item {
-            background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%);
+            background: var(--panel);
             border: 2px solid var(--border);
             border-radius: 8px;
             padding: 16px;
             margin-bottom: 12px;
-            transition: all .3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.2s;
         }
-        .strategy-item:hover { border-color: var(--primary); box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
-        .strategy-item.running { border-color: #22c55e; background: linear-gradient(135deg, rgba(34,197,94,.05) 0%, rgba(34,197,94,.02) 100%); }
 
-        .strategy-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 12px; }
-        .strategy-title { flex: 1; }
-        .strategy-name { font-size: 14px; font-weight: 700; color: var(--text); }
-        .strategy-meta { font-size: 10px; color: var(--muted); margin-top: 3px; }
-        
-        .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; white-space: nowrap;  }
-        .status-idle { background: rgba(107,114,128,.15); color: #6b7280; }
-        .status-running { background: rgba(34,197,94,.15); color: #22c55e; border: 1px solid #22c55e; }
-        .status-paused { background: rgba(234,179,8,.15); color: #eab308; border: 1px solid #eab308; }
+        .strategy-item:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+        }
 
-        .strategy-config { background: var(--panel-2); border-radius: 4px; padding: 10px; margin: 12px 0; font-size: 10px; }
-        .config-row { display: flex; justify-content: space-between; padding: 4px 0; }
-        .config-label { color: var(--muted); font-weight: 600; }
-        .config-value { color: var(--text); font-family: monospace; font-weight: 500; }
+        .strategy-item.running {
+            border-color: var(--success);
+        }
 
-        .strategy-actions { display: flex; gap: 6px; margin-top: 12px; }
-        .btn-sm { padding: 6px 12px; font-size: 10px; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: all .2s; }
-        .btn-success { background: #22c55e; color: white; }
-        .btn-success:hover:not(:disabled) { background: #16a34a; }
-        .btn-warning { background: #eab308; color: #1a1a1a; }
-        .btn-warning:hover:not(:disabled) { background: #ca8a04; }
-        .btn-danger { background: #ef4444; color: white; }
-        .btn-danger:hover:not(:disabled) { background: #dc2626; }
-        .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+        .strategy-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            gap: 12px;
+        }
 
-        /* Right Panel - Strategies Control & Monitoring */
-        .control-panel { display: flex; flex-direction: column; gap: 0; }
+        .strategy-title {
+            flex: 1;
+        }
 
-        /* Tabs */
-        .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 0; background: linear-gradient(180deg, var(--panel-2) 0%, var(--panel) 100%); }
-        .tab { padding: 12px 20px; cursor: pointer; border-bottom: 3px solid transparent; color: var(--muted); font-weight: 600; transition: all .2s; position: relative; font-size: 13px; }
-        .tab:hover { color: var(--text); }
-        .tab.active { color: var(--primary); border-bottom-color: var(--primary); margin-bottom: -2px; }
-        .tab-content { display: none; padding: 20px; }
-        .tab-content.active { display: block; animation: fadeIn 0.2s; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+        .strategy-name {
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text);
+        }
 
-        .section-header { 
-            display: flex; 
-            align-items: center; 
-            gap: 12px; 
-            padding: 16px; 
-            background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%);
-            border: 1px solid var(--border); 
-            border-radius: 6px; 
-            cursor: pointer; 
-            user-select: none;
-            transition: all .2s;
+        .strategy-meta {
+            font-size: 10px;
+            color: var(--muted);
+            margin-top: 3px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .badge-idle {
+            background: rgba(107, 114, 128, 0.15);
+            color: #9ca3af;
+        }
+
+        .badge-running {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .badge-paused {
+            background: rgba(234, 179, 8, 0.15);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+
+        .strategy-config {
+            background: var(--panel-2);
+            border-radius: 4px;
+            padding: 10px;
+            margin: 12px 0;
+            font-size: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .config-label {
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .config-value {
+            color: var(--text);
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-weight: 500;
+        }
+
+        .strategy-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 12px;
+        }
+
+        .btn-sm {
+            flex: 1;
+            padding: 6px 10px;
+            font-size: 10px;
+            font-weight: 600;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-start {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-start:hover {
+            background: #16a34a;
+        }
+
+        .btn-pause {
+            background: var(--warning);
+            color: #1a1a1a;
+        }
+
+        .btn-pause:hover {
+            background: #ca8a04;
+        }
+
+        .btn-stop {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-stop:hover {
+            background: #dc2626;
+        }
+
+        .btn-sm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted);
+        }
+
+        .empty-icon {
+            font-size: 48px;
             margin-bottom: 12px;
         }
-        .section-header:hover { background: var(--panel); border-color: var(--primary); }
-        .section-toggle { display: inline-block; width: 14px; text-align: center; transition: transform .3s; font-weight: bold; color: var(--primary); }
-        .section-toggle.open { transform: rotate(90deg); }
-        .section-title { font-weight: 700; color: var(--text); flex: 1; font-size: 13px; }
-        .section-content { display: none; padding: 16px; background: var(--panel); border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; margin-bottom: 12px; }
-        .section-content.open { display: block; }
 
-        .table-compact { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 12px; }
-        .table-compact th { background: var(--panel-2); padding: 8px; text-align: left; font-weight: 700; border-bottom: 2px solid var(--border); }
-        .table-compact td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
-        .table-compact tr:hover { background: var(--panel-2); }
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
 
-        .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
-        .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+        .stat-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
 
-        .status-banner { background: linear-gradient(135deg, rgba(34,197,94,.15) 0%, rgba(34,197,94,.05) 100%); border: 2px solid #22c55e; border-radius: 8px; padding: 16px; margin-bottom: 20px; display: none; animation: slideDown 0.3s ease-out; }
-        .banner-title { font-weight: 700; color: #22c55e; font-size: 13px; margin-bottom: 6px; }
-        .banner-text { font-size: 11px; color: var(--text); font-family: monospace; }
+        .stat-label {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
 
-        .info-msg { background: var(--panel); border-left: 4px solid var(--primary); padding: 12px; border-radius: 4px; font-size: 11px; margin-bottom: 16px; }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--primary);
+        }
+
+        .table {
+            width: 100%;
+            font-size: 10px;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+
+        .table th {
+            background: var(--panel);
+            padding: 8px;
+            text-align: left;
+            font-weight: 700;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .table td {
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table tr:hover {
+            background: var(--panel);
+        }
     </style>
 </head>
 <body data-page="strategy">
@@ -125,526 +486,269 @@
 
     <main>
         <div class="page-header">
-            <h1>🎯 Strategy Management System</h1>
-            <p class="muted">Production-grade strategy builder, execution & real-time monitoring</p>
+            <h1>🎯 Strategy Management</h1>
+            <p>Build, control, and monitor trading strategies in real-time</p>
         </div>
 
-        <!-- STATUS BANNER -->
-        <div id="statusBanner" class="status-banner">
-             <div class="banner-title">⚡ ACTIVE EXECUTION</div>
-            <div id="statusText" class="banner-text"></div>
-        </div>
+        <div class="container">
+            <!-- LEFT: BUILDER -->
+            <div class="builder">
+                <div class="builder-header">📝 Strategy Builder</div>
+                <div class="builder-body">
+                    <div id="alert" class="alert"></div>
 
-        <div class="page-container">
-            <!-- LEFT PANEL: STRATEGY BUILDER -->
-            <div class="builder-panel">
-                <h2>📝 Strategy Configuration</h2>
-                
-                <div id="resultCard" class="result-card">
-                    <div class="result-title" id="resultTitle">✅ Success</div>
-                    <div class="result-message" id="resultMessage"></div>
+                    <form id="form" onsubmit="submitStrategy(event)">
+                        <div class="form-section">
+                            <div class="form-section-title">Identity</div>
+                            <div class="form-field">
+                                <label>Strategy Name</label>
+                                <input type="text" id="stratName" placeholder="DNSS NIFTY Weekly" required>
+                            </div>
+                            <div class="form-field">
+                                <label>Type</label>
+                                <select id="stratType">
+                                    <option>DNSS (Delta Neutral)</option>
+                                    <option>Iron Condor</option>
+                                    <option>Butterfly</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label>Underlying</label>
+                                <select id="underlying">
+                                    <option>NIFTY</option>
+                                    <option>BANKNIFTY</option>
+                                    <option>FINNIFTY</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <div class="form-section-title">Schedule</div>
+                            <div class="form-field">
+                                <label>Frequency</label>
+                                <select id="schedule" required>
+                                    <option value="">-- Select --</option>
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="manual">Manual</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label>Entry Time</label>
+                                <input type="time" id="entryTime" value="09:20">
+                            </div>
+                            <div class="form-field">
+                                <label>Exit Time</label>
+                                <input type="time" id="exitTime" value="15:15">
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <div class="form-section-title">Risk Parameters</div>
+                            <div class="form-field">
+                                <label>Target Profit (₹)</label>
+                                <input type="number" id="targetProfit" placeholder="5000">
+                            </div>
+                            <div class="form-field">
+                                <label>Stop Loss (₹)</label>
+                                <input type="number" id="stopLoss" placeholder="3000">
+                            </div>
+                            <div class="form-field">
+                                <label>Max Positions</label>
+                                <input type="number" id="maxPositions" value="1" min="1">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-submit">💾 Save & Deploy</button>
+                    </form>
                 </div>
-
-                <form id="strategyForm" onsubmit="submitStrategy(event)">
-                    <div class="builder-section">
-                        <h3>📋 Identity</h3>
-                        <div class="field">
-                            <label>Strategy Name *</label>
-                            <input type="text" id="stratName" placeholder="DNSS NIFTY Weekly" required>
-                        </div>
-                        <div class="field">
-                            <label>Type *</label>
-                            <select id="stratType" onchange="updateStrategyType()">
-                                <option value="dnss">DNSS (Delta Neutral)</option>
-                                <option value="iron_condor">Iron Condor</option>
-                                <option value="butterfly">Butterfly</option>
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label>Underlying</label>
-                            <select id="underlying">
-                                <option>NIFTY</option>
-                                <option>BANKNIFTY</option>
-                                <option>FINNIFTY</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="builder-section">
-                        <h3>⏰ Schedule</h3>
-                        <div class="field">
-                            <label>Frequency *</label>
-                            <select id="schedule" required>
-                                <option value="">-- Select --</option>
-                                <option value="daily">📅 Daily</option>
-                                <option value="weekly">📆 Weekly</option>
-                                <option value="manual">⚡ Manual</option>
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label>Entry Time</label>
-                            <input type="time" id="entryTime" value="09:20">
-                        </div>
-                        <div class="field">
-                            <label>Exit Time</label>
-                            <input type="time" id="exitTime" value="15:15">
-                        </div>
-                    </div>
-
-                    <div class="builder-section">
-                        <h3>💰 Risk Parameters</h3>
-                        <div class="field">
-                            <label>Target Profit (₹)</label>
-                            <input type="number" id="targetProfit" placeholder="5000" step="100">
-                        </div>
-                        <div class="field">
-                            <label>Stop Loss (₹)</label>
-                            <input type="number" id="stopLoss" placeholder="3000" step="100">
-                        </div>
-                        <div class="field">
-                            <label>Max Positions</label>
-                            <input type="number" id="maxPositions" value="1" min="1">
-                        </div>
-                    </div>
-
-                    <div class="builder-section" id="legFields"></div>
-
-                    <button type="submit" class="btn-save">💾 Save & Deploy</button>
-                </form>
             </div>
 
-            <!-- RIGHT PANEL: CONTROL & MONITORING -->
-            <div class="control-panel">
-                <!-- Tabs -->
+            <!-- RIGHT: MONITOR -->
+            <div class="monitor">
                 <div class="tabs">
-                    <div class="tab active" onclick="switchTab('control')">🎛️ Control</div>
-                    <div class="tab" onclick="switchTab('monitor')">📊 Monitor</div>
-                    <div class="tab" onclick="switchTab('audit')">🔍 Audit</div>
+                    <button class="tab active" onclick="switchTab('control')">🎛️ Control</button>
+                    <button class="tab" onclick="switchTab('monitor')">📊 Monitor</button>
+                    <button class="tab" onclick="switchTab('audit')">🔍 Audit</button>
                 </div>
 
-                <!-- CONTROL TAB -->
+                <!-- Control Tab -->
                 <div id="control" class="tab-content active">
                     <div id="strategyList"></div>
                 </div>
 
-                <!-- MONITOR TAB -->
+                <!-- Monitor Tab -->
                 <div id="monitor" class="tab-content">
+                    <div class="stats-grid" id="statsGrid"></div>
                     <div id="monitorContent"></div>
                 </div>
 
-                <!-- AUDIT TAB -->
+                <!-- Audit Tab -->
                 <div id="audit" class="tab-content">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                        <div class="info-msg" style="border-left-color: #22c55e; text-align: center;">
-                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Running</div>
-                            <div id="stat-running" style="font-size: 24px; font-weight: 700; color: #22c55e; margin-top: 4px;">0</div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Running</div>
+                            <div class="stat-value" id="statRunning" style="color: var(--success);">0</div>
                         </div>
-                        <div class="info-msg" style="border-left-color: #eab308; text-align: center;">
-                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Paused</div>
-                            <div id="stat-paused" style="font-size: 24px; font-weight: 700; color: #eab308; margin-top: 4px;">0</div>
+                        <div class="stat-card">
+                            <div class="stat-label">Paused</div>
+                            <div class="stat-value" id="statPaused" style="color: var(--warning);">0</div>
                         </div>
-                        <div class="info-msg" style="border-left-color: #3b82f6; text-align: center;">
-                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Intents</div>
-                            <div id="stat-intents" style="font-size: 24px; font-weight: 700; color: #3b82f6; margin-top: 4px;">0</div>
+                        <div class="stat-card">
+                            <div class="stat-label">Intents</div>
+                            <div class="stat-value" id="statIntents">0</div>
                         </div>
-                        <div class="info-msg" style="border-left-color: #8b5cf6; text-align: center;">
-                            <div style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Positions</div>
-                            <div id="stat-positions" style="font-size: 24px; font-weight: 700; color: #8b5cf6; margin-top: 4px;">0</div>
+                        <div class="stat-card">
+                            <div class="stat-label">Executed</div>
+                            <div class="stat-value" id="statExecuted">0</div>
                         </div>
                     </div>
-
-                    <div id="auditTableContainer"></div>
+                    <table class="table" id="auditTable">
+                        <thead>
+                            <tr>
+                                <th>Strategy</th>
+                                <th>Status</th>
+                                <th>Time</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditBody">
+                            <tr>
+                                <td colspan="4" style="text-align: center;">No audit logs yet</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
     </main>
 
     <script>
-        const API = '/dashboard';
-        let strategies = [];
-        let activeIntents = new Map();
-
-        function updateStrategyType() {
-            const type = document.getElementById('stratType').value;
-            const container = document.getElementById('legFields');
-            let html = '<h3 style="margin-bottom: 12px;">Strategy Parameters</h3>';
-            
-            if (type === 'dnss') {
-                html += `
-                    <div class="field">
-                        <label>CE Offset (pts)</label>
-                        <input type="number" value="100" step="50">
-                    </div>
-                    <div class="field">
-                        <label>PE Offset (pts)</label>
-                        <input type="number" value="100" step="50">
-                    </div>
-                    <div class="field">
-                        <label>Entry Delta</label>
-                        <input type="number" value="0.20" step="0.05" min="0" max="1">
-                    </div>
-                `;
-            }
-            container.innerHTML = html;
-        }
-
-        function submitStrategy(event) {
-            event.preventDefault();
-
-            const name = document.getElementById('stratName').value.trim();
-            const schedule = document.getElementById('schedule').value;
-
-            if (!name || !schedule) {
-                showResult(false, '⚠️ Fill all required fields');
-                return;
-            }
-
-            const data = {
-                name: name,
-                schedule: schedule,
-                identity: {
-                    underlying: document.getElementById('underlying').value,
-                    strategy_type: document.getElementById('stratType').value,
-                },
-                timing: {
-                    entry_time: document.getElementById('entryTime').value,
-                    exit_time: document.getElementById('exitTime').value,
-                },
-                risk: {
-                    target_profit: parseFloat(document.getElementById('targetProfit').value) || 0,
-                    stop_loss: parseFloat(document.getElementById('stopLoss').value) || 0,
-                    max_positions: parseInt(document.getElementById('maxPositions').value) || 1,
-                },
-                status: 'IDLE',
-                created_at: new Date().toISOString(),
-            };
-
-            console.log('💾 Saving strategy:', data);
-
-            fetch(`${API}/strategy/config/save-all`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            })
-            .then(r => r.json())
-            .then(result => {
-                console.log('✅ Saved:', result);
-                showResult(true, `✅ SAVED\n\n${name}\nSchedule: ${schedule}\nStatus: IDLE\n\nReady for execution`);
-                document.getElementById('strategyForm').reset();
-                updateStrategyType();
-                setTimeout(() => {
-                    loadStrategies();
-                    switchTab('control');
-                }, 1500);
-            })
-            .catch(e => {
-                console.error('❌ Error:', e);
-                showResult(false, `❌ Save Failed\n\n${e.message}`);
-            });
-        }
-
-        function showResult(success, msg) {
-            const card = document.getElementById('resultCard');
-            const title = document.getElementById('resultTitle');
-            const message = document.getElementById('resultMessage');
-            
-            card.className = 'result-card ' + (success ? '' : 'error') + ' show';
-            title.textContent = success ? '✅ SUCCESS' : '❌ ERROR';
-            message.textContent = msg;
-            
-            if (!success) setTimeout(() => card.classList.remove('show'), 5000);
-        }
-
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            
-            document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
-
-            if (tabName === 'control') {
-                loadStrategies();
-            } else if (tabName === 'monitor') {
-                refreshMonitor();
-            } else if (tabName === 'audit') {
-                loadAudit();
-            }
-        }
-
+        // Load strategies
         async function loadStrategies() {
             try {
-                const r = await fetch(`${API}/strategy/configs`, { credentials: 'include' });
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                
-                const data = await r.json();
-                strategies = data.configs || [];
-                console.log(`✅ Loaded ${strategies.length} strategies`);
-                renderStrategies();
+                const res = await fetch('/strategy/configs');
+                const data = await res.json();
+                renderStrategies(data.configs || []);
             } catch (e) {
-                console.error('❌ Load error:', e);
-                document.getElementById('strategyList').innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Failed to load</div></div>`;
+                console.error('Load error:', e);
+                showAlert('Failed to load strategies', 'error');
             }
         }
 
-        function renderStrategies() {
-            const container = document.getElementById('strategyList');
-            
-            if (!strategies.length) {
-                container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>No strategies saved<br><small>Create one using builder ←</small></div></div>`;
-                return;
-            }
-
-            let html = '';
-            for (const s of strategies) {
-                const status = s.status || 'IDLE';
-                const isRunning = status === 'RUNNING';
-                const btnKey = `${s.name}-start`;
-                const isLoading = activeIntents.has(btnKey);
-                
-                html += `<div class="strategy-item ${isRunning ? 'running' : ''}">
-                    <div class="strategy-header">
-                        <div class="strategy-title">
-                            <div class="strategy-name">${s.name}</div>
-                            <div class="strategy-meta">${s.identity?.underlying} · ${s.identity?.strategy_type?.toUpperCase()} · ${s.schedule || 'Manual'}</div>
-                        </div>
-                        <span class="status-badge status-${status.toLowerCase()}">● ${status}</span>
-                    </div>
-
-                    <div class="strategy-config">
-                        <div class="config-row">
-                            <span class="config-label">Entry:</span>
-                            <span class="config-value">${s.timing?.entry_time || '--:--'}</span>
-                        </div>
-                        <div class="config-row">
-                            <span class="config-label">Exit:</span>
-                            <span class="config-value">${s.timing?.exit_time || '--:--'}</span>
-                        </div>
-                        <div class="config-row">
-                            <span class="config-label">Target / SL:</span>
-                            <span class="config-value">₹${s.risk?.target_profit || 0} / ₹${s.risk?.stop_loss || 0}</span>
-                        </div>
-                    </div>
-
-                    <div class="strategy-actions">
-                        <button class="btn-sm btn-success" 
-                                onclick="startStrategy('${s.name}')" 
-                                ${isRunning || isLoading ? 'disabled' : ''}>
-                            ${isLoading ? '⏳' : '▶'} Start
-                        </button>
-                        <button class="btn-sm btn-warning" 
-                                onclick="pauseStrategy('${s.name}')" 
-                                ${status !== 'RUNNING' ? 'disabled' : ''}>
-                            ⏸ Pause
-                        </button>
-                        <button class="btn-sm btn-danger" 
-                                onclick="stopStrategy('${s.name}')" 
-                                ${status === 'IDLE' ? 'disabled' : ''}>
-                            ⏹ Stop
-                        </button>
-                    </div>
-                </div>`;
-            }
-            
-            container.innerHTML = html;
-            updateStatusBanner();
-        }
-
-        async function startStrategy(name) {
-            if (!confirm(`Start "${name}" with DAILY schedule?\n\nAutomated execution will begin.`)) return;
-
-            const key = `${name}-start`;
-            if (activeIntents.has(key)) return;
-
-            activeIntents.set(key, true);
-            renderStrategies();
-
-            try {
-                const r = await fetch(`${API}/intent/strategy`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ strategy_name: name, action: 'ENTRY', reason: 'DASHBOARD' })
-                });
-
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-
-                const result = await r.json();
-                
-                // Update status
-                await fetch(`${API}/strategy/config/${name}/status`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'RUNNING' })
-                });
-
-                console.log('✅ Started:', result);
-                showResult(true, `✅ EXECUTION STARTED\n\n${name}\nIntent: ${result.intent_id}\n\n🔄 Status: RUNNING\nMonitor in Monitor tab →`);
-                
-                setTimeout(() => { loadStrategies(); loadAudit(); }, 1000);
-            } catch (e) {
-                console.error('❌ Error:', e);
-                showResult(false, `❌ FAILED\n\n${e.message}`);
-            } finally {
-                activeIntents.delete(key);
-               renderStrategies();
-            }
-        }
-
-        async function pauseStrategy(name) {
-            if (!confirm(`Pause "${name}"?`)) return;
-            try {
-                await fetch(`${API}/intent/strategy`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ strategy_name: name, action: 'ADJUST' })
-                });
-                await fetch(`${API}/strategy/config/${name}/status`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'PAUSED' })
-                });
-                showResult(true, `⏸ PAUSED\n\n${name}\nPositions: OPEN`);
-                setTimeout(() => loadStrategies(), 800);
-            } catch (e) {
-                showResult(false, `❌ Error: ${e.message}`);
-            }
-        }
-
-        async function stopStrategy(name) {
-            if (!confirm(`STOP "${name}"?\n\n⚠️ All positions will exit!`)) return;
-            try {
-                await fetch(`${API}/intent/strategy`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ strategy_name: name, action: 'FORCE_EXIT' })
-                });
-                await fetch(`${API}/strategy/config/${name}/status`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'STOPPED' })
-                });
-                showResult(true, `🛑 STOPPED\n\n${name}\n⚠️ Positions exited`);
-                setTimeout(() => loadStrategies(), 800);
-            } catch (e) {
-                showResult(false, `❌ Error: ${e.message}`);
-            }
-        }
-
-        async function refreshMonitor() {
-            try {
-                const r = await fetch(`${API}/monitoring/strategy-positions`, { credentials: 'include' });
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                
-                const data = await r.json();
-                const strats = data.strategy_positions || [];
-
-                let html = '';
-                if (!strats.length) {
-                    html = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>No running strategies</div></div>`;
-                } else {
-                    for (const s of strats) {
-                        const pnl = s.total_pnl || 0;
-                        const pnlColor = pnl >= 0 ? '#22c55e' : '#ef4444';
-                        const posCount = (s.positions || []).reduce((sum, p) => sum + (p.legs || []).length, 0);
-                        
-                        html += `<div class="section-header" onclick="toggleSection(event)">
-                            <span class="section-toggle">▶</span>
-                            <span class="section-title">${s.strategy_name}</span>
-                            <div style="margin-left: auto; font-size: 10px;">
-                                <span style="color: ${pnlColor}; font-weight: 700; margin-right: 12px;">PnL: ₹${pnl.toFixed(0)}</span>
-                                <span style="color: var(--muted);">Legs: ${posCount}</span>
+        // Render strategy list
+        function renderStrategies(strategies) {
+            const html = strategies.length > 0
+                ? strategies.map(s => `
+                    <div class="strategy-item ${s.status === 'RUNNING' ? 'running' : ''}">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <div class="strategy-name">${s.name}</div>
+                                <div class="strategy-meta">${s.type} • ${s.underlying}</div>
                             </div>
+                            <span class="status-badge badge-${s.status.toLowerCase()}">${s.status}</span>
                         </div>
-                        <div class="section-content">
-                            <table class="table-compact">
-                                <thead><tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>P&L</th></tr></thead>
-                                <tbody>`;
-                        
-                        for (const p of (s.positions || [])) {
-                            for (const l of (p.legs || [])) {
-                                const lpnl = l.pnl || 0;
-                                html += `<tr>
-                                    <td><strong>${l.symbol}</strong></td>
-                                    <td>${l.qty}</td>
-                                    <td>${parseFloat(l.ltp || 0).toFixed(2)}</td>
-                                    <td style="color: ${lpnl >= 0 ? '#22c55e' : '#ef4444'}; font-weight: 600;">₹${lpnl.toFixed(0)}</td>
-                                </tr>`;
-                            }
-                        }
-                        
-                        html += `</tbody></table></div>`;
-                    }
-                }
-                
-                document.getElementById('monitorContent').innerHTML = html;
-            } catch (e) {
-                console.error('❌ Monitor error:', e);
-            }
+                        <div class="strategy-config">
+                            <div class="config-item"><div class="config-label">Freq:</div><div class="config-value">${s.frequency}</div></div>
+                            <div class="config-item"><div class="config-label">Target:</div><div class="config-value">₹${s.target_profit || 0}</div></div>
+                            <div class="config-item"><div class="config-label">SL:</div><div class="config-value">₹${s.stop_loss || 0}</div></div>
+                            <div class="config-item"><div class="config-label">Entry:</div><div class="config-value">${s.entry_time}</div></div>
+                        </div>
+                        <div class="strategy-actions">
+                            <button class="btn-sm btn-start" onclick="startStrategy('${s.id}')">▶ Start</button>
+                            <button class="btn-sm btn-pause" onclick="pauseStrategy('${s.id}')">⏸ Pause</button>
+                            <button class="btn-sm btn-stop" onclick="stopStrategy('${s.id}')">⏹ Stop</button>
+                        </div>
+                    </div>
+                `).join('')
+                : '<div class="empty-state"><div class="empty-icon">📭</div><p>No strategies yet. Create one using the builder.</p></div>';
+
+            document.getElementById('strategyList').innerHTML = html;
         }
 
-        async function loadAudit() {
+        // Submit form
+        async function submitStrategy(e) {
+            e.preventDefault();
+            const btn = e.target.querySelector('.btn-submit');
+            btn.disabled = true;
+
+            const data = {
+                name: document.getElementById('stratName').value,
+                type: document.getElementById('stratType').value,
+                underlying: document.getElementById('underlying').value,
+                frequency: document.getElementById('schedule').value,
+                entry_time: document.getElementById('entryTime').value,
+                exit_time: document.getElementById('exitTime').value,
+                target_profit: parseFloat(document.getElementById('targetProfit').value) || 0,
+                stop_loss: parseFloat(document.getElementById('stopLoss').value) || 0,
+                max_positions: parseInt(document.getElementById('maxPositions').value) || 1,
+            };
+
             try {
-                const r = await fetch(`${API}/monitoring/all-strategies-status`, { credentials: 'include' });
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                
-                const data = await r.json();
-                const audit = data.audit || {};
-                const strats = data.strategies || [];
-
-                document.getElementById('stat-running').textContent = audit.strategies_running || 0;
-                document.getElementById('stat-paused').textContent = audit.strategies_paused || 0;
-                document.getElementById('stat-intents').textContent = audit.pending_intents_in_queue || 0;
-                document.getElementById('stat-positions').textContent = audit.active_positions_total || 0;
-
-                let tableHtml = '<table class="table-compact" style="margin-top: 20px;"><thead><tr><th>Strategy</th><th>Status</th><th>Pending</th><th>Positions</th></tr></thead><tbody>';
-                
-                for (const s of strats) {
-                    tableHtml += `<tr>
-                        <td><strong>${s.name}</strong></td>
-                        <td><span class="status-badge status-${s.status.toLowerCase()}">● ${s.status}</span></td>
-                        <td>${s.intent_count}</td>
-                        <td>${s.position_count}</td>
-                    </tr>`;
+                const res = await fetch('/strategy/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+                if (res.ok) {
+                    showAlert('✅ Strategy saved successfully', 'success');
+                    document.getElementById('form').reset();
+                    setTimeout(loadStrategies, 800);
+                } else {
+                    showAlert('❌ Failed to save strategy', 'error');
                 }
-                
-                tableHtml += '</tbody></table>';
-                document.getElementById('auditTableContainer').innerHTML = tableHtml;
-                
-                updateStatusBanner();
             } catch (e) {
-                console.error('❌ Audit error:', e);
+                showAlert(`❌ Error: ${e.message}`, 'error');
+            } finally {
+                btn.disabled = false;
             }
         }
 
-        function toggleSection(e) {
-            const content = e.currentTarget.nextElementSibling;
-            const toggle = e.currentTarget.querySelector('.section-toggle');
-            content.classList.toggle('open');
-            toggle.classList.toggle('open');
+        // Control actions
+        async function startStrategy(id) {
+            await sendIntent(id, 'START');
         }
 
-        function updateStatusBanner() {
-            const running = strategies.filter(s => s.status === 'RUNNING').length;
-            const banner = document.getElementById('statusBanner');
-            
-            if (running > 0) {
-                banner.style.display = 'block';
-                document.getElementById('statusText').textContent = `${running} strateg${running > 1 ? 'ies' : 'y'} executing | Monitor active positions`;
-            } else {
-                banner.style.display = 'none';
+        async function pauseStrategy(id) {
+            await sendIntent(id, 'PAUSE');
+        }
+
+        async function stopStrategy(id) {
+            await sendIntent(id, 'STOP');
+        }
+
+        async function sendIntent(id, action) {
+            try {
+                const res = await fetch('/intent/strategy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy_id: id, action })
+                });
+                if (res.ok) {
+                    showAlert(`✅ ${action} command sent`, 'success');
+                    setTimeout(loadStrategies, 500);
+                }
+            } catch (e) {
+                showAlert(`❌ Error: ${e.message}`, 'error');
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Strategy Manager initialized');
-            updateStrategyType();
-        });
+        // Tab switching
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tab).classList.add('active');
+        }
+
+        // Alert helper
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            const title = type === 'success' ? message : message;
+            alert.innerHTML = `<div class="alert-title">${title}</div>`;
+            alert.className = `alert show alert-${type}`;
+            setTimeout(() => alert.classList.remove('show'), 3500);
+        }
+
+        // Initialize
+        loadStrategies();
+        setInterval(loadStrategies, 5000);
     </script>
 </body>
 </html>

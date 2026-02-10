@@ -177,7 +177,6 @@
                 `;
             }
         });
-        });
         
         frozenContainer.innerHTML = niftyHtml;
         

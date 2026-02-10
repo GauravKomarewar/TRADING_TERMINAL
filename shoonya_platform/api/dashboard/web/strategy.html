@@ -627,9 +627,16 @@
         // Load strategies
         async function loadStrategies() {
             try {
-                const res = await fetch('/strategy/configs');
+                const res = await fetch('/dashboard/strategy/configs', {
+                    credentials: 'include'
+                });
                 if (!res.ok) {
                     console.error(`API error: ${res.status} ${res.statusText}`);
+                    if (res.status === 401) {
+                        showAlert('Session expired. Please login again.', 'error');
+                        window.location.href = '/';
+                        return;
+                    }
                     showAlert(`Failed to load strategies (HTTP ${res.status})`, 'error');
                     renderStrategies([]);
                     return;
@@ -716,10 +723,11 @@
             };
 
             try {
-                const res = await fetch('/strategy/config/save-all', {
+                const res = await fetch('/dashboard/strategy/config/save-all', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    credentials: 'include'
                 });
 
                 if (!res.ok) {
@@ -763,7 +771,8 @@
                 const res = await fetch('/dashboard/intent/strategy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    credentials: 'include'
                 });
 
                 if (!res.ok) {

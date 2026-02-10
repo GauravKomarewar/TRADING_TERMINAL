@@ -236,6 +236,7 @@ class CommandService:
         self,
         *,
         scope,
+        strategy_name=None,  # 🔥 NEW: filter exits by strategy
         symbols,
         product_type,
         reason,
@@ -245,9 +246,11 @@ class CommandService:
         Route EXIT intent to PositionExitService for execution.
         
         This is the single gateway for all EXIT requests (strategy, RMS, manual, API).
+        Now supports strategy-scoped exits for safer multi-strategy deployments.
         """
         self.position_exit_service.exit_positions(
             scope=scope,
+            strategy_name=strategy_name,
             symbols=symbols,
             product_scope=product_type,
             reason=reason,

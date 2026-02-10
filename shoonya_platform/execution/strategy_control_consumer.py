@@ -184,10 +184,10 @@ class StrategyControlConsumer:
                     else:
                         raise
 
-
             elif action == "EXIT":
                 self.strategy_manager.request_exit(
                     scope="STRATEGY",
+                    strategy_name=strategy_name,  # 🔥 NEW: scope by strategy
                     symbols=None,
                     product_type="ALL",
                     reason="DASHBOARD_EXIT",
@@ -197,6 +197,7 @@ class StrategyControlConsumer:
             elif action == "FORCE_EXIT":
                 self.strategy_manager.request_exit(
                     scope="STRATEGY",
+                    strategy_name=strategy_name,  # 🔥 NEW: scope by strategy
                     symbols=None,
                     product_type="ALL",
                     reason="FORCE_EXIT",

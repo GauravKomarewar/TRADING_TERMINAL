@@ -197,6 +197,11 @@ class StrategyEntryRequest(BaseModel):
 
     poll_interval: Optional[float] = 2.0
     cooldown_seconds: Optional[int] = 0
+    
+    # 🔥 NEW: Schedule support for automated strategy execution
+    run_mode: Optional[Literal["MANUAL", "EVERY_DAY", "SPECIFIC_DAY", "ONE_TIME"]] = "MANUAL"
+    schedule_time: Optional[str] = None        # HH:MM for scheduled start (ISO time format)
+    schedule_day: Optional[int] = None         # 0=Monday, 1=Tuesday, ..., 6=Sunday (for SPECIFIC_DAY)
 
     @model_validator(mode="after")
     def validate_time_fields(self):

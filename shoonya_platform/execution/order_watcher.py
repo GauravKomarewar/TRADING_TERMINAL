@@ -177,7 +177,16 @@ class OrderWatcherEngine(threading.Thread):
                     broker_id,
                 )
 
-                # 🔒 BROKER-TRUTH CONVERGENCE POINT
+                # � NEW: Notify strategy of fill via on_fill() callback
+                try:
+                    self._notify_strategy_fill(record, bo)
+                except Exception:
+                    logger.exception(
+                        "OrderWatcher: on_fill callback failed | cmd_id=%s",
+                        record.command_id,
+                    )
+
+                # �🔒 BROKER-TRUTH CONVERGENCE POINT
                 self._reconcile_execution_guard(record.strategy_name)
 
     # --------------------------------------------------
@@ -217,6 +226,129 @@ class OrderWatcherEngine(threading.Thread):
                 strategy_name,
                 e,
             )
+
+    # --------------------------------------------------
+    # 🔥 ON_FILL CALLBACK — Wire strategy fill notifications
+    # --------------------------------------------------
+
+    def _notify_strategy_fill(self, record, broker_order):
+        """
+        Extract fill details from broker order and notify strategy via on_fill().
+
+        Broker order format:
+        {
+          "norenordno": "string",
+          "status": "COMPLETE",
+          "tsym": "SYMBOL",
+          "side": "BUY" / "SELL",
+          "fillshares": qty,
+          "avgprc": price,
+          "prcflag": "LTP" / etc,
+          ... (delta may or may not be present)
+        }
+
+        Route returned intents through CommandService.
+        """
+        try:
+            symbol = broker_order.get("tsym", record.symbol)
+            side = (broker_order.get("side") or "").upper()
+            qty = int(broker_order.get("fillshares", 0))
+            price = float(broker_order.get("avgprc", 0))
+            delta = broker_order.get("delta")  # May be None or string
+
+            if not symbol or not side or qty == 0:
+                logger.warning(
+                    f"Fill callback: incomplete fill data | cmd_id={record.command_id}"
+                )
+                return
+
+            # Try to parse delta
+            try:
+                delta = float(delta) if delta else None
+            except (ValueError, TypeError):
+                delta = None
+
+            logger.info(
+                f"FILL_CALLBACK | cmd_id={record.command_id} | "
+                f"{symbol} {side} {qty} @ {price} | delta={delta}"
+            )
+
+            # Get all live strategies and call on_fill on each
+            # (they'll ignore fills that aren't theirs)
+            intents = self._collect_fill_callbacks(
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                price=price,
+                delta=delta,
+                strategy_name=record.strategy_name,
+            )
+
+            # Route collected intents through CommandService
+            for intent in intents:
+                try:
+                    self.bot.command_service.submit(intent, execution_type="ADJUSTMENT")
+                    logger.info(
+                        f"FILL_INTENT_ROUTED | cmd_id={record.command_id} | "
+                        f"intent={intent.side} {intent.symbol}"
+                    )
+                except Exception:
+                    logger.exception(
+                        "OrderWatcher: failed to route fill intent | cmd_id=%s",
+                        record.command_id,
+                    )
+
+        except Exception:
+            logger.exception(
+                "OrderWatcher: _notify_strategy_fill failed | cmd_id=%s",
+                record.command_id,
+            )
+
+    def _collect_fill_callbacks(
+        self, symbol: str, side: str, qty: int, price: float, delta: float, strategy_name: str
+    ) -> list:
+        """
+        Call on_fill() on all live strategies matching the filled symbol/strategy.
+
+        Returns list of UniversalOrderCommand intents for adjustments/exit.
+        """
+        intents = []
+
+        with self.bot._live_strategies_lock:
+            strategies = list(self.bot._live_strategies.items())
+
+        for strat_name, (strategy, market) in strategies:
+            # Only notify the strategy that placed the order
+            # (or all strategies if strategy_name is unknown)
+            if strategy_name and strat_name != strategy_name:
+                continue
+
+            if not hasattr(strategy, "on_fill"):
+                continue
+
+            try:
+                result = strategy.on_fill(
+                    symbol=symbol,
+                    side=side,
+                    price=price,
+                    qty=qty,
+                    delta=delta,
+                )
+
+                if result:
+                    intents.extend(result)
+                    logger.info(
+                        f"Strategy on_fill returned {len(result)} intents | {strat_name}"
+                    )
+
+            except Exception:
+                logger.exception(
+                    "OrderWatcher: strategy.on_fill() failed | strategy=%s | symbol=%s",
+                    strat_name,
+                    symbol,
+                )
+
+        return intents
 
     # --------------------------------------------------
     # Direction-aware broker map (ExecutionGuard v1.3)

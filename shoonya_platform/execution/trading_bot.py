@@ -405,9 +405,10 @@ class ShoonyaBot:
             logger.warning("Telegram configuration missing - notifications disabled")
 
         # -------------------------------------------------
-        # 📈 STRATEGY REGISTRY
+        # 📈 STRATEGY REGISTRY (THREAD-SAFE)
         # -------------------------------------------------
         self._live_strategies = {}  # strategy_name -> (strategy, market)
+        self._live_strategies_lock = threading.Lock()  # 🔒 Thread-safe access
 
         # -------------------------------------------------
         # ♻️ PHASE-2 RECOVERY (SAFE, NON-ACTIVE)
@@ -444,15 +445,16 @@ class ShoonyaBot:
 
 
     def register_live_strategy(self, strategy_name, strategy, market):
-        if strategy_name in self._live_strategies:
-            logger.warning(f"⚠️ Strategy already registered: {strategy_name}")
-            return
-        """
-        READ-ONLY registration for reporting only.
-        NO trading, NO execution, NO mutation.
-        """
-        self._live_strategies[strategy_name] = (strategy, market)
-        logger.info(f"📡 Registered live strategy for reporting: {strategy_name}")
+        with self._live_strategies_lock:
+            if strategy_name in self._live_strategies:
+                logger.warning(f"⚠️ Strategy already registered: {strategy_name}")
+                return
+            """
+            READ-ONLY registration for reporting only.
+            NO trading, NO execution, NO mutation.
+            """
+            self._live_strategies[strategy_name] = (strategy, market)
+            logger.info(f"📡 Registered live strategy for reporting: {strategy_name}")
 
   
     # ==================================================
@@ -502,11 +504,12 @@ class ShoonyaBot:
                 logger.exception("Error processing strategy intent")
 
     def request_entry(self, strategy_name: str):
-        """Trigger a strategy ENTRY cycle for a registered live strategy."""
-        try:
-            strategy, market = self._live_strategies[strategy_name]
-        except KeyError:
-            logger.error("Request ENTRY failed: strategy not registered: %s", strategy_name)
+        with self._live_strategies_lock:
+            try:
+                strategy, market = self._live_strategies[strategy_name]
+            except KeyError:
+                logger.error("Request ENTRY failed: strategy not registered: %s", strategy_name)
+                logger.error("Request ENTRY failed: strategy not registered: %s", strategy_name)
             raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
 
         try:
@@ -526,11 +529,12 @@ class ShoonyaBot:
             logger.exception("Strategy ENTRY failed | %s", strategy_name)
 
     def request_adjust(self, strategy_name: str):
-        """Trigger an ADJUST cycle on a registered strategy."""
-        try:
-            strategy, market = self._live_strategies[strategy_name]
-        except KeyError:
-            logger.error("Request ADJUST failed: strategy not registered: %s", strategy_name)
+        with self._live_strategies_lock:
+            try:
+                strategy, market = self._live_strategies[strategy_name]
+            except KeyError:
+                logger.error("Request ADJUST failed: strategy not registered: %s", strategy_name)
+                logger.error("Request ADJUST failed: strategy not registered: %s", strategy_name)
             raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
 
         try:
@@ -552,6 +556,7 @@ class ShoonyaBot:
         self,
         *,
         scope,
+        strategy_name=None,  # 🔥 NEW: strategy-scoped exits
         symbols=None,
         product_type="ALL",
         reason,
@@ -560,11 +565,14 @@ class ShoonyaBot:
         """
         Route EXIT intent to CommandService for position-driven execution.
         
+        Now supports strategy-scoped exits: only exits positions created by that strategy.
+        
         Never constructs orders directly.
         PositionExitService handles all exit logic (broker-driven).
         """
         self.command_service.handle_exit_intent(
             scope=scope,
+            strategy_name=strategy_name,
             symbols=symbols,
             product_type=product_type,
             reason=reason,
@@ -585,7 +593,9 @@ class ShoonyaBot:
         """Start the scheduler for periodic reports in separate thread"""
         def run_scheduler():
             def send_strategy_reports():
-                for name, (strategy, market) in self._live_strategies.items():
+                with self._live_strategies_lock:
+                    items = list(self._live_strategies.items())
+                for name, (strategy, market) in items:
                     try:
                         report = build_strategy_report(strategy, market)
                         if report:
@@ -1365,11 +1375,12 @@ class ShoonyaBot:
         market_cls,
         market_config,
     ):
-        if strategy_name in self._live_strategies:
-            raise RuntimeError(f"Strategy already running: {strategy_name}")
+        with self._live_strategies_lock:
+            if strategy_name in self._live_strategies:
+                raise RuntimeError(f"Strategy already running: {strategy_name}")
 
-        # 1️⃣ Create market
-        market = market_cls(**market_config)
+            # 1️⃣ Create market
+            market = market_cls(**market_config)
 
         # 2️⃣ Create strategy (CONFIG IS NOW RESOLVED)
         # Get lot_qty from config or use default

@@ -761,7 +761,7 @@ def submit_basket_intent(
 # ==================================================
 
 @router.get("/option-chain/active-symbols")
-def list_active_option_chain_symbols():
+def list_active_option_chain_symbols(ctx=Depends(require_dashboard_auth)):
     """
     Active option-chain symbols derived from supervisor DB files.
 
@@ -778,6 +778,7 @@ def list_active_option_chain_symbols():
 def list_active_option_chain_expiries(
     exchange: str = Query(..., description="NFO / BFO"),
     symbol: str = Query(..., description="NIFTY / BANKNIFTY / SENSEX"),
+    ctx=Depends(require_dashboard_auth),
 ):
     """
     Active option-chain expiries derived from supervisor DB files.
@@ -786,6 +787,7 @@ def list_active_option_chain_expiries(
     - ✅ Supervisor-authoritative
     - ✅ Process-safe
     - ✅ Restart-safe
+    - ✅ Auth-protected
     - ❌ No ScriptMaster access
     - ❌ No live feed access
     - ❌ No DB reads (filenames only)
@@ -809,16 +811,18 @@ def get_option_chain(
         300.0,
         description="Maximum allowed snapshot age in seconds (300 = 5 min)",
     ),
+    ctx=Depends(require_dashboard_auth),
 ):
     """
     Canonical Option Chain API (READ-ONLY)
 
     Guarantees:
+    - ✅ Auth-protected (dashboard users only)
+    - ✅ Single-writer, many-reader safe
     - ❌ No live feed interaction
     - ❌ No ScriptMaster access
     - ❌ No Greek calculation
     - ❌ No DB path exposed to frontend
-    - ✅ Single-writer, many-reader safe
     """
 
     db_file = DATA_DIR / f"{exchange}_{symbol}_{expiry}.sqlite"
@@ -906,6 +910,7 @@ def get_nearest_option(
     metric: str = Query("ltp", description="Column to match: ltp, iv, delta, etc."),
     option_type: Optional[str] = Query(None, description="CE / PE or None"),
     max_age: float = Query(5.0, description="Max allowed snapshot age in seconds"),
+    ctx=Depends(require_dashboard_auth),
 ):
     db_file = DATA_DIR / f"{exchange}_{symbol}_{expiry}.sqlite"
 

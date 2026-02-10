@@ -64,17 +64,29 @@ class PositionExitService:
     ) -> None:
         """
         Register EXIT intents using broker position book as truth.
+        
+        If strategy_name is provided, only exits positions created by that strategy.
+        This prevents cross-strategy position exits in multi-strategy deployments.
 
         NO execution happens here.
         """
         logger.critical(
-            "EXIT REQUEST | scope=%s symbols=%s product=%s reason=%s source=%s",
+            "EXIT REQUEST | scope=%s strategy=%s symbols=%s product=%s reason=%s source=%s",
             scope,
+            strategy_name,
             symbols,
             product_scope,
             reason,
             source,
         )
+
+        # 🔥 NEW: If strategy-scoped, find symbols created by that strategy
+        if strategy_name:
+            symbols = self._get_strategy_symbols(strategy_name)
+            if not symbols:
+                logger.info("EXIT: no positions for strategy: %s", strategy_name)
+                return
+            scope = "SYMBOLS"  # Override to filter by our symbols
 
         positions = self.client.get_positions()
         if not positions:
@@ -130,8 +142,9 @@ class PositionExitService:
             return
 
         logger.critical(
-            "EXIT INTENTS REGISTERING | count=%d",
+            "EXIT INTENTS REGISTERING | count=%d | strategy=%s",
             len(exit_legs),
+            strategy_name,
         )
 
         for leg in exit_legs:
@@ -141,6 +154,40 @@ class PositionExitService:
                 source=source,
                 strategy_name=strategy_name,
             )
+
+    # --------------------------------------------------
+    # 🔥 NEW: Get symbols created by strategy
+    # --------------------------------------------------
+
+    def _get_strategy_symbols(self, strategy_name: str) -> List[str]:
+        """
+        Query OrderRepository to find all symbols created by this strategy.
+        
+        Returns list of unique symbols that this strategy has open orders for.
+        """
+        try:
+            # Get all orders for this strategy
+            all_orders = self.repo.get_orders() or []
+            
+            # Filter to orders created by this strategy that are still active
+            strategy_orders = [
+                o for o in all_orders
+                if o.strategy_name == strategy_name and o.status in ("CREATED", "SENT_TO_BROKER", "EXECUTED")
+            ]
+            
+            # Extract unique symbols
+            symbols = list(set(o.symbol for o in strategy_orders))
+            logger.info(
+                "STRATEGY_SYMBOLS | strategy=%s | symbols=%s",
+                strategy_name,
+                symbols,
+            )
+            
+            return symbols
+            
+        except Exception:
+            logger.exception("Failed to get strategy symbols: %s", strategy_name)
+            return []
 
     # --------------------------------------------------
     # Internal helpers

@@ -9,74 +9,113 @@
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
         /* Top Navigation */
-        .main-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; background: var(--panel-2); padding: 0 var(--spacing-md); }
-        .main-tab { padding: 14px 18px; cursor: pointer; border-bottom: 3px solid transparent; color: var(--muted); font-weight: 600; transition: all .2s; white-space: nowrap; }
-        .main-tab:hover { color: var(--text); }
-        .main-tab.active { color: var(--primary); border-bottom-color: var(--primary); margin-bottom: -2px; }
+        .main-tabs { display: flex; gap: 0; border-bottom: 3px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; background: linear-gradient(180deg, var(--panel-2) 0%, var(--panel) 100%); }
+        .main-tab { padding: 16px 24px; cursor: pointer; border-bottom: 4px solid transparent; color: var(--muted); font-weight: 600; transition: all .25s; white-space: nowrap; font-size: 14px; }
+        .main-tab:hover { color: var(--text); background: var(--panel-2); }
+        .main-tab.active { color: var(--primary); border-bottom-color: var(--primary); margin-bottom: -3px; }
 
         .tab-panel { display: none; }
-        .tab-panel.active { display: block; }
+        .tab-panel.active { display: block; animation: fadeIn 0.2s ease-in; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         /* Builder Tabs */
-        .builder-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; }
-        .builder-tab { padding: 10px 14px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; white-space: nowrap; }
-        .builder-tab:hover { color: var(--text); }
+        .builder-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; }
+        .builder-tab { padding: 12px 16px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; transition: all .2s; white-space: nowrap; }
+        .builder-tab:hover { color: var(--text); background: var(--panel-2); }
         .builder-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
         .builder-pane { display: none; }
         .builder-pane.active { display: block; }
 
         /* Strategy Items */
-        .strategy-item { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; margin-bottom: 8px; display: grid; grid-template-columns: 200px 1fr 200px auto; gap: 12px; align-items: center; }
-        .strategy-name { font-weight: 600; color: var(--text); }
-        .strategy-timing { display: flex; gap: 8px; align-items: center; }
-        .strategy-timing select { padding: 4px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); color: var(--text); }
-        .strategy-actions { display: flex; gap: 4px; }
-        .status-pill { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-        .status-idle { background: rgba(255,255,255,.06); color: var(--muted); }
-        .status-running { background: rgba(34,197,94,.12); color: #22c55e; }
-        .status-paused { background: rgba(234,179,8,.12); color: #eab308; }
+        .strategy-item { 
+            background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%);
+            border: 1px solid var(--border); 
+            border-radius: var(--radius-md); 
+            padding: 16px; 
+            margin-bottom: 12px; 
+            display: grid; 
+            grid-template-columns: 220px 1fr 200px auto; 
+            gap: 16px; 
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: all .2s;
+        }
+        .strategy-item:hover { border-color: var(--primary); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .strategy-name { font-weight: 700; color: var(--text); font-size: 14px; }
+        .strategy-subtitle { font-size: 10px; color: var(--muted); margin-top: 4px; }
+        .strategy-timing { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .strategy-timing select { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); color: var(--text); font-weight: 500; }
+        .strategy-actions { display: flex; gap: 6px; align-items: center; }
+        .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-idle { background: rgba(255,255,255,.08); color: var(--muted); }
+        .status-running { background: rgba(34,197,94,.15); color: #22c55e; border: 1px solid #22c55e; }
+        .status-paused { background: rgba(234,179,8,.15); color: #eab308; border: 1px solid #eab308; }
+
+        /* Button States */
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-loading { position: relative; }
+        .btn-loading::after { content: ''; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
 
         /* Monitor Sections */
         .monitor-section { margin-bottom: 20px; }
-        .section-header { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; user-select: none; }
-        .section-header:hover { background: var(--panel); }
-        .section-toggle { display: inline-block; width: 16px; text-align: center; transition: transform .2s; }
+        .section-header { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            padding: 16px; 
+            background: linear-gradient(135deg, var(--panel-2) 0%, var(--panel) 100%);
+            border: 1px solid var(--border); 
+            border-radius: var(--radius-md); 
+            cursor: pointer; 
+            user-select: none;
+            transition: all .2s;
+        }
+        .section-header:hover { background: var(--panel); border-color: var(--primary); }
+        .section-toggle { display: inline-block; width: 16px; text-align: center; transition: transform .3s; font-weight: bold; }
         .section-toggle.open { transform: rotate(90deg); }
-        .section-title { font-weight: 600; color: var(--text); flex: 1; }
-        .section-summary { font-size: 11px; color: var(--muted); }
-        .section-content { display: none; padding: 12px; background: var(--panel); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+        .section-title { font-weight: 700; color: var(--text); flex: 1; font-size: 14px; }
+        .section-summary { font-size: 11px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+        .section-content { display: none; padding: 16px; background: var(--panel); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
         .section-content.open { display: block; }
 
+        /* Info Cards */
+        .info-card { background: var(--panel); border-left: 4px solid var(--primary); padding: 12px; border-radius: 4px; font-size: 11px; margin: 12px 0; }
+        .info-card strong { color: var(--primary); }
+
         /* Tables */
-        .table-compact { width: 100%; border-collapse: collapse; font-size: 10px; }
-        .table-compact th { background: var(--panel-2); padding: 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); }
-        .table-compact td { padding: 6px; border-bottom: 1px solid var(--border); }
+        .table-compact { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .table-compact th { background: var(--panel-2); padding: 10px; text-align: left; font-weight: 700; border-bottom: 2px solid var(--border); }
+        .table-compact td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
         .table-compact tr:hover { background: var(--panel-2); }
-        .greek { display: inline-block; padding: 2px 4px; background: var(--panel-2); border-radius: 3px; font-family: monospace; font-size: 10px; }
+        .greek { display: inline-block; padding: 3px 6px; background: var(--panel-2); border-radius: 3px; font-family: monospace; font-size: 10px; font-weight: 600; }
 
         /* Forms */
         .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
-        .field { display: flex; flex-direction: column; gap: 4px; }
-        label { font-size: 12px; font-weight: 500; }
-        input, select, textarea { padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); font-size: 12px; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
-        .card-footer { display: flex; gap: 8px; justify-content: flex-end; padding-top: var(--spacing-md); border-top: 1px solid var(--border); margin-top: var(--spacing-md); }
-        h3 { font-size: 14px; font-weight: 600; margin: 20px 0 12px; }
-        h4 { font-size: 12px; font-weight: 600; margin: 16px 0 8px; }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text); }
+        input, select, textarea { padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); font-size: 12px; transition: all .2s; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: var(--panel); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); }
+        .card-footer { display: flex; gap: 12px; justify-content: flex-end; padding-top: var(--spacing-md); border-top: 1px solid var(--border); margin-top: var(--spacing-md); }
+        h3 { font-size: 18px; font-weight: 700; margin: 20px 0 12px; }
+        h4 { font-size: 13px; font-weight: 700; margin: 16px 0 12px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-        .stat-badge { display: inline-block; padding: 4px 8px; background: var(--panel-2); border-radius: 4px; font-size: 10px; margin-right: 8px; margin-bottom: 4px; }
-        .summary-box { background: var(--panel); border: 1px solid var(--border); padding: 8px; border-radius: 4px; text-align: center; }
-        .summary-label { font-size: 10px; color: var(--muted); }
-        .summary-value { font-size: 14px; font-weight: 600; color: var(--primary); margin-top: 4px; }
-        .summary-2line { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; }
-        .summary-label-2line { color: var(--muted); }
-        .summary-value-2line { font-weight: 600; color: var(--text); }
-        .result { padding: 12px; border-radius: var(--radius-md); margin-bottom: var(--spacing-lg); display: none; }
-        .result.success { background: rgba(34, 197, 94, 0.1); color: #22c55e; border: 1px solid #22c55e; }
-        .result.error { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; }
+        .stat-badge { display: inline-block; padding: 6px 10px; background: var(--panel-2); border-radius: 4px; font-size: 11px; font-weight: 700; margin-right: 8px; margin-bottom: 4px; }
+        .summary-box { background: var(--panel); border: 1px solid var(--border); padding: 12px; border-radius: 4px; text-align: center; }
+        .summary-label { font-size: 11px; color: var(--muted); font-weight: 600; }
+        .summary-value { font-size: 18px; font-weight: 700; color: var(--primary); margin-top: 6px; }
+        .summary-2line { display: flex; justify-content: space-between; font-size: 12px; padding: 8px 0; }
+        .summary-label-2line { color: var(--muted); font-weight: 500; }
+        .summary-value-2line { font-weight: 700; color: var(--text); }
+        .result { padding: 16px; border-radius: var(--radius-md); margin-bottom: var(--spacing-lg); display: none; border-left: 4px solid; animation: slideDown 0.3s ease-out; }
+        .result.success { background: rgba(34, 197, 94, 0.08); color: #22c55e; border-left-color: #22c55e; }
+        .result.error { background: rgba(239, 68, 68, 0.08); color: #ef4444; border-left-color: #ef4444; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .grid { display: grid; gap: var(--spacing-md); }
         .grid.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-        @media(max-width: 768px) { .grid.grid-cols-4 { grid-template-columns: repeat(2, 1fr); } .strategy-item { grid-template-columns: 1fr; } }
+        @media(max-width: 1200px) { .strategy-item { grid-template-columns: 1fr; } }
+        @media(max-width: 768px) { .grid.grid-cols-4 { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
 <body data-page="strategy">
@@ -402,6 +441,7 @@
     <script>
         const API = '/dashboard';
         let strategies = [];
+        let activeIntents = new Map();  // Track ongoing intent submissions
 
         function switchMainTab(tab) {
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -450,9 +490,9 @@
         }
 
         function saveStrategy() {
-            if (!document.getElementById('stratName').value) { showResult(false, 'Strategy name required'); return; }
-            showResult(true, 'Strategy saved successfully');
-            setTimeout(() => { loadStrategies(); switchMainTab('control'); }, 1000);
+            if (!document.getElementById('stratName').value) { showResult(false, '⚠️ Strategy name is required'); return; }
+            showResult(true, '✅ Strategy saved successfully');
+            setTimeout(() => { loadStrategies(); switchMainTab('control'); }, 1200);
         }
 
         async function loadStrategies() {
@@ -469,36 +509,57 @@
                 renderStrategyList();
             } catch (e) {
                 console.error('❌ Strategy load error:', e);
-                showResult(false, 'Error: ' + e.message);
+                showResult(false, '❌ Error: ' + e.message);
             }
         }
 
         function renderStrategyList() {
             const container = document.getElementById('strategyList');
             if (!strategies.length) {
-                container.innerHTML = '<div class="muted" style="text-align:center; padding:20px;">No saved strategies</div>';
+                container.innerHTML = `<div class="info-card">📭 No saved strategies. Go to <strong>Strategy Builder</strong> to create one!</div>`;
                 return;
             }
             let html = '';
             for (const s of strategies) {
                 const status = s.status || 'IDLE';
-                html += `<div class="strategy-item">
-                    <div><div class="strategy-name">${s.name}</div><div style="font-size:10px; color:var(--muted);">${s.identity?.underlying || 'N/A'} · ${s.identity?.strategy_type || 'custom'}</div></div>
+                const isRunning = status === 'RUNNING';
+                const btnKey = `${s.name}-start`;
+                const isLoading = activeIntents.has(btnKey);
+                
+                html += `<div class="strategy-item" data-strategy="${s.name}">
+                    <div>
+                        <div class="strategy-name">${s.name}</div>
+                        <div class="strategy-subtitle">
+                            ${s.identity?.underlying || 'N/A'} · ${(s.identity?.strategy_type || 'custom').toUpperCase()} 
+                            ${s.created_at ? ` · Created: ${new Date(s.created_at).toLocaleDateString()}` : ''}
+                        </div>
+                    </div>
                     <div class="strategy-timing">
-                        <select onchange="updateSchedule('${s.name}', this.value)" style="min-width:150px;">
+                        <select onchange="updateSchedule('${s.name}', this.value)" ${isLoading ? 'disabled' : ''} style="min-width:150px;">
                             <option value="disabled">⏸ Disabled</option>
                             <option value="daily" ${s.schedule === 'daily' ? 'selected' : ''}>📅 Daily</option>
                             <option value="weekly" ${s.schedule === 'weekly' ? 'selected' : ''}>📆 Weekly</option>
                             <option value="custom" ${s.schedule === 'custom' ? 'selected' : ''}>⚙️ Custom</option>
                             <option value="immediate" ${s.schedule === 'immediate' ? 'selected' : ''}>⚡ On Demand</option>
                         </select>
-                        <span style="font-size:11px; color:var(--muted);">${s.entry?.timing?.entry_time || '--:--'}</span>
+                        <span style="font-size:12px; color:var(--muted); font-weight:500; min-width:80px; text-align:center;">
+                            ${s.entry?.timing?.entry_time || '--:--'} IST
+                        </span>
                     </div>
-                    <div><span class="status-pill status-${status.toLowerCase()}">${status}</span></div>
+                    <div><span class="status-pill status-${status.toLowerCase()}">● ${status}</span></div>
                     <div class="strategy-actions">
-                        <button class="btn-success btn-sm" onclick="actionStrategy('${s.name}', 'start')" ${status === 'RUNNING' ? 'disabled' : ''}>▶</button>
-                        <button class="btn-warning btn-sm" onclick="actionStrategy('${s.name}', 'pause')" ${status !== 'RUNNING' ? 'disabled' : ''}>⏸</button>
-                        <button class="btn-danger btn-sm" onclick="actionStrategy('${s.name}', 'stop')" ${status === 'IDLE' ? 'disabled' : ''}>⏹</button>
+                        <button class="btn-success btn-sm ${isLoading ? 'btn-loading' : ''}" 
+                                onclick="actionStrategy('${s.name}', 'start')" 
+                                ${isRunning || isLoading ? 'disabled' : ''} 
+                                title="Start strategy execution">▶ Start</button>
+                        <button class="btn-warning btn-sm" 
+                                onclick="actionStrategy('${s.name}', 'pause')" 
+                                ${status !== 'RUNNING' ? 'disabled' : ''} 
+                                title="Pause ongoing execution">⏸ Pause</button>
+                        <button class="btn-danger btn-sm" 
+                                onclick="actionStrategy('${s.name}', 'stop')" 
+                                ${status === 'IDLE' ? 'disabled' : ''} 
+                                title="Force stop execution">⏹ Stop</button>
                     </div>
                 </div>`;
             }
@@ -506,15 +567,33 @@
         }
 
         async function actionStrategy(name, action) {
-            if (!confirm(`${action.toUpperCase()} strategy "${name}"?`)) return;
+            const confirmMsg = action === 'start' ? 
+                `Start "${name}" strategy?\n\n⚠️ This will initialize positions based on configured rules.` :
+                action === 'pause' ?
+                `Pause "${name}" strategy?\n\nPositions will remain open but no new adjustments.` :
+                `Stop "${name}" strategy?\n\n⚠️ All positions will be force-exited!`;
+            
+            if (!confirm(confirmMsg)) return;
+
+            const btnKey = `${name}-${action}`;
+            if (activeIntents.has(btnKey)) {
+                console.warn('⚠️ Intent already in progress for this action');
+                return;
+            }
+
+            // Mark as loading
+            activeIntents.set(btnKey, true);
+            updateButtonStates();
+
             try {
                 const actionMap = { start: 'ENTRY', pause: 'ADJUST', stop: 'FORCE_EXIT' };
-                const payload = { strategy_name: name, action: actionMap[action], reason: 'DASHBOARD' };
+                const payload = { strategy_name: name, action: actionMap[action], reason: 'DASHBOARD_UI' };
                 
-                console.log(`📤 Sending intent: ${JSON.stringify(payload)}`);
+                console.log(`📤 Submitting intent: ${JSON.stringify(payload)}`);
                 
                 const r = await fetch(`${API}/intent/strategy`, {
-                    method: 'POST', credentials: 'include',
+                    method: 'POST', 
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
@@ -528,17 +607,34 @@
                 const result = await r.json();
                 console.log(`✅ Intent accepted:`, result);
                 
-                showResult(true, `✓ Intent submitted: ${name} → ${actionMap[action]}\n(Intent ID: ${result.intent_id || 'pending'})\n\n⏳ The execution service is processing this...`);
+                showResult(true, 
+                    `✅ INTENT SUBMITTED SUCCESSFULLY\n\n` +
+                    `Strategy: ${name}\n` +
+                    `Action: ${actionMap[action]}\n` +
+                    `Intent ID: ${result.intent_id || 'pending'}\n\n` +
+                    `⏳ Execution service is now processing...\n` +
+                    `Check Console (F12) for real-time updates.`
+                );
                 
-                // Auto-refresh to show updates
-                setTimeout(() => { loadStrategies(); refreshMonitor(); }, 1000);
+                // Auto-refresh after delay
+                setTimeout(() => { loadStrategies(); refreshMonitor(); }, 1500);
             } catch (e) {
                 console.error(`❌ Error:`, e);
-                showResult(false, `Failed: ${e.message}`);
+                showResult(false, `❌ FAILED TO SUBMIT\n\n${e.message}`);
+            } finally {
+                // Clear loading state
+                activeIntents.delete(btnKey);
+                updateButtonStates();
             }
         }
 
-        function updateSchedule(name, schedule) { showResult(true, `${name} scheduled: ${schedule}`); }
+        function updateButtonStates() {
+            renderStrategyList();
+        }
+
+        function updateSchedule(name, schedule) { 
+            showResult(true, `📅 ${name} scheduled: ${schedule}`); 
+        }
 
         function toggleSection(e, contentId) {
             e.preventDefault();
@@ -556,58 +652,85 @@
                 const orphanR = await fetch(`${API}/orphan-positions`, { credentials: 'include' });
                 if (orphanR.ok) {
                     const orphanData = await orphanR.json();
-                    console.log(`👻 Orphan positions: ${(orphanData.positions || []).length}`);
-                    let html = '<tr><td colspan="8" class="text-center muted">No orphan positions</td></tr>';
+                    const count = orphanData.positions?.length || 0;
+                    console.log(`👻 Orphan positions: ${count}`);
+                    let html = '<tr><td colspan="8" class="text-center muted">No orphan positions found</td></tr>';
                     if (orphanData.positions?.length) {
                         html = '';
                         for (const p of orphanData.positions) {
                             const pnl = parseFloat(p.pnl || 0);
-                            html += `<tr><td>${p.symbol}</td><td>${p.netqty}</td><td>${parseFloat(p.ltp || 0).toFixed(2)}</td>
-                                     <td style="color:${pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${pnl.toFixed(0)}</td>
-                                     <td><span class="greek">${parseFloat(p.delta || 0).toFixed(3)}</span></td>
-                                     <td><span class="greek">${parseFloat(p.gamma || 0).toFixed(4)}</span></td>
-                                     <td>${parseFloat(p.theta || 0).toFixed(2)}</td>
-                                     <td>${parseFloat(p.vega || 0).toFixed(2)}</td></tr>`;
+                            html += `<tr>
+                                <td><strong>${p.symbol}</strong></td>
+                                <td>${p.netqty}</td>
+                                <td>${parseFloat(p.ltp || 0).toFixed(2)}</td>
+                                <td style="color:${pnl >= 0 ? '#22c55e' : '#ef4444'}; font-weight:600;">₹${pnl.toFixed(0)}</td>
+                                <td><span class="greek">${parseFloat(p.delta || 0).toFixed(3)}</span></td>
+                                <td><span class="greek">${parseFloat(p.gamma || 0).toFixed(4)}</span></td>
+                                <td><span class="greek">${parseFloat(p.theta || 0).toFixed(2)}</span></td>
+                                <td><span class="greek">${parseFloat(p.vega || 0).toFixed(2)}</span></td>
+                            </tr>`;
                         }
                     }
                     document.getElementById('orphanBody').innerHTML = html;
-                    document.getElementById('orphanBadge').textContent = (orphanData.positions?.length || 0) + ' positions';
+                    document.getElementById('orphanBadge').innerHTML = `<span class="stat-badge">${count} position${count !== 1 ? 's' : ''}</span>`;
                 }
 
                 const monR = await fetch(`${API}/monitoring/strategy-positions`, { credentials: 'include' });
                 if (monR.ok) {
                     const monData = await monR.json();
-                    console.log(`📊 Running strategies: ${(monData.strategies || []).length}`);
-                    let html = monData.strategies?.length ? '' : '<div class="muted" style="text-align:center; padding:20px;">No running strategies</div>';
-                    for (const s of (monData.strategies || [])) {
-                        const totalPnL = s.total_pnl || 0;
-                        const delta = (s.combined_greeks?.delta || 0).toFixed(3);
-                        const posCount = s.positions?.reduce((sum, p) => sum + (p.legs || []).length, 0) || 0;
-                        html += `<div class="monitor-section" style="margin-top:12px;">
-                            <div class="section-header" onclick="toggleSection(event, 'strat-${s.strategy_name.replace(/\s+/g, '-')}')">
-                                <span class="section-toggle">▶</span><span class="section-title">📊 ${s.strategy_name}</span>
-                                <span class="section-summary"><span class="stat-badge">Pos: ${posCount}</span>
-                                <span class="stat-badge" style="color:${totalPnL >= 0 ? 'var(--success)' : 'var(--danger)'}">PnL: ₹${totalPnL.toFixed(0)}</span>
-                                <span class="stat-badge">Δ: ${delta}</span></span>
-                            </div>
-                            <div id="strat-${s.strategy_name.replace(/\s+/g, '-')}" class="section-content">
-                                <div class="summary-2line"><span class="summary-label-2line">PnL:</span><span class="summary-value-2line" style="color:${totalPnL >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${totalPnL.toFixed(0)}</span></div>
-                                <div class="summary-2line" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border);"><span class="summary-label-2line">Greeks:</span><span class="summary-value-2line">Δ ${delta} | θ ${(s.combined_greeks?.theta || 0).toFixed(2)}</span></div>
-                                <table class="table-compact" style="margin-top:12px;">
-                                    <thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>LTP</th><th>PnL</th><th>Δ</th><th>Γ</th><th>θ</th></tr></thead>
-                                    <tbody>`;
-                        for (const p of (s.positions || [])) {
-                            for (const l of (p.legs || [])) {
-                                const lpnl = parseFloat(l.pnl || 0);
-                                html += `<tr><td>${l.symbol || '?'}</td><td>${l.type || '?'}</td><td>${l.qty || 0}</td>
-                                        <td>${parseFloat(l.ltp || 0).toFixed(2)}</td>
-                                        <td style="color:${lpnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${lpnl.toFixed(0)}</td>
+                    const runningCount = (monData.strategies || []).length;
+                    console.log(`📊 Running strategies: ${runningCount}`);
+                    
+                    let html = '';
+                    if (!runningCount) {
+                        html = '<div class="info-card">📊 No running strategies. Start one from the <strong>Strategy Control</strong> section above.</div>';
+                    } else {
+                        for (const s of (monData.strategies || [])) {
+                            const totalPnL = s.total_pnl || 0;
+                            const delta = (s.combined_greeks?.delta || 0).toFixed(3);
+                            const theta = (s.combined_greeks?.theta || 0).toFixed(2);
+                            const posCount = s.positions?.reduce((sum, p) => sum + (p.legs || []).length, 0) || 0;
+                            const pnlColor = totalPnL >= 0 ? '#22c55e' : '#ef4444';
+                            
+                            html += `<div class="monitor-section">
+                                <div class="section-header" onclick="toggleSection(event, 'strat-${s.strategy_name.replace(/\s+/g, '-')}')">
+                                    <span class="section-toggle">▶</span>
+                                    <span class="section-title">📊 ${s.strategy_name}</span>
+                                    <span class="section-summary">
+                                        <span class="stat-badge">Legs: ${posCount}</span>
+                                        <span class="stat-badge" style="color: ${pnlColor}; font-weight: 700;">PnL: ₹${totalPnL.toFixed(0)}</span>
+                                        <span class="stat-badge">Δ: ${delta}</span>
+                                        <span class="stat-badge">θ: ${theta}</span>
+                                    </span>
+                                </div>
+                                <div id="strat-${s.strategy_name.replace(/\s+/g, '-')}" class="section-content">
+                                    <div class="info-card"><strong>Strategy Status:</strong> RUNNING | <strong>Positions:</strong> ${posCount} active legs | <strong>Total Risk:</strong> ₹${Math.abs(totalPnL).toFixed(0)}</div>
+                                    
+                                    <div class="summary-2line"><span class="summary-label-2line">Total P&L:</span><span class="summary-value-2line" style="color:${pnlColor}">₹${totalPnL.toFixed(0)}</span></div>
+                                    <div class="summary-2line"><span class="summary-label-2line">Combined Greeks:</span><span class="summary-value-2line">Δ ${delta} | Θ ${theta}</span></div>
+                                    
+                                    <table class="table-compact" style="margin-top:16px;">
+                                        <thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>LTP</th><th>Avg Price</th><th>PnL</th><th>Δ</th><th>Γ</th><th>Θ</th></tr></thead>
+                                        <tbody>`;
+                            
+                            for (const p of (s.positions || [])) {
+                                for (const l of (p.legs || [])) {
+                                    const lpnl = parseFloat(l.pnl || 0);
+                                    html += `<tr>
+                                        <td><strong>${l.symbol || '?'}</strong></td>
+                                        <td>${l.type || '?'}</td>
+                                        <td>${l.qty || 0}</td>
+                                        <td><strong>${parseFloat(l.ltp || 0).toFixed(2)}</strong></td>
+                                        <td>${parseFloat(l.avg_price || 0).toFixed(2)}</td>
+                                        <td style="color:${lpnl >= 0 ? '#22c55e' : '#ef4444'}; font-weight:600;">₹${lpnl.toFixed(0)}</td>
                                         <td><span class="greek">${parseFloat(l.delta || 0).toFixed(3)}</span></td>
                                         <td><span class="greek">${parseFloat(l.gamma || 0).toFixed(4)}</span></td>
-                                        <td>${parseFloat(l.theta || 0).toFixed(2)}</td></tr>`;
+                                        <td><span class="greek">${parseFloat(l.theta || 0).toFixed(2)}</span></td>
+                                    </tr>`;
+                                }
                             }
+                            html += '</tbody></table></div></div>';
                         }
-                        html += '</tbody></table></div></div>';
                     }
                     document.getElementById('strategyMonitors').innerHTML = html;
                 } else {
@@ -620,18 +743,17 @@
 
         function showResult(success, message) {
             const resultDiv = document.getElementById('result');
-            resultDiv.style.background = success ? 'rgba(34,197,94,.1)' : 'rgba(239,68,68,.1)';
-            resultDiv.style.color = success ? '#22c55e' : '#ef4444';
-            resultDiv.style.border = success ? '1px solid #22c55e' : '1px solid #ef4444';
-            resultDiv.innerHTML = `<div style="white-space: pre-wrap; font-family: monospace; font-size: 12px; line-height: 1.5;">${message}</div>`;
+            resultDiv.className = success ? 'result success' : 'result error';
+            resultDiv.innerHTML = `<div style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; font-size: 13px; line-height: 1.6;">${message}</div>`;
             resultDiv.style.display = 'block';
-            setTimeout(() => { resultDiv.style.display = 'none'; }, 6000);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setTimeout(() => { resultDiv.style.display = 'none'; }, 7000);
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🚀 Strategy Manager loaded');
             console.log(`📡 API endpoint: ${API}`);
-            console.log('💡 TIP: Open browser DevTools (F12) → Console to see intent details');
+            console.log('💡 TIP: Open DevTools (F12) → Console for detailed intent tracking');
             updateStrategyType();
         });
     </script>

@@ -1133,6 +1133,9 @@
             const newStrikes = Object.keys(processChainData(data.rows)).map(Number).sort((a, b) => a - b);
             const strikeListChanged = JSON.stringify(newStrikes) !== JSON.stringify(currentStrikes);
             
+            // Update info bar FIRST so atmStrike is set before rendering table
+            updateInfoBar(data.meta || {});
+            
             if (strikeListChanged || isFirstLoad) {
                 isFirstLoad = false;
                 currentStrikes = newStrikes;
@@ -1140,8 +1143,6 @@
             } else {
                 smartUpdateValues(data.rows);
             }
-            
-            updateInfoBar(data.meta || {});
             
         } catch (error) {
             console.error('Error loading option chain:', error);
@@ -1194,6 +1195,8 @@
     
     function smartUpdateValues(rows) {
         const newStrikeMap = {};
+        let totalCeOiNew = 0;
+        let totalPeOiNew = 0;
         
         rows.forEach(row => {
             const strike = row.strike;
@@ -1211,8 +1214,22 @@
             newStrikeMap[strike][`${prefix}_gamma`] = parseFloat(row.gamma) || 0;
             newStrikeMap[strike][`${prefix}_theta`] = parseFloat(row.theta) || 0;
             newStrikeMap[strike][`${prefix}_vega`] = parseFloat(row.vega) || 0;
+            
+            // Calculate total OI
+            if (row.option_type === 'CE') {
+                totalCeOiNew += parseFloat(row.oi) || 0;
+            } else {
+                totalPeOiNew += parseFloat(row.oi) || 0;
+            }
         });
         
+        // Update info bar values
+        elements.ceOi.textContent = formatNumber(totalCeOiNew, 0);
+        elements.peOi.textContent = formatNumber(totalPeOiNew, 0);
+        elements.totalOI.textContent = formatNumber(totalCeOiNew + totalPeOiNew, 0);
+        elements.pcr.textContent = totalCeOiNew > 0 ? (totalPeOiNew / totalCeOiNew).toFixed(2) : '0.00';
+        
+        // Update row values
         Object.keys(newStrikeMap).forEach(strike => {
             const newData = newStrikeMap[strike];
             const oldData = chainData[strike] || {};
@@ -1220,6 +1237,24 @@
             updateStrikeRow(strike, newData, oldData);
             chainData[strike] = { ...chainData[strike], ...newData };
         });
+        
+        // Refresh ATM highlighting in case atmStrike changed
+        refreshATMHighlighting();
+    }
+    
+    function refreshATMHighlighting() {
+        // Remove ATM class from all rows
+        document.querySelectorAll('.atm-row').forEach(row => {
+            row.classList.remove('atm-row');
+        });
+        
+        // Add ATM class to correct row
+        if (atmStrike) {
+            const atmRow = document.querySelector(`tr[data-strike="${atmStrike}"]`);
+            if (atmRow) {
+                atmRow.classList.add('atm-row');
+            }
+        }
     }
     
     function updateStrikeRow(strike, newData, oldData) {

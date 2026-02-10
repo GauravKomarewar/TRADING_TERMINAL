@@ -85,7 +85,7 @@ class SupremeRiskManager:
         self.last_manual_position_signature = None
         self.last_manual_violation_ts = None
         self.human_violation_detected = False
-        self.MANUAL_ALERT_COOLDOWN_SEC = 60
+        self.MANUAL_ALERT_COOLDOWN_SEC = 5  # 🔥 Reduced from 60s — fast re-detection
 
         # Status / analytics
         self.last_status_update: Optional[datetime] = None
@@ -216,6 +216,13 @@ class SupremeRiskManager:
                 )
                 return False
 
+            if self.force_exit_in_progress:
+                logger.warning(
+                    "RMS: Entry BLOCKED | reason=FORCE_EXIT_IN_PROGRESS | pnl=%.2f",
+                    self.daily_pnl,
+                )
+                return False
+
             if self.daily_loss_hit:
                 logger.warning(
                     "RMS: Entry BLOCKED | reason=DAILY_LOSS_HIT | pnl=%.2f | max_loss=%.2f",
@@ -291,6 +298,10 @@ class SupremeRiskManager:
 
         self._route_global_exit("RMS_DAILY_MAX_LOSS")
 
+        # 🔥 Immediately cancel all pending orders (don't wait for next heartbeat)
+        self._cancel_pending_broker_orders()
+        self._cancel_pending_system_entries()
+
         if consecutive_losses == self.MAX_CONSECUTIVE_LOSS_DAYS:
             logger.critical(
                 "🚨 MAX CONSECUTIVE LOSS DAYS REACHED | activating cooldown until Monday"
@@ -341,22 +352,52 @@ class SupremeRiskManager:
                             )
                         self._handle_daily_loss_breach()
 
-                    # Manual trade detection
-                    self.on_broker_positions(positions)
-
-                    # Exit completion check
+                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    # POST-BREACH ENFORCEMENT (continuous flatten loop)
+                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     if self.daily_loss_hit:
                         all_flat = all(int(p.get("netqty", 0)) == 0 for p in positions)
 
-                        if all_flat:
+                        if all_flat and not self.force_exit_in_progress:
+                            # Truly done — cancel any lingering broker orders too
+                            self._cancel_pending_broker_orders()
+                            self._cancel_pending_system_entries()
+                            logger.info("RMS: Post-breach — all positions flat, orders cleaned")
+                        elif all_flat and self.force_exit_in_progress:
+                            # Exit cycle complete, but stay vigilant
                             self.force_exit_in_progress = False
-                            logger.info("RMS: Exit cycle fully completed, all positions flat")
+                            self._cancel_pending_broker_orders()
+                            self._cancel_pending_system_entries()
+                            logger.info("RMS: Exit cycle completed, all flat — staying in DAILY_LOSS_HIT mode")
                         else:
+                            # STILL have live positions after breach → force exit again
                             live_count = sum(1 for p in positions if int(p.get("netqty", 0)) != 0)
-                            logger.warning(
-                                "RMS: Exit in progress, waiting for positions to flatten | live_positions=%d",
+                            logger.critical(
+                                "🚨 RMS: POSITIONS EXIST AFTER BREACH | live=%d | re-triggering flatten",
                                 live_count,
                             )
+                            self._cancel_pending_broker_orders()
+                            self._cancel_pending_system_entries()
+                            if not self.force_exit_in_progress:
+                                self.force_exit_in_progress = True
+                                self.human_violation_detected = True
+                                self._save_state()
+                                self._route_global_exit("RMS_POST_BREACH_FLATTEN")
+                                if self.bot.telegram_enabled:
+                                    live_details = []
+                                    for p in positions:
+                                        nq = int(p.get("netqty", 0))
+                                        if nq != 0:
+                                            live_details.append(
+                                                f"  • {p.get('exch', '?')}:{p.get('tsym', '?')} qty={nq}"
+                                            )
+                                    detail_text = "\n".join(live_details)
+                                    self.bot.send_telegram(
+                                        f"🚨 <b>POST-BREACH FLATTEN</b>\n\n"
+                                        f"Positions detected after max loss hit:\n"
+                                        f"{detail_text}\n\n"
+                                        f"⚠️ Force-exiting ALL positions again"
+                                    )
                 else:
                     logger.debug("RMS: No positions in broker snapshot")
 
@@ -373,66 +414,74 @@ class SupremeRiskManager:
                 log_exception("SupremeRiskManager.heartbeat", exc)
 
     # --------------------------------------------------
-    # MANUAL TRADE DETECTION
+    # BROKER ORDER / SYSTEM ENTRY CANCELLATION
     # --------------------------------------------------
 
-    def on_broker_positions(self, positions: list):
-        if not self.daily_loss_hit:
-            return
+    def _cancel_pending_broker_orders(self):
+        """
+        Cancel all OPEN/PENDING orders on the broker side.
+        Called after breach to prevent any pending buy/sell from filling.
+        """
+        try:
+            order_book = self.bot.api.get_order_book()
+            if not order_book:
+                return
 
-        # 🔒 CRITICAL FIX: prevent re-trigger during exit execution
-        if self.force_exit_in_progress:
-            logger.debug("RMS: Manual detection skipped (exit in progress)")
-            return
-            
-        live_positions = tuple(
-            (p.get("exch"), p.get("tsym"), int(p.get("netqty", 0)))
-            for p in positions
-            if int(p.get("netqty", 0)) != 0
-        )
+            cancelled = 0
+            for o in order_book:
+                status = (o.get("status") or "").upper()
+                if status in ("OPEN", "PENDING", "TRIGGER_PENDING", "SL-PENDING", "AFTER MARKET ORDER REQ RECEIVED"):
+                    orderno = o.get("norenordno", "")
+                    if orderno:
+                        try:
+                            self.bot.api.cancel_order(orderno)
+                            cancelled += 1
+                            logger.info(
+                                "RMS: Cancelled broker order | orderno=%s | sym=%s | status=%s",
+                                orderno, o.get("tsym", "?"), status,
+                            )
+                        except Exception as e:
+                            logger.warning("RMS: Failed to cancel order %s: %s", orderno, e)
 
-        if not live_positions:
-            logger.debug("RMS: No live positions detected")
-            return
+            if cancelled:
+                logger.critical("🚨 RMS: Cancelled %d pending broker orders post-breach", cancelled)
+                if self.bot.telegram_enabled:
+                    self.bot.send_telegram(
+                        f"🚨 <b>RISK: Cancelled {cancelled} pending broker orders</b>\n"
+                        f"Daily loss hit — no new orders allowed"
+                    )
+        except Exception as e:
+            logger.error("RMS: Error cancelling broker orders: %s", e)
 
-        now = datetime.now()
-        if (
-            live_positions != self.last_manual_position_signature
-            and (
-                self.last_manual_violation_ts is None
-                or (now - self.last_manual_violation_ts).total_seconds()
-                >= self.MANUAL_ALERT_COOLDOWN_SEC
-            )
-        ):
-            self.last_manual_position_signature = live_positions
-            self.last_manual_violation_ts = now
-            self.human_violation_detected = True
-            self._save_state()
+    def _cancel_pending_system_entries(self):
+        """
+        Mark all CREATED (non-EXIT) system orders as FAILED in the DB.
+        Prevents OrderWatcher from picking them up and executing them.
+        """
+        try:
+            open_orders = self.bot.order_repo.get_open_orders()
+            cancelled = 0
+            for order in open_orders:
+                # Only cancel ENTRY/ADJUST — never cancel EXIT orders
+                if getattr(order, "tag", None) == "EXIT":
+                    continue
+                if getattr(order, "execution_type", "") == "EXIT":
+                    continue
+                try:
+                    self.bot.order_repo.update_status(order.command_id, "FAILED")
+                    self.bot.order_repo.update_tag(order.command_id, "RISK_BREACH_CANCELLED")
+                    cancelled += 1
+                    logger.info(
+                        "RMS: Cancelled system order | cmd_id=%s | sym=%s",
+                        order.command_id, getattr(order, "symbol", "?"),
+                    )
+                except Exception as e:
+                    logger.warning("RMS: Failed to cancel system order %s: %s", order.command_id, e)
 
-            position_details = "\n".join(
-                [f"  • {exch}:{sym} qty={qty}" for exch, sym, qty in live_positions]
-            )
-
-            logger.critical(
-                "🚨 MANUAL TRADE AFTER RISK HIT | positions=%d\n%s",
-                len(live_positions),
-                position_details,
-            )
-
-            if self.bot.telegram_enabled:
-                msg = (
-                    f"🚨 <b>CRITICAL RISK VIOLATION</b>\n\n"
-                    f"⚠️ Manual trade detected AFTER max loss hit\n"
-                    f"📊 Live Positions: {len(live_positions)}\n\n"
-                    f"<b>Positions:</b>\n{position_details}\n\n"
-                    f"⏰ Time: {now.strftime('%H:%M:%S')}\n"
-                    f"💔 Current PnL: ₹{self.daily_pnl:.2f}\n\n"
-                    f"🔒 <b>FORCING EXIT AGAIN</b>"
-                )
-                self.bot.send_telegram(msg)
-
-            self.force_exit_in_progress = True
-            self._route_global_exit("RMS_MANUAL_TRADE")
+            if cancelled:
+                logger.critical("🚨 RMS: Cancelled %d pending system entries post-breach", cancelled)
+        except Exception as e:
+            logger.error("RMS: Error cancelling system entries: %s", e)
 
     # --------------------------------------------------
     # TRAILING / PNL / ANALYTICS (UNCHANGED LOGIC)

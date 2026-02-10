@@ -33,6 +33,7 @@ from shoonya_platform.api.dashboard.services.intent_utility import DashboardInte
 from shoonya_platform.api.dashboard.services.supervisor_service import SupervisorService
 from shoonya_platform.api.dashboard.services.option_chain_service import (
     get_active_expiries,
+    get_active_symbols,
     find_nearest_option,
 )
 from shoonya_platform.market_data.feeds import index_tokens_subscriber
@@ -462,7 +463,21 @@ def submit_basket_intent(
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================================================
-# 📅 OPTION CHAIN — ACTIVE EXPIRIES (SUPERVISOR TRUTH)
+# � OPTION CHAIN — ACTIVE SYMBOLS (FROM DB FILES)
+# ==================================================
+
+@router.get("/option-chain/active-symbols")
+def list_active_option_chain_symbols():
+    """
+    Active option-chain symbols derived from supervisor DB files.
+
+    Returns list of {exchange, symbol, expiries[]} from DB filenames.
+    """
+    symbols = get_active_symbols()
+    return symbols
+
+# ==================================================
+# �📅 OPTION CHAIN — ACTIVE EXPIRIES (SUPERVISOR TRUTH)
 # ==================================================
 
 @router.get("/option-chain/active-expiries", response_model=List[str])

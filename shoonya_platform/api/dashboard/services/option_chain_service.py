@@ -13,6 +13,71 @@ OPTION_CHAIN_DATA_DIR = (
     / "market_data/option_chain/data"
 )
 
+def get_active_symbols() -> List[Dict[str, Any]]:
+    """
+    Scan supervisor DB directory for all active symbol+exchange combos.
+
+    Filename format:
+        <EXCHANGE>_<SYMBOL>_<EXPIRY>.sqlite
+    Example:
+        NFO_NIFTY_10-FEB-2026.sqlite
+        MCX_CRUDEOILM_17-FEB-2026.sqlite
+
+    Returns:
+        List of {"exchange": ..., "symbol": ..., "expiries": [...]}
+    """
+    from collections import defaultdict
+
+    symbol_map: Dict[str, Dict[str, Any]] = {}
+
+    for p in OPTION_CHAIN_DATA_DIR.glob("*.sqlite"):
+        name = p.stem  # e.g. NFO_NIFTY_10-FEB-2026
+        parts = name.split("_")
+        if len(parts) < 3:
+            continue
+        exchange = parts[0]
+        # Expiry is the last part (DD-MMM-YYYY), symbol is everything in between
+        expiry = parts[-1]
+        # Handle multi-word expiries like 17-FEB-2026
+        # Check if last part looks like a date
+        try:
+            datetime.strptime(expiry, "%d-%b-%Y")
+        except ValueError:
+            # Last part wasn't a date — try last two parts joined
+            if len(parts) >= 4:
+                expiry = parts[-2] + "_" + parts[-1]
+                try:
+                    datetime.strptime(expiry.replace("_", "-"), "%d-%b-%Y")
+                except ValueError:
+                    continue
+            else:
+                continue
+
+        symbol = "_".join(parts[1:-1])  # Everything between exchange and expiry
+        # Reconstruct the actual expiry from filename (has hyphens)
+        expiry_str = name[len(exchange) + 1 + len(symbol) + 1:]  # skip EXCHANGE_SYMBOL_
+
+        key = f"{exchange}:{symbol}"
+        if key not in symbol_map:
+            symbol_map[key] = {
+                "exchange": exchange,
+                "symbol": symbol,
+                "expiries": [],
+            }
+        symbol_map[key]["expiries"].append(expiry_str)
+
+    # Sort expiries within each symbol
+    for info in symbol_map.values():
+        try:
+            info["expiries"] = sorted(
+                info["expiries"],
+                key=lambda e: datetime.strptime(e, "%d-%b-%Y"),
+            )
+        except Exception:
+            info["expiries"].sort()
+
+    return list(symbol_map.values())
+
 def get_active_expiries(exchange: str, symbol: str) -> List[str]:
     """
     Read active option-chain expiries from supervisor DB directory.

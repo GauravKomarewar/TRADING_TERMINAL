@@ -792,25 +792,15 @@
         <!-- Left Control Panel -->
         <div class="control-panel">
             <div class="symbol-combo" id="symbolCombo">
-                <input type="text" id="symbolInput" class="symbol-input" value="NIFTY" placeholder="Type symbol..." autocomplete="off" spellcheck="false">
+                <input type="text" id="symbolInput" class="symbol-input" value="" placeholder="Loading symbols..." autocomplete="off" spellcheck="false" disabled>
                 <span class="symbol-arrow">▾</span>
                 <div class="symbol-dropdown" id="symbolDropdown">
-                    <div class="symbol-option selected" data-value="NIFTY">NIFTY</div>
-                    <div class="symbol-option" data-value="BANKNIFTY">BANKNIFTY</div>
-                    <div class="symbol-option" data-value="FINNIFTY">FINNIFTY</div>
-                    <div class="symbol-option" data-value="SENSEX">SENSEX</div>
-                    <div class="symbol-option" data-value="MIDCPNIFTY">MIDCPNIFTY</div>
-                    <div class="symbol-option" data-value="NIFTYNXT50">NIFTYNXT50</div>
-                    <div class="symbol-option" data-value="CRUDEOIL">CRUDEOIL</div>
-                    <div class="symbol-option" data-value="GOLD">GOLD</div>
-                    <div class="symbol-option" data-value="SILVER">SILVER</div>
-                    <div class="symbol-option" data-value="NATURALGAS">NATURALGAS</div>
-                    <div class="symbol-option" data-value="BANKEX">BANKEX</div>
+                    <div class="symbol-option" style="color:var(--muted);cursor:default">Loading...</div>
                 </div>
             </div>
             <!-- Hidden select kept for JS compatibility -->
             <select id="symbol" style="display:none">
-                <option value="NIFTY" selected>NIFTY</option>
+                <option value="">Loading...</option>
             </select>
             
             <select id="expiry">
@@ -1036,6 +1026,10 @@
     let totalCeOi = 0;
     let totalPeOi = 0;
     
+    // Symbol → exchange mapping from API
+    let symbolExchangeMap = {};  // e.g. { NIFTY: 'NFO', CRUDEOILM: 'MCX' }
+    let activeSymbolData = [];   // full API response
+    
     // DOM Elements
     const elements = {
         symbol: document.getElementById('symbol'),
@@ -1094,9 +1088,8 @@
     function init() {
         initSymbolCombo();
         setupEventListeners();
-        loadExpiries();
-        startAutoRefresh();
-        // Index tokens now handled by shared layout.js
+        // Load symbols from DB, then expiries, then start refresh
+        loadActiveSymbols();
         updateBasketUI();
     }
     
@@ -1106,10 +1099,15 @@
         const input = document.getElementById('symbolInput');
         const dropdown = document.getElementById('symbolDropdown');
         const hiddenSelect = elements.symbol; // the hidden <select>
-        const allOptions = Array.from(dropdown.querySelectorAll('.symbol-option'));
+        let allOptions = [];  // rebuilt dynamically after API load
         let highlightIdx = -1;
 
+        function refreshOptionsList() {
+            allOptions = Array.from(dropdown.querySelectorAll('.symbol-option[data-value]'));
+        }
+
         function openDropdown() {
+            refreshOptionsList();
             filterOptions(input.value);
             dropdown.classList.add('open');
         }
@@ -1119,6 +1117,7 @@
             allOptions.forEach(o => o.classList.remove('highlight'));
         }
         function filterOptions(query) {
+            refreshOptionsList();
             const q = query.trim().toUpperCase();
             let visibleCount = 0;
             allOptions.forEach(opt => {
@@ -1142,12 +1141,14 @@
             }
             hiddenSelect.value = val;
             // Mark selected in dropdown
+            refreshOptionsList();
             allOptions.forEach(o => o.classList.toggle('selected', o.dataset.value === val));
             closeDropdown();
             // Fire change event on the hidden select
             hiddenSelect.dispatchEvent(new Event('change'));
         }
         function getVisibleOptions() {
+            refreshOptionsList();
             return allOptions.filter(o => !o.classList.contains('hidden'));
         }
         function setHighlight(idx) {
@@ -1200,7 +1201,7 @@
         });
         // Click option
         dropdown.addEventListener('click', (e) => {
-            const opt = e.target.closest('.symbol-option');
+            const opt = e.target.closest('.symbol-option[data-value]');
             if (opt) selectValue(opt.dataset.value);
         });
         // Close on outside click
@@ -1208,12 +1209,95 @@
             if (!combo.contains(e.target)) closeDropdown();
         });
     }
+
+    // Load active symbols from supervisor DB files
+    async function loadActiveSymbols() {
+        const input = document.getElementById('symbolInput');
+        const dropdown = document.getElementById('symbolDropdown');
+        const hiddenSelect = elements.symbol;
+
+        try {
+            const res = await fetch('/dashboard/option-chain/active-symbols', { credentials: 'include' });
+            if (!res.ok) throw new Error(`Failed: ${res.status}`);
+            activeSymbolData = await res.json();
+
+            // Build exchange map and dropdown options
+            symbolExchangeMap = {};
+            let optionsHTML = '';
+            let selectHTML = '';
+            activeSymbolData.forEach((item, idx) => {
+                symbolExchangeMap[item.symbol] = item.exchange;
+                const label = item.exchange !== 'NFO' ? `${item.symbol} (${item.exchange})` : item.symbol;
+                const selectedClass = idx === 0 ? ' selected' : '';
+                optionsHTML += `<div class="symbol-option${selectedClass}" data-value="${item.symbol}" data-exchange="${item.exchange}">${label}</div>`;
+                selectHTML += `<option value="${item.symbol}"${idx === 0 ? ' selected' : ''}>${item.symbol}</option>`;
+            });
+
+            dropdown.innerHTML = optionsHTML;
+            hiddenSelect.innerHTML = selectHTML;
+
+            if (activeSymbolData.length > 0) {
+                const first = activeSymbolData[0];
+                input.value = first.symbol;
+                input.placeholder = 'Type symbol...';
+                input.disabled = false;
+                hiddenSelect.value = first.symbol;
+
+                // If first symbol has expiries, preload them directly
+                if (first.expiries && first.expiries.length > 0) {
+                    populateExpiries(first.expiries);
+                    await loadOptionChain();
+                    startAutoRefresh();
+                } else {
+                    await loadExpiries();
+                    startAutoRefresh();
+                }
+            } else {
+                input.value = '';
+                input.placeholder = 'No symbols available';
+                dropdown.innerHTML = '<div class="symbol-option" style="color:var(--muted);cursor:default">No active chains</div>';
+            }
+        } catch (err) {
+            console.error('Failed to load active symbols:', err);
+            // Fallback: enable input for manual entry
+            input.placeholder = 'Type symbol...';
+            input.disabled = false;
+            input.value = 'NIFTY';
+            hiddenSelect.innerHTML = '<option value="NIFTY" selected>NIFTY</option>';
+            hiddenSelect.value = 'NIFTY';
+            dropdown.innerHTML = '<div class="symbol-option selected" data-value="NIFTY">NIFTY</div>';
+            await loadExpiries();
+            startAutoRefresh();
+        }
+    }
+
+    // Populate expiry dropdown from data (no API call)
+    function populateExpiries(expiries) {
+        if (!Array.isArray(expiries) || expiries.length === 0) {
+            elements.expiry.innerHTML = '<option>No expiries</option>';
+            elements.expiry.disabled = true;
+            return;
+        }
+        elements.expiry.innerHTML = expiries.map(e =>
+            `<option value="${e}">${e}</option>`
+        ).join('');
+        elements.expiry.disabled = false;
+        elements.expiry.value = expiries[0];
+    }
     
     // Event Listeners
     function setupEventListeners() {
         elements.symbol.addEventListener('change', async () => {
             stopAutoRefresh();
-            await loadExpiries();
+            // When symbol changes, try to use cached expiries first
+            const sym = elements.symbol.value;
+            const item = activeSymbolData.find(s => s.symbol === sym);
+            if (item && item.expiries && item.expiries.length > 0) {
+                populateExpiries(item.expiries);
+                await loadOptionChain();
+            } else {
+                await loadExpiries();
+            }
             startAutoRefresh();
         });
         
@@ -1289,14 +1373,21 @@
         }, 5000);
     }
     
+    // Helper: get exchange for current symbol
+    function getCurrentExchange() {
+        const sym = elements.symbol.value;
+        return symbolExchangeMap[sym] || 'NFO';
+    }
+
     // Load Expiries
     async function loadExpiries() {
         try {
             elements.expiry.innerHTML = '<option>Loading...</option>';
             elements.expiry.disabled = true;
             
+            const exchange = getCurrentExchange();
             const res = await fetch(
-                `/dashboard/option-chain/active-expiries?exchange=NFO&symbol=${elements.symbol.value}`,
+                `/dashboard/option-chain/active-expiries?exchange=${exchange}&symbol=${elements.symbol.value}`,
                 { credentials: 'include' }
             );
             
@@ -1337,7 +1428,7 @@
             console.log('[OptionChain] loadOptionChain called, isAutoRefresh:', isAutoRefresh);
             
             const res = await fetch(
-                `/dashboard/option-chain?exchange=NFO&symbol=${elements.symbol.value}&expiry=${elements.expiry.value}&max_age=5`,
+                `/dashboard/option-chain?exchange=${getCurrentExchange()}&symbol=${elements.symbol.value}&expiry=${elements.expiry.value}&max_age=5`,
                 { credentials: 'include' }
             );
             

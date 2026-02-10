@@ -131,7 +131,7 @@
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 12px;
-            grid-template-rows: auto auto;
+            grid-template-rows: auto auto auto;
         }
         
         .info-panel .info-item {
@@ -781,6 +781,7 @@
         
         <!-- Right Info Panel - Row 1: Spot LTP, Future LTP, ATM Strike, PCR -->
         <!-- Row 2: Total OI, CE OI, PE OI, Last Updated -->
+        <!-- Row 3: Spread, Implied Vol, Call Volume, Put Volume -->
         <div class="info-panel">
             <div class="info-item">
                 <div class="info-label">Spot LTP</div>
@@ -795,8 +796,8 @@
                 <div class="info-value atm-price" id="atmStrike">0</div>
             </div>
             <div class="info-item">
-                <div class="info-label">Call/Put Ratio</div>
-                <div class="info-value" id="pcr">0.00</div>
+                <div class="info-label">Spread</div>
+                <div class="info-value" id="spreadValue" style="font-size: 12px;">₹0.00</div>
             </div>
             
             <!-- Row 2 -->
@@ -813,8 +814,26 @@
                 <div class="info-value" id="peOi">0</div>
             </div>
             <div class="info-item">
+                <div class="info-label">Call/Put Ratio</div>
+                <div class="info-value" id="pcr">0.00</div>
+            </div>
+            
+            <!-- Row 3 - Additional Analytics -->
+            <div class="info-item">
+                <div class="info-label">Total Volume</div>
+                <div class="info-value" id="totalVolume" style="font-size: 12px;">0</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Call Volume</div>
+                <div class="info-value" id="ceVolume" style="font-size: 12px;">0</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Put Volume</div>
+                <div class="info-value" id="peVolume" style="font-size: 12px;">0</div>
+            </div>
+            <div class="info-item">
                 <div class="info-label">Last Updated</div>
-                <div class="info-value" id="lastUpdated">--:--:--</div>
+                <div class="info-value" id="lastUpdated" style="font-size: 12px;">--:--:--</div>
             </div>
         </div>
     </div>
@@ -963,7 +982,12 @@
         orderPriceTypeLMT: document.getElementById('orderPriceTypeLMT'),
         orderPriceGroup: document.getElementById('orderPriceGroup'),
         columnSelectorBtn: document.getElementById('columnSelectorBtn'),
-        columnDropdown: document.getElementById('columnDropdown')
+        columnDropdown: document.getElementById('columnDropdown'),
+        // New info panel elements
+        spreadValue: document.getElementById('spreadValue'),
+        ceVolume: document.getElementById('ceVolume'),
+        peVolume: document.getElementById('peVolume'),
+        totalVolume: document.getElementById('totalVolume')
     };
     
     // Current order entry
@@ -1140,8 +1164,11 @@
                 isFirstLoad = false;
                 currentStrikes = newStrikes;
                 renderTable();
+                console.log(`[Option Chain] Table rendered with ${newStrikes.length} strikes`);
             } else {
+                // Force update all cells even if strike list hasn't changed
                 smartUpdateValues(data.rows);
+                console.log(`[Option Chain] Smart update executed for ${data.rows.length} rows`);
             }
             
         } catch (error) {
@@ -1194,9 +1221,13 @@
     }
     
     function smartUpdateValues(rows) {
+        console.log('[OptionChain] Starting smartUpdate with', rows.length, 'rows of data');
+        
         const newStrikeMap = {};
         let totalCeOiNew = 0;
         let totalPeOiNew = 0;
+        let totalCeVolumeNew = 0;
+        let totalPeVolumeNew = 0;
         
         rows.forEach(row => {
             const strike = row.strike;
@@ -1215,13 +1246,17 @@
             newStrikeMap[strike][`${prefix}_theta`] = parseFloat(row.theta) || 0;
             newStrikeMap[strike][`${prefix}_vega`] = parseFloat(row.vega) || 0;
             
-            // Calculate total OI
+            // Calculate total OI and Volume
             if (row.option_type === 'CE') {
                 totalCeOiNew += parseFloat(row.oi) || 0;
+                totalCeVolumeNew += parseFloat(row.volume) || 0;
             } else {
                 totalPeOiNew += parseFloat(row.oi) || 0;
+                totalPeVolumeNew += parseFloat(row.volume) || 0;
             }
         });
+        
+        console.log('[OptionChain] Parsed', Object.keys(newStrikeMap).length, 'strikes from data');
         
         // Update info bar values
         elements.ceOi.textContent = formatNumber(totalCeOiNew, 0);
@@ -1229,17 +1264,35 @@
         elements.totalOI.textContent = formatNumber(totalCeOiNew + totalPeOiNew, 0);
         elements.pcr.textContent = totalCeOiNew > 0 ? (totalPeOiNew / totalCeOiNew).toFixed(2) : '0.00';
         
+        console.log('[OptionChain] Updated OI info - CE:', totalCeOiNew, ' PE:', totalPeOiNew);
+        
+        // Update volume metrics
+        const ceVolumeEl = document.getElementById('ceVolume');
+        const peVolumeEl = document.getElementById('peVolume');
+        const totalVolumeEl = document.getElementById('totalVolume');
+        if (ceVolumeEl) ceVolumeEl.textContent = formatNumber(totalCeVolumeNew, 0);
+        if (peVolumeEl) peVolumeEl.textContent = formatNumber(totalPeVolumeNew, 0);
+        if (totalVolumeEl) totalVolumeEl.textContent = formatNumber(totalCeVolumeNew + totalPeVolumeNew, 0);
+        
+        console.log('[OptionChain] Updated volume info - CE:', totalCeVolumeNew, ' PE:', totalPeVolumeNew);
+        
         // Update row values
+        let updateCount = 0;
         Object.keys(newStrikeMap).forEach(strike => {
             const newData = newStrikeMap[strike];
             const oldData = chainData[strike] || {};
             
             updateStrikeRow(strike, newData, oldData);
             chainData[strike] = { ...chainData[strike], ...newData };
+            updateCount++;
         });
+        
+        console.log('[OptionChain] Updated', updateCount, 'strike rows');
         
         // Refresh ATM highlighting in case atmStrike changed
         refreshATMHighlighting();
+        
+        console.log('[OptionChain] Smart update complete');
     }
     
     function refreshATMHighlighting() {
@@ -1259,7 +1312,16 @@
     
     function updateStrikeRow(strike, newData, oldData) {
         const row = document.querySelector(`tr[data-strike="${strike}"]`);
-        if (!row) return;
+        if (!row) {
+            console.warn('[OptionChain] Row not found for strike:', strike);
+            return;
+        }
+        
+        console.log(`[OptionChain] Updating strike ${strike}:`, {
+            newData: newData,
+            oldData: oldData,
+            rowElement: row
+        });
         
         updateCellGroup(row, newData, oldData, 'ce');
         updateCellGroup(row, newData, oldData, 'pe');
@@ -1329,7 +1391,17 @@
     }
     
     function updateCellValue(cell, newValue, oldValue, column) {
-        const hasChanged = Math.abs((newValue || 0) - (oldValue || 0)) > 0.0001;
+        if (!cell) {
+            console.warn('[OptionChain] Cell element is null for column:', column);
+            return;
+        }
+        
+        const newNum = parseFloat(newValue) || 0;
+        const oldNum = parseFloat(oldValue) || 0;
+        const hasChanged = Math.abs(newNum - oldNum) > 0.0001;
+        
+        const cellText = cell.textContent.trim();
+        console.log(`[OptionChain] Cell Update - Column: ${column} | Old: ${oldNum} | New: ${newNum} | Changed: ${hasChanged} | Current Text: "${cellText}"`);
         
         if (hasChanged) {
             let displayValue;
@@ -1347,6 +1419,7 @@
                 cell.textContent = formatNumber(newValue, 2);
             }
             
+            console.log(`[OptionChain] Updated cell to: "${cell.textContent}"`);
             cell.classList.remove('value-changed');
             void cell.offsetWidth;
             cell.classList.add('value-changed');
@@ -1376,6 +1449,14 @@
         // Update display values
         elements.spotPrice.textContent = `₹${formatNumber(currentSpotPrice, 2)}`;
         elements.futurePrice.textContent = `₹${formatNumber(currentFuturePrice, 2)}`;
+        
+        // Calculate Spot-Future Spread
+        const spread = currentFuturePrice - currentSpotPrice;
+        const spreadEl = document.getElementById('spreadValue');
+        if (spreadEl) {
+            spreadEl.textContent = `₹${formatNumber(spread, 2)}`;
+            spreadEl.style.color = spread >= 0 ? 'var(--success)' : 'var(--danger)';
+        }
         
         // Calculate ATM Strike based on FUTURE LTP (not spot)
         const strikes = Object.keys(chainData).map(Number).sort((a, b) => a - b);

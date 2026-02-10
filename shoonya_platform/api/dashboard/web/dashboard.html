@@ -1028,6 +1028,7 @@
         const tbody = document.getElementById('holdingsRows');
         
         if (!holdings || holdings.length === 0) {
+            console.log('[Dashboard] No holdings data received');
             tbody.innerHTML = `
                 <tr>
                     <td colspan="9" class="empty-state">
@@ -1039,6 +1040,8 @@
             return;
         }
         
+        console.log('[Dashboard] Processing', holdings.length, 'holdings');
+        
         // Check if we need full rebuild
         const currentSymbols = Array.from(tbody.querySelectorAll('tr[data-symbol]')).map(tr => tr.dataset.symbol);
         const newSymbols = holdings.map(h => h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '');
@@ -1046,6 +1049,7 @@
                              !newSymbols.every((s, i) => s === currentSymbols[i]);
         
         if (needsRebuild) {
+            console.log('[Dashboard] Rebuilding holdings table');
             // Full rebuild
             tbody.innerHTML = holdings.map(h => {
                 // Symbol: Try all possible field names from broker response
@@ -1092,6 +1096,7 @@
                 `;
             }).join('');
         } else {
+            console.log('[Dashboard] Smart update for holdings');
             // Smart update - only update values that changed
             holdings.forEach(h => {
                 const symbol = h.tsym || h.symbol || h.tradingsymbol || h.itemcode || h.prtname || h.name || '';

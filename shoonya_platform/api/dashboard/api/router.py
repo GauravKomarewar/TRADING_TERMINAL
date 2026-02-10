@@ -24,6 +24,8 @@ from uuid import uuid4
 from pathlib import Path
 import sqlite3
 import time
+import json
+import re
 
 from shoonya_platform.api.dashboard.deps import require_dashboard_auth
 from shoonya_platform.api.dashboard.services.broker_service import BrokerService
@@ -322,6 +324,102 @@ def stop_strategy(
     except Exception as e:
         logger.exception("Strategy stop failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================================================
+# STRATEGY CONFIG — Save / Load / List
+# ==================================================
+_STRATEGY_CONFIGS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "strategies" / "saved_configs"
+_STRATEGY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
+
+_VALID_SECTIONS = {"entry", "adjustment", "exit", "rms"}
+
+def _slugify(name: str) -> str:
+    """Convert strategy name to safe filename slug."""
+    s = name.strip().lower()
+    s = re.sub(r'[^a-z0-9]+', '_', s)
+    return s.strip('_') or 'unnamed'
+
+
+@router.post("/strategy/config/save")
+def save_strategy_config(
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Save a strategy config section (entry/adjustment/exit/rms).
+    
+    payload: { "name": "NIFTY_DELTA_NEUTRAL", "section": "entry", "config": {...} }
+    Persists to JSON in strategies/saved_configs/<slug>.json
+    """
+    name = payload.get("name", "").strip()
+    section = payload.get("section", "").strip().lower()
+    config = payload.get("config")
+
+    if not name:
+        raise HTTPException(400, "Strategy name is required")
+    if section not in _VALID_SECTIONS:
+        raise HTTPException(400, f"Invalid section '{section}'. Must be one of: {', '.join(sorted(_VALID_SECTIONS))}")
+    if not isinstance(config, dict):
+        raise HTTPException(400, "config must be a JSON object")
+
+    slug = _slugify(name)
+    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+
+    # Load existing or create new
+    existing = {}
+    if filepath.exists():
+        try:
+            existing = json.loads(filepath.read_text(encoding="utf-8"))
+        except Exception:
+            existing = {}
+
+    existing["name"] = name
+    existing[section] = config
+    existing["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    filepath.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
+    logger.info("Strategy config saved: %s / %s", name, section)
+
+    return {"saved": True, "name": name, "section": section, "file": slug + ".json"}
+
+
+@router.get("/strategy/config/{name}")
+def load_strategy_config(
+    name: str,
+    ctx=Depends(require_dashboard_auth),
+):
+    """Load a saved strategy config by name."""
+    slug = _slugify(name)
+    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+
+    if not filepath.exists():
+        # Return empty config — not an error, just no saved data yet
+        return {"name": name, "entry": {}, "adjustment": {}, "exit": {}, "rms": {}}
+
+    try:
+        data = json.loads(filepath.read_text(encoding="utf-8"))
+        return data
+    except Exception as e:
+        raise HTTPException(500, f"Failed to read config: {e}")
+
+
+@router.get("/strategy/configs")
+def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
+    """List all saved strategy configs."""
+    configs = []
+    for f in sorted(_STRATEGY_CONFIGS_DIR.glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            configs.append({
+                "name": data.get("name", f.stem),
+                "file": f.name,
+                "updated_at": data.get("updated_at", ""),
+                "sections": [s for s in _VALID_SECTIONS if s in data],
+            })
+        except Exception:
+            continue
+    return {"configs": configs, "total": len(configs)}
+
 
 @router.post(
     "/intent/strategy/entry",

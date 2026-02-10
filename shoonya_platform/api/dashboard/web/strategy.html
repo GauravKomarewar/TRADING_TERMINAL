@@ -724,7 +724,103 @@
         }
 
         async function saveConfig(section, config) {
-            showResult(false, `${section.toUpperCase()} config API is not available in this build.`);
+            const name = getStrategyName();
+            try {
+                const response = await fetch(`${DASHBOARD_API}/strategy/config/save`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, section, config })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                showResult(true, `${section.toUpperCase()} config saved for ${name}`);
+            } catch (error) {
+                showResult(false, `Failed to save ${section} config: ${error.message}`);
+            }
+        }
+
+        async function loadConfig() {
+            const name = getStrategyName();
+            try {
+                const response = await fetch(`${DASHBOARD_API}/strategy/config/${encodeURIComponent(name)}`, {
+                    credentials: 'include'
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+
+                // Populate entry fields
+                if (data.entry) {
+                    const e = data.entry;
+                    if (e.strategy_type) document.getElementById('strategyType').value = e.strategy_type;
+                    if (e.underlying) document.getElementById('underlying').value = e.underlying;
+                    if (e.entry_time) document.getElementById('entryTime').value = e.entry_time;
+                    if (e.entry_condition) document.getElementById('entryCondition').value = e.entry_condition;
+                    if (e.position_size != null) document.getElementById('positionSize').value = e.position_size;
+                    if (e.max_positions != null) document.getElementById('maxPositions').value = e.max_positions;
+                    if (e.hedge_entry != null) document.getElementById('hedgeEntry').checked = e.hedge_entry;
+                    if (e.auto_confirm != null) document.getElementById('autoConfirm').checked = e.auto_confirm;
+                }
+
+                // Populate adjustment fields
+                if (data.adjustment) {
+                    const a = data.adjustment;
+                    if (a.enable_adjustments != null) document.getElementById('enableAdjustments').checked = a.enable_adjustments;
+                    if (a.delta_trigger != null) document.getElementById('deltaTrigger').value = a.delta_trigger;
+                    if (a.target_delta != null) document.getElementById('targetDelta').value = a.target_delta;
+                    if (a.max_adjustments != null) document.getElementById('maxAdjustments').value = a.max_adjustments;
+                    if (a.profit_lock_trigger != null) document.getElementById('profitLockTrigger').value = a.profit_lock_trigger;
+                    if (a.loss_repair_trigger != null) document.getElementById('lossRepairTrigger').value = a.loss_repair_trigger;
+                    if (a.adjustment_action) document.getElementById('adjustmentAction').value = a.adjustment_action;
+                    if (a.adjust_check_interval != null) document.getElementById('adjustCheckInterval').value = a.adjust_check_interval;
+                    if (a.max_leg_delta != null) document.getElementById('maxLegDelta').value = a.max_leg_delta;
+                }
+
+                // Populate exit fields
+                if (data.exit) {
+                    const x = data.exit;
+                    if (x.exit_time) document.getElementById('exitTime').value = x.exit_time;
+                    if (x.force_exit_minutes != null) document.getElementById('forceExitMinutes').value = x.force_exit_minutes;
+                    if (x.target_profit != null) document.getElementById('targetProfit').value = x.target_profit;
+                    if (x.target_profit_percent != null) document.getElementById('targetProfitPercent').value = x.target_profit_percent;
+                    if (x.partial_exit_percent != null) document.getElementById('partialExitPercent').value = x.partial_exit_percent;
+                    if (x.stop_loss != null) document.getElementById('stopLoss').value = x.stop_loss;
+                    if (x.stop_loss_percent != null) document.getElementById('stopLossPercent').value = x.stop_loss_percent;
+                    if (x.trailing_stop != null) document.getElementById('trailingStop').value = x.trailing_stop;
+                    if (x.leg_stop_loss != null) document.getElementById('legStopLoss').value = x.leg_stop_loss;
+                    if (x.leg_target != null) document.getElementById('legTarget').value = x.leg_target;
+                    if (x.exit_all_on_leg_breach != null) document.getElementById('exitAllOnLegBreach').checked = x.exit_all_on_leg_breach;
+                }
+
+                // Populate RMS fields
+                if (data.rms) {
+                    const r = data.rms;
+                    if (r.max_position_value != null) document.getElementById('maxPositionValue').value = r.max_position_value;
+                    if (r.max_margin_percent != null) document.getElementById('maxMarginPercent').value = r.max_margin_percent;
+                    if (r.max_lots_per_trade != null) document.getElementById('maxLotsPerTrade').value = r.max_lots_per_trade;
+                    if (r.daily_loss_limit != null) document.getElementById('dailyLossLimit').value = r.daily_loss_limit;
+                    if (r.daily_profit_target != null) document.getElementById('dailyProfitTarget').value = r.daily_profit_target;
+                    if (r.max_trades_per_day != null) document.getElementById('maxTradesPerDay').value = r.max_trades_per_day;
+                    if (r.circuit_breaker != null) document.getElementById('circuitBreaker').value = r.circuit_breaker;
+                    if (r.drawdown_limit != null) document.getElementById('drawdownLimit').value = r.drawdown_limit;
+                    if (r.concentration_limit != null) document.getElementById('concentrationLimit').value = r.concentration_limit;
+                    if (r.track_combined_pnl != null) document.getElementById('trackCombinedPnL').checked = r.track_combined_pnl;
+                    if (r.combined_stop_loss != null) document.getElementById('combinedStopLoss').value = r.combined_stop_loss;
+                    if (r.combined_target != null) document.getElementById('combinedTarget').value = r.combined_target;
+                    if (r.auto_square_off != null) document.getElementById('autoSquareOff').checked = r.auto_square_off;
+                    if (r.notify_on_risk_breach != null) document.getElementById('notifyOnRiskBreach').checked = r.notify_on_risk_breach;
+                }
+
+                const sections = [data.entry, data.adjustment, data.exit, data.rms].filter(s => s && Object.keys(s).length);
+                if (sections.length > 0) {
+                    showResult(true, `Loaded saved config for ${name} (${sections.length} section${sections.length > 1 ? 's' : ''})`);
+                }
+            } catch (error) {
+                // Silently ignore load errors — first-time use will have no saved config
+            }
         }
 
         // Monitor Functions
@@ -814,6 +910,7 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             updateStrategyType();
+            loadConfig();
             refreshMonitor();
             // Auto-refresh every 2 seconds for live monitoring
             setInterval(refreshMonitor, 2000);

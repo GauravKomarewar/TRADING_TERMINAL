@@ -137,10 +137,10 @@ def check_market_activity(api: ShoonyaClient) -> tuple[bool, str]:
 
 
 def is_service_running() -> bool:
-    """Check if shoonya_service is already running"""
+    """Check if trading service is already running"""
     try:
         result = subprocess.run(
-            ['systemctl', 'is-active', 'shoonya_service'],
+            ['systemctl', 'is-active', 'trading'],
             capture_output=True,
             text=True
         )
@@ -151,10 +151,10 @@ def is_service_running() -> bool:
 
 
 def start_service():
-    """Start the shoonya_service"""
+    """Start the trading service"""
     try:
         subprocess.run(
-            ['sudo', 'systemctl', 'start', 'shoonya_service'],
+            ['sudo', 'systemctl', 'start', 'trading'],
             check=True
         )
         return True
@@ -256,7 +256,7 @@ def main():
                         telegram,
                         f"❌ <b>SERVICE START FAILED</b>\n"
                         f"⚠️ Please check logs\n"
-                        f"📋 journalctl -u shoonya_service -n 50"
+                        f"📋 journalctl -u trading -n 50"
                     )
             else:
                 logger.error("❌ Failed to start service")

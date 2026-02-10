@@ -1,5 +1,5 @@
 [Unit]
-Description=Shoonya Trading Platform - Unified Service
+Description=Trading Platform - Client %i
 Documentation=https://github.com/yourusername/shoonya_platform
 After=network-online.target
 Wants=network-online.target
@@ -19,99 +19,93 @@ Environment="LOG_LEVEL=INFO"
 Environment="PYTHONPATH=/home/ec2-user/shoonya_platform"
 
 # ========================================
-# SERVICE ENTRYPOINT
+# SERVICE ENTRYPOINT (PER-CLIENT .env)
 # ========================================
-# Runs unified service (execution + dashboard + option supervisor)
-ExecStart=/home/ec2-user/shoonya_platform/venv/bin/python /home/ec2-user/shoonya_platform/main.py
+# %i = instance name (e.g. "primary", "yeleshwar_a_komarewar")
+# Loads config_env/%i.env for this client
+ExecStart=/home/ec2-user/shoonya_platform/venv/bin/python /home/ec2-user/shoonya_platform/main.py --env config_env/%i.env
 
 # ========================================
 # RESTART POLICY
 # ========================================
-# Always restart on failure (including session recovery failures)
 Restart=always
-# Wait 10 seconds before restart (allows broker to stabilize)
 RestartSec=10
-# Allow up to 5 restarts in 5 minutes
 StartLimitInterval=300
 StartLimitBurst=5
-# Exit code 1 (session failure) triggers restart
 RestartForceExitStatus=1
 
 # ========================================
 # RESOURCE LIMITS
 # ========================================
-# Memory limit (prevents runaway memory usage)
-MemoryLimit=2G
-# CPU limit (80% of one core)
+MemoryMax=2G
 CPUQuota=80%
 
 # ========================================
 # SECURITY & ISOLATION
 # ========================================
-# Private /tmp directory
 PrivateTmp=yes
-# Prevent privilege escalation
 NoNewPrivileges=yes
-# Protect system files
 ProtectSystem=strict
-# Allow writes only to logs and data directories
 ReadWritePaths=/home/ec2-user/shoonya_platform/logs
 ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/persistence/data
 ReadWritePaths=/home/ec2-user/shoonya_platform/shoonya_platform/market_data/option_chain/data
-# Protect home directories
 ProtectHome=yes
-# Protect kernel parameters
 ProtectKernelTunables=yes
 
 # ========================================
 # GRACEFUL SHUTDOWN
 # ========================================
-# 30-second timeout for graceful shutdown (matches main.py shutdown logic)
 TimeoutStopSec=30
-# Send SIGTERM first (triggers signal_handler in main.py)
 KillSignal=SIGTERM
-# Force kill if SIGTERM doesn't work
 SendSIGKILL=yes
 
 # ========================================
 # PROCESS LIMITS
 # ========================================
-# Prevent OOM killer from targeting this service
 OOMScoreAdjust=-100
-# File descriptor limit
 LimitNOFILE=65536
-# Process limit
 LimitNPROC=8192
 
 # ========================================
 # LOGGING
 # ========================================
-# Log to systemd journal (in addition to file logs in logs/ directory)
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=shoonya-platform
+SyslogIdentifier=trading-%i
 
 [Install]
 WantedBy=multi-user.target
 
 # ========================================
-# INSTALLATION INSTRUCTIONS
+# MULTI-CLIENT USAGE
 # ========================================
-# 1. Copy this file to systemd:
-#    sudo cp ~/shoonya_platform/shoonya_service.service \
-#        /etc/systemd/system/shoonya_platform.service
 #
-# 2. Reload systemd:
-#    sudo systemctl daemon-reload
+# Each client gets their own service instance:
 #
-# 3. Enable auto-start on boot:
-#    sudo systemctl enable shoonya_platform
+#   1. Copy this template to systemd:
+#      sudo cp deployment/trading@.service /etc/systemd/system/trading@.service
+#      sudo systemctl daemon-reload
 #
-# 4. Start service:
-#    sudo systemctl start shoonya_platform
+#   2. Start Client 1 (primary.env → port 5000/8000):
+#      sudo systemctl start trading@primary
+#      sudo systemctl enable trading@primary
 #
-# 5. Check status:
-#    sudo systemctl status shoonya_platform
+#   3. Start Client 2 (yeleshwar_a_komarewar.env → port 5001/8001):
+#      sudo systemctl start trading@yeleshwar_a_komarewar
+#      sudo systemctl enable trading@yeleshwar_a_komarewar
 #
-# For detailed instructions, see: SERVICE_INSTALLATION_LINUX.md
+#   4. Check status:
+#      sudo systemctl status trading@primary
+#      sudo systemctl status trading@yeleshwar_a_komarewar
+#
+#   5. View logs:
+#      journalctl -u trading@primary -f
+#      journalctl -u trading@yeleshwar_a_komarewar -f
+#
+#   Each client process has:
+#   - Separate .env file (unique ports, credentials, DB path)
+#   - Separate log directory (logs/<USER_ID>/)
+#   - Separate SQLite database
+#   - Separate risk state file
+#   - Independent restart policy
 # ========================================

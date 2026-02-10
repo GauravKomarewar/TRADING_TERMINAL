@@ -354,7 +354,7 @@ def main():
             max_request_header_size=8192,
             max_request_body_size=1048576,  # 1 MB
             expose_tracebacks=False,
-            ident="Shoonya-Execution-Service/2.0",
+            ident="Trading-Service/2.0",
         )
 
     except KeyboardInterrupt:

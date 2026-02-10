@@ -70,6 +70,7 @@ logger: Optional[logging.Logger] = None
 dashboard_server: Optional[uvicorn.Server] = None
 dashboard_thread: Optional[threading.Thread] = None
 shutdown_event = threading.Event()
+_dashboard_port: int = 8000  # Set by main() before dashboard thread starts
 
 
 # ---------------------------------------------------------------------
@@ -143,7 +144,7 @@ def run_dashboard():
             app = create_dashboard_app()
 
             # Create Server instance (not run() helper)
-            dashboard_port = config.dashboard_port
+            dashboard_port = _dashboard_port
             config_uv = uvicorn.Config(
                 app=app,
                 host="0.0.0.0",
@@ -307,6 +308,7 @@ def main():
         # This is ACCEPTABLE and intentional.
         # -------------------------------------------------
         logger.info("Starting dashboard server...")
+        _dashboard_port = config.dashboard_port
         
         # NON-DAEMON thread (allows graceful shutdown)
         dashboard_thread = threading.Thread(

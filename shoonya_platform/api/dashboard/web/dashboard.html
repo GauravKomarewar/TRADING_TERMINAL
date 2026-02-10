@@ -12,15 +12,15 @@
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: var(--spacing-lg);
-            margin-bottom: var(--spacing-xl);
+            gap: 10px;
+            margin-bottom: 12px;
         }
 
         .overview-grid {
             display: grid;
             grid-template-columns: minmax(280px, 1.1fr) minmax(220px, 1fr) minmax(220px, 1fr);
-            gap: var(--spacing-lg);
-            margin-bottom: var(--spacing-xl);
+            gap: 10px;
+            margin-bottom: 12px;
         }
 
         .stat-block {
@@ -29,15 +29,15 @@
         }
 
         .stat-block + .stat-block {
-            margin-top: var(--spacing-md);
-            padding-top: var(--spacing-md);
+            margin-top: 8px;
+            padding-top: 8px;
             border-top: 1px solid var(--border);
         }
         
         .stat-card {
             background: var(--panel);
             border: 1px solid var(--border);
-            padding: var(--spacing-lg);
+            padding: 12px;
             border-radius: var(--radius-lg);
             transition: var(--transition);
         }
@@ -50,7 +50,7 @@
             font-size: var(--font-xs);
             color: var(--muted);
             text-transform: uppercase;
-            margin-bottom: var(--spacing-sm);
+            margin-bottom: 4px;
             font-weight: 600;
             letter-spacing: 0.5px;
         }
@@ -75,7 +75,7 @@
         
         th {
             background: #1c2333;
-            padding: 12px;
+            padding: 8px;
             text-align: left;
             color: var(--muted);
             font-weight: 600;
@@ -85,7 +85,7 @@
         }
         
         td {
-            padding: 12px;
+            padding: 8px;
             border-bottom: 1px solid var(--border);
         }
         
@@ -121,13 +121,13 @@
         /* Empty State */
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
+            padding: 30px 12px;
             color: var(--muted);
         }
         
         .empty-state-icon {
-            font-size: 48px;
-            margin-bottom: 12px;
+            font-size: 36px;
+            margin-bottom: 8px;
             opacity: 0.5;
         }
         
@@ -136,7 +136,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 0;
+            padding: 6px 0;
             border-bottom: 1px solid var(--border);
         }
         
@@ -158,9 +158,9 @@
         .error-banner {
             background: rgba(239, 68, 68, 0.1);
             color: var(--danger);
-            padding: 16px;
+            padding: 10px;
             border-radius: 8px;
-            margin-bottom: 24px;
+            margin-bottom: 12px;
             display: none;
             border: 1px solid rgba(239, 68, 68, 0.3);
         }
@@ -219,15 +219,15 @@
         .analytics-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            gap: 10px;
+            margin-bottom: 12px;
         }
 
         .mini-card {
             background: var(--panel);
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 14px;
+            border-radius: 10px;
+            padding: 10px;
         }
 
         .mini-title {
@@ -235,7 +235,7 @@
             color: var(--muted);
             text-transform: uppercase;
             letter-spacing: 0.6px;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             font-weight: 600;
         }
 
@@ -260,15 +260,15 @@
         .message-list {
             max-height: 320px;
             overflow-y: auto;
-            padding: 8px;
+            padding: 6px;
         }
 
         .message-item {
             border: 1px solid var(--border);
             background: #1c2333;
-            border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 8px;
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 6px;
         }
 
         .message-meta {
@@ -313,7 +313,7 @@
     <div class="overview-grid">
         <div class="card">
             <div class="card-header">Account Limits</div>
-            <div style="padding: 20px">
+            <div style="padding: 10px">
                 <div class="status-item">
                     <span class="status-label">Cash Available</span>
                     <span id="cashAvail" class="status-value">₹0.00</span>
@@ -337,7 +337,7 @@
             </div>
         </div>
 
-        <div style="display: grid; gap: var(--spacing-lg)">
+        <div style="display: grid; gap: 10px">
             <div class="stat-card">
                 <div class="stat-label">Net PnL</div>
                 <div id="netPnl" class="stat-value neutral">₹0.00</div>
@@ -444,7 +444,7 @@
     <!-- Main Grid -->
     <div class="grid-main">
         <!-- Left Column -->
-        <div style="display: grid; grid-template-columns: 1fr; gap: 24px">
+        <div style="display: grid; grid-template-columns: 1fr; gap: 10px">
             <!-- Positions Table -->
             <div class="card">
                 <div class="card-header">
@@ -524,11 +524,11 @@
         </div>
         
         <!-- Right Column -->
-        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; grid-template-rows: auto">
+        <div style="display: grid; grid-template-columns: 1fr; gap: 10px; grid-template-rows: auto">
             <!-- System Status -->
             <div class="card">
                 <div class="card-header">System Status</div>
-                <div style="padding: 20px">
+                <div style="padding: 10px">
                     <div class="status-item">
                         <span class="status-label">Broker Connection</span>
                         <span id="loginStatus" class="badge ok">CHECKING</span>

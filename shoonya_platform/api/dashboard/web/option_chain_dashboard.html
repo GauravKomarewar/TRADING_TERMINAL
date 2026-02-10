@@ -118,7 +118,8 @@
         }
         
         .control-panel select,
-        .control-panel button {
+        .control-panel button,
+        .control-panel .symbol-combo {
             width: 100%;
         }
         
@@ -167,6 +168,72 @@
         select:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+        
+        /* Searchable Symbol Combobox */
+        .symbol-combo {
+            position: relative;
+            width: 100%;
+        }
+        .symbol-input {
+            padding: 6px 24px 6px 8px;
+            background: #1c2333;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 4px;
+            font-size: 11px;
+            height: 28px;
+            width: 100%;
+            box-sizing: border-box;
+            outline: none;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .symbol-input:focus {
+            border-color: var(--primary);
+        }
+        .symbol-arrow {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            font-size: 11px;
+            pointer-events: none;
+        }
+        .symbol-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            margin-top: 2px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            z-index: 200;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .symbol-dropdown.open {
+            display: block;
+        }
+        .symbol-option {
+            padding: 6px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            color: var(--text);
+        }
+        .symbol-option:hover, .symbol-option.highlight {
+            background: rgba(59,130,246,0.15);
+        }
+        .symbol-option.selected {
+            color: var(--primary);
+            font-weight: 700;
+        }
+        .symbol-option.hidden {
+            display: none;
         }
         
         .column-dropdown {
@@ -724,11 +791,26 @@
     <div class="top-controls-container">
         <!-- Left Control Panel -->
         <div class="control-panel">
-            <select id="symbol">
+            <div class="symbol-combo" id="symbolCombo">
+                <input type="text" id="symbolInput" class="symbol-input" value="NIFTY" placeholder="Type symbol..." autocomplete="off" spellcheck="false">
+                <span class="symbol-arrow">▾</span>
+                <div class="symbol-dropdown" id="symbolDropdown">
+                    <div class="symbol-option selected" data-value="NIFTY">NIFTY</div>
+                    <div class="symbol-option" data-value="BANKNIFTY">BANKNIFTY</div>
+                    <div class="symbol-option" data-value="FINNIFTY">FINNIFTY</div>
+                    <div class="symbol-option" data-value="SENSEX">SENSEX</div>
+                    <div class="symbol-option" data-value="MIDCPNIFTY">MIDCPNIFTY</div>
+                    <div class="symbol-option" data-value="NIFTYNXT50">NIFTYNXT50</div>
+                    <div class="symbol-option" data-value="CRUDEOIL">CRUDEOIL</div>
+                    <div class="symbol-option" data-value="GOLD">GOLD</div>
+                    <div class="symbol-option" data-value="SILVER">SILVER</div>
+                    <div class="symbol-option" data-value="NATURALGAS">NATURALGAS</div>
+                    <div class="symbol-option" data-value="BANKEX">BANKEX</div>
+                </div>
+            </div>
+            <!-- Hidden select kept for JS compatibility -->
+            <select id="symbol" style="display:none">
                 <option value="NIFTY" selected>NIFTY</option>
-                <option value="BANKNIFTY">BANKNIFTY</option>
-                <option value="FINNIFTY">FINNIFTY</option>
-                <option value="SENSEX">SENSEX</option>
             </select>
             
             <select id="expiry">
@@ -1010,11 +1092,121 @@
     
     // Initialize
     function init() {
+        initSymbolCombo();
         setupEventListeners();
         loadExpiries();
         startAutoRefresh();
         // Index tokens now handled by shared layout.js
         updateBasketUI();
+    }
+    
+    // Searchable symbol combobox
+    function initSymbolCombo() {
+        const combo = document.getElementById('symbolCombo');
+        const input = document.getElementById('symbolInput');
+        const dropdown = document.getElementById('symbolDropdown');
+        const hiddenSelect = elements.symbol; // the hidden <select>
+        const allOptions = Array.from(dropdown.querySelectorAll('.symbol-option'));
+        let highlightIdx = -1;
+
+        function openDropdown() {
+            filterOptions(input.value);
+            dropdown.classList.add('open');
+        }
+        function closeDropdown() {
+            dropdown.classList.remove('open');
+            highlightIdx = -1;
+            allOptions.forEach(o => o.classList.remove('highlight'));
+        }
+        function filterOptions(query) {
+            const q = query.trim().toUpperCase();
+            let visibleCount = 0;
+            allOptions.forEach(opt => {
+                const match = !q || opt.dataset.value.includes(q);
+                opt.classList.toggle('hidden', !match);
+                if (match) visibleCount++;
+            });
+            highlightIdx = -1;
+            allOptions.forEach(o => o.classList.remove('highlight'));
+        }
+        function selectValue(val) {
+            val = val.toUpperCase();
+            input.value = val;
+            // Update hidden select
+            let opt = hiddenSelect.querySelector(`option[value="${val}"]`);
+            if (!opt) {
+                opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = val;
+                hiddenSelect.appendChild(opt);
+            }
+            hiddenSelect.value = val;
+            // Mark selected in dropdown
+            allOptions.forEach(o => o.classList.toggle('selected', o.dataset.value === val));
+            closeDropdown();
+            // Fire change event on the hidden select
+            hiddenSelect.dispatchEvent(new Event('change'));
+        }
+        function getVisibleOptions() {
+            return allOptions.filter(o => !o.classList.contains('hidden'));
+        }
+        function setHighlight(idx) {
+            const visible = getVisibleOptions();
+            if (!visible.length) return;
+            highlightIdx = Math.max(0, Math.min(idx, visible.length - 1));
+            allOptions.forEach(o => o.classList.remove('highlight'));
+            visible[highlightIdx].classList.add('highlight');
+            visible[highlightIdx].scrollIntoView({ block: 'nearest' });
+        }
+
+        // Typing filters the list
+        input.addEventListener('input', () => {
+            openDropdown();
+        });
+        // Focus opens dropdown and selects text for easy replacement
+        input.addEventListener('focus', () => {
+            input.select();
+            openDropdown();
+        });
+        // Arrow click opens
+        combo.addEventListener('click', () => {
+            if (dropdown.classList.contains('open')) {
+                closeDropdown();
+            } else {
+                input.focus();
+            }
+        });
+        // Keyboard navigation
+        input.addEventListener('keydown', (e) => {
+            const visible = getVisibleOptions();
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (!dropdown.classList.contains('open')) openDropdown();
+                setHighlight(highlightIdx + 1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setHighlight(highlightIdx - 1);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (highlightIdx >= 0 && visible[highlightIdx]) {
+                    selectValue(visible[highlightIdx].dataset.value);
+                } else if (input.value.trim()) {
+                    selectValue(input.value.trim());
+                }
+            } else if (e.key === 'Escape') {
+                closeDropdown();
+                input.value = hiddenSelect.value;
+            }
+        });
+        // Click option
+        dropdown.addEventListener('click', (e) => {
+            const opt = e.target.closest('.symbol-option');
+            if (opt) selectValue(opt.dataset.value);
+        });
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (!combo.contains(e.target)) closeDropdown();
+        });
     }
     
     // Event Listeners

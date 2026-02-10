@@ -76,7 +76,7 @@ class CommandService:
             quantity=cmd.quantity,
             product=cmd.product,
 
-            order_type="MARKET",
+            order_type=cmd.order_type or "MARKET",
             price=cmd.price,
 
             stop_loss=cmd.stop_loss,
@@ -99,7 +99,11 @@ class CommandService:
         EXIT intents must use register() for explicit EXIT semantics.
         """
         if execution_type == "EXIT" or cmd.intent == "EXIT":
-            raise RuntimeError("EXIT intents must use register()")
+            logger.warning(
+                "register_intent called with EXIT — redirecting to register() | cmd_id=%s",
+                cmd.command_id,
+            )
+            return self.register(cmd)
 
         validate_order(cmd)
 

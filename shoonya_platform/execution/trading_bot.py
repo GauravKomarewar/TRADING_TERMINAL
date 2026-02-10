@@ -326,11 +326,49 @@ class ShoonyaBot:
         # -------------------------------------------------
         self.execution_guard = ExecutionGuard()
 
+        # 🔒 STARTUP GUARD RECONCILIATION — rebuild guard state from broker truth
+        # Without this, after a restart the guard thinks no strategies have positions,
+        # allowing duplicate ENTRY orders for strategies that already have live broker positions.
+        try:
+            self._ensure_login()
+            positions = self.api.get_positions() or []
+            broker_map: Dict[str, Dict[str, int]] = {}
+            for p in positions:
+                sym = p.get("tsym")
+                net = int(p.get("netqty", 0))
+                if not sym or net == 0:
+                    continue
+                broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
+                if net > 0:
+                    broker_map[sym]["BUY"] = net
+                else:
+                    broker_map[sym]["SELL"] = abs(net)
+
+            if broker_map:
+                # Use "__STARTUP__" as strategy_id; real strategy reconciliation
+                # happens in process_alert before each trade.
+                self.execution_guard.reconcile_with_broker(
+                    strategy_id="__STARTUP__",
+                    broker_positions=broker_map,
+                )
+                logger.info(
+                    "STARTUP_GUARD_RECONCILE | symbols=%d | %s",
+                    len(broker_map),
+                    list(broker_map.keys()),
+                )
+            else:
+                logger.info("STARTUP_GUARD_RECONCILE | No live positions at startup")
+        except Exception as e:
+            logger.warning("STARTUP_GUARD_RECONCILE FAILED | %s — guard starts empty", e)
+
         # ⚠️ CommandService DEPENDS on order_watcher
         self.command_service = CommandService(self)
         self.pending_commands = []
         # 🔒 Atomic lock for execute_command (prevents double execution)
         self._cmd_lock = threading.Lock()
+        # 🔒 Per-strategy locks for process_alert (prevents duplicate webhook races)
+        self._alert_locks: Dict[str, threading.Lock] = {}
+        self._alert_locks_guard = threading.Lock()
         # -------------------------------------------------
         # 🧠 RISK MANAGER (INTENT ONLY – NO DIRECT ORDERS)
         # -------------------------------------------------
@@ -1051,6 +1089,7 @@ class ShoonyaBot:
         - ✅ Alert defines order_type & price
         - ✅ ExecutionGuard controls risk
         - ✅ Broker position book controls duplicates
+        - ✅ Per-strategy lock prevents duplicate webhook races
         """
 
         try:
@@ -1063,231 +1102,257 @@ class ShoonyaBot:
             parsed = self.parse_alert_data(alert_data)
             execution_type = parsed.execution_type.upper()
 
-            # Risk check — EXIT alerts always pass (they reduce risk)
-            if execution_type != "EXIT" and not self.risk_manager.can_execute():
-                return {
-                    "status": "blocked",
-                    "reason": "Risk limits / cooldown",
-                    "timestamp": datetime.now().isoformat(),
-                }
-
             # -------------------------------------------------
-            # TELEGRAM — ALERT RECEIVED
+            # 🔒 PER-STRATEGY LOCK — prevents duplicate webhook races
+            # Two identical webhooks arriving simultaneously will serialize
+            # on the strategy lock; the second one will hit dedup checks.
             # -------------------------------------------------
-            if self.telegram_enabled and self.telegram:
-                try:
-                    self.telegram.send_alert_received(
-                        strategy_name=parsed.strategy_name,
-                        execution_type=execution_type,
-                        legs_count=len(parsed.legs),
-                        exchange=parsed.exchange,
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to send alert received message: {e}")
-            # -------------------------------------------------
-            # 🔁 EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
-            # -------------------------------------------------
-            if not parsed.test_mode:
-                try:
-                    positions = self.api.get_positions()
-                except Exception:
-                    positions = []
+            with self._alert_locks_guard:
+                if parsed.strategy_name not in self._alert_locks:
+                    self._alert_locks[parsed.strategy_name] = threading.Lock()
+                strategy_lock = self._alert_locks[parsed.strategy_name]
 
-                # 🔒 Direction-aware broker map (ExecutionGuard v1.3 contract)
-                broker_map = {}
-                for p in positions:
-                    sym = p.get("tsym")
-                    net = int(p.get("netqty", 0))
-                    if not sym or net == 0:
-                        continue
+            with strategy_lock:
 
-                    broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
-                    if net > 0:
-                        broker_map[sym]["BUY"] = net
-                    else:
-                        broker_map[sym]["SELL"] = abs(net)
+                # Risk check — EXIT alerts always pass (they reduce risk)
+                if execution_type != "EXIT" and not self.risk_manager.can_execute():
+                    return {
+                        "status": "blocked",
+                        "reason": "Risk limits / cooldown",
+                        "timestamp": datetime.now().isoformat(),
+                    }
 
-                self.execution_guard.reconcile_with_broker(
-                    strategy_id=parsed.strategy_name,
-                    broker_positions=broker_map,
-                )
-
-            # -------------------------------------------------
-            # DUPLICATE ENTRY DETECTION (BROKER-TRUTH)
-            # -------------------------------------------------
-            duplicate_symbols = set()
-
-            if execution_type == "ENTRY" and not parsed.test_mode:
-                for leg in parsed.legs:
-                    if self.has_live_entry_block(parsed.strategy_name, leg.tradingsymbol):
-                        duplicate_symbols.add(leg.tradingsymbol)
-                        logger.warning(
-                            f"ENTRY BLOCKED — LIVE ORDER OR POSITION EXISTS | "
-                            f"{leg.tradingsymbol} | {parsed.strategy_name}"
+                # -------------------------------------------------
+                # TELEGRAM — ALERT RECEIVED
+                # -------------------------------------------------
+                if self.telegram_enabled and self.telegram:
+                    try:
+                        self.telegram.send_alert_received(
+                            strategy_name=parsed.strategy_name,
+                            execution_type=execution_type,
+                            legs_count=len(parsed.legs),
+                            exchange=parsed.exchange,
                         )
-
-            # -------------------------------------------------
-            # EXECUTION GUARD PLAN
-            # -------------------------------------------------
-            intents = [
-                LegIntent(
-                    strategy_id=parsed.strategy_name,
-                    symbol=leg.tradingsymbol,
-                    direction=leg.direction,
-                    qty=leg.qty,
-                    tag=execution_type,
-                )
-                for leg in parsed.legs
-            ]
-
-            try:
-                guarded = (
-                    intents
-                    if parsed.test_mode
-                    else self.execution_guard.validate_and_prepare(
-                        intents=intents,
-                        execution_type=execution_type,
-                    )
-                )
-            except RuntimeError as e:
-                logger.warning(str(e))
-                return {
-                    "status": "blocked",
-                    "reason": str(e),
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-
-            if execution_type == "ENTRY" and not guarded:
-                return {
-                    "status": "blocked",
-                    "reason": "ExecutionGuard blocked ENTRY",
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-            guard_map = {(g.symbol, g.direction): g.qty for g in guarded}
-
-            expected_legs = len(parsed.legs)
-            attempted = 0
-            success_count = 0
-
-            # -------------------------------------------------
-            # EXECUTE LEGS
-            # -------------------------------------------------
-            for leg in parsed.legs:
-                orig_direction = leg.direction
-
-                if execution_type == "EXIT":
-                    # -------------------------------------------------
-                    # 🔒 BROKER-TRUTH EXIT DIRECTION
-                    # -------------------------------------------------
+                    except Exception as e:
+                        logger.warning(f"Failed to send alert received message: {e}")
+                # -------------------------------------------------
+                # 🔁 EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
+                # -------------------------------------------------
+                if not parsed.test_mode:
                     try:
                         positions = self.api.get_positions()
                     except Exception:
                         positions = []
 
-                    net_qty = 0
+                    # 🔒 Direction-aware broker map (ExecutionGuard v1.3 contract)
+                    broker_map = {}
                     for p in positions:
-                        if p.get("tsym") == leg.tradingsymbol:
-                            net_qty = int(p.get("netqty", 0))
-                            break
+                        sym = p.get("tsym")
+                        net = int(p.get("netqty", 0))
+                        if not sym or net == 0:
+                            continue
 
-                    if net_qty == 0:
+                        broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
+                        if net > 0:
+                            broker_map[sym]["BUY"] = net
+                        else:
+                            broker_map[sym]["SELL"] = abs(net)
+
+                    self.execution_guard.reconcile_with_broker(
+                        strategy_id=parsed.strategy_name,
+                        broker_positions=broker_map,
+                    )
+
+                # -------------------------------------------------
+                # DUPLICATE ENTRY DETECTION (BROKER-TRUTH)
+                # -------------------------------------------------
+                duplicate_symbols = set()
+
+                if execution_type == "ENTRY" and not parsed.test_mode:
+                    for leg in parsed.legs:
+                        if self.has_live_entry_block(parsed.strategy_name, leg.tradingsymbol):
+                            duplicate_symbols.add(leg.tradingsymbol)
+                            logger.warning(
+                                f"ENTRY BLOCKED — LIVE ORDER OR POSITION EXISTS | "
+                                f"{leg.tradingsymbol} | {parsed.strategy_name}"
+                            )
+
+                # -------------------------------------------------
+                # EXECUTION GUARD PLAN
+                # -------------------------------------------------
+                intents = [
+                    LegIntent(
+                        strategy_id=parsed.strategy_name,
+                        symbol=leg.tradingsymbol,
+                        direction=leg.direction,
+                        qty=leg.qty,
+                        tag=execution_type,
+                    )
+                    for leg in parsed.legs
+                ]
+
+                try:
+                    guarded = (
+                        intents
+                        if parsed.test_mode
+                        else self.execution_guard.validate_and_prepare(
+                            intents=intents,
+                            execution_type=execution_type,
+                        )
+                    )
+                except RuntimeError as e:
+                    logger.warning(str(e))
+                    return {
+                        "status": "blocked",
+                        "reason": str(e),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+
+                if execution_type == "ENTRY" and not guarded:
+                    return {
+                        "status": "blocked",
+                        "reason": "ExecutionGuard blocked ENTRY",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                guard_map = {(g.symbol, g.direction): g.qty for g in guarded}
+
+                expected_legs = len(parsed.legs)
+                attempted = 0
+                success_count = 0
+
+                # -------------------------------------------------
+                # EXECUTE LEGS
+                # -------------------------------------------------
+                # 🔒 Fetch positions ONCE before the loop for EXIT legs
+                # (prevents per-leg API calls and race conditions between legs)
+                exit_positions_cache = None
+                if execution_type == "EXIT":
+                    try:
+                        exit_positions_cache = self.api.get_positions() or []
+                    except Exception:
+                        exit_positions_cache = []
+
+                for leg in parsed.legs:
+                    orig_direction = leg.direction
+
+                    if execution_type == "EXIT":
+                        # -------------------------------------------------
+                        # 🔒 BROKER-TRUTH EXIT DIRECTION (from cached snapshot)
+                        # -------------------------------------------------
+                        net_qty = 0
+                        for p in exit_positions_cache:
+                            if p.get("tsym") == leg.tradingsymbol:
+                                net_qty = int(p.get("netqty", 0))
+                                break
+
+                        if net_qty == 0:
+                            logger.warning(
+                                f"EXIT SKIPPED — NO POSITION | {leg.tradingsymbol}"
+                            )
+                            continue
+
+                        # If net_qty > 0 → SELL to exit
+                        # If net_qty < 0 → BUY to exit
+                        leg.direction = "SELL" if net_qty > 0 else "BUY"
+
+                    if execution_type == "EXIT":
+                        key = (leg.tradingsymbol, "EXIT")
+                    else:
+                        key = (leg.tradingsymbol, orig_direction)
+
+                    if key not in guard_map:
                         logger.warning(
-                            f"EXIT SKIPPED — NO POSITION | {leg.tradingsymbol}"
+                            f"EXECUTION_GUARD_BLOCK | {parsed.strategy_name} | {leg.tradingsymbol}"
                         )
                         continue
 
-                    # If net_qty > 0 → SELL to exit
-                    # If net_qty < 0 → BUY to exit
-                    leg.direction = "SELL" if net_qty > 0 else "BUY"
+                    leg.qty = guard_map[key]
+                    if leg.qty <= 0:
+                        continue
 
-                if execution_type == "EXIT":
-                    key = (leg.tradingsymbol, "EXIT")
-                else:
-                    key = (leg.tradingsymbol, orig_direction)
-
-                if key not in guard_map:
-                    logger.warning(
-                        f"EXECUTION_GUARD_BLOCK | {parsed.strategy_name} | {leg.tradingsymbol}"
-                    )
-                    continue
-
-                leg.qty = guard_map[key]
-                if leg.qty <= 0:
-                    continue
-
-                # -------------------------------------------------
-                # ENFORCE ORDER CONTRACT
-                # -------------------------------------------------
-                if not leg.order_type:
-                    raise RuntimeError(
-                        f"ORDER TYPE MISSING | {leg.tradingsymbol}"
-                    )
-
-                if leg.order_type.upper() == "LIMIT" and not leg.price:
-                    raise RuntimeError(
-                        f"LIMIT PRICE MISSING | {leg.tradingsymbol}"
-                    )
-
-                is_duplicate = (
-                    execution_type == "ENTRY"
-                    and not parsed.test_mode
-                    and leg.tradingsymbol in duplicate_symbols
-                )
-
-                attempted += 1
-
-                result = self.process_leg(
-                    leg_data=leg,
-                    exchange=parsed.exchange,
-                    strategy_name=parsed.strategy_name,
-                    execution_type=execution_type,
-                    test_mode=parsed.test_mode,
-                    is_duplicate=is_duplicate,
-                )
-
-                if result.order_result.success:
-                    success_count += 1
-
-            # -------------------------------------------------
-            # ENTRY FAILURE — ROLLBACK
-            # -------------------------------------------------
-            if execution_type == "ENTRY" and success_count == 0:
-                self.execution_guard.force_close_strategy(parsed.strategy_name)
-
-                if self.telegram_enabled and self.telegram:
+                    # -------------------------------------------------
+                    # ENFORCE ORDER CONTRACT
+                    # -------------------------------------------------
                     try:
-                        self.telegram.send_error_message(
-                            title="🚨 ENTRY FAILED",
-                            error=f"{parsed.strategy_name} | All legs rejected",
+                        if not leg.order_type:
+                            raise RuntimeError(
+                                f"ORDER TYPE MISSING | {leg.tradingsymbol}"
+                            )
+
+                        if leg.order_type.upper() == "LIMIT" and not leg.price:
+                            raise RuntimeError(
+                                f"LIMIT PRICE MISSING | {leg.tradingsymbol}"
+                            )
+
+                        is_duplicate = (
+                            execution_type == "ENTRY"
+                            and not parsed.test_mode
+                            and leg.tradingsymbol in duplicate_symbols
                         )
-                    except Exception as e:
-                        logger.warning(f"Failed to send error message: {e}")
+
+                        attempted += 1
+
+                        result = self.process_leg(
+                            leg_data=leg,
+                            exchange=parsed.exchange,
+                            strategy_name=parsed.strategy_name,
+                            execution_type=execution_type,
+                            test_mode=parsed.test_mode,
+                            is_duplicate=is_duplicate,
+                        )
+
+                        if result.order_result.success:
+                            success_count += 1
+                    except Exception as leg_err:
+                        logger.error(
+                            "LEG_PROCESSING_FAILED | strategy=%s | symbol=%s | error=%s",
+                            parsed.strategy_name,
+                            leg.tradingsymbol,
+                            leg_err,
+                        )
+                        attempted += 1
+                        # Continue processing remaining legs
+
+                # -------------------------------------------------
+                # ENTRY FAILURE — ROLLBACK
+                # -------------------------------------------------
+                if execution_type == "ENTRY" and success_count == 0:
+                    self.execution_guard.force_close_strategy(parsed.strategy_name)
+
+                    if self.telegram_enabled and self.telegram:
+                        try:
+                            self.telegram.send_error_message(
+                                title="🚨 ENTRY FAILED",
+                                error=f"{parsed.strategy_name} | All legs rejected",
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to send error message: {e}")
+
+                    return {
+                        "status": "FAILED",
+                        "expected_legs": expected_legs,
+                        "successful_legs": 0,
+                        "attempted_legs": attempted,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                status = (
+                    "INTENTS_REGISTERED"
+                    if success_count == expected_legs
+                    else "PARTIALLY_REGISTERED"
+                    if success_count > 0
+                    else "FAILED"
+                )
 
                 return {
-                    "status": "FAILED",
+                    "status": status,
                     "expected_legs": expected_legs,
-                    "successful_legs": 0,
                     "attempted_legs": attempted,
+                    "successful_legs": success_count,
                     "timestamp": datetime.now().isoformat(),
                 }
-
-            status = (
-                "COMPLETED SUCCESSFULLY"
-                if success_count == expected_legs
-                else "PARTIALLY COMPLETED"
-                if success_count > 0
-                else "FAILED"
-            )
-
-            return {
-                "status": status,
-                "expected_legs": expected_legs,
-                "attempted_legs": attempted,
-                "successful_legs": success_count,
-                "timestamp": datetime.now().isoformat(),
-            }
         except RuntimeError:
             # 🔥 FAIL-HARD: broker/session blind
             raise
@@ -1452,10 +1517,12 @@ class ShoonyaBot:
             # 🛡️ Check 2A: RISK MANAGER (daily loss, cooldown, max loss)
             # EXIT orders ALWAYS bypass risk checks — they REDUCE risk, not add it.
             # Without this bypass, RMS exit orders block themselves when daily_loss_hit=True.
+            #
+            # Detection: intent field (set by from_record / with_intent) OR command_id prefix
+            # (set by PositionExitService for risk-triggered exits).
             is_exit_order = (
                 getattr(command, 'intent', None) == 'EXIT'
-                or getattr(command, 'execution_type', '').upper() == 'EXIT'
-                or (hasattr(command, 'command_id') and command.command_id.startswith('EXIT_'))
+                or (hasattr(command, 'command_id') and str(command.command_id).startswith('EXIT_'))
             )
             if is_exit_order:
                 logger.info(

@@ -103,6 +103,30 @@ def get_connection():
             )
             conn.commit()
 
+            # 🔒 PRODUCTION INDEXES — prevent full table scans on client_id
+            # and enforce uniqueness on (command_id, client_id) to prevent
+            # duplicate order execution from retries or race conditions.
+            try:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_orders_client_id "
+                    "ON orders(client_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_orders_client_status "
+                    "ON orders(client_id, status)"
+                )
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_command_client "
+                    "ON orders(command_id, client_id)"
+                )
+                conn.commit()
+            except Exception:
+                # Best-effort: indexes improve performance but are not fatal
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             # Detect and migrate away from UNIQUE(command_id) if present in older DBs
             try:
                 indexes = conn.execute("PRAGMA index_list('orders')").fetchall()

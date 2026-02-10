@@ -101,7 +101,12 @@ class OrderWatcherEngine(threading.Thread):
         Updates DB status from SENT_TO_BROKER → EXECUTED/FAILED based on broker reality.
         This is the ONLY source of definitive execution status.
         """
-        broker_orders = self.bot.api.get_order_book()
+        try:
+            broker_orders = self.bot.api.get_order_book() or []
+        except Exception:
+            logger.exception("OrderWatcher: get_order_book() failed — broker polling skipped this cycle")
+            return
+
         for bo in broker_orders:
             broker_id = bo.get("norenordno")
             status = (bo.get("status") or "").upper()
@@ -229,7 +234,7 @@ class OrderWatcherEngine(threading.Thread):
               }
             }
         """
-        positions = self.bot.api.get_positions()
+        positions = self.bot.api.get_positions() or []
         broker_map: Dict[str, Dict[str, int]] = {}
 
         for p in positions:
@@ -376,15 +381,26 @@ class OrderWatcherEngine(threading.Thread):
         """
         try:
             # Build minimal params if Mock/struct-like
-            sym = getattr(order, 'symbol', None) or order.get('symbol') if isinstance(order, dict) else None
-            qty = getattr(order, 'quantity', None) or order.get('quantity') if isinstance(order, dict) else None
+            sym = getattr(order, 'symbol', None) or (order.get('symbol') if isinstance(order, dict) else None)
+            qty = getattr(order, 'quantity', None) or (order.get('quantity') if isinstance(order, dict) else None)
+            exch = getattr(order, 'exchange', None) or (order.get('exchange') if isinstance(order, dict) else None) or "NFO"
+            side = getattr(order, 'side', None) or (order.get('side') if isinstance(order, dict) else None)
+            product = getattr(order, 'product', None) or (order.get('product') if isinstance(order, dict) else None) or "M"
+
+            # Determine correct exit direction (opposite of position side)
+            if side and side.upper() == "BUY":
+                exit_direction = "SELL"
+            elif side and side.upper() == "SELL":
+                exit_direction = "BUY"
+            else:
+                exit_direction = "SELL"  # Default fallback
 
             params = {
-                "exchange": "NFO",
+                "exchange": exch,
                 "tradingsymbol": sym,
                 "quantity": qty or 0,
-                "direction": "SELL",
-                "product": "M",
+                "direction": exit_direction,
+                "product": product,
                 "order_type": "MARKET",
                 "price": None,
             }

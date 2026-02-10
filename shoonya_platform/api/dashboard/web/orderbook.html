@@ -26,10 +26,6 @@ async function logout() {
     window.location.href = '/';
 }
 
-window.addEventListener('DOMContentLoaded', function() {
-    checkAuth();
-});
-
 // Auto-refresh orderbook every 2s
 let _orderbookAutoTimer = null;
 function startOrderbookAutoRefresh() {
@@ -43,7 +39,8 @@ function stopOrderbookAutoRefresh() {
     _orderbookAutoTimer = null;
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', function() {
+    checkAuth();
     startOrderbookAutoRefresh();
 });
 
@@ -211,10 +208,7 @@ async function checkAuth() {
 <script>
 let timer=null,currentModifyId=null,currentModifyType=null,systemOrdersCache=[],brokerOrdersCache=[];
 
-async function logout(){
-    await fetch('/auth/logout',{method:'POST'});
-    window.location.href='/';
-}
+// logout() defined in header script block (with credentials: 'include')
 
 async function loadOrderbook(){
     try{
@@ -248,7 +242,7 @@ function renderSystemOrders(orders){
         const aTime=a.created_at?new Date(a.created_at).getTime():0;
         const bTime=b.created_at?new Date(b.created_at).getTime():0;
         if(aTime!==bTime){
-            return aTime-bTime;
+            return bTime-aTime;
         }
         return String(a.command_id||'').localeCompare(String(b.command_id||''));
     });
@@ -384,8 +378,8 @@ function downloadCSV(filename,data){
     URL.revokeObjectURL(url);
 }
 
-window.onload=()=>{loadOrderbook();timer=setInterval(loadOrderbook,3000)};
-window.onbeforeunload=()=>{if(timer)clearInterval(timer)};
+// Auto-refresh managed by startOrderbookAutoRefresh() in DOMContentLoaded
+window.onbeforeunload=()=>{stopOrderbookAutoRefresh()};
 </script>
 </body>
 </html>

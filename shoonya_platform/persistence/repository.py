@@ -53,7 +53,7 @@ class OrderRepository:
         conn = get_connection()
         conn.execute(
             """
-            INSERT INTO orders (
+            INSERT OR IGNORE INTO orders (
                 client_id,
                 command_id,
                 source,

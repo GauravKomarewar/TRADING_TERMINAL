@@ -17,6 +17,7 @@ Invariants:
 import logging
 from typing import Literal, List, Optional
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from shoonya_platform.brokers.shoonya.client import ShoonyaClient
 from shoonya_platform.persistence.repository import OrderRepository
@@ -157,7 +158,7 @@ class PositionExitService:
         Register a single EXIT intent (idempotent).
         """
         try:
-            if self._recent_exit_exists(leg["symbol"]):
+            if self._recent_exit_exists(leg["symbol"], strategy_name=strategy_name):
                 logger.warning(
                     "EXIT DUPLICATE SKIPPED | %s",
                     leg["symbol"],
@@ -166,7 +167,8 @@ class PositionExitService:
 
             command_id = (
                 f"EXIT_{source}_{leg['symbol']}_"
-                f"{int(datetime.utcnow().timestamp() * 1000)}"
+                f"{int(datetime.utcnow().timestamp() * 1000)}_"
+                f"{uuid4().hex[:8]}"
             )
 
             record = OrderRecord(
@@ -214,11 +216,13 @@ class PositionExitService:
                 leg.get("symbol"),
             )
 
-    def _recent_exit_exists(self, symbol: str) -> bool:
+    def _recent_exit_exists(self, symbol: str, strategy_name: Optional[str] = None) -> bool:
         """
-        Prevent duplicate EXIT intents for the same symbol.
+        Prevent duplicate EXIT intents for the same symbol + strategy.
 
         Uses ONLY OrderRepository public API (PRODUCTION FROZEN).
+        Scoped by strategy_name to avoid cross-strategy dedup collision
+        (e.g., Strategy A's EXIT should not block Strategy B's EXIT for same symbol).
         """
         open_orders = self.repo.get_open_orders()
 
@@ -226,6 +230,7 @@ class PositionExitService:
             if (
                 order.execution_type == "EXIT"
                 and order.symbol == symbol
+                and (strategy_name is None or order.strategy_name == strategy_name)
             ):
                 return True
 

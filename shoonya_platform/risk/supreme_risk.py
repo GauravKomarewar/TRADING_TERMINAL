@@ -118,6 +118,21 @@ class SupremeRiskManager:
                 self.highest_profit = data.get("highest_profit", 0.0)
                 self.daily_loss_hit = data.get("daily_loss_hit", False)
                 self.human_violation_detected = data.get("human_violation_detected", False)
+
+                # Restore failed_days and cooldown_until (crash-safe)
+                saved_failed_days = data.get("failed_days", [])
+                for d_str in saved_failed_days:
+                    try:
+                        self.failed_days.append(date.fromisoformat(d_str))
+                    except (ValueError, TypeError):
+                        pass
+                saved_cooldown = data.get("cooldown_until")
+                if saved_cooldown:
+                    try:
+                        self.cooldown_until = date.fromisoformat(saved_cooldown)
+                    except (ValueError, TypeError):
+                        pass
+
                 logger.info(
                     "RMS: State loaded | date=%s | max_loss=%.2f | profit=%.2f | loss_hit=%s",
                     self.current_day,
@@ -143,6 +158,8 @@ class SupremeRiskManager:
                 "highest_profit": self.highest_profit,
                 "daily_loss_hit": self.daily_loss_hit,
                 "human_violation_detected": self.human_violation_detected,
+                "failed_days": [str(d) for d in self.failed_days],
+                "cooldown_until": str(self.cooldown_until) if self.cooldown_until else None,
             }
             with open(self.STATE_FILE, "w") as f:
                 json.dump(state_data, f)
@@ -175,49 +192,50 @@ class SupremeRiskManager:
     # --------------------------------------------------
 
     def can_execute(self) -> bool:
-        today = date.today()
-        try:
-            self._update_pnl()
-        except RuntimeError:
-            # 🔥 FAIL-HARD: broker/session failure must kill process
-            raise
+        with self._lock:
+            today = date.today()
+            try:
+                self._update_pnl()
+            except RuntimeError:
+                # 🔥 FAIL-HARD: broker/session failure must kill process
+                raise
 
-        if today != self.current_day:
-            logger.info("RMS: New day detected | old=%s | new=%s", self.current_day, today)
-            self._reset_daily_state(today)
+            if today != self.current_day:
+                logger.info("RMS: New day detected | old=%s | new=%s", self.current_day, today)
+                self._reset_daily_state(today)
 
-        if self.cooldown_until and today < self.cooldown_until:
-            logger.warning(
-                "RMS: Entry BLOCKED | reason=COOLDOWN | until=%s | current=%s",
-                self.cooldown_until,
-                today,
-            )
-            return False
+            if self.cooldown_until and today < self.cooldown_until:
+                logger.warning(
+                    "RMS: Entry BLOCKED | reason=COOLDOWN | until=%s | current=%s",
+                    self.cooldown_until,
+                    today,
+                )
+                return False
 
-        if self.daily_loss_hit:
-            logger.warning(
-                "RMS: Entry BLOCKED | reason=DAILY_LOSS_HIT | pnl=%.2f | max_loss=%.2f",
+            if self.daily_loss_hit:
+                logger.warning(
+                    "RMS: Entry BLOCKED | reason=DAILY_LOSS_HIT | pnl=%.2f | max_loss=%.2f",
+                    self.daily_pnl,
+                    self.dynamic_max_loss,
+                )
+                return False
+
+            if self.daily_pnl <= self.dynamic_max_loss:
+                logger.critical(
+                    "RMS: Max loss breach detected | pnl=%.2f | max_loss=%.2f | triggering exit",
+                    self.daily_pnl,
+                    self.dynamic_max_loss,
+                )
+                self._handle_daily_loss_breach()
+                return False
+
+            logger.debug(
+                "RMS: Entry ALLOWED | pnl=%.2f | max_loss=%.2f | margin=%.2f",
                 self.daily_pnl,
                 self.dynamic_max_loss,
+                self.daily_pnl - self.dynamic_max_loss,
             )
-            return False
-
-        if self.daily_pnl <= self.dynamic_max_loss:
-            logger.critical(
-                "RMS: Max loss breach detected | pnl=%.2f | max_loss=%.2f | triggering exit",
-                self.daily_pnl,
-                self.dynamic_max_loss,
-            )
-            self._handle_daily_loss_breach()
-            return False
-
-        logger.debug(
-            "RMS: Entry ALLOWED | pnl=%.2f | max_loss=%.2f | margin=%.2f",
-            self.daily_pnl,
-            self.dynamic_max_loss,
-            self.daily_pnl - self.dynamic_max_loss,
-        )
-        return True
+            return True
 
     def can_execute_command(self, command) -> Tuple[bool, str]:
         with self._lock:
@@ -303,7 +321,7 @@ class SupremeRiskManager:
                         has_live_position
                         and not self.daily_loss_hit
                         and self.highest_profit > 0
-                        and self.daily_pnl < self.dynamic_max_loss
+                        and self.daily_pnl <= self.dynamic_max_loss
                     ):
                         logger.critical(
                             "🔴 TRAILING LOSS HIT | pnl=%.2f < trail=%.2f | highest_profit=%.2f",
@@ -410,7 +428,12 @@ class SupremeRiskManager:
     # --------------------------------------------------
 
     def _update_pnl(self):
-        """Update PnL from fresh broker positions snapshot"""
+        """Update PnL from fresh broker positions snapshot.
+        
+        🔒 CNC positions are EXCLUDED from daily PnL calculation.
+        CNC is long-term holding and should NOT trigger intraday risk breaches.
+        Only MIS and NRML contribute to daily_pnl.
+        """
         self.bot._ensure_login()
         positions = self.bot.api.get_positions() or []
         
@@ -421,6 +444,16 @@ class SupremeRiskManager:
         
         for p in positions:
             try:
+                # 🔒 Skip CNC positions — they don't affect intraday risk
+                product = (p.get("prd") or "").upper()
+                if product in ("CNC", "C"):
+                    logger.debug(
+                        "RMS: Skipping CNC position | symbol=%s | prd=%s",
+                        p.get("tsym", "UNKNOWN"),
+                        product,
+                    )
+                    continue
+
                 rpnl = float(p.get("rpnl", 0))
                 urmtom = float(p.get("urmtom", 0))
                 netqty = int(p.get("netqty", 0))

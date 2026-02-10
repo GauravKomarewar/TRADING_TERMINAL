@@ -628,40 +628,58 @@
         async function loadStrategies() {
             try {
                 const res = await fetch('/strategy/configs');
+                if (!res.ok) {
+                    console.error(`API error: ${res.status} ${res.statusText}`);
+                    showAlert(`Failed to load strategies (HTTP ${res.status})`, 'error');
+                    renderStrategies([]);
+                    return;
+                }
                 const data = await res.json();
+                console.log('Strategies loaded:', data.configs);
                 renderStrategies(data.configs || []);
             } catch (e) {
                 console.error('Load error:', e);
-                showAlert('Failed to load strategies', 'error');
+                renderStrategies([]);
+                showAlert(`Error loading strategies: ${e.message}`, 'error');
             }
         }
 
         // Render strategy list
         function renderStrategies(strategies) {
             const html = strategies.length > 0
-                ? strategies.map(s => `
+                ? strategies.map(s => {
+                    const identity = s.identity || {};
+                    const entry = s.entry || {};
+                    const underlying = identity.underlying || 'NIFTY';
+                    const frequency = entry.frequency || 'manual';
+                    const entryTime = identity.entry_time || '--:--';
+                    const target = identity.target || 0;
+                    const stopLoss = identity.stop_loss || 0;
+                    
+                    return `
                     <div class="strategy-item ${s.status === 'RUNNING' ? 'running' : ''}">
                         <div class="strategy-header">
                             <div class="strategy-title">
                                 <div class="strategy-name">${s.name}</div>
-                                <div class="strategy-meta">${s.type} • ${s.underlying}</div>
+                                <div class="strategy-meta">DNSS • ${underlying}</div>
                             </div>
-                            <span class="status-badge badge-${s.status.toLowerCase()}">${s.status}</span>
+                            <span class="status-badge badge-${(s.status || 'idle').toLowerCase()}">${s.status || 'IDLE'}</span>
                         </div>
                         <div class="strategy-config">
-                            <div class="config-item"><div class="config-label">Freq:</div><div class="config-value">${s.frequency}</div></div>
-                            <div class="config-item"><div class="config-label">Target:</div><div class="config-value">₹${s.target_profit || 0}</div></div>
-                            <div class="config-item"><div class="config-label">SL:</div><div class="config-value">₹${s.stop_loss || 0}</div></div>
-                            <div class="config-item"><div class="config-label">Entry:</div><div class="config-value">${s.entry_time}</div></div>
+                            <div class="config-item"><div class="config-label">Freq:</div><div class="config-value">${frequency}</div></div>
+                            <div class="config-item"><div class="config-label">Target:</div><div class="config-value">₹${target}</div></div>
+                            <div class="config-item"><div class="config-label">SL:</div><div class="config-value">₹${stopLoss}</div></div>
+                            <div class="config-item"><div class="config-label">Entry:</div><div class="config-value">${entryTime}</div></div>
                         </div>
                         <div class="strategy-actions">
-                            <button class="btn-sm btn-start" onclick="startStrategy('${s.id}')">▶ Start</button>
-                            <button class="btn-sm btn-pause" onclick="pauseStrategy('${s.id}')">⏸ Pause</button>
-                            <button class="btn-sm btn-stop" onclick="stopStrategy('${s.id}')">⏹ Stop</button>
+                            <button class="btn-sm btn-start" onclick="startStrategy('${s.name}')">▶ Start</button>
+                            <button class="btn-sm btn-pause" onclick="pauseStrategy('${s.name}')">⏸ Pause</button>
+                            <button class="btn-sm btn-stop" onclick="stopStrategy('${s.name}')">⏹ Stop</button>
                         </div>
                     </div>
-                `).join('')
-                : '<div class="empty-state"><div class="empty-icon">📭</div><p>No strategies yet. Create one using the builder.</p></div>';
+                    `;
+                }).join('')
+                : '<div class="empty-state"><div class="empty-icon">📭</div><p>No strategies saved yet. Create one using the builder above.</p></div>';
 
             document.getElementById('strategyList').innerHTML = html;
         }
@@ -672,60 +690,94 @@
             const btn = e.target.querySelector('.btn-submit');
             btn.disabled = true;
 
-            const data = {
-                name: document.getElementById('stratName').value,
-                type: document.getElementById('stratType').value,
-                underlying: document.getElementById('underlying').value,
-                frequency: document.getElementById('schedule').value,
-                entry_time: document.getElementById('entryTime').value,
-                exit_time: document.getElementById('exitTime').value,
-                target_profit: parseFloat(document.getElementById('targetProfit').value) || 0,
-                stop_loss: parseFloat(document.getElementById('stopLoss').value) || 0,
-                max_positions: parseInt(document.getElementById('maxPositions').value) || 1,
+            const name = document.getElementById('stratName').value.trim();
+            if (!name) {
+                showAlert('Strategy name is required', 'error');
+                btn.disabled = false;
+                return;
+            }
+
+            const payload = {
+                name: name,
+                id: name.toUpperCase().replace(/\s+/g, '_'),
+                identity: {
+                    underlying: document.getElementById('underlying').value,
+                    frequency: document.getElementById('schedule').value,
+                    entry_time: document.getElementById('entryTime').value,
+                    exit_time: document.getElementById('exitTime').value,
+                    target: parseFloat(document.getElementById('targetProfit').value) || 0,
+                    stop_loss: parseFloat(document.getElementById('stopLoss').value) || 0,
+                    max_positions: parseInt(document.getElementById('maxPositions').value) || 1,
+                },
+                entry: {},
+                adjustment: {},
+                exit: {},
+                rms: {}
             };
 
             try {
-                const res = await fetch('/strategy/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-                if (res.ok) {
-                    showAlert('✅ Strategy saved successfully', 'success');
-                    document.getElementById('form').reset();
-                    setTimeout(loadStrategies, 800);
-                } else {
-                    showAlert('❌ Failed to save strategy', 'error');
+                const res = await fetch('/strategy/config/save-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    showAlert(`Failed: ${errorData.detail || res.statusText}`, 'error');
+                    btn.disabled = false;
+                    return;
                 }
+
+                showAlert('✅ Strategy saved successfully', 'success');
+                document.getElementById('form').reset();
+                setTimeout(loadStrategies, 800);
             } catch (e) {
-                showAlert(`❌ Error: ${e.message}`, 'error');
+                console.error('Save error:', e);
+                showAlert(`Error: ${e.message}`, 'error');
             } finally {
                 btn.disabled = false;
             }
         }
 
         // Control actions
-        async function startStrategy(id) {
-            await sendIntent(id, 'START');
+        async function startStrategy(name) {
+            await sendIntent(name, 'ENTRY');
         }
 
-        async function pauseStrategy(id) {
-            await sendIntent(id, 'PAUSE');
+        async function pauseStrategy(name) {
+            await sendIntent(name, 'PAUSE');
         }
 
-        async function stopStrategy(id) {
-            await sendIntent(id, 'STOP');
+        async function stopStrategy(name) {
+            await sendIntent(name, 'EXIT');
         }
 
-        async function sendIntent(id, action) {
+        async function sendIntent(strategyName, action) {
             try {
-                const res = await fetch('/intent/strategy', {
+                const payload = {
+                    strategy_name: strategyName,
+                    action: action
+                };
+
+                const res = await fetch('/dashboard/intent/strategy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ strategy_id: id, action })
+                    body: JSON.stringify(payload)
                 });
-                if (res.ok) {
-                    showAlert(`✅ ${action} command sent`, 'success');
-                    setTimeout(loadStrategies, 500);
+
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    console.error(`API error: ${res.status}`, errorData);
+                    showAlert(`Failed to send ${action}: ${errorData.detail || res.statusText}`, 'error');
+                    return;
                 }
+
+                showAlert(`✅ ${action} command sent to ${strategyName}`, 'success');
+                setTimeout(loadStrategies, 500);
             } catch (e) {
-                showAlert(`❌ Error: ${e.message}`, 'error');
+                console.error('Intent error:', e);
+                showAlert(`Error sending intent: ${e.message}`, 'error');
             }
         }
 

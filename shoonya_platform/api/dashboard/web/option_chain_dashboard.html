@@ -98,23 +98,23 @@
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 6px;
-            padding: 10px 12px;
-            margin-bottom: 10px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
             display: flex;
-            gap: 10px;
+            gap: 12px;
             align-items: center;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
         }
         
         select {
-            padding: 6px 10px;
+            padding: 5px 8px;
             background: #1c2333;
             border: 1px solid var(--border);
             color: var(--text);
             border-radius: 4px;
             font-size: 12px;
-            height: 32px;
-            min-width: 120px;
+            height: 30px;
+            min-width: 130px;
         }
         
         .column-selector {
@@ -169,28 +169,30 @@
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 6px;
-            padding: 10px 12px;
-            margin-bottom: 10px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            max-height: 70px;
         }
         
         .info-item {
             display: flex;
             flex-direction: column;
             gap: 2px;
+            justify-content: center;
         }
         
         .info-label {
-            font-size: 10px;
+            font-size: 9px;
             color: var(--muted);
             text-transform: uppercase;
             letter-spacing: 0.3px;
         }
         
         .info-value {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             font-variant-numeric: tabular-nums;
         }
@@ -217,7 +219,7 @@
         
         .table-wrapper {
             overflow-x: auto;
-            max-height: calc(100vh - 220px);
+            max-height: calc(100vh - 200px);
         }
         
         /* Table Styles */
@@ -426,11 +428,13 @@
         .basket-indicator {
             position: relative;
             cursor: pointer;
-            padding: 6px 12px;
+            padding: 5px 10px;
             border-radius: 4px;
             transition: background 0.2s;
             background: rgba(59, 130, 246, 0.1);
             border: 1px solid var(--border);
+            font-size: 12px;
+            white-space: nowrap;
         }
         
         .basket-indicator:hover {
@@ -631,24 +635,32 @@
         }
         
         /* Responsive */
+        @media (max-width: 1200px) {
+            .info-bar {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+        
         @media (max-width: 768px) {
             main {
                 padding: 8px;
             }
             
             .controls-bar {
-                padding: 8px;
+                padding: 6px 8px;
                 gap: 8px;
+                flex-wrap: wrap;
             }
             
             select {
-                min-width: auto;
+                min-width: 100px;
                 flex: 1;
             }
             
             .info-bar {
                 grid-template-columns: repeat(2, 1fr);
-                padding: 8px;
+                padding: 6px 8px;
+                gap: 8px;
             }
         }
     </style>
@@ -673,7 +685,7 @@
         </select>
         
         <div class="column-selector">
-            <button id="columnSelectorBtn" style="padding: 6px 12px; background: #1c2333; border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 12px; height: 32px; cursor: pointer;">
+            <button id="columnSelectorBtn" style="padding: 5px 10px; background: #1c2333; border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 12px; height: 30px; cursor: pointer; white-space: nowrap;">
                 📊 Columns
             </button>
             <div id="columnDropdown" class="column-dropdown">
@@ -712,8 +724,8 @@
             </div>
         </div>
         
-        <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
-            <div class="basket-indicator" onclick="openBasketModal()">
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
+            <div class="basket-indicator" onclick="openBasketModal()" style="padding: 5px 10px; height: 30px; line-height: 30px;">
                 🛒 Basket
                 <span id="basketCount" class="basket-count"></span>
             </div>
@@ -929,9 +941,10 @@
     
     // Event Listeners
     function setupEventListeners() {
-        elements.symbol.addEventListener('change', () => {
+        elements.symbol.addEventListener('change', async () => {
             stopAutoRefresh();
-            loadExpiries();
+            await loadExpiries();
+            startAutoRefresh();
         });
         
         elements.expiry.addEventListener('change', () => {

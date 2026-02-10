@@ -37,6 +37,7 @@ import json
 import time
 import logging
 import sqlite3
+import re
 from datetime import time as dt_time
 from pathlib import Path
 from typing import Optional, Tuple
@@ -172,7 +173,17 @@ class StrategyControlConsumer:
             # STRATEGY LIFECYCLE DISPATCH
             # ----------------------------------------------
             if action == "ENTRY":
-                universal_config = build_universal_config(payload)
+                # Load saved strategy config to get symbol, exchange, etc.
+                saved_config = self._load_strategy_config(strategy_name)
+                if not saved_config:
+                    raise RuntimeError(f"Strategy config not found: {strategy_name}")
+                
+                # Merge payload (intent data) with saved config
+                # Intent overrides config if provided
+                merged_payload = {**saved_config, **payload}
+                merged_payload["strategy_name"] = strategy_name  # Ensure correct name
+                
+                universal_config = build_universal_config(merged_payload)
                 if strategy_name != universal_config.strategy_name:
                     raise RuntimeError("Strategy name mismatch in payload")
                 try:
@@ -357,6 +368,62 @@ class StrategyControlConsumer:
 
         finally:
             conn.close()
+
+    # ==================================================
+    # LOAD STRATEGY CONFIG (from saved JSON)
+    # ==================================================
+    def _load_strategy_config(self, strategy_name: str) -> dict:
+        """
+        Load strategy config from saved JSON file.
+        
+        Path: shoonya_platform/api/dashboard/saved_configs/{slug}.json
+        
+        Returns: Config dict with symbol, exchange, timing, risk params, etc.
+        Returns: None if config not found.
+        """
+        try:
+            # Slugify strategy name (same as frontend)
+            slug = strategy_name.strip().lower()
+            slug = re.sub(r'[^a-z0-9]+', '_', slug)
+            slug = slug.strip('_') or 'unnamed'
+            
+            config_path = (
+                Path(__file__).resolve().parents[2]
+                / "shoonya_platform"
+                / "api"
+                / "dashboard"
+                / "saved_configs"
+                / f"{slug}.json"
+            )
+            
+            if not config_path.exists():
+                logger.warning(f"⚠️ Config not found: {config_path}")
+                return None
+            
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            logger.info(f"✅ Loaded strategy config: {strategy_name} | symbol={config.get('identity', {}).get('underlying')}")
+            
+            # Transform from dashboard schema to execution-compatible schema
+            # Dashboard schema: identity.underlying → execution schema: symbol
+            execution_config = {
+                "strategy_name": config.get("name", strategy_name),
+                "strategy_version": config.get("strategy_version", "1.0.0"),
+                "symbol": config.get("identity", {}).get("underlying", "NIFTY"),  # ← CRITICAL: Extract symbol
+                "exchange": "NFO",  # Options on NSE
+                "instrument_type": "OPTIDX",  # Default to options
+                "entry_time": config.get("timing", {}).get("entry_time", "09:20"),
+                "exit_time": config.get("timing", {}).get("exit_time", "15:15"),
+                "order_type": "LIMIT",
+                "product": "NRML",
+                "lot_qty": 50,  # Default lot size
+                "params": config.get("risk", {}),
+            }
+            
+            return execution_config
+            
+        except Exception as e:
+            logger.exception(f"❌ Failed to load strategy config: {strategy_name}")
+            return None
 
     # ==================================================
     # UPDATE STATUS

@@ -1220,52 +1220,64 @@
             const res = await fetch('/dashboard/option-chain/active-symbols', { credentials: 'include' });
             if (!res.ok) throw new Error(`Failed: ${res.status}`);
             activeSymbolData = await res.json();
+            console.log('[OptionChain] Active symbols from API:', activeSymbolData);
+
+            if (!activeSymbolData || activeSymbolData.length === 0) {
+                input.value = '';
+                input.placeholder = 'No symbols available';
+                input.disabled = false;
+                dropdown.innerHTML = '<div class="symbol-option" style="color:var(--muted);cursor:default">No active chains</div>';
+                return;
+            }
 
             // Build exchange map and dropdown options
             symbolExchangeMap = {};
             let optionsHTML = '';
             let selectHTML = '';
+
+            // Find NIFTY as default, fallback to first item
+            let defaultIdx = activeSymbolData.findIndex(s => s.symbol === 'NIFTY');
+            if (defaultIdx < 0) defaultIdx = 0;
+
             activeSymbolData.forEach((item, idx) => {
                 symbolExchangeMap[item.symbol] = item.exchange;
                 const label = item.exchange !== 'NFO' ? `${item.symbol} (${item.exchange})` : item.symbol;
-                const selectedClass = idx === 0 ? ' selected' : '';
+                const selectedClass = idx === defaultIdx ? ' selected' : '';
                 optionsHTML += `<div class="symbol-option${selectedClass}" data-value="${item.symbol}" data-exchange="${item.exchange}">${label}</div>`;
-                selectHTML += `<option value="${item.symbol}"${idx === 0 ? ' selected' : ''}>${item.symbol}</option>`;
+                selectHTML += `<option value="${item.symbol}"${idx === defaultIdx ? ' selected' : ''}>${item.symbol}</option>`;
             });
 
             dropdown.innerHTML = optionsHTML;
             hiddenSelect.innerHTML = selectHTML;
 
-            if (activeSymbolData.length > 0) {
-                const first = activeSymbolData[0];
-                input.value = first.symbol;
-                input.placeholder = 'Type symbol...';
-                input.disabled = false;
-                hiddenSelect.value = first.symbol;
+            const defaultItem = activeSymbolData[defaultIdx];
+            input.value = defaultItem.symbol;
+            input.placeholder = 'Type symbol...';
+            input.disabled = false;
+            hiddenSelect.value = defaultItem.symbol;
+            console.log('[OptionChain] Default symbol:', defaultItem.symbol, 'Exchange:', defaultItem.exchange);
 
-                // If first symbol has expiries, preload them directly
-                if (first.expiries && first.expiries.length > 0) {
-                    populateExpiries(first.expiries);
-                    await loadOptionChain();
-                    startAutoRefresh();
-                } else {
-                    await loadExpiries();
-                    startAutoRefresh();
-                }
+            // Load expiries for default symbol
+            if (defaultItem.expiries && defaultItem.expiries.length > 0) {
+                console.log('[OptionChain] Pre-loading expiries from API:', defaultItem.expiries);
+                populateExpiries(defaultItem.expiries);
+                await loadOptionChain();
+                startAutoRefresh();
             } else {
-                input.value = '';
-                input.placeholder = 'No symbols available';
-                dropdown.innerHTML = '<div class="symbol-option" style="color:var(--muted);cursor:default">No active chains</div>';
+                console.log('[OptionChain] No expiries in API response, fetching...');
+                await loadExpiries();
+                startAutoRefresh();
             }
         } catch (err) {
-            console.error('Failed to load active symbols:', err);
-            // Fallback: enable input for manual entry
+            console.error('[OptionChain] Failed to load active symbols:', err);
+            // Fallback: enable input for manual entry with NIFTY default
             input.placeholder = 'Type symbol...';
             input.disabled = false;
             input.value = 'NIFTY';
+            symbolExchangeMap['NIFTY'] = 'NFO';
             hiddenSelect.innerHTML = '<option value="NIFTY" selected>NIFTY</option>';
             hiddenSelect.value = 'NIFTY';
-            dropdown.innerHTML = '<div class="symbol-option selected" data-value="NIFTY">NIFTY</div>';
+            dropdown.innerHTML = '<div class="symbol-option selected" data-value="NIFTY" data-exchange="NFO">NIFTY</div>';
             await loadExpiries();
             startAutoRefresh();
         }

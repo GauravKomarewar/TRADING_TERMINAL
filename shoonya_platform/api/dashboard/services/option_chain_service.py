@@ -76,7 +76,18 @@ def get_active_symbols() -> List[Dict[str, Any]]:
         except Exception:
             info["expiries"].sort()
 
-    return list(symbol_map.values())
+    # Sort symbols: NIFTY first, BANKNIFTY second, then rest alphabetically
+    PRIORITY_ORDER = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"]
+    result = list(symbol_map.values())
+    def sort_key(item):
+        sym = item["symbol"]
+        if sym in PRIORITY_ORDER:
+            return (0, PRIORITY_ORDER.index(sym))
+        # NFO before other exchanges
+        exch_priority = 0 if item["exchange"] == "NFO" else 1
+        return (1, exch_priority, sym)
+    result.sort(key=sort_key)
+    return result
 
 def get_active_expiries(exchange: str, symbol: str) -> List[str]:
     """

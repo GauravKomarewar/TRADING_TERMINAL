@@ -75,6 +75,7 @@ from shoonya_platform.persistence.repository import OrderRepository
 
 # # ---------------- RECOVERY ----------------
 from shoonya_platform.services.recovery_service import RecoveryBootstrap
+from shoonya_platform.services.orphan_position_manager import OrphanPositionManager
 
 # ---------------- EXECUTION ----------------
 from shoonya_platform.execution.execution_guard import ExecutionGuard, LegIntent
@@ -438,6 +439,13 @@ class ShoonyaBot:
         logger.info("🚀 StrategyRunner started")
 
         # -------------------------------------------------
+        # 🔓 ORPHAN POSITION MANAGER (MANUAL POSITION CONTROL)
+        # -------------------------------------------------
+        self.orphan_manager = OrphanPositionManager(self)
+        self.orphan_manager.load_active_rules()
+        logger.info("🔓 OrphanPositionManager initialized")
+
+        # -------------------------------------------------
         # ⏱ SCHEDULER
         # -------------------------------------------------
         self.start_scheduler()
@@ -636,6 +644,18 @@ class ShoonyaBot:
                 schedule.every(5).minutes.do(_telegram_heartbeat)
 
                 schedule.every(10).minutes.do(send_strategy_reports)
+                
+                # 🔓 ORPHAN POSITION MANAGEMENT (check every 30 seconds)
+                def _orphan_monitor_wrapper():
+                    try:
+                        executed = self.orphan_manager.monitor_and_execute()
+                        if executed > 0:
+                            logger.warning(f"🔓 ORPHAN MANAGER: Executed {executed} rule(s)")
+                    except Exception as e:
+                        log_exception("orphan_manager.monitor", e)
+                
+                schedule.every(30).seconds.do(_orphan_monitor_wrapper)
+                
                 # 🧹 Weekly DB hygiene (safe, non-trading)
                 schedule.every().day.at("03:30").do(self.cleanup_old_orders)
                 

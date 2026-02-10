@@ -287,6 +287,358 @@ def recover_and_resume_strategy(
         logger.exception("Failed to submit recovery intent")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==================================================
+# 🔓 ORPHAN POSITION MANAGEMENT
+# ==================================================
+# Positions created outside of strategy system:
+# - Manual trades from platform
+# - External webhooks
+# - System-generated orders
+# User can manage these with greeks-based rules
+
+@router.get("/orphan-positions")
+def list_orphan_positions(
+    ctx=Depends(require_dashboard_auth),
+    broker=Depends(get_broker),
+    system=Depends(get_system),
+):
+    """
+    List all positions NOT owned by any strategy.
+    
+    These are "orphan" positions created by:
+    - Manual trades from UI
+    - External webhooks (non-strategy)
+    - System-generated orders
+    
+    User can apply individual/combined management rules
+    based on greeks, price, or combined net exposure.
+    """
+    try:
+        # Get all broker positions
+        positions = broker.get_positions() or []
+        
+        # Get all strategy-owned positions
+        orders = system.get_orders(500) or []
+        strategy_symbols = set(
+            o.get("symbol") for o in orders 
+            if o.get("user") and o.get("user") not in ["", None]
+        )
+        
+        orphan_positions = []
+        for pos in positions:
+            symbol = pos.get("tsym", "")
+            netqty = int(pos.get("netqty", 0))
+            
+            if netqty == 0 or not symbol or symbol in strategy_symbols:
+                continue
+            
+            # Find order details for greeks
+            order = next((o for o in orders if o.get("symbol") == symbol), {})
+            
+            orphan_positions.append({
+                "symbol": symbol,
+                "exchange": pos.get("exch"),
+                "qty": abs(netqty),
+                "side": "BUY" if netqty > 0 else "SELL",
+                "entry_price": float(order.get("price", 0) or 0),
+                "avg_price": float(pos.get("avgprc", 0) or 0),
+                "ltp": float(pos.get("ltp", 0) or 0),
+                "unrealized_pnl": float(pos.get("upnl", 0) or 0),
+                "realized_pnl": float(pos.get("rpnl", 0) or 0),
+                "greeks": {
+                    "delta": float(order.get("delta", 0) or 0),
+                    "gamma": float(order.get("gamma", 0) or 0),
+                    "theta": float(order.get("theta", 0) or 0),
+                    "vega": float(order.get("vega", 0) or 0),
+                },
+            })
+        
+        logger.info(f"Found {len(orphan_positions)} orphan positions")
+        
+        return {
+            "total": len(orphan_positions),
+            "positions": orphan_positions,
+        }
+        
+    except Exception as e:
+        logger.exception("Failed to list orphan positions")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/orphan-positions/summary")
+def orphan_positions_summary(
+    selected_symbols: Optional[str] = Query(None, description="Comma-separated symbols to combine (e.g., 'NIFTY,BANKNIFTY')"),
+    ctx=Depends(require_dashboard_auth),
+    broker=Depends(get_broker),
+    system=Depends(get_system),
+):
+    """
+    Get summary of orphan positions with combined greeks.
+    
+    Optionally select specific symbols to see combined net greeks
+    (useful for managing multiple legs as a combined position).
+    
+    Returns:
+    - Individual position details
+    - Combined net greeks (if selected)
+    - Combined PnL metrics
+    """
+    try:
+        positions = broker.get_positions() or []
+        orders = system.get_orders(500) or []
+        strategy_symbols = set(
+            o.get("symbol") for o in orders 
+            if o.get("user") and o.get("user") not in ["", None]
+        )
+        
+        # Collect orphan positions
+        orphan_map = {}
+        for pos in positions:
+            symbol = pos.get("tsym", "")
+            netqty = int(pos.get("netqty", 0))
+            
+            if netqty == 0 or not symbol or symbol in strategy_symbols:
+                continue
+            
+            order = next((o for o in orders if o.get("symbol") == symbol), {})
+            
+            orphan_map[symbol] = {
+                "symbol": symbol,
+                "qty": abs(netqty),
+                "side": "BUY" if netqty > 0 else "SELL",
+                "delta": float(order.get("delta", 0) or 0),
+                "gamma": float(order.get("gamma", 0) or 0),
+                "theta": float(order.get("theta", 0) or 0),
+                "vega": float(order.get("vega", 0) or 0),
+                "ltp": float(pos.get("ltp", 0) or 0),
+                "unrealized_pnl": float(pos.get("upnl", 0) or 0),
+            }
+        
+        # If specific symbols selected, calculate combined greeks
+        selected_list = []
+        if selected_symbols:
+            selected_list = [s.strip() for s in selected_symbols.split(",")]
+        
+        combined = None
+        if selected_list:
+            selected_positions = [
+                orphan_map[s] for s in selected_list 
+                if s in orphan_map
+            ]
+            if selected_positions:
+                combined = {
+                    "symbols": selected_list,
+                    "count": len(selected_positions),
+                    "combined_delta": sum(p["delta"] for p in selected_positions),
+                    "combined_gamma": sum(p["gamma"] for p in selected_positions),
+                    "combined_theta": sum(p["theta"] for p in selected_positions),
+                    "combined_vega": sum(p["vega"] for p in selected_positions),
+                    "total_unrealized_pnl": sum(p["unrealized_pnl"] for p in selected_positions),
+                    "positions": selected_positions,
+                }
+        
+        return {
+            "total_orphan": len(orphan_map),
+            "all_orphans": list(orphan_map.values()),
+            "combined_view": combined,
+        }
+        
+    except Exception as e:
+        logger.exception("Failed to get orphan positions summary")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/orphan-positions/manage")
+def create_orphan_position_rule(
+    payload: dict = Body(...),
+    intent: DashboardIntentService = Depends(get_intent),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Create management rule for orphan position(s).
+    
+    Rules can be:
+    
+    1. PRICE-BASED:
+       - target: Exit when price reaches target
+       - stoploss: Exit when price falls below stoploss
+       - trailing: Trail stop by fixed amount
+    
+    2. GREEK-BASED:
+       - delta_target: Exit when delta reaches value
+       - theta_target: Exit when theta reaches value (for decay)
+       - vega_target: Exit when vega reaches value (for volatility)
+       - gamma_target: exit when gamma reaches value
+    
+    3. COMBINED (multiple positions):
+       - Select multiple symbols
+       - Combined net greeks > threshold = exit all
+       - Combined PnL > target = exit all
+    
+    Payload:
+    {
+        "rule_name": "NIFTY PE Exit",
+        "symbols": ["NIFTY 23000 PE"],  // single or multiple
+        "rule_type": "PRICE" | "GREEK" | "COMBINED",
+        "condition": "target" | "stoploss" | "trailing" | "delta" | "theta" | "combined_delta" | etc,
+        "threshold": 355.5,  // exit price or greek value
+        "action": "EXIT" | "REDUCE",  // EXIT = full exit, REDUCE = half
+        "reduce_qty": 25  // qty to reduce when action=REDUCE
+    }
+    """
+    try:
+        rule_name = payload.get("rule_name", f"RULE-{int(time.time())}")
+        symbols = payload.get("symbols", [])
+        rule_type = payload.get("rule_type", "PRICE")  # PRICE, GREEK, COMBINED
+        condition = payload.get("condition")  # target, stoploss, trailing, delta, theta, vega, etc
+        threshold = payload.get("threshold")
+        action = payload.get("action", "EXIT")  # EXIT or REDUCE
+        reduce_qty = payload.get("reduce_qty")
+        
+        if not symbols or not condition or threshold is None:
+            raise HTTPException(
+                status_code=400, 
+                detail="symbols, condition, and threshold required"
+            )
+        
+        rule_id = f"ORPHAN-{'-'.join(symbols[:2])}-{int(time.time())}"
+        
+        # Submit to system
+        intent.submit_raw_intent(
+            intent_id=rule_id,
+            intent_type="ORPHAN_POSITION_RULE",
+            payload={
+                "rule_id": rule_id,
+                "rule_name": rule_name,
+                "symbols": symbols,
+                "rule_type": rule_type,
+                "condition": condition,
+                "threshold": threshold,
+                "action": action,
+                "reduce_qty": reduce_qty,
+                "created_at": datetime.now().isoformat(),
+            },
+        )
+        
+        logger.warning(
+            f"📋 ORPHAN RULE CREATED: {rule_name} | symbols={symbols} | "
+            f"condition={condition} | threshold={threshold}"
+        )
+        
+        return {
+            "rule_id": rule_id,
+            "rule_name": rule_name,
+            "symbols": symbols,
+            "rule_type": rule_type,
+            "condition": condition,
+            "threshold": threshold,
+            "action": action,
+            "status": "ACTIVE",
+            "message": "Management rule created - monitoring enabled"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to create orphan position rule")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/orphan-positions/rules")
+def list_orphan_rules(
+    ctx=Depends(require_dashboard_auth),
+    system=Depends(get_system),
+):
+    """
+    List all active orphan position management rules.
+    
+    Shows:
+    - Rule ID, name, symbols
+    - Condition (price/greek based)
+    - Threshold value
+    - Current status (active, triggered, etc)
+    """
+    try:
+        # Query control intents for ORPHAN_POSITION_RULE type
+        db = sqlite3.connect(
+            str(Path(__file__).resolve().parents[4] / "shoonya_platform" / "persistence" / "data" / "orders.db"),
+            timeout=5
+        )
+        cur = db.cursor()
+        
+        cur.execute(
+            """
+            SELECT id, payload
+            FROM control_intents
+            WHERE type = 'ORPHAN_POSITION_RULE'
+            ORDER BY created_at DESC
+            LIMIT 50
+            """
+        )
+        
+        rules = []
+        for row in cur.fetchall():
+            try:
+                payload = json.loads(row[1])
+                rules.append(payload)
+            except Exception:
+                pass
+        
+        db.close()
+        
+        return {
+            "total": len(rules),
+            "rules": rules,
+        }
+        
+    except Exception as e:
+        logger.exception("Failed to list orphan rules")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/orphan-positions/rules/{rule_id}")
+def delete_orphan_rule(
+    rule_id: str,
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Deactivate an orphan position management rule.
+    
+    The monitoring for this rule will stop.
+    Existing positions will no longer be auto-managed.
+    """
+    try:
+        logger.warning(f"🗑️ ORPHAN RULE DELETED: {rule_id}")
+        
+        # Mark rule as DELETED in DB
+        db = sqlite3.connect(
+            str(Path(__file__).resolve().parents[4] / "shoonya_platform" / "persistence" / "data" / "orders.db"),
+            timeout=5
+        )
+        cur = db.cursor()
+        
+        cur.execute(
+            """
+            UPDATE control_intents
+            SET status = 'DELETED'
+            WHERE id = ? AND type = 'ORPHAN_POSITION_RULE'
+            """,
+            (rule_id,)
+        )
+        
+        db.commit()
+        db.close()
+        
+        return {
+            "rule_id": rule_id,
+            "status": "DELETED",
+            "message": "Rule deactivated - monitoring stopped"
+        }
+        
+    except Exception as e:
+        logger.exception(f"Failed to delete rule {rule_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/orders/modify/system")
 def modify_system_order(
     payload: dict = Body(...),

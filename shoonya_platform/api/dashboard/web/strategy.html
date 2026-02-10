@@ -8,37 +8,56 @@
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
-        .status-box { background: var(--panel-2); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
-        .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        th { background: var(--panel-2); padding: 10px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); }
-        td { padding: 10px; border-bottom: 1px solid var(--border); }
-        tr:hover { background: var(--panel-2); }
-        .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg); overflow-x: auto; }
-        .tab { padding: 12px 16px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 500; transition: all .2s; white-space: nowrap; }
-        .tab:hover { color: var(--text); }
-        .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
-        .field { display: flex; flex-direction: column; gap: 4px; }
-        label { font-size: 12px; font-weight: 500; }
-        input, select, textarea { padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); font-size: 12px; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
-        .card-footer { display: flex; gap: 8px; justify-content: flex-end; padding-top: var(--spacing-md); border-top: 1px solid var(--border); margin-top: var(--spacing-md); }
-        h3 { font-size: 14px; font-weight: 600; margin: 20px 0 12px; }
-        .result { padding: 12px; border-radius: var(--radius-md); margin-bottom: var(--spacing-lg); display: none; }
-        .result.success { background: rgba(34, 197, 94, 0.1); color: #22c55e; border: 1px solid #22c55e; }
-        .result.error { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; }
-        .greek { display: inline-block; padding: 2px 6px; background: var(--panel-2); border-radius: 4px; font-size: 10px; font-family: monospace; margin: 2px; }
-        .grid { display: grid; gap: var(--spacing-md); }
-        .grid.grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
-        .grid.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-        @media(max-width: 768px) { .grid.grid-cols-3, .grid.grid-cols-4 { grid-template-columns: repeat(2, 1fr); } }
-        .primary-actions { display: flex; gap: 8px; margin-bottom: var(--spacing-lg); }
-        .breadcrumb { display: flex; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg); font-size: 12px; }
-        .breadcrumb button { background: transparent; border: none; cursor: pointer; color: var(--muted); padding: 4px 8px; }
-        .breadcrumb button.active { color: var(--primary); font-weight: 600; }
+        .strategy-item { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; margin-bottom: 8px; display: grid; grid-template-columns: 200px 1fr 200px auto; gap: 12px; align-items: center; }
+        .strategy-name { font-weight: 600; color: var(--text); }
+        .strategy-timing { display: flex; gap: 8px; align-items: center; }
+        .strategy-timing select { padding: 4px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); color: var(--text); }
+        .strategy-actions { display: flex; gap: 4px; }
+        .status-pill { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+        .status-idle { background: rgba(255,255,255,.06); color: var(--muted); }
+        .status-running { background: rgba(34,197,94,.12); color: #22c55e; }
+        .status-paused { background: rgba(234,179,8,.12); color: #eab308; }
+
+        .monitor-section { margin-bottom: 20px; }
+        .section-header { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; user-select: none; }
+        .section-header:hover { background: var(--panel); }
+        .section-toggle { display: inline-block; width: 16px; text-align: center; transition: transform .2s; }
+        .section-toggle.open { transform: rotate(90deg); }
+        .section-title { font-weight: 600; color: var(--text); flex: 1; }
+        .section-summary { font-size: 11px; color: var(--muted); }
+        .section-content { display: none; padding: 12px; background: var(--panel); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+        .section-content.open { display: block; }
+
+        .position-row { display: grid; grid-template-columns: 120px 60px 80px 80px 60px 60px 60px 60px; gap: 8px; padding: 8px; border-bottom: 1px solid var(--border); font-size: 11px; align-items: center; }
+        .position-row:last-child { border-bottom: none; }
+        .position-row.header { background: var(--panel-2); font-weight: 600; padding: 10px 8px; }
+        .greek { display: inline-block; padding: 2px 4px; background: var(--panel-2); border-radius: 3px; font-family: monospace; font-size: 10px; }
+
+        .stat-badge { display: inline-block; padding: 4px 8px; background: var(--panel-2); border-radius: 4px; font-size: 10px; margin-right: 8px; margin-bottom: 4px; }
+
+        .orphan-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+        .summary-box { background: var(--panel); border: 1px solid var(--border); padding: 8px; border-radius: 4px; text-align: center; }
+        .summary-label { font-size: 10px; color: var(--muted); }
+        .summary-value { font-size: 14px; font-weight: 600; color: var(--primary); margin-top: 4px; }
+
+        .table-compact { width: 100%; border-collapse: collapse; font-size: 10px; }
+        .table-compact th { background: var(--panel-2); padding: 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); }
+        .table-compact td { padding: 6px; border-bottom: 1px solid var(--border); }
+        .table-compact tr:hover { background: var(--panel-2); }
+
+        .summary-2line { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; }
+        .summary-label-2line { color: var(--muted); }
+        .summary-value-2line { font-weight: 600; color: var(--text); }
+
+        @media(max-width: 1200px) {
+            .strategy-item { grid-template-columns: 150px 1fr 150px auto; }
+        }
+        @media(max-width: 768px) {
+            .strategy-item { grid-template-columns: 1fr; }
+            .strategy-timing { flex-wrap: wrap; }
+            .position-row { grid-template-columns: repeat(4, 1fr); }
+            .orphan-summary { grid-template-columns: repeat(2, 1fr); }
+        }
     </style>
 </head>
 <body data-page="strategy">
@@ -47,374 +66,283 @@
     <main>
         <div class="page-header">
             <h1>Strategy Management</h1>
-            <p class="muted">Build, execute, monitor, and manage trading strategies with position recovery and orphan management</p>
+            <p class="muted">Control and monitor your trading strategies with real-time position tracking</p>
         </div>
 
-        <!-- Section Breadcrumb Navigation -->
-        <div class="breadcrumb">
-            <button class="active" onclick="switchSection('builder')">📋 Strategy Builder</button>
-            <button onclick="switchSection('monitor')">📊 Monitor & Control</button>
-            <button onclick="switchSection('recovery')">↩️ Recovery/Resume</button>
-            <button onclick="switchSection('orphan')">👻 Orphan Positions</button>
+        <!-- ═══ SECTION 1: STRATEGY CONTROL ═══ -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Strategy Control & Scheduling</h3>
+                <button class="btn-primary btn-sm" onclick="loadStrategies()" style="margin-left:auto;">🔄 Refresh List</button>
+            </div>
+            <div class="card-body">
+                <div id="strategyList" style="min-height: 200px;">
+                    <div class="muted" style="text-align:center; padding:20px;">Loading strategies...</div>
+                </div>
+            </div>
         </div>
 
-        <!-- ═══ SECTION 1: STRATEGY BUILDER ═══ -->
-        <div id="builderSection" class="section active">
-            <!-- Strategy Control Panel -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Strategy Control</h3>
-                    <div class="flex gap-sm">
-                        <button class="btn-success btn-sm" onclick="startStrategy()">▶ Start</button>
-                        <button class="btn-warning btn-sm" onclick="pauseStrategy()">⏸ Pause</button>
-                        <button class="btn-danger btn-sm" onclick="stopStrategy()">⏹ Stop</button>
+        <!-- ═══ SECTION 2: STRATEGY MONITOR ═══ -->
+        <div class="card" style="margin-top: var(--spacing-lg);">
+            <div class="card-header">
+                <h3 class="card-title">Strategy Monitor</h3>
+                <button class="btn-sm" onclick="refreshMonitor()" style="background:transparent; border:1px solid var(--border); cursor:pointer; margin-left:auto;">🔄 Refresh</button>
+            </div>
+            <div class="card-body">
+                <!-- Orphan Positions Section -->
+                <div class="monitor-section">
+                    <div class="section-header" onclick="toggleSection(event, 'orphanContent')">
+                        <span class="section-toggle">▶</span>
+                        <span class="section-title">👻 Orphan Positions</span>
+                        <span class="section-summary" id="orphanSummaryBadge">0 positions</span>
+                    </div>
+                    <div id="orphanContent" class="section-content">
+                        <div id="orphanPositions">
+                            <table class="table-compact">
+                                <thead>
+                                    <tr>
+                                        <th>Symbol</th>
+                                        <th>Qty</th>
+                                        <th>LTP</th>
+                                        <th>PnL</th>
+                                        <th>Δ</th>
+                                        <th>Γ</th>
+                                        <th>θ</th>
+                                        <th>ν</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="orphanBody">
+                                    <tr><td colspan="8" class="text-center muted">No orphan positions</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="orphan-summary" id="orphanSummary" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+                            <div class="summary-box">
+                                <div class="summary-label">Total PnL</div>
+                                <div class="summary-value" id="orphanTotalPnL">₹0</div>
+                            </div>
+                            <div class="summary-box">
+                                <div class="summary-label">Combined Δ</div>
+                                <div class="summary-value" id="orphanDelta">0.000</div>
+                            </div>
+                            <div class="summary-box">
+                                <div class="summary-label">Combined θ</div>
+                                <div class="summary-value" id="orphanTheta">0.00</div>
+                            </div>
+                            <div class="summary-box">
+                                <div class="summary-label">Positions</div>
+                                <div class="summary-value" id="orphanCount">0</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div class="grid grid-cols-4">
-                        <div class="status-box">
-                            <div class="muted">Status</div>
-                            <div id="strategyStatus" style="font-weight:600; margin-top:4px;">IDLE</div>
-                        </div>
-                        <div class="status-box">
-                            <div class="muted">Active Positions</div>
-                            <div id="activePositions" style="font-weight:600; margin-top:4px;">0</div>
-                        </div>
-                        <div class="status-box">
-                            <div class="muted">Today's PnL</div>
-                            <div id="todayPnL" style="font-weight:600; margin-top:4px;">₹0.00</div>
-                        </div>
-                        <div class="status-box">
-                            <div class="muted">Open Orders</div>
-                            <div id="openOrders" style="font-weight:600; margin-top:4px;">0</div>
-                        </div>
-                    </div>
-                </div>
+
+                <!-- Strategy Monitoring Sections (Dynamic) -->
+                <div id="strategyMonitors"></div>
             </div>
+        </div>
 
-            <!-- Configuration Tabs -->
-            <div class="tabs">
-                <div class="tab active" onclick="switchTab(event, 'entryTab')">Entry Rules</div>
-                <div class="tab" onclick="switchTab(event, 'adjustmentTab')">Adjustment Rules</div>
-                <div class="tab" onclick="switchTab(event, 'exitTab')">Exit Rules</div>
-                <div class="tab" onclick="switchTab(event, 'rmsTab')">Risk Management</div>
-                <div class="tab" onclick="switchTab(event, 'monitorTab')">Monitor</div>
-            </div>
+        <div id="result" class="result" style="padding:12px; border-radius:var(--radius-md); margin-top:var(--spacing-lg); display:none;"></div>
+    </main>
 
-            <!-- TAB: ENTRY RULES -->
-            <div id="entryTab" class="tab-content active">
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Entry Configuration</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="field">
-                                <label>Strategy Type</label>
-                                <select id="strategyType" onchange="updateStrategyType()">
-                                    <option value="custom">Custom Strategy</option>
-                                    <option value="dnss">Delta Neutral Straddle/Strangle (DNSS)</option>
-                                    <option value="iron_condor">Iron Condor</option>
-                                    <option value="butterfly">Butterfly</option>
-                                    <option value="long_straddle">Long Straddle</option>
-                                    <option value="short_straddle">Short Straddle</option>
-                                    <option value="directional">Directional Spread</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Underlying Symbol</label>
-                                <input type="text" id="underlying" placeholder="e.g., NIFTY, BANKNIFTY, FINNIFTY" value="NIFTY">
-                            </div>
-                            <div class="field">
-                                <label>Entry Time</label>
-                                <input type="time" id="entryTime" value="09:20">
-                            </div>
-                            <div class="field">
-                                <label>Entry Condition</label>
-                                <select id="entryCondition">
-                                    <option value="time_based">Time Based</option>
-                                    <option value="price_based">Price Level</option>
-                                    <option value="volatility_based">Volatility Threshold</option>
-                                    <option value="indicator_based">Technical Indicator</option>
-                                </select>
-                            </div>
+    <script>
+        const API = '/dashboard';
+        let strategies = [];
+        let selectedStrategy = null;
+
+        // Show/Hide Sections
+        function toggleSection(e, contentId) {
+            e.preventDefault();
+            const header = e.currentTarget;
+            const content = document.getElementById(contentId);
+            const toggle = header.querySelector('.section-toggle');
+            
+            content.classList.toggle('open');
+            toggle.classList.toggle('open');
+        }
+
+        // Load Strategy List
+        async function loadStrategies() {
+            try {
+                const r = await fetch(`${API}/strategy/configs`, { credentials: 'include' });
+                if (!r.ok) return showResult(false, 'Failed to load strategies');
+                const data = await r.json();
+                strategies = data.configs || [];
+                renderStrategyList();
+            } catch (e) {
+                showResult(false, 'Error: ' + e.message);
+            }
+        }
+
+        function renderStrategyList() {
+            const container = document.getElementById('strategyList');
+            if (!strategies.length) {
+                container.innerHTML = '<div class="muted" style="text-align:center; padding:20px;">No saved strategies</div>';
+                return;
+            }
+
+            let html = '';
+            for (const s of strategies) {
+                const status = s.status || 'IDLE';
+                html += `
+                    <div class="strategy-item">
+                        <div>
+                            <div class="strategy-name">${s.name}</div>
+                            <div style="font-size:10px; color:var(--muted); margin-top:2px;">${s.identity?.underlying || 'N/A'} · ${s.identity?.strategy_type || 'custom'}</div>
                         </div>
-
-                        <div class="row">
-                            <div class="field">
-                                <label>Position Size (Lots)</label>
-                                <input type="number" id="positionSize" min="1" value="1">
-                            </div>
-                            <div class="field">
-                                <label>Max Positions</label>
-                                <input type="number" id="maxPositions" min="1" value="1">
-                            </div>
-                            <div class="field">
-                                <label>
-                                    <input type="checkbox" id="hedgeEntry" style="width:auto; margin-right:8px;">
-                                    Enable Hedging on Entry
-                                </label>
-                            </div>
-                            <div class="field">
-                                <label>
-                                    <input type="checkbox" id="autoConfirm" style="width:auto; margin-right:8px;">
-                                    Auto-confirm Orders
-                                </label>
-                            </div>
+                        <div class="strategy-timing">
+                            <select onchange="updateSchedule('${s.name}', this.value)" style="min-width:150px;">
+                                <option value="disabled">⏸ Disabled</option>
+                                <option value="daily" ${s.schedule === 'daily' ? 'selected' : ''}>📅 Daily</option>
+                                <option value="weekly" ${s.schedule === 'weekly' ? 'selected' : ''}>📆 Weekly</option>
+                                <option value="custom" ${s.schedule === 'custom' ? 'selected' : ''}>⚙️ Custom Time</option>
+                                <option value="immediate" ${s.schedule === 'immediate' ? 'selected' : ''}>⚡ On Demand</option>
+                            </select>
+                            <span style="font-size:11px; color:var(--muted); min-width:80px;">
+                                ${s.entry?.timing?.entry_time ? s.entry.timing.entry_time : '--:--'}
+                            </span>
                         </div>
-
-                        <!-- Dynamic Strategy-Specific Fields -->
-                        <div id="strategySpecificFields"></div>
-                    </div>
-                    <div class="card-footer">
-                        <button class="btn-primary" onclick="saveEntryRules()">Save Entry Rules</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TAB: ADJUSTMENT RULES -->
-            <div id="adjustmentTab" class="tab-content">
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Adjustment Configuration</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="field">
-                                <label>
-                                    <input type="checkbox" id="enableAdjustments" style="width:auto; margin-right:8px;">
-                                    Enable Automatic Adjustments
-                                </label>
-                            </div>
+                        <div style="text-align:center;">
+                            <span class="status-pill status-${status.toLowerCase()}">${status}</span>
                         </div>
-
-                        <h3>Delta Adjustment</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Delta Trigger Threshold</label>
-                                <input type="number" id="deltaTrigger" step="0.01" placeholder="e.g., 0.15">
-                            </div>
-                            <div class="field">
-                                <label>Target Delta After Adjustment</label>
-                                <input type="number" id="targetDelta" step="0.01" placeholder="e.g., 0.05">
-                            </div>
-                            <div class="field">
-                                <label>Max Adjustments Per Day</label>
-                                <input type="number" id="maxAdjustments" min="0" value="3">
-                            </div>
-                            <div class="field">
-                                <label>Max Leg Delta</label>
-                                <input type="number" id="maxLegDelta" step="0.01" placeholder="Max delta per leg">
-                            </div>
-                        </div>
-
-                        <h3>Profit/Loss Adjustment</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Profit Lock Trigger (₹)</label>
-                                <input type="number" id="profitLockTrigger" step="100" placeholder="Lock at profit level">
-                            </div>
-                            <div class="field">
-                                <label>Loss Repair Trigger (₹)</label>
-                                <input type="number" id="lossRepairTrigger" step="100" placeholder="Adjust at loss level">
-                            </div>
-                            <div class="field">
-                                <label>Adjustment Check Interval (min)</label>
-                                <input type="number" id="adjustCheckInterval" min="1" value="5">
-                            </div>
-                            <div class="field">
-                                <label>Adjustment Action</label>
-                                <select id="adjustmentAction">
-                                    <option value="add_hedge">Add Hedge</option>
-                                    <option value="roll_strike">Roll Strike</option>
-                                    <option value="reduce_position">Reduce Position</option>
-                                    <option value="inverse_spread">Add Inverse Spread</option>
-                                </select>
-                            </div>
+                        <div class="strategy-actions">
+                            <button class="btn-success btn-sm" onclick="actionStrategy('${s.name}', 'start')" ${status === 'RUNNING' ? 'disabled' : ''}>▶</button>
+                            <button class="btn-warning btn-sm" onclick="actionStrategy('${s.name}', 'pause')" ${status !== 'RUNNING' ? 'disabled' : ''}>⏸</button>
+                            <button class="btn-danger btn-sm" onclick="actionStrategy('${s.name}', 'stop')" ${status === 'IDLE' ? 'disabled' : ''}>⏹</button>
                         </div>
                     </div>
-                    <div class="card-footer">
-                        <button class="btn-primary" onclick="saveAdjustmentRules()">Save Adjustment Rules</button>
-                    </div>
-                </div>
-            </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
 
-            <!-- TAB: EXIT RULES -->
-            <div id="exitTab" class="tab-content">
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Exit Configuration</h3>
-                    </div>
-                    <div class="card-body">
-                        <h3>Time-Based Exit</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Exit Time</label>
-                                <input type="time" id="exitTime" value="15:15">
-                            </div>
-                            <div class="field">
-                                <label>Force Exit Before Expiry (minutes)</label>
-                                <input type="number" id="forceExitMinutes" min="0" value="10">
-                            </div>
+        async function actionStrategy(name, action) {
+            if (!confirm(`${action.toUpperCase()} strategy "${name}"?`)) return;
+            try {
+                const actionMap = { start: 'ENTRY', pause: 'ADJUST', stop: 'FORCE_EXIT' };
+                const r = await fetch(`${API}/intent/strategy`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy_name: name, action: actionMap[action], reason: 'DASHBOARD_UI' })
+                });
+                if (!r.ok) throw new Error('Failed');
+                showResult(true, `Strategy ${action}ed: ${name}`);
+                setTimeout(() => { loadStrategies(); refreshMonitor(); }, 1000);
+            } catch (e) {
+                showResult(false, `Failed to ${action}: ${e.message}`);
+            }
+        }
+
+        function updateSchedule(name, schedule) {
+            showResult(true, `Schedule updated for ${name}: ${schedule}`);
+        }
+
+        // Refresh Monitor
+        async function refreshMonitor() {
+            try {
+                // Load orphan positions
+                const orphanR = await fetch(`${API}/orphan-positions`, { credentials: 'include' });
+                if (orphanR.ok) {
+                    const orphanData = await orphanR.json();
+                    renderOrphanPositions(orphanData);
+                }
+
+                // Load strategy positions
+                const monR = await fetch(`${API}/monitoring/strategy-positions`, { credentials: 'include' });
+                if (monR.ok) {
+                    const monData = await monR.json();
+                    renderStrategyMonitors(monData);
+                } else {
+                    document.getElementById('strategyMonitors').innerHTML = '<div class="muted" style="text-align:center; padding:20px;">No running strategies</div>';
+                }
+            } catch (e) {
+                console.error('Monitor error:', e);
+            }
+        }
+
+        function renderOrphanPositions(data) {
+            const positions = data.positions || [];
+            let html = '';
+            
+            if (positions.length) {
+                for (const p of positions) {
+                    const pnl = parseFloat(p.pnl || 0);
+                    html += `
+                        <tr>
+                            <td>${p.symbol}</td>
+                            <td>${p.netqty}</td>
+                            <td>${parseFloat(p.ltp || 0).toFixed(2)}</td>
+                            <td style="color:${pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${pnl.toFixed(0)}</td>
+                            <td><span class="greek">${parseFloat(p.delta || 0).toFixed(3)}</span></td>
+                            <td><span class="greek">${parseFloat(p.gamma || 0).toFixed(4)}</span></td>
+                            <td>${parseFloat(p.theta || 0).toFixed(2)}</td>
+                            <td>${parseFloat(p.vega || 0).toFixed(2)}</td>
+                        </tr>
+                    `;
+                }
+                document.getElementById('orphanBody').innerHTML = html;
+                document.getElementById('orphanSummaryBadge').textContent = positions.length + ' position' + (positions.length !== 1 ? 's' : '');
+                
+                // Load summary
+                const summaryR = fetch(`${API}/orphan-positions/summary`, { credentials: 'include' });
+                summaryR.then(r => r.ok ? r.json() : null).then(s => {
+                    if (s && s.summary) {
+                        document.getElementById('orphanTotalPnL').textContent = '₹' + (s.summary.total_pnl || 0).toFixed(0);
+                        document.getElementById('orphanDelta').textContent = (s.summary.combined_delta || 0).toFixed(3);
+                        document.getElementById('orphanTheta').textContent = (s.summary.combined_theta || 0).toFixed(2);
+                        document.getElementById('orphanCount').textContent = s.summary.total_positions || 0;
+                        document.getElementById('orphanSummary').style.display = 'grid';
+                    }
+                });
+            } else {
+                document.getElementById('orphanBody').innerHTML = '<tr><td colspan="8" class="text-center muted">No orphan positions</td></tr>';
+                document.getElementById('orphanSummaryBadge').textContent = '0 positions';
+            }
+        }
+
+        function renderStrategyMonitors(data) {
+            const strategies = data.strategies || [];
+            let html = '';
+
+            if (!strategies.length) {
+                document.getElementById('strategyMonitors').innerHTML = '<div class="muted" style="text-align:center; padding:20px;">No running strategies</div>';
+                return;
+            }
+
+            for (const s of strategies) {
+                const positions = s.positions || [];
+                const totalPnL = s.total_pnl || 0;
+                const delta = (s.combined_greeks?.delta || 0).toFixed(3);
+                const theta = (s.combined_greeks?.theta || 0).toFixed(2);
+                const posCount = positions.reduce((sum, p) => sum + (p.legs || []).length, 0);
+
+                html += `
+                    <div class="monitor-section" style="margin-top:12px;">
+                        <div class="section-header" onclick="toggleSection(event, 'strat-${s.strategy_name.replace(/\s+/g, '-')}')">
+                            <span class="section-toggle">▶</span>
+                            <span class="section-title">📊 ${s.strategy_name}</span>
+                            <span class="section-summary">
+                                <span class="stat-badge">Positions: ${posCount}</span>
+                                <span class="stat-badge" style="color:${totalPnL >= 0 ? 'var(--success)' : 'var(--danger)'}">PnL: ₹${totalPnL.toFixed(0)}</span>
+                                <span class="stat-badge">Δ: ${delta}</span>
+                            </span>
                         </div>
-
-                        <h3>Profit Target</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Target Profit (₹)</label>
-                                <input type="number" id="targetProfit" step="100" placeholder="Exit at profit">
+                        <div id="strat-${s.strategy_name.replace(/\s+/g, '-')}" class="section-content">
+                            <div class="table-compact" style="margin-bottom:12px;">
+                                <div class="summary-2line">
+                                    <span class="summary-label-2line">Total PnL:</span>
+                                    <span class="summary-value-2line" style="color:${totalPnL >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${totalPnL.toFixed(0)}</span>
+                                </div>
+                                <div class="summary-2line">
+                                    <span class="summary-label-2line">Combined Greeks:</span>
+                                    <span class="summary-value-2line">Δ ${delta} | θ ${theta}</span>
+                                </div>
+                                <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+                                    <strong style="font-size:11px;">Leg-wise Positions:</strong>
+                                </div>
                             </div>
-                            <div class="field">
-                                <label>Target Profit (%)</label>
-                                <input type="number" id="targetProfitPercent" step="1" placeholder="% of premium">
-                            </div>
-                            <div class="field">
-                                <label>Partial Exit at Target</label>
-                                <select id="partialExitPercent">
-                                    <option value="100">Full Exit (100%)</option>
-                                    <option value="75">Exit 75%</option>
-                                    <option value="50">Exit 50%</option>
-                                    <option value="25">Exit 25%</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <h3>Stop Loss</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Stop Loss (₹)</label>
-                                <input type="number" id="stopLoss" step="100" placeholder="Exit at loss">
-                            </div>
-                            <div class="field">
-                                <label>Stop Loss (%)</label>
-                                <input type="number" id="stopLossPercent" step="1" placeholder="% of premium">
-                            </div>
-                            <div class="field">
-                                <label>Trailing Stop (%)</label>
-                                <input type="number" id="trailingStop" step="1" placeholder="Trail profit">
-                            </div>
-                        </div>
-
-                        <h3>Position-Specific Exit</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Individual Leg SL (₹)</label>
-                                <input type="number" id="legStopLoss" step="50" placeholder="Per leg stop loss">
-                            </div>
-                            <div class="field">
-                                <label>Individual Leg Target (₹)</label>
-                                <input type="number" id="legTarget" step="50" placeholder="Per leg target">
-                            </div>
-                            <div class="field">
-                                <label>
-                                    <input type="checkbox" id="exitAllOnLegBreach" style="width:auto; margin-right:8px;">
-                                    Exit All Legs if One Breaches
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <button class="btn-primary" onclick="saveExitRules()">Save Exit Rules</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TAB: RISK MANAGEMENT -->
-            <div id="rmsTab" class="tab-content">
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Risk Management System</h3>
-                    </div>
-                    <div class="card-body">
-                        <h3>Position Limits</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Max Position Value (₹)</label>
-                                <input type="number" id="maxPositionValue" step="10000" placeholder="Total value limit">
-                            </div>
-                            <div class="field">
-                                <label>Max Margin Usage (%)</label>
-                                <input type="number" id="maxMarginPercent" min="0" max="100" value="70">
-                            </div>
-                            <div class="field">
-                                <label>Max Lots Per Trade</label>
-                                <input type="number" id="maxLotsPerTrade" min="1" value="10">
-                            </div>
-                        </div>
-
-                        <h3>Daily Limits</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Daily Loss Limit (₹)</label>
-                                <input type="number" id="dailyLossLimit" step="1000" placeholder="Stop trading at loss">
-                            </div>
-                            <div class="field">
-                                <label>Daily Profit Target (₹)</label>
-                                <input type="number" id="dailyProfitTarget" step="1000" placeholder="Stop trading at profit">
-                            </div>
-                            <div class="field">
-                                <label>Max Trades Per Day</label>
-                                <input type="number" id="maxTradesPerDay" min="1" value="10">
-                            </div>
-                        </div>
-
-                        <h3>Risk Controls</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>Circuit Breaker Loss (₹)</label>
-                                <input type="number" id="circuitBreaker" step="1000" placeholder="Emergency stop">
-                            </div>
-                            <div class="field">
-                                <label>Drawdown Limit (%)</label>
-                                <input type="number" id="drawdownLimit" step="5" placeholder="From peak">
-                            </div>
-                            <div class="field">
-                                <label>Position Concentration (%)</label>
-                                <input type="number" id="concentrationLimit" min="0" max="100" value="30" placeholder="Max % in one symbol">
-                            </div>
-                        </div>
-
-                        <h3>Combined Legs Management</h3>
-                        <div class="row">
-                            <div class="field">
-                                <label>
-                                    <input type="checkbox" id="trackCombinedPnL" style="width:auto; margin-right:8px;" checked>
-                                    Track Combined Legs PnL (Strategy-Level)
-                                </label>
-                            </div>
-                            <div class="field">
-                                <label>Combined Stop Loss (₹)</label>
-                                <input type="number" id="combinedStopLoss" step="100" placeholder="Total position SL">
-                            </div>
-                            <div class="field">
-                                <label>Combined Target (₹)</label>
-                                <input type="number" id="combinedTarget" step="100" placeholder="Total position target">
-                            </div>
-                            <div class="field">
-                                <label>
-                                    <input type="checkbox" id="autoSquareOff" style="width:auto; margin-right:8px;">
-                                    Auto Square-Off on Risk Breach
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <button class="btn-primary" onclick="saveRMSRules()">Save RMS Configuration</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TAB: MONITOR -->
-            <div id="monitorTab" class="tab-content">
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Live Strategy Monitor</h3>
-                        <span class="badge badge-success" style="margin-left:auto;">Auto-refresh: 2s</span>
-                    </div>
-                    <div class="card-body">
-                        <h3>Position Summary with Greeks</h3>
-                        <div class="table-container">
-                            <table id="positionsTable">
+                            <table class="table-compact">
                                 <thead>
                                     <tr>
                                         <th>Symbol</th>
@@ -422,353 +350,57 @@
                                         <th>Qty</th>
                                         <th>LTP</th>
                                         <th>PnL</th>
-                                        <th>Delta</th>
-                                        <th>Gamma</th>
-                                        <th>Theta</th>
-                                        <th>Vega</th>
+                                        <th>Δ</th>
+                                        <th>Γ</th>
+                                        <th>θ</th>
                                     </tr>
                                 </thead>
-                                <tbody id="positionsBody">
-                                    <tr><td colspan="9" class="text-center muted">No active positions</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <h3>Strategy Greeks Summary</h3>
-                        <div class="grid grid-cols-4">
-                            <div class="status-box">
-                                <div class="muted">Total Delta</div>
-                                <div id="totalDelta" style="font-weight:600; margin-top:4px;">0.000</div>
-                            </div>
-                            <div class="status-box">
-                                <div class="muted">Total Gamma</div>
-                                <div id="totalGamma" style="font-weight:600; margin-top:4px;">0.0000</div>
-                            </div>
-                            <div class="status-box">
-                                <div class="muted">Total Theta</div>
-                                <div id="totalTheta" style="font-weight:600; margin-top:4px;">0.00</div>
-                            </div>
-                            <div class="status-box">
-                                <div class="muted">Total Vega</div>
-                                <div id="totalVega" style="font-weight:600; margin-top:4px;">0.00</div>
-                            </div>
-                            <div class="status-box">
-                                <div class="muted">Combined PnL</div>
-                                <div id="combinedPnL" style="font-weight:600; margin-top:4px;">₹0.00</div>
-                            </div>
-                            <div class="status-box">
-                                <div class="muted">Total Premium</div>
-                                <div id="totalPremium" style="font-weight:600; margin-top:4px;">₹0.00</div>
-                            </div>
-                            <div class="status-box">
-                                <div class="muted">Margin Used</div>
-                                <div id="marginUsed" style="font-weight:600; margin-top:4px;">₹0.00</div>
-                            </div>
-                            <div class="status-box">
-                                <div class="muted">Risk Status</div>
-                                <div id="riskStatus" style="font-weight:600; margin-top:4px; color:var(--success)">OK</div>
-                            </div>
-                        </div>
-
-                        <h3>Event Log</h3>
-                        <div class="status-box" style="max-height:300px; overflow-y:auto; font-family:monospace; font-size:11px;">
-                            <div id="strategyLog">No events yet</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ SECTION 2: MONITOR & CONTROL (Live Monitoring) ═══ -->
-        <div id="monitorSection" class="section" style="display:none;">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Running Strategies</h3>
-                    <button class="btn-sm" onclick="refreshMonitoringData()" style="background:transparent; border:1px solid var(--border); cursor:pointer;">🔄 Refresh</button>
-                </div>
-                <div class="card-body">
-                    <div id="monitoringContent" class="muted" style="text-align:center; padding:20px;">Loading strategies...</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ SECTION 3: RECOVERY/RESUME ═══ -->
-        <div id="recoverySection" class="section" style="display:none;">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Strategy Recovery & Resume</h3>
-                    <p class="muted" style="margin:0; font-size:11px;">Manually resume crashed strategies or map orphan broker positions</p>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="field">
-                            <label>Select Strategy to Resume</label>
-                            <select id="recStrat" style="padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm);">
-                                <option value="">-- Choose Strategy --</option>
-                            </select>
-                        </div>
-                        <div style="display:flex; align-items:flex-end;"><button class="btn-primary" onclick="loadRecoveryOptions()" style="margin-bottom:0;">Load Recovery Options</button></div>
-                    </div>
-                    <div id="recoveryContent"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ SECTION 4: ORPHAN POSITIONS ═══ -->
-        <div id="orphanSection" class="section" style="display:none;">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--spacing-lg);">
-                <!-- Left: Orphan Positions List -->
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Orphan Positions</h3>
-                        <button class="btn-sm" onclick="refreshOrphanList()" style="background:transparent; border:1px solid var(--border); cursor:pointer;">🔄 Refresh</button>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-container">
-                            <table id="orphanTable">
-                                <thead>
+                                <tbody>
+`;
+                for (const p of positions) {
+                    for (const l of (p.legs || [])) {
+                        const lpnl = parseFloat(l.pnl || 0);
+                        html += `
                                     <tr>
-                                        <th>Symbol</th>
-                                        <th>Qty</th>
-                                        <th>LTP</th>
-                                        <th>PnL</th>
-                                        <th>Delta</th>
-                                        <th>Theta</th>
+                                        <td>${l.symbol || '?'}</td>
+                                        <td>${l.type || '?'}</td>
+                                        <td>${l.qty || 0}</td>
+                                        <td>${parseFloat(l.ltp || 0).toFixed(2)}</td>
+                                        <td style="color:${lpnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${lpnl.toFixed(0)}</td>
+                                        <td><span class="greek">${parseFloat(l.delta || 0).toFixed(3)}</span></td>
+                                        <td><span class="greek">${parseFloat(l.gamma || 0).toFixed(4)}</span></td>
+                                        <td>${parseFloat(l.theta || 0).toFixed(2)}</td>
                                     </tr>
-                                </thead>
-                                <tbody id="orphanBody">
-                                    <tr><td colspan="6" class="text-center muted">Loading...</td></tr>
+`;
+                    }
+                }
+                html += `
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                </div>
-
-                <!-- Right: Rules & Summary -->
-                <div>
-                    <!-- Rules Management -->
-                    <div class="card" style="margin-bottom:var(--spacing-lg);">
-                        <div class="card-header">
-                            <h3 class="card-title">Management Rules</h3>
-                            <button class="btn-primary btn-sm" onclick="showNewRuleModal()">+ New Rule</button>
-                        </div>
-                        <div class="card-body">
-                            <div id="rulesList">
-                                <div class="muted" style="text-align:center; padding:20px;">Loading...</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Summary -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">Combined Summary</h3>
-                        </div>
-                        <div class="card-body">
-                            <div id="orphanSummary">
-                                <div class="muted" style="text-align:center; padding:20px;">Loading...</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div id="result" class="result"></div>
-    </main>
-
-    <script>
-        const API = '/dashboard';
-        
-        // Section Switching
-        function switchSection(sectionName) {
-            document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
-            document.getElementById(sectionName + 'Section').style.display = 'block';
-            
-            document.querySelectorAll('.breadcrumb button').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
-
-            if (sectionName === 'monitor') refreshMonitoringData();
-            else if (sectionName === 'recovery') loadRecoveryStrategies();
-            else if (sectionName === 'orphan') { refreshOrphanList(); refreshOrphanRules(); refreshOrphanSummary(); }
-        }
-
-        // Tab Switching
-        function switchTab(e, tabId) {
-            e.preventDefault();
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
-            e.target.classList.add('active');
-        }
-
-        function updateStrategyType() {
-            const type = document.getElementById('strategyType').value;
-            const container = document.getElementById('strategySpecificFields');
-            let html = '<h3 style="margin-top:24px;">Strategy-Specific Parameters</h3><div class="row">';
-            
-            if (type === 'dnss') {
-                html += `<div class="field"><label>Straddle/Strangle</label><select><option>Straddle (ATM)</option><option>Strangle (OTM)</option></select></div>
-                        <div class="field"><label>ATM Offset (Points)</label><input type="number" step="50" value="0"></div>
-                        <div class="field"><label>CE Offset</label><input type="number" step="50" value="100"></div>
-                        <div class="field"><label>PE Offset</label><input type="number" step="50" value="100"></div>`;
-            } else if (type === 'iron_condor') {
-                html += `<div class="field"><label>Short CE Offset</label><input type="number" step="50" value="200"></div>
-                        <div class="field"><label>Long CE Offset</label><input type="number" step="50" value="300"></div>
-                        <div class="field"><label>Short PE Offset</label><input type="number" step="50" value="200"></div>
-                        <div class="field"><label>Long PE Offset</label><input type="number" step="50" value="300"></div>`;
-            } else if (type === 'butterfly') {
-                html += `<div class="field"><label>Direction</label><select><option>Long Butterfly</option><option>Short Butterfly</option></select></div>
-                        <div class="field"><label>Wing Width (Points)</label><input type="number" step="50" value="100"></div>
-                        <div class="field"><label>Option Type</label><select><option>Call</option><option>Put</option></select></div>`;
+                `;
             }
-            html += '</div>';
-            container.innerHTML = html;
+
+            document.getElementById('strategyMonitors').innerHTML = html;
         }
 
         function showResult(success, message) {
             const resultDiv = document.getElementById('result');
-            resultDiv.className = 'result ' + (success ? 'success' : 'error');
+            resultDiv.className = success ? 'result' : 'result';
+            resultDiv.style.background = success ? 'rgba(34,197,94,.1)' : 'rgba(239,68,68,.1)';
+            resultDiv.style.color = success ? '#22c55e' : '#ef4444';
+            resultDiv.style.border = success ? '1px solid #22c55e' : '1px solid #ef4444';
             resultDiv.textContent = message;
             resultDiv.style.display = 'block';
-            setTimeout(() => { resultDiv.style.display = 'none'; }, 5000);
+            setTimeout(() => { resultDiv.style.display = 'none'; }, 4000);
         }
 
-        // Save Functions
-        function saveEntryRules() { showResult(true, 'Entry rules saved'); }
-        function saveAdjustmentRules() { showResult(true, 'Adjustment rules saved'); }
-        function saveExitRules() { showResult(true, 'Exit rules saved'); }
-        function saveRMSRules() { showResult(true, 'RMS configuration saved'); }
-
-        // Strategy Control
-        function startStrategy() { showResult(true, 'Strategy start intent queued'); }
-        function pauseStrategy() { showResult(true, 'Strategy pause intent queued'); }
-        function stopStrategy() { showResult(true, 'Strategy stop intent queued'); }
-
-        // Monitoring
-        async function refreshMonitoringData() {
-            try {
-                const r = await fetch(`${API}/monitoring/strategy-positions`, { credentials: 'include' });
-                if (!r.ok) return;
-                const data = await r.json();
-                let html = '';
-                if (data.strategies && data.strategies.length) {
-                    for (const s of data.strategies) {
-                        html += `<div style="margin-bottom:20px; padding:16px; background:var(--panel-2); border-radius:var(--radius-md);">
-                            <h4>${s.strategy_name}</h4>
-                            <div class="table-container">
-                                <table style="font-size:11px;">
-                                    <thead><tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>PnL</th><th style="text-align:right">Δ</th><th style="text-align:right">Γ</th><th style="text-align:right">θ</th><th style="text-align:right">ν</th></tr></thead>
-                                    <tbody>`;
-                        for (const p of (s.positions || [])) {
-                            for (const l of (p.legs || [])) {
-                                const pnl = parseFloat(l.pnl || 0);
-                                html += `<tr>
-                                    <td>${l.symbol}</td><td>${l.qty}</td><td>${parseFloat(l.ltp || 0).toFixed(2)}</td>
-                                    <td style="color:${pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${pnl.toFixed(0)}</td>
-                                    <td style="text-align:right"><span class="greek">${parseFloat(l.delta || 0).toFixed(3)}</span></td>
-                                    <td style="text-align:right"><span class="greek">${parseFloat(l.gamma || 0).toFixed(4)}</span></td>
-                                    <td style="text-align:right">${parseFloat(l.theta || 0).toFixed(2)}</td>
-                                    <td style="text-align:right">${parseFloat(l.vega || 0).toFixed(2)}</td>
-                                </tr>`;
-                            }
-                        }
-                        html += `</tbody></table></div>
-                            <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:11px;">
-                                <strong>PnL:</strong> <span style="color:${(s.total_pnl || 0) >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${(s.total_pnl || 0).toFixed(0)}</span> | 
-                                <strong>Δ:</strong> ${(s.combined_greeks?.delta || 0).toFixed(3)} | 
-                                <strong>θ:</strong> ${(s.combined_greeks?.theta || 0).toFixed(2)}
-                            </div></div>`;
-                    }
-                } else html = '<div class="muted" style="text-align:center; padding:20px;">No running strategies</div>';
-                document.getElementById('monitoringContent').innerHTML = html;
-            } catch (e) { document.getElementById('monitoringContent').innerHTML = '<div class="muted" style="text-align:center;">Error loading data</div>'; }
-        }
-
-        // Recovery
-        async function loadRecoveryStrategies() {
-            try {
-                const r = await fetch(`${API}/strategy/configs`, { credentials: 'include' });
-                if (!r.ok) return;
-                const data = await r.json();
-                const sel = document.getElementById('recStrat');
-                sel.innerHTML = '<option value="">-- Choose Strategy --</option>';
-                for (const s of (data.configs || [])) sel.innerHTML += `<option value="${s.name}">${s.name}</option>`;
-            } catch (e) { console.error(e); }
-        }
-
-        function loadRecoveryOptions() {
-            const sname = document.getElementById('recStrat').value;
-            if (!sname) { showResult(false, 'Please select a strategy'); return; }
-            showResult(true, 'Recovery positions loaded for: ' + sname);
-        }
-
-        // Orphan Positions
-        async function refreshOrphanList() {
-            try {
-                const r = await fetch(`${API}/orphan-positions`, { credentials: 'include' });
-                if (!r.ok) return;
-                const data = await r.json();
-                let html = '<tr><td colspan="6" class="text-center muted">No orphan positions</td></tr>';
-                if (data.positions && data.positions.length) {
-                    html = '';
-                    for (const p of data.positions) {
-                        const pnl = parseFloat(p.pnl || 0);
-                        html += `<tr><td>${p.symbol}</td><td>${p.netqty}</td><td>${parseFloat(p.ltp || 0).toFixed(2)}</td>
-                                <td style="color:${pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${pnl.toFixed(0)}</td>
-                                <td><span class="greek">${parseFloat(p.delta || 0).toFixed(3)}</span></td>
-                                <td>${parseFloat(p.theta || 0).toFixed(2)}</td></tr>`;
-                    }
-                }
-                document.getElementById('orphanBody').innerHTML = html;
-            } catch (e) { console.error(e); }
-        }
-
-        async function refreshOrphanRules() {
-            try {
-                const r = await fetch(`${API}/orphan-positions/rules`, { credentials: 'include' });
-                if (!r.ok) return;
-                const data = await r.json();
-                let html = '<div class="muted" style="text-align:center; padding:20px;">No rules yet</div>';
-                if (data.rules && data.rules.length) {
-                    html = '';
-                    for (const rul of data.rules) {
-                        html += `<div style="background:var(--panel-2); padding:12px; border-radius:var(--radius-sm); margin-bottom:8px;">
-                                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                                    <span style="display:inline-block; padding:2px 8px; background:var(--primary); color:#fff; border-radius:4px; font-size:10px; font-weight:600;">${rul.rule_type}</span>
-                                    <button class="btn-ghost-danger btn-sm" onclick="deleteRule('${rul.rule_id}')">×</button>
-                                </div>
-                                <div style="font-size:11px; font-family:monospace; margin-bottom:4px;">${rul.symbols.join(', ')} - ${rul.action}</div>
-                            </div>`;
-                    }
-                }
-                document.getElementById('rulesList').innerHTML = html;
-            } catch (e) { console.error(e); }
-        }
-
-        async function refreshOrphanSummary() {
-            try {
-                const r = await fetch(`${API}/orphan-positions/summary`, { credentials: 'include' });
-                if (!r.ok) return;
-                const data = await r.json();
-                let html = '';
-                if (data.summary) {
-                    html = `<div class="status-box" style="margin-bottom:8px;"><div class="muted">Total Positions</div><div style="font-weight:600; margin-top:4px;">${data.summary.total_positions || 0}</div></div>
-                           <div class="status-box" style="margin-bottom:8px;"><div class="muted">Net PnL</div><div style="font-weight:600; margin-top:4px; color:${(data.summary.total_pnl || 0) >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${(data.summary.total_pnl || 0).toFixed(0)}</div></div>
-                           <div class="status-box" style="margin-bottom:8px;"><div class="muted">Combined Δ</div><div style="font-weight:600; margin-top:4px;">${(data.summary.combined_delta || 0).toFixed(3)}</div></div>
-                           <div class="status-box"><div class="muted">Combined θ</div><div style="font-weight:600; margin-top:4px;">${(data.summary.combined_theta || 0).toFixed(2)}</div></div>`;
-                }
-                document.getElementById('orphanSummary').innerHTML = html || '<div class="muted">No summary data</div>';
-            } catch (e) { console.error(e); }
-        }
-
-        function showNewRuleModal() { showResult(true, 'New rule modal would appear here'); }
-        function deleteRule(rid) { showResult(true, 'Rule deleted'); refreshOrphanRules(); }
-
-        // Init
+        // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            updateStrategyType();
-            setInterval(refreshMonitoringData, 2000);
+            loadStrategies();
+            refreshMonitor();
+            setInterval(refreshMonitor, 5000);
         });
     </script>
 </body>

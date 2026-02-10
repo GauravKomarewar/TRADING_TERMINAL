@@ -316,19 +316,25 @@ class SupremeRiskManager:
 
                 # Only check trailing/manual if we have positions
                 if positions:
-                    # Trailing loss check
+                    # Max loss breach check (BASE or TRAILING)
                     if (
                         has_live_position
                         and not self.daily_loss_hit
-                        and self.highest_profit > 0
                         and self.daily_pnl <= self.dynamic_max_loss
                     ):
-                        logger.critical(
-                            "🔴 TRAILING LOSS HIT | pnl=%.2f < trail=%.2f | highest_profit=%.2f",
-                            self.daily_pnl,
-                            self.dynamic_max_loss,
-                            self.highest_profit,
-                        )
+                        if self.highest_profit > 0:
+                            logger.critical(
+                                "🔴 TRAILING LOSS HIT | pnl=%.2f <= trail=%.2f | highest_profit=%.2f",
+                                self.daily_pnl,
+                                self.dynamic_max_loss,
+                                self.highest_profit,
+                            )
+                        else:
+                            logger.critical(
+                                "🔴 BASE MAX LOSS HIT | pnl=%.2f <= max_loss=%.2f",
+                                self.daily_pnl,
+                                self.dynamic_max_loss,
+                            )
                         self._handle_daily_loss_breach()
 
                     # Manual trade detection

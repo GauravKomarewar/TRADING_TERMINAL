@@ -1137,6 +1137,8 @@
     // Load Option Chain
     async function loadOptionChain(isAutoRefresh = false) {
         try {
+            console.log('[OptionChain] loadOptionChain called, isAutoRefresh:', isAutoRefresh);
+            
             const res = await fetch(
                 `/dashboard/option-chain?exchange=NFO&symbol=${elements.symbol.value}&expiry=${elements.expiry.value}&max_age=5`,
                 { credentials: 'include' }
@@ -1148,6 +1150,7 @@
             }
             
             const data = await res.json();
+            console.log('[OptionChain] API Response received:', data.rows.length, 'rows');
             
             if (!data.rows || data.rows.length === 0) {
                 elements.tableBody.innerHTML = '<tr><td colspan="100" class="no-data">No data available</td></tr>';
@@ -1157,18 +1160,24 @@
             const newStrikes = Object.keys(processChainData(data.rows)).map(Number).sort((a, b) => a - b);
             const strikeListChanged = JSON.stringify(newStrikes) !== JSON.stringify(currentStrikes);
             
+            console.log('[OptionChain] Strike list changed:', strikeListChanged);
+            console.log('[OptionChain] Current strikes:', currentStrikes.length, '| New strikes:', newStrikes.length);
+            
             // Update info bar FIRST so atmStrike is set before rendering table
             updateInfoBar(data.meta || {});
+            console.log('[OptionChain] ✓ Info bar updated');
             
             if (strikeListChanged || isFirstLoad) {
+                console.log('[OptionChain] 🔄 RENDERING FULL TABLE (strike list changed or first load)');
                 isFirstLoad = false;
                 currentStrikes = newStrikes;
                 renderTable();
-                console.log(`[Option Chain] Table rendered with ${newStrikes.length} strikes`);
+                console.log(`%c✓ Table rendered with ${newStrikes.length} strikes`, 'color: green; font-weight: bold');
             } else {
+                console.log('[OptionChain] 🔄 CALLING SMART UPDATE (strike list unchanged)');
                 // Force update all cells even if strike list hasn't changed
                 smartUpdateValues(data.rows);
-                console.log(`[Option Chain] Smart update executed for ${data.rows.length} rows`);
+                console.log(`%c✓ Smart update executed for ${data.rows.length} rows`, 'color: blue; font-weight: bold');
             }
             
         } catch (error) {
@@ -1221,7 +1230,9 @@
     }
     
     function smartUpdateValues(rows) {
+        console.log('%c⭐ SMART UPDATE CALLED ⭐', 'color: orange; font-weight: bold; font-size: 14px');
         console.log('[OptionChain] Starting smartUpdate with', rows.length, 'rows of data');
+        console.log('[OptionChain] Current table rows in DOM:', document.querySelectorAll('tr[data-strike]').length);
         
         const newStrikeMap = {};
         let totalCeOiNew = 0;
@@ -1257,6 +1268,7 @@
         });
         
         console.log('[OptionChain] Parsed', Object.keys(newStrikeMap).length, 'strikes from data');
+        console.log('[OptionChain] Sample strikes parsed:', Object.keys(newStrikeMap).slice(0, 3));
         
         // Update info bar values
         elements.ceOi.textContent = formatNumber(totalCeOiNew, 0);
@@ -1264,7 +1276,7 @@
         elements.totalOI.textContent = formatNumber(totalCeOiNew + totalPeOiNew, 0);
         elements.pcr.textContent = totalCeOiNew > 0 ? (totalPeOiNew / totalCeOiNew).toFixed(2) : '0.00';
         
-        console.log('[OptionChain] Updated OI info - CE:', totalCeOiNew, ' PE:', totalPeOiNew);
+        console.log('[OptionChain] ✓ Updated OI info');
         
         // Update volume metrics
         const ceVolumeEl = document.getElementById('ceVolume');
@@ -1274,20 +1286,36 @@
         if (peVolumeEl) peVolumeEl.textContent = formatNumber(totalPeVolumeNew, 0);
         if (totalVolumeEl) totalVolumeEl.textContent = formatNumber(totalCeVolumeNew + totalPeVolumeNew, 0);
         
-        console.log('[OptionChain] Updated volume info - CE:', totalCeVolumeNew, ' PE:', totalPeVolumeNew);
+        console.log('[OptionChain] ✓ Updated volume info');
         
         // Update row values
         let updateCount = 0;
+        let failCount = 0;
+        
         Object.keys(newStrikeMap).forEach(strike => {
             const newData = newStrikeMap[strike];
             const oldData = chainData[strike] || {};
+            
+            // CHECK IF ROW EXISTS FIRST
+            const row = document.querySelector(`tr[data-strike="${strike}"]`);
+            if (!row) {
+                failCount++;
+                if (failCount <= 3) {
+                    console.warn(`[OptionChain] ✗ Row NOT FOUND for strike: ${strike}`);
+                }
+                return;
+            }
             
             updateStrikeRow(strike, newData, oldData);
             chainData[strike] = { ...chainData[strike], ...newData };
             updateCount++;
         });
         
-        console.log('[OptionChain] Updated', updateCount, 'strike rows');
+        console.log(`%c✓ Updated ${updateCount} rows | ✗ ${failCount} rows NOT FOUND`, 'color: green; font-weight: bold');
+        
+        if (failCount > 0) {
+            console.error('[OptionChain] ERROR: Table rows not found! Check data-strike attributes!');
+        }
         
         // Refresh ATM highlighting in case atmStrike changed
         refreshATMHighlighting();
@@ -1328,62 +1356,88 @@
     }
     
     function updateCellGroup(row, newData, oldData, prefix) {
+        console.log(`[OptionChain] updateCellGroup called for ${prefix}:`, {
+            newData: newData,
+            oldData: oldData
+        });
+        
+        // LTP - Always present
         const ltpCell = row.querySelector(`.${prefix}-ltp-cell`);
+        console.log(`[OptionChain] ${prefix}-ltp-cell search:`, ltpCell ? 'FOUND ✓' : 'NOT FOUND ✗');
         if (ltpCell) {
-            updateCellValue(ltpCell, newData[`${prefix}_ltp`], oldData[`${prefix}_ltp`], 'ltp');
+            const newVal = newData[`${prefix}_ltp`];
+            const oldVal = oldData[`${prefix}_ltp`];
+            console.log(`[OptionChain] LTP - New: ${newVal}, Old: ${oldVal}`);
+            updateCellValue(ltpCell, newVal, oldVal, 'ltp');
         }
         
+        // Change %
         if (columnVisibility.change) {
             const changeCell = row.querySelector(`.${prefix}-change-cell`);
+            console.log(`[OptionChain] ${prefix}-change-cell search:`, changeCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (changeCell) {
                 updateCellValue(changeCell, newData[`${prefix}_change_pct`], oldData[`${prefix}_change_pct`], 'change');
             }
         }
         
+        // OI
         if (columnVisibility.oi) {
             const oiCell = row.querySelector(`.${prefix}-oi-cell`);
+            console.log(`[OptionChain] ${prefix}-oi-cell search:`, oiCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (oiCell) {
                 updateOiCell(oiCell, newData[`${prefix}_oi`], oldData[`${prefix}_oi`]);
             }
         }
         
+        // Volume
         if (columnVisibility.volume) {
             const volumeCell = row.querySelector(`.${prefix}-volume-cell`);
+            console.log(`[OptionChain] ${prefix}-volume-cell search:`, volumeCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (volumeCell) {
                 updateCellValue(volumeCell, newData[`${prefix}_volume`], oldData[`${prefix}_volume`], 'volume');
             }
         }
         
+        // IV
         if (columnVisibility.iv) {
             const ivCell = row.querySelector(`.${prefix}-iv-cell`);
+            console.log(`[OptionChain] ${prefix}-iv-cell search:`, ivCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (ivCell) {
                 updateCellValue(ivCell, newData[`${prefix}_iv`], oldData[`${prefix}_iv`], 'iv');
             }
         }
         
+        // Delta
         if (columnVisibility.delta) {
             const deltaCell = row.querySelector(`.${prefix}-delta-cell`);
+            console.log(`[OptionChain] ${prefix}-delta-cell search:`, deltaCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (deltaCell) {
                 updateCellValue(deltaCell, newData[`${prefix}_delta`], oldData[`${prefix}_delta`], 'delta');
             }
         }
         
+        // Gamma
         if (columnVisibility.gamma) {
             const gammaCell = row.querySelector(`.${prefix}-gamma-cell`);
+            console.log(`[OptionChain] ${prefix}-gamma-cell search:`, gammaCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (gammaCell) {
                 updateCellValue(gammaCell, newData[`${prefix}_gamma`], oldData[`${prefix}_gamma`], 'gamma');
             }
         }
         
+        // Theta
         if (columnVisibility.theta) {
             const thetaCell = row.querySelector(`.${prefix}-theta-cell`);
+            console.log(`[OptionChain] ${prefix}-theta-cell search:`, thetaCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (thetaCell) {
                 updateCellValue(thetaCell, newData[`${prefix}_theta`], oldData[`${prefix}_theta`], 'theta');
             }
         }
         
+        // Vega
         if (columnVisibility.vega) {
             const vegaCell = row.querySelector(`.${prefix}-vega-cell`);
+            console.log(`[OptionChain] ${prefix}-vega-cell search:`, vegaCell ? 'FOUND ✓' : 'NOT FOUND ✗');
             if (vegaCell) {
                 updateCellValue(vegaCell, newData[`${prefix}_vega`], oldData[`${prefix}_vega`], 'vega');
             }

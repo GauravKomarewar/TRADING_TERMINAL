@@ -3,481 +3,607 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strategy Management | Shoonya Platform</title>
+    <title>Strategy Command Center | Shoonya Platform</title>
     <link rel="stylesheet" href="/dashboard/web/styles/common.css">
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
         :root {
-            --primary: #3b82f6;
-            --success: #22c55e;
-            --warning: #eab308;
-            --danger: #ef4444;
-            --panel: #1f2937;
-            --panel-2: #111827;
-            --border: #374151;
-            --text: #f3f4f6;
-            --muted: #9ca3af;
+            --primary: #66e4ff;
+            --primary-dark: #23b6ff;
+            --success: #4ade80;
+            --warning: #fbcb5c;
+            --danger: #fb7185;
+            --panel: rgba(13, 18, 41, 0.8);
+            --panel-2: rgba(6, 10, 26, 0.95);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #f8fbff;
+            --muted: rgba(248, 251, 255, 0.65);
+            --accent-blue: rgba(102, 228, 255, 0.18);
+            --accent-green: rgba(74, 222, 128, 0.18);
+            --accent-red: rgba(251, 113, 133, 0.18);
+            --shadow-soft: 0 20px 45px rgba(3, 5, 20, 0.5);
         }
 
         * {
-            margin: 0;
-            padding: 0;
             box-sizing: border-box;
         }
 
         body {
-            background: #0f172a;
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+            background: radial-gradient(circle at top, #0f1a3c 0%, #050815 55%, #020308 100%);
             color: var(--text);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            letter-spacing: 0.1px;
         }
 
         main {
-            padding: 20px;
-            max-width: 1600px;
+            padding: 32px clamp(16px, 4vw, 48px) 64px;
+            max-width: 1680px;
             margin: 0 auto;
         }
 
-        /* Header */
         .page-header {
-            margin-bottom: 24px;
-        }
-
-        .page-header h1 {
-            font-size: 28px;
-            font-weight: 800;
-            margin-bottom: 6px;
-        }
-
-        .page-header p {
-            font-size: 13px;
-            color: var(--muted);
-        }
-
-        /* Main Container */
-        .container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
             gap: 24px;
-            max-height: calc(100vh - 180px);
+            margin-bottom: 32px;
         }
 
-        @media (max-width: 1200px) {
-            .container {
-                grid-template-columns: 1fr;
-                max-height: none;
-            }
-        }
-
-        /* === LEFT PANEL: BUILDER === */
-        .builder {
-            display: flex;
-            flex-direction: column;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        .builder-header {
-            padding: 16px;
-            background: linear-gradient(135deg, var(--panel) 0%, var(--panel-2) 100%);
-            border-bottom: 1px solid var(--border);
+        .page-title {
+            font-size: clamp(32px, 3vw, 48px);
             font-weight: 700;
-            font-size: 14px;
+            margin: 4px 0;
         }
 
-        .builder-body {
-            padding: 20px;
-            overflow-y: auto;
-            flex: 1;
+        .eyebrow {
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 4px;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+
+        .page-actions {
             display: flex;
-            flex-direction: column;
-            gap: 20px;
+            gap: 12px;
         }
 
-        .form-section {
+        button {
+            font-family: inherit;
+        }
+
+        .ghost-btn,
+        .primary-btn {
+            border: 1px solid transparent;
+            border-radius: 999px;
+            padding: 10px 24px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+        }
+
+        .ghost-btn {
+            background: transparent;
+            border-color: rgba(255, 255, 255, 0.3);
+            color: var(--text);
+        }
+
+        .ghost-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .primary-btn {
+            background: linear-gradient(120deg, var(--primary), var(--primary-dark));
+            color: #04060f;
+            box-shadow: 0 10px 20px rgba(35, 182, 255, 0.35);
+        }
+
+        .primary-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 18px 26px rgba(35, 182, 255, 0.45);
+        }
+
+        .monitor-stack {
+            display: grid;
+            gap: 18px;
+            margin-bottom: 32px;
+        }
+
+        .monitor-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(20px);
+        }
+
+        .monitor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 18px;
+        }
+
+        .card-headline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .card-headline h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .orphan-list {
             display: flex;
             flex-direction: column;
             gap: 12px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border);
         }
 
-        .form-section:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
+        .orphan-leg {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 14px;
+            background: rgba(255, 255, 255, 0.02);
+            display: grid;
+            grid-template-columns: 1.5fr repeat(3, 1fr) 0.8fr;
+            gap: 12px;
+            align-items: center;
         }
 
-        .form-section-title {
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            color: var(--primary);
+        .orphan-leg strong {
+            font-size: 14px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
             letter-spacing: 0.5px;
         }
 
-        .form-field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
+        .badge-danger {
+            background: var(--accent-red);
+            color: var(--danger);
         }
 
-        .form-field label {
+        .badge-neutral {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--muted);
+        }
+
+        .greek-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .greek-pill {
+            border-radius: 18px;
+            padding: 14px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .greek-pill label {
+            display: block;
             font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        .greek-pill span {
+            font-size: 20px;
             font-weight: 600;
-            color: var(--text);
+            font-family: 'IBM Plex Mono', monospace;
         }
 
-        .form-field input,
-        .form-field select,
-        .form-field textarea {
-            padding: 8px 12px;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            color: var(--text);
-            font-size: 12px;
-            transition: all 0.2s;
-        }
-
-        .form-field input:focus,
-        .form-field select:focus,
-        .form-field textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-
-        .btn-submit {
+        .strategy-monitor-table {
             width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, var(--success) 0%, #16a34a 100%);
-            color: white;
-            font-weight: 700;
-            border: none;
-            border-radius: 6px;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .strategy-monitor-table th,
+        .strategy-monitor-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .strategy-monitor-table th {
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 1px;
+            color: var(--muted);
+        }
+
+        .control-panel {
+            background: var(--panel-2);
+            border-radius: 28px;
+            padding: 28px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-soft);
+        }
+
+        .control-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .chip {
+            border-radius: 999px;
+            padding: 6px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+            font-size: 12px;
+            color: var(--muted);
             cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 12px;
+            transition: border 0.2s ease, color 0.2s ease;
         }
 
-        .btn-submit:hover {
-            box-shadow: 0 8px 16px rgba(34, 197, 94, 0.3);
-            transform: translateY(-2px);
+        .chip.active {
+            border-color: var(--primary);
+            color: var(--primary);
         }
 
-        .btn-submit:disabled {
-            opacity: 0.5;
+        .strategy-board {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 18px;
+        }
+
+        .strategy-card {
+            position: relative;
+            border-radius: 22px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(1, 4, 18, 0.85);
+            overflow: hidden;
+        }
+
+        .strategy-card.running::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 22px;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.3), transparent);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        .strategy-card h4 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .meta-row {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+            margin: 12px 0;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .action-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            flex: 1;
+            border-radius: 12px;
+            padding: 10px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 13px;
+            transition: opacity 0.2s ease;
+        }
+
+        .action-start {
+            background: var(--accent-green);
+            color: var(--success);
+        }
+
+        .action-pause {
+            background: rgba(251, 203, 92, 0.2);
+            color: var(--warning);
+        }
+
+        .action-stop {
+            background: rgba(251, 113, 133, 0.2);
+            color: var(--danger);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.4;
             cursor: not-allowed;
         }
 
-        .alert {
-            padding: 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            margin-bottom: 12px;
-            display: none;
+        .lock-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(2, 5, 13, 0.85);
+            display: flex;
             flex-direction: column;
             gap: 6px;
+            justify-content: center;
+            align-items: center;
+            color: var(--muted);
+            font-size: 12px;
+            letter-spacing: 1px;
         }
 
-        .alert.show {
+        .lock-overlay span {
+            font-size: 28px;
+        }
+
+        .builder-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 4, 13, 0.85);
+            backdrop-filter: blur(18px);
             display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px 20px;
+            overflow-y: auto;
+            transition: opacity 0.3s ease;
+            z-index: 999;
+        }
+
+        .builder-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .builder-shell {
+            width: min(1400px, 100%);
+            background: rgba(1, 2, 10, 0.95);
+            border-radius: 32px;
+            border: 1px solid rgba(102, 228, 255, 0.2);
+            box-shadow: 0 40px 120px rgba(1, 2, 10, 0.9);
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
+        }
+
+        .builder-head {
+            padding: 28px 32px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-btn {
+            border: none;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text);
+            border-radius: 999px;
+            width: 42px;
+            height: 42px;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .builder-scroll {
+            padding: 0 32px 32px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .section-block {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .section-title {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--muted);
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+            display: inline-block;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(102, 228, 255, 0.12);
+        }
+
+        .leg-collection {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .leg-card {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 18px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .leg-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .leg-label {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .icon-btn {
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .leg-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+        }
+
+        .condition-list,
+        .trigger-list,
+        .combined-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .condition-row,
+        .combined-row,
+        .trigger-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+        }
+
+        .mini-btn {
+            border-radius: 10px;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            padding: 8px 12px;
+            background: transparent;
+            color: var(--muted);
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .builder-alert {
+            margin-bottom: 18px;
+            border-radius: 16px;
+            padding: 12px 16px;
+            display: none;
+        }
+
+        .builder-alert.show {
+            display: block;
         }
 
         .alert-success {
-            background: rgba(34, 197, 94, 0.1);
-            border: 1px solid var(--success);
+            background: var(--accent-green);
             color: var(--success);
         }
 
         .alert-error {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid var(--danger);
+            background: var(--accent-red);
             color: var(--danger);
         }
 
-        .alert-title {
-            font-weight: 700;
-        }
-
-        /* === RIGHT PANEL: CONTROL & MONITOR === */
-        .monitor {
+        .save-row {
             display: flex;
-            flex-direction: column;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            overflow: hidden;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 18px;
         }
 
-        /* Tabs */
-        .tabs {
-            display: flex;
-            gap: 0;
-            background: var(--panel);
-            border-bottom: 2px solid var(--border);
+        .save-row button {
+            min-width: 160px;
         }
 
-        .tab {
-            flex: 1;
-            padding: 12px 16px;
-            cursor: pointer;
+        .empty-copy {
             text-align: center;
-            font-weight: 600;
-            font-size: 12px;
             color: var(--muted);
-            border: none;
-            background: transparent;
-            transition: all 0.2s;
-            border-bottom: 3px solid transparent;
-            position: relative;
-            margin-bottom: -2px;
-        }
-
-        .tab:hover {
-            color: var(--text);
-        }
-
-        .tab.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-        }
-
-        .tab-content {
-            display: none;
             padding: 20px;
-            overflow-y: auto;
-            flex: 1;
+            border: 1px dashed rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
         }
 
-        .tab-content.active {
-            display: block;
-            animation: fadeIn 0.2s;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-8px);
+        @media (max-width: 900px) {
+            .page-header,
+            .control-head {
+                flex-direction: column;
+                align-items: flex-start;
             }
-            to {
-                opacity: 1;
-                transform: translateY(0);
+
+            .orphan-leg {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             }
-        }
 
-        /* Strategy Item */
-        .strategy-item {
-            background: var(--panel);
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 12px;
-            transition: all 0.2s;
-        }
-
-        .strategy-item:hover {
-            border-color: var(--primary);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
-        }
-
-        .strategy-item.running {
-            border-color: var(--success);
-        }
-
-        .strategy-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 12px;
-            gap: 12px;
-        }
-
-        .strategy-title {
-            flex: 1;
-        }
-
-        .strategy-name {
-            font-weight: 700;
-            font-size: 13px;
-            color: var(--text);
-        }
-
-        .strategy-meta {
-            font-size: 10px;
-            color: var(--muted);
-            margin-top: 3px;
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 10px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        .badge-idle {
-            background: rgba(107, 114, 128, 0.15);
-            color: #9ca3af;
-        }
-
-        .badge-running {
-            background: rgba(34, 197, 94, 0.15);
-            color: var(--success);
-            border: 1px solid var(--success);
-        }
-
-        .badge-paused {
-            background: rgba(234, 179, 8, 0.15);
-            color: var(--warning);
-            border: 1px solid var(--warning);
-        }
-
-        .strategy-config {
-            background: var(--panel-2);
-            border-radius: 4px;
-            padding: 10px;
-            margin: 12px 0;
-            font-size: 10px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        .config-item {
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .config-label {
-            color: var(--muted);
-            font-weight: 600;
-        }
-
-        .config-value {
-            color: var(--text);
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-weight: 500;
-        }
-
-        .strategy-actions {
-            display: flex;
-            gap: 6px;
-            margin-top: 12px;
-        }
-
-        .btn-sm {
-            flex: 1;
-            padding: 6px 10px;
-            font-size: 10px;
-            font-weight: 600;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-start {
-            background: var(--success);
-            color: white;
-        }
-
-        .btn-start:hover {
-            background: #16a34a;
-        }
-
-        .btn-pause {
-            background: var(--warning);
-            color: #1a1a1a;
-        }
-
-        .btn-pause:hover {
-            background: #ca8a04;
-        }
-
-        .btn-stop {
-            background: var(--danger);
-            color: white;
-        }
-
-        .btn-stop:hover {
-            background: #dc2626;
-        }
-
-        .btn-sm:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: var(--muted);
-        }
-
-        .empty-icon {
-            font-size: 48px;
-            margin-bottom: 12px;
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .stat-card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            text-align: center;
-        }
-
-        .stat-label {
-            font-size: 10px;
-            color: var(--muted);
-            text-transform: uppercase;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .stat-value {
-            font-size: 28px;
-            font-weight: 800;
-            color: var(--primary);
-        }
-
-        .table {
-            width: 100%;
-            font-size: 10px;
-            border-collapse: collapse;
-            margin-top: 12px;
-        }
-
-        .table th {
-            background: var(--panel);
-            padding: 8px;
-            text-align: left;
-            font-weight: 700;
-            border-bottom: 2px solid var(--border);
-        }
-
-        .table td {
-            padding: 8px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .table tr:hover {
-            background: var(--panel);
+            .builder-shell {
+                border-radius: 24px;
+            }
         }
     </style>
 </head>
@@ -485,241 +611,601 @@
     <div id="app-header"></div>
 
     <main>
-        <div class="page-header">
-            <h1>🎯 Strategy Management</h1>
-            <p>Build, control, and monitor trading strategies in real-time</p>
-        </div>
-
-        <div class="container">
-            <!-- LEFT: BUILDER -->
-            <div class="builder">
-                <div class="builder-header">📝 Strategy Builder</div>
-                <div class="builder-body">
-                    <div id="alert" class="alert"></div>
-
-                    <form id="form" onsubmit="submitStrategy(event)">
-                        <div class="form-section">
-                            <div class="form-section-title">Identity</div>
-                            <div class="form-field">
-                                <label>Strategy Name</label>
-                                <input type="text" id="stratName" placeholder="DNSS NIFTY Weekly" required>
-                            </div>
-                            <div class="form-field">
-                                <label>Type</label>
-                                <select id="stratType">
-                                    <option>DNSS (Delta Neutral)</option>
-                                    <option>Iron Condor</option>
-                                    <option>Butterfly</option>
-                                </select>
-                            </div>
-                            <div class="form-field">
-                                <label>Underlying</label>
-                                <select id="underlying">
-                                    <option>NIFTY</option>
-                                    <option>BANKNIFTY</option>
-                                    <option>FINNIFTY</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="form-section">
-                            <div class="form-section-title">Schedule</div>
-                            <div class="form-field">
-                                <label>Frequency</label>
-                                <select id="schedule" required>
-                                    <option value="">-- Select --</option>
-                                    <option value="daily">Daily</option>
-                                    <option value="weekly">Weekly</option>
-                                    <option value="manual">Manual</option>
-                                </select>
-                            </div>
-                            <div class="form-field">
-                                <label>Entry Time</label>
-                                <input type="time" id="entryTime" value="09:20">
-                            </div>
-                            <div class="form-field">
-                                <label>Exit Time</label>
-                                <input type="time" id="exitTime" value="15:15">
-                            </div>
-                        </div>
-
-                        <div class="form-section">
-                            <div class="form-section-title">Risk Parameters</div>
-                            <div class="form-field">
-                                <label>Target Profit (₹)</label>
-                                <input type="number" id="targetProfit" placeholder="5000">
-                            </div>
-                            <div class="form-field">
-                                <label>Stop Loss (₹)</label>
-                                <input type="number" id="stopLoss" placeholder="3000">
-                            </div>
-                            <div class="form-field">
-                                <label>Max Positions</label>
-                                <input type="number" id="maxPositions" value="1" min="1">
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn-submit">💾 Save & Deploy</button>
-                    </form>
-                </div>
+        <header class="page-header">
+            <div>
+                <p class="eyebrow">Shoonya Strategy Ops</p>
+                <h1 class="page-title">Strategy Command Center</h1>
+                <p>Construct intent-driven strategies, track every greek in real time, and command execution flows from one cockpit.</p>
             </div>
+            <div class="page-actions">
+                <button class="ghost-btn" id="refreshNow">Manual Refresh</button>
+                <button class="primary-btn" id="launchBuilder">+ Create Strategy</button>
+            </div>
+        </header>
 
-            <!-- RIGHT: MONITOR -->
-            <div class="monitor">
-                <div class="tabs">
-                    <button class="tab active" onclick="switchTab('control')">🎛️ Control</button>
-                    <button class="tab" onclick="switchTab('monitor')">📊 Monitor</button>
-                    <button class="tab" onclick="switchTab('audit')">🔍 Audit</button>
-                </div>
-
-                <!-- Control Tab -->
-                <div id="control" class="tab-content active">
-                    <div id="strategyList"></div>
-                </div>
-
-                <!-- Monitor Tab -->
-                <div id="monitor" class="tab-content">
-                    <div class="stats-grid" id="statsGrid"></div>
-                    <div id="monitorContent"></div>
-                </div>
-
-                <!-- Audit Tab -->
-                <div id="audit" class="tab-content">
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-label">Running</div>
-                            <div class="stat-value" id="statRunning" style="color: var(--success);">0</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Paused</div>
-                            <div class="stat-value" id="statPaused" style="color: var(--warning);">0</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Intents</div>
-                            <div class="stat-value" id="statIntents">0</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Executed</div>
-                            <div class="stat-value" id="statExecuted">0</div>
-                        </div>
+        <section class="monitor-stack">
+            <div class="monitor-card">
+                <div class="card-headline">
+                    <div>
+                        <p class="eyebrow">Live Health</p>
+                        <h3>Orphan Legs Watch</h3>
                     </div>
-                    <table class="table" id="auditTable">
-                        <thead>
-                            <tr>
-                                <th>Strategy</th>
-                                <th>Status</th>
-                                <th>Time</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="auditBody">
-                            <tr>
-                                <td colspan="4" style="text-align: center;">No audit logs yet</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <span class="badge badge-danger" id="orphanCount">0 ORPHANS</span>
+                </div>
+                <div id="orphanLegs" class="orphan-list"></div>
+            </div>
+
+            <div class="monitor-card">
+                <div class="card-headline">
+                    <div>
+                        <p class="eyebrow">Combined Greks</p>
+                        <h3>Strategy Monitor</h3>
+                    </div>
+                    <span class="badge badge-neutral" id="strategyPulse">SYNCING...</span>
+                </div>
+                <div class="greek-grid" id="combinedGreeks"></div>
+                <table class="strategy-monitor-table">
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th>Status</th>
+                            <th>Δ / Γ</th>
+                            <th>Θ / ν</th>
+                            <th>OI / VOL</th>
+                            <th>PnL</th>
+                        </tr>
+                    </thead>
+                    <tbody id="strategyMonitor"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="control-panel">
+            <div class="control-head">
+                <div>
+                    <p class="eyebrow">Strategy Control Widget</p>
+                    <h2 style="margin: 4px 0 0;">Execution & Overrides</h2>
+                </div>
+                <div class="filter-group">
+                    <div class="chip active" data-filter="ALL">All</div>
+                    <div class="chip" data-filter="RUNNING">Running</div>
+                    <div class="chip" data-filter="PAUSED">Paused</div>
+                    <div class="chip" data-filter="IDLE">Idle</div>
                 </div>
             </div>
-        </div>
+            <div id="strategyBoard" class="strategy-board"></div>
+        </section>
     </main>
 
-    <script>
-        // Load strategies
-        async function loadStrategies() {
-            try {
-                const res = await fetch('/dashboard/strategy/configs', {
-                    credentials: 'include'
-                });
-                if (!res.ok) {
-                    console.error(`API error: ${res.status} ${res.statusText}`);
-                    if (res.status === 401) {
-                        showAlert('Session expired. Please login again.', 'error');
-                        window.location.href = '/';
-                        return;
-                    }
-                    showAlert(`Failed to load strategies (HTTP ${res.status})`, 'error');
-                    renderStrategies([]);
-                    return;
-                }
-                const data = await res.json();
-                console.log('Strategies loaded:', data.configs);
-                renderStrategies(data.configs || []);
-            } catch (e) {
-                console.error('Load error:', e);
-                renderStrategies([]);
-                showAlert(`Error loading strategies: ${e.message}`, 'error');
-            }
-        }
-
-        // Render strategy list
-        function renderStrategies(strategies) {
-            const html = strategies.length > 0
-                ? strategies.map(s => {
-                    const identity = s.identity || {};
-                    const entry = s.entry || {};
-                    const underlying = identity.underlying || 'NIFTY';
-                    const frequency = entry.frequency || 'manual';
-                    const entryTime = identity.entry_time || '--:--';
-                    const target = identity.target || 0;
-                    const stopLoss = identity.stop_loss || 0;
-                    
-                    return `
-                    <div class="strategy-item ${s.status === 'RUNNING' ? 'running' : ''}">
-                        <div class="strategy-header">
-                            <div class="strategy-title">
-                                <div class="strategy-name">${s.name}</div>
-                                <div class="strategy-meta">DNSS • ${underlying}</div>
+    <div id="builderOverlay" class="builder-overlay hidden">
+        <div class="builder-shell">
+            <div class="builder-head">
+                <div>
+                    <p class="eyebrow" style="margin-bottom: 8px;">Strategy Constructor</p>
+                    <h2 style="margin: 0;">Create Advanced Intent</h2>
+                    <small style="color: var(--muted);">Entry · Adjustment · Exit · Risk stitched with leg-level logic</small>
+                </div>
+                <button class="close-btn" id="closeBuilder" aria-label="Close builder">×</button>
+            </div>
+            <div class="builder-scroll">
+                <div id="builderFlash" class="builder-alert"></div>
+                <form id="builderForm">
+                    <div class="section-block">
+                        <div class="section-header">
+                            <h3 class="section-title">Identity & Schedule</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div>
+                                <label for="strategyName">Strategy Name</label>
+                                <input id="strategyName" name="strategyName" placeholder="DNSS NIFTY Weekly" required>
                             </div>
-                            <span class="status-badge badge-${(s.status || 'idle').toLowerCase()}">${s.status || 'IDLE'}</span>
-                        </div>
-                        <div class="strategy-config">
-                            <div class="config-item"><div class="config-label">Freq:</div><div class="config-value">${frequency}</div></div>
-                            <div class="config-item"><div class="config-label">Target:</div><div class="config-value">₹${target}</div></div>
-                            <div class="config-item"><div class="config-label">SL:</div><div class="config-value">₹${stopLoss}</div></div>
-                            <div class="config-item"><div class="config-label">Entry:</div><div class="config-value">${entryTime}</div></div>
-                        </div>
-                        <div class="strategy-actions">
-                            <button class="btn-sm btn-start" onclick="startStrategy('${s.name}')">▶ Start</button>
-                            <button class="btn-sm btn-pause" onclick="pauseStrategy('${s.name}')">⏸ Pause</button>
-                            <button class="btn-sm btn-stop" onclick="stopStrategy('${s.name}')">⏹ Stop</button>
+                            <div>
+                                <label for="strategyId">Strategy ID</label>
+                                <input id="strategyId" name="strategyId" placeholder="DNSS_NIFTY_WEEKLY">
+                            </div>
+                            <div>
+                                <label for="strategyType">Template</label>
+                                <select id="strategyType" name="strategyType">
+                                    <option value="DNSS">Delta Neutral (DNSS)</option>
+                                    <option value="IRON_CONDOR">Iron Condor</option>
+                                    <option value="FLY">Butterfly</option>
+                                    <option value="CUSTOM">Custom</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="underlying">Underlying</label>
+                                <select id="underlying" name="underlying">
+                                    <option value="NIFTY">NIFTY</option>
+                                    <option value="BANKNIFTY">BANKNIFTY</option>
+                                    <option value="FINNIFTY">FINNIFTY</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="frequency">Frequency</label>
+                                <select id="frequency" name="frequency" required>
+                                    <option value="">Select</option>
+                                    <option value="INTRADAY">Intraday</option>
+                                    <option value="DAILY">Daily</option>
+                                    <option value="WEEKLY">Weekly</option>
+                                    <option value="MANUAL">Manual</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="entryTime">Entry Window</label>
+                                <input type="time" id="entryTime" name="entryTime" value="09:20">
+                            </div>
+                            <div>
+                                <label for="exitTime">Exit Window</label>
+                                <input type="time" id="exitTime" name="exitTime" value="15:15">
+                            </div>
+                            <div>
+                                <label for="notes">Operator Notes</label>
+                                <textarea id="notes" name="notes" placeholder="Why we are running this intent..."></textarea>
+                            </div>
                         </div>
                     </div>
-                    `;
-                }).join('')
-                : '<div class="empty-state"><div class="empty-icon">📭</div><p>No strategies saved yet. Create one using the builder above.</p></div>';
 
-            document.getElementById('strategyList').innerHTML = html;
+                    <div class="section-block">
+                        <div class="section-header">
+                            <h3 class="section-title">Risk Management</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div>
+                                <label for="targetProfit">Target Profit (₹)</label>
+                                <input type="number" id="targetProfit" name="targetProfit" placeholder="5000">
+                            </div>
+                            <div>
+                                <label for="stopLoss">Stop Loss (₹)</label>
+                                <input type="number" id="stopLoss" name="stopLoss" placeholder="3000">
+                            </div>
+                            <div>
+                                <label for="maxDrawdown">Max Drawdown (₹)</label>
+                                <input type="number" id="maxDrawdown" name="maxDrawdown" placeholder="1500">
+                            </div>
+                            <div>
+                                <label for="maxPositions">Max Positions</label>
+                                <input type="number" id="maxPositions" name="maxPositions" value="1" min="1">
+                            </div>
+                            <div>
+                                <label for="exposureLimit">Exposure Limit (Lots)</label>
+                                <input type="number" id="exposureLimit" name="exposureLimit" value="2" min="1">
+                            </div>
+                            <div>
+                                <label for="hedgePreference">Hedge Preference</label>
+                                <select id="hedgePreference" name="hedgePreference">
+                                    <option value="NONE">None</option>
+                                    <option value="FUTURE">Futures</option>
+                                    <option value="OPTIONS">Options</option>
+                                    <option value="BOTH">Blended</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="entrySection" class="section-block" data-section="entry">
+                        <div class="section-header">
+                            <h3 class="section-title">Entry Builder</h3>
+                            <button class="mini-btn" type="button" onclick="addLeg('entry')">+ Add Leg</button>
+                        </div>
+                        <div id="entryLegs" class="leg-collection"></div>
+                        <div class="section-header" style="margin-top: 24px;">
+                            <h4 style="margin:0;">Entry Combined Parameters</h4>
+                            <button class="mini-btn" type="button" onclick="addCombinedRule('entry')">+ Combined Rule</button>
+                        </div>
+                        <div id="entryCombined" class="combined-list"></div>
+                    </div>
+
+                    <div id="adjustmentSection" class="section-block" data-section="adjustment">
+                        <div class="section-header">
+                            <h3 class="section-title">Adjustment Builder</h3>
+                            <button class="mini-btn" type="button" onclick="addLeg('adjustment')">+ Add Leg</button>
+                        </div>
+                        <div id="adjustmentLegs" class="leg-collection"></div>
+                        <div class="section-header" style="margin-top: 24px;">
+                            <h4 style="margin:0;">Adjustment Combined Parameters</h4>
+                            <button class="mini-btn" type="button" onclick="addCombinedRule('adjustment')">+ Combined Rule</button>
+                        </div>
+                        <div id="adjustmentCombined" class="combined-list"></div>
+                    </div>
+
+                    <div id="exitSection" class="section-block" data-section="exit">
+                        <div class="section-header">
+                            <h3 class="section-title">Exit Builder</h3>
+                            <button class="mini-btn" type="button" onclick="addLeg('exit')">+ Add Leg</button>
+                        </div>
+                        <div id="exitLegs" class="leg-collection"></div>
+                        <div class="section-header" style="margin-top: 24px;">
+                            <h4 style="margin:0;">Exit Combined Parameters</h4>
+                            <button class="mini-btn" type="button" onclick="addCombinedRule('exit')">+ Combined Rule</button>
+                        </div>
+                        <div id="exitCombined" class="combined-list"></div>
+                    </div>
+
+                    <div class="save-row">
+                        <button type="button" class="ghost-btn" id="resetBuilder">Reset</button>
+                        <button type="submit" class="primary-btn">Save Strategy</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const builderOverlay = document.getElementById('builderOverlay');
+        const launchBuilderBtn = document.getElementById('launchBuilder');
+        const closeBuilderBtn = document.getElementById('closeBuilder');
+        const builderForm = document.getElementById('builderForm');
+        const builderFlash = document.getElementById('builderFlash');
+        const strategyBoardEl = document.getElementById('strategyBoard');
+        const orphanLegsEl = document.getElementById('orphanLegs');
+        const orphanCountEl = document.getElementById('orphanCount');
+        const combinedGreeksEl = document.getElementById('combinedGreeks');
+        const strategyMonitorEl = document.getElementById('strategyMonitor');
+        const strategyPulseEl = document.getElementById('strategyPulse');
+        const refreshNowBtn = document.getElementById('refreshNow');
+        const filterChips = document.querySelectorAll('.chip');
+
+        const optionChainFields = [
+            { value: 'instrument', label: 'Instrument' },
+            { value: 'expiry', label: 'Expiry' },
+            { value: 'strike', label: 'Strike' },
+            { value: 'option_type', label: 'Option Type' },
+            { value: 'time_to_expiry', label: 'Time to Expiry' },
+            { value: 'bid_price', label: 'Bid Price' },
+            { value: 'ask_price', label: 'Ask Price' },
+            { value: 'last_price', label: 'Last Traded Price' },
+            { value: 'volume', label: 'Volume' },
+            { value: 'open_interest', label: 'Open Interest' },
+            { value: 'iv', label: 'Implied Vol' },
+            { value: 'delta', label: 'Delta' },
+            { value: 'gamma', label: 'Gamma' },
+            { value: 'theta', label: 'Theta' },
+            { value: 'vega', label: 'Vega' },
+            { value: 'rho', label: 'Rho' },
+            { value: 'ltp_change', label: 'LTP Change' },
+            { value: 'time', label: 'Time' }
+        ];
+
+        const operators = ['>=', '<=', '==', '!=', 'BETWEEN', 'CROSSES_ABOVE', 'CROSSES_BELOW'];
+        const triggerActions = ['ALERT', 'HEDGE', 'ROLL', 'CLOSE', 'SCALE_IN', 'SCALE_OUT'];
+
+        const builderState = {
+            legs: {
+                entry: [],
+                adjustment: [],
+                exit: []
+            },
+            combined: {
+                entry: [],
+                adjustment: [],
+                exit: []
+            }
+        };
+
+        function uid(prefix = 'leg') {
+            return `${prefix}-${crypto.randomUUID()}`;
         }
 
-        // Submit form
-        async function submitStrategy(e) {
-            e.preventDefault();
-            const btn = e.target.querySelector('.btn-submit');
-            btn.disabled = true;
+        function renderLegs(section) {
+            const container = document.getElementById(`${section}Legs`);
+            const legs = builderState.legs[section];
+            if (!container) return;
 
-            const name = document.getElementById('stratName').value.trim();
+            if (!legs.length) {
+                container.innerHTML = '<div class="empty-copy">No legs defined. Add a leg to start wiring option-chain conditions.</div>';
+                return;
+            }
+
+            container.innerHTML = legs.map(leg => {
+                const conditionRows = leg.conditions.map(cond => `
+                    <div class="condition-row" data-cond="${cond.id}">
+                        ${renderFieldSelect(section, leg.id, cond.id, cond.field)}
+                        ${renderOperatorSelect(section, leg.id, cond.id, cond.operator)}
+                        <input placeholder="Value" value="${cond.value ?? ''}" oninput="updateCondition('${section}','${leg.id}','${cond.id}','value', this.value)">
+                        <select onchange="updateCondition('${section}','${leg.id}','${cond.id}','timeframe', this.value)">
+                            <option value="LIVE" ${cond.timeframe === 'LIVE' ? 'selected' : ''}>Live</option>
+                            <option value="1M">1 Min</option>
+                            <option value="5M">5 Min</option>
+                            <option value="15M">15 Min</option>
+                        </select>
+                        <button type="button" class="icon-btn" onclick="removeCondition('${section}','${leg.id}','${cond.id}')">×</button>
+                    </div>
+                `).join('');
+
+                const triggerRows = leg.triggers.map(trigger => `
+                    <div class="trigger-row" data-trigger="${trigger.id}">
+                        <select onchange="updateTrigger('${section}','${leg.id}','${trigger.id}','metric', this.value)">
+                            ${['delta','gamma','theta','vega','price','pnl'].map(metric => `<option value="${metric}" ${trigger.metric === metric ? 'selected' : ''}>${metric.toUpperCase()}</option>`).join('')}
+                        </select>
+                        ${renderOperatorSelect(section, leg.id, trigger.id, trigger.operator, 'trigger')}
+                        <input placeholder="Value" value="${trigger.value ?? ''}" oninput="updateTrigger('${section}','${leg.id}','${trigger.id}','value', this.value)">
+                        <select onchange="updateTrigger('${section}','${leg.id}','${trigger.id}','action', this.value)">
+                            ${triggerActions.map(act => `<option value="${act}" ${trigger.action === act ? 'selected' : ''}>${act.replace('_', ' ')}</option>`).join('')}
+                        </select>
+                        <button type="button" class="icon-btn" onclick="removeTrigger('${section}','${leg.id}','${trigger.id}')">×</button>
+                    </div>
+                `).join('');
+
+                return `
+                    <div class="leg-card" data-leg="${leg.id}">
+                        <div class="leg-header">
+                            <input value="${leg.label}" oninput="updateLeg('${section}','${leg.id}','label', this.value)">
+                            <div>
+                                <span class="badge badge-neutral">${section.toUpperCase()}</span>
+                                <button type="button" class="icon-btn" onclick="removeLeg('${section}','${leg.id}')">×</button>
+                            </div>
+                        </div>
+                        <div class="leg-grid">
+                            <div>
+                                <label>Side</label>
+                                <select onchange="updateLeg('${section}','${leg.id}','side', this.value)">
+                                    <option value="BUY" ${leg.side === 'BUY' ? 'selected' : ''}>Buy</option>
+                                    <option value="SELL" ${leg.side === 'SELL' ? 'selected' : ''}>Sell</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Option Type</label>
+                                <select onchange="updateLeg('${section}','${leg.id}','optionType', this.value)">
+                                    <option value="CE" ${leg.optionType === 'CE' ? 'selected' : ''}>Call (CE)</option>
+                                    <option value="PE" ${leg.optionType === 'PE' ? 'selected' : ''}>Put (PE)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Expiry</label>
+                                <select onchange="updateLeg('${section}','${leg.id}','expiryType', this.value)">
+                                    <option value="CURRENT" ${leg.expiryType === 'CURRENT' ? 'selected' : ''}>Current Week</option>
+                                    <option value="NEXT" ${leg.expiryType === 'NEXT' ? 'selected' : ''}>Next Week</option>
+                                    <option value="MONTHLY" ${leg.expiryType === 'MONTHLY' ? 'selected' : ''}>Monthly</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Quantity</label>
+                                <input type="number" value="${leg.quantity}" min="1" onchange="updateLeg('${section}','${leg.id}','quantity', parseInt(this.value, 10) || 1)">
+                            </div>
+                        </div>
+                        <div class="condition-list" style="margin-top:16px;">
+                            <div class="section-header" style="margin:0 0 8px;">
+                                <h4 style="margin:0; font-size:14px;">Leg Conditions</h4>
+                                <button class="mini-btn" type="button" onclick="addCondition('${section}','${leg.id}')">+ Condition</button>
+                            </div>
+                            ${conditionRows || '<div class="empty-copy" style="padding:12px;">No conditions yet.</div>'}
+                        </div>
+                        <div class="trigger-list" style="margin-top:16px;">
+                            <div class="section-header" style="margin:0 0 8px;">
+                                <h4 style="margin:0; font-size:14px;">Leg Parameter Triggers</h4>
+                                <button class="mini-btn" type="button" onclick="addTrigger('${section}','${leg.id}')">+ Trigger</button>
+                            </div>
+                            ${triggerRows || '<div class="empty-copy" style="padding:12px;">No parameter triggers configured.</div>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderCombined(section) {
+            const container = document.getElementById(`${section}Combined`);
+            const rules = builderState.combined[section];
+            if (!container) return;
+            if (!rules.length) {
+                container.innerHTML = '<div class="empty-copy">Define combined greek/vol/oi conditions to orchestrate section level actions.</div>';
+                return;
+            }
+
+            container.innerHTML = rules.map(rule => `
+                <div class="combined-row" data-rule="${rule.id}">
+                    <select onchange="updateCombinedRule('${section}','${rule.id}','metric', this.value)">
+                        ${['delta','gamma','theta','vega','oi','volume','price'].map(metric => `<option value="${metric}" ${rule.metric === metric ? 'selected' : ''}>${metric.toUpperCase()}</option>`).join('')}
+                    </select>
+                    ${renderOperatorSelect(section, rule.id, rule.id, rule.operator, 'combined')}
+                    <input placeholder="Value" value="${rule.value ?? ''}" oninput="updateCombinedRule('${section}','${rule.id}','value', this.value)">
+                    <select onchange="updateCombinedRule('${section}','${rule.id}','action', this.value)">
+                        ${['ENTRY','ADJUST','EXIT','ALERT'].map(action => `<option value="${action}" ${rule.action === action ? 'selected' : ''}>${action}</option>`).join('')}
+                    </select>
+                    <button type="button" class="icon-btn" onclick="removeCombinedRule('${section}','${rule.id}')">×</button>
+                </div>
+            `).join('');
+        }
+
+        function renderFieldSelect(section, legId, condId, selected) {
+            return `<select onchange="updateCondition('${section}','${legId}','${condId}','field', this.value)">
+                ${optionChainFields.map(field => `<option value="${field.value}" ${field.value === selected ? 'selected' : ''}>${field.label}</option>`).join('')}
+            </select>`;
+        }
+
+        function renderOperatorSelect(section, legId, condId, selected, type = 'condition') {
+            return `<select onchange="${type === 'condition' ? `updateCondition('${section}','${legId}','${condId}','operator', this.value)` : type === 'trigger' ? `updateTrigger('${section}','${legId}','${condId}','operator', this.value)` : `updateCombinedRule('${section}','${condId}','operator', this.value)`}">
+                ${operators.map(op => `<option value="${op}" ${op === selected ? 'selected' : ''}>${op.replace('_', ' ')}</option>`).join('')}
+            </select>`;
+        }
+
+        function addLeg(section) {
+            builderState.legs[section].push({
+                id: uid(section),
+                label: `${section.charAt(0).toUpperCase() + section.slice(1)} Leg ${builderState.legs[section].length + 1}`,
+                side: 'SELL',
+                optionType: 'CE',
+                expiryType: 'CURRENT',
+                quantity: 1,
+                conditions: [],
+                triggers: []
+            });
+            renderLegs(section);
+        }
+
+        function removeLeg(section, legId) {
+            builderState.legs[section] = builderState.legs[section].filter(leg => leg.id !== legId);
+            renderLegs(section);
+        }
+
+        function updateLeg(section, legId, field, value) {
+            const leg = builderState.legs[section].find(l => l.id === legId);
+            if (!leg) return;
+            leg[field] = value;
+        }
+
+        function addCondition(section, legId) {
+            const leg = builderState.legs[section].find(l => l.id === legId);
+            if (!leg) return;
+            leg.conditions.push({
+                id: uid('cond'),
+                field: 'last_price',
+                operator: '>=',
+                value: '',
+                timeframe: 'LIVE'
+            });
+            renderLegs(section);
+        }
+
+        function updateCondition(section, legId, condId, field, value) {
+            const leg = builderState.legs[section].find(l => l.id === legId);
+            if (!leg) return;
+            const condition = leg.conditions.find(c => c.id === condId);
+            if (!condition) return;
+            condition[field] = value;
+        }
+
+        function removeCondition(section, legId, condId) {
+            const leg = builderState.legs[section].find(l => l.id === legId);
+            if (!leg) return;
+            leg.conditions = leg.conditions.filter(c => c.id !== condId);
+            renderLegs(section);
+        }
+
+        function addTrigger(section, legId) {
+            const leg = builderState.legs[section].find(l => l.id === legId);
+            if (!leg) return;
+            leg.triggers.push({
+                id: uid('trigger'),
+                metric: 'delta',
+                operator: '>=',
+                value: '',
+                action: 'ALERT'
+            });
+            renderLegs(section);
+        }
+
+        function updateTrigger(section, legId, triggerId, field, value) {
+            const leg = builderState.legs[section].find(l => l.id === legId);
+            if (!leg) return;
+            const trigger = leg.triggers.find(t => t.id === triggerId);
+            if (!trigger) return;
+            trigger[field] = value;
+        }
+
+        function removeTrigger(section, legId, triggerId) {
+            const leg = builderState.legs[section].find(l => l.id === legId);
+            if (!leg) return;
+            leg.triggers = leg.triggers.filter(t => t.id !== triggerId);
+            renderLegs(section);
+        }
+
+        function addCombinedRule(section) {
+            builderState.combined[section].push({
+                id: uid('combined'),
+                metric: 'delta',
+                operator: '>=',
+                value: '',
+                action: 'ENTRY'
+            });
+            renderCombined(section);
+        }
+
+        function updateCombinedRule(section, ruleId, field, value) {
+            const rule = builderState.combined[section].find(r => r.id === ruleId);
+            if (!rule) return;
+            rule[field] = value;
+        }
+
+        function removeCombinedRule(section, ruleId) {
+            builderState.combined[section] = builderState.combined[section].filter(r => r.id !== ruleId);
+            renderCombined(section);
+        }
+
+        function resetBuilder() {
+            builderForm.reset();
+            ['entry','adjustment','exit'].forEach(section => {
+                builderState.legs[section] = [];
+                builderState.combined[section] = [];
+                renderLegs(section);
+                renderCombined(section);
+            });
+            builderFlash.className = 'builder-alert';
+            builderFlash.textContent = '';
+        }
+
+        document.getElementById('resetBuilder').addEventListener('click', resetBuilder);
+
+        function openBuilder() {
+            builderOverlay.classList.remove('hidden');
+            if (!builderState.legs.entry.length) {
+                addLeg('entry');
+            }
+            renderLegs('adjustment');
+            renderLegs('exit');
+            ['entry','adjustment','exit'].forEach(renderCombined);
+        }
+
+        function closeBuilder() {
+            builderOverlay.classList.add('hidden');
+        }
+
+        launchBuilderBtn.addEventListener('click', openBuilder);
+        closeBuilderBtn.addEventListener('click', closeBuilder);
+        builderOverlay.addEventListener('click', (event) => {
+            if (event.target === builderOverlay) closeBuilder();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeBuilder();
+        });
+
+        builderForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData(builderForm);
+            const name = formData.get('strategyName')?.trim();
+            const id = (formData.get('strategyId')?.trim() || name || '').toUpperCase().replace(/\s+/g, '_');
+
             if (!name) {
-                showAlert('Strategy name is required', 'error');
-                btn.disabled = false;
+                flashBuilder('Strategy name required', true);
+                return;
+            }
+
+            if (!builderState.legs.entry.length) {
+                flashBuilder('Add at least one entry leg', true);
                 return;
             }
 
             const payload = {
-                name: name,
-                id: name.toUpperCase().replace(/\s+/g, '_'),
+                name,
+                id,
                 identity: {
-                    underlying: document.getElementById('underlying').value,
-                    frequency: document.getElementById('schedule').value,
-                    entry_time: document.getElementById('entryTime').value,
-                    exit_time: document.getElementById('exitTime').value,
-                    target: parseFloat(document.getElementById('targetProfit').value) || 0,
-                    stop_loss: parseFloat(document.getElementById('stopLoss').value) || 0,
-                    max_positions: parseInt(document.getElementById('maxPositions').value) || 1,
+                    template: formData.get('strategyType'),
+                    underlying: formData.get('underlying'),
+                    frequency: formData.get('frequency'),
+                    entry_time: formData.get('entryTime'),
+                    exit_time: formData.get('exitTime'),
+                    notes: formData.get('notes')
                 },
-                entry: {},
-                adjustment: {},
-                exit: {},
-                rms: {}
+                entry: {
+                    legs: builderState.legs.entry,
+                    combined_rules: builderState.combined.entry
+                },
+                adjustment: {
+                    legs: builderState.legs.adjustment,
+                    combined_rules: builderState.combined.adjustment
+                },
+                exit: {
+                    legs: builderState.legs.exit,
+                    combined_rules: builderState.combined.exit
+                },
+                rms: {
+                    target_profit: Number(formData.get('targetProfit')) || 0,
+                    stop_loss: Number(formData.get('stopLoss')) || 0,
+                    max_drawdown: Number(formData.get('maxDrawdown')) || 0,
+                    max_positions: Number(formData.get('maxPositions')) || 1,
+                    exposure_limit: Number(formData.get('exposureLimit')) || 0,
+                    hedge_preference: formData.get('hedgePreference')
+                },
+                storage_path: 'shoonya_platform/strategies/saved_configs'
             };
 
             try {
@@ -732,84 +1218,214 @@
 
                 if (!res.ok) {
                     const errorData = await res.json().catch(() => ({}));
-                    showAlert(`Failed: ${errorData.detail || res.statusText}`, 'error');
-                    btn.disabled = false;
-                    return;
+                    throw new Error(errorData.detail || res.statusText);
                 }
 
-                showAlert('✅ Strategy saved successfully', 'success');
-                document.getElementById('form').reset();
-                setTimeout(loadStrategies, 800);
-            } catch (e) {
-                console.error('Save error:', e);
-                showAlert(`Error: ${e.message}`, 'error');
-            } finally {
-                btn.disabled = false;
+                flashBuilder('Strategy saved into saved_configs', false);
+                loadStrategies();
+                setTimeout(() => {
+                    closeBuilder();
+                    resetBuilder();
+                }, 600);
+            } catch (error) {
+                flashBuilder(error.message, true);
+            }
+        });
+
+        function flashBuilder(message, isError) {
+            builderFlash.textContent = message;
+            builderFlash.className = `builder-alert show ${isError ? 'alert-error' : 'alert-success'}`;
+        }
+
+        async function loadStrategies() {
+            try {
+                const res = await fetch('/dashboard/strategy/configs', { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const configs = data.configs || [];
+                renderStrategyCards(configs);
+            } catch (error) {
+                console.error('Strategy load failed', error);
+                strategyBoardEl.innerHTML = '<div class="empty-copy">Unable to load strategies right now.</div>';
             }
         }
 
-        // Control actions
+        function renderStrategyCards(strategies) {
+            if (!strategies.length) {
+                strategyBoardEl.innerHTML = '<div class="empty-copy" style="grid-column: 1 / -1;">No strategies saved. Use "+ Create Strategy" to build one.</div>';
+                return;
+            }
+
+            const filter = document.querySelector('.chip.active')?.dataset.filter || 'ALL';
+            const filtered = filter === 'ALL' ? strategies : strategies.filter(s => (s.status || 'IDLE') === filter);
+
+            strategyBoardEl.innerHTML = filtered.map(strategy => {
+                const identity = strategy.identity || {};
+                const status = strategy.status || 'IDLE';
+                const running = status === 'RUNNING';
+                return `
+                    <div class="strategy-card ${running ? 'running' : ''}">
+                        ${running ? '<div class="lock-overlay"><span>🔒</span>RUNNING</div>' : ''}
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <h4>${strategy.name}</h4>
+                            <span class="badge ${running ? 'badge-danger' : 'badge-neutral'}">${status}</span>
+                        </div>
+                        <div class="meta-row">
+                            <span>${identity.underlying || 'NIFTY'}</span>
+                            <span>Freq: ${identity.frequency || 'MANUAL'}</span>
+                            <span>Entry ${identity.entry_time || '--:--'} / Exit ${identity.exit_time || '--:--'}</span>
+                        </div>
+                        <div class="action-row">
+                            <button class="action-btn action-start" ${running ? 'style="visibility:hidden;"' : ''} onclick="startStrategy('${strategy.name}')">Start</button>
+                            <button class="action-btn action-pause" ${running ? '' : 'disabled'} onclick="pauseStrategy('${strategy.name}')">Pause</button>
+                            <button class="action-btn action-stop" ${running ? '' : 'disabled'} onclick="stopStrategy('${strategy.name}')">Stop</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadMonitorData() {
+            try {
+                strategyPulseEl.textContent = 'SYNCING...';
+                // Endpoint: /dashboard/monitoring/strategy-positions returns {legs_detailed, strategy_positions}
+                const res = await fetch('/dashboard/monitoring/strategy-positions', { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                // Transform backend response to frontend format
+                const transformed = {
+                    orphan_legs: data.legs_detailed || [],
+                    strategies: (data.strategy_positions || []).map(s => ({
+                        name: s.strategy_name,
+                        legs: s.legs || [],
+                        combined_delta: s.combined_delta || 0,
+                        combined_gamma: s.combined_gamma || 0,
+                        combined_theta: s.combined_theta || 0,
+                        combined_vega: s.combined_vega || 0,
+                        total_pnl: (s.total_unrealized_pnl || 0) + (s.total_realized_pnl || 0),
+                    }))
+                };
+                
+                renderOrphans(transformed.orphan_legs || []);
+                renderMonitorTable(transformed.strategies || []);
+                renderCombinedGreeks(transformed.strategies || []);
+                strategyPulseEl.textContent = `UPDATED ${new Date().toLocaleTimeString()}`;
+            } catch (error) {
+                console.error('Monitor load failed', error);
+                strategyPulseEl.textContent = 'STALE';
+                orphanLegsEl.innerHTML = '<div class="empty-copy">No orphan leg data.</div>';
+                combinedGreeksEl.innerHTML = '';
+                strategyMonitorEl.innerHTML = '<tr><td colspan="6" style="text-align:center;">Monitor data unavailable</td></tr>';
+            }
+        }
+
+        function renderOrphans(orphanLegs) {
+            orphanCountEl.textContent = `${orphanLegs.length} ORPHANS`;
+            if (!orphanLegs.length) {
+                orphanLegsEl.innerHTML = '<div class="empty-copy">No orphan legs detected. Book is clean.</div>';
+                return;
+            }
+
+            orphanLegsEl.innerHTML = orphanLegs.map(leg => `
+                <div class="orphan-leg">
+                    <div>
+                        <strong>${leg.leg_id || leg.id}</strong>
+                        <div style="font-size:12px;color:var(--muted);">${leg.instrument || 'NIFTY'} ${leg.option_type || ''} ${leg.strike || ''}</div>
+                    </div>
+                    <div>Δ ${Number(leg.delta || 0).toFixed(2)}</div>
+                    <div>ν ${Number(leg.vega || 0).toFixed(2)}</div>
+                    <div>OI ${Number(leg.open_interest || 0)}</div>
+                    <span class="badge badge-danger">${leg.status || 'ORPHAN'}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderCombinedGreeks(greeks) {
+            const metrics = ['delta','gamma','theta','vega'];
+            combinedGreeksEl.innerHTML = metrics.map(metric => `
+                <div class="greek-pill">
+                    <label>${metric}</label>
+                    <span>${Number(greeks[metric] || 0).toFixed(2)}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderMonitorTable(strategies) {
+            if (!strategies.length) {
+                strategyMonitorEl.innerHTML = '<tr><td colspan="6" style="text-align:center;">No strategies live</td></tr>';
+                return;
+            }
+
+            strategyMonitorEl.innerHTML = strategies.map(strategy => {
+                const greek = strategy.greeks || {};
+                const metrics = `${Number(greek.delta || 0).toFixed(2)} / ${Number(greek.gamma || 0).toFixed(2)}`;
+                const thetaVega = `${Number(greek.theta || 0).toFixed(2)} / ${Number(greek.vega || 0).toFixed(2)}`;
+                const oiVol = `${strategy.open_interest || 0} / ${strategy.volume || 0}`;
+                const pnl = Number(strategy.pnl || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+                return `
+                    <tr>
+                        <td>${strategy.name}</td>
+                        <td>${strategy.status || 'IDLE'}</td>
+                        <td>${metrics}</td>
+                        <td>${thetaVega}</td>
+                        <td>${oiVol}</td>
+                        <td>${pnl}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function sendIntent(strategyName, action) {
+            try {
+                const res = await fetch('/dashboard/intent/strategy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy_name: strategyName, action }),
+                    credentials: 'include'
+                });
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    throw new Error(errorData.detail || res.statusText);
+                }
+                await loadStrategies();
+            } catch (error) {
+                console.error('Intent failed', error);
+                alert(`Intent failed: ${error.message}`);
+            }
+        }
+
         async function startStrategy(name) {
             await sendIntent(name, 'ENTRY');
         }
 
         async function pauseStrategy(name) {
-            await sendIntent(name, 'PAUSE');
+            // PAUSE mapped to ADJUST action (strategy parameter modification)
+            // Execution layer implements as advisory/no-op to pause new entries
+            await sendIntent(name, 'ADJUST');
         }
 
         async function stopStrategy(name) {
             await sendIntent(name, 'EXIT');
         }
 
-        async function sendIntent(strategyName, action) {
-            try {
-                const payload = {
-                    strategy_name: strategyName,
-                    action: action
-                };
+        refreshNowBtn.addEventListener('click', () => {
+            loadStrategies();
+            loadMonitorData();
+        });
 
-                const res = await fetch('/dashboard/intent/strategy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    credentials: 'include'
-                });
+        filterChips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                filterChips.forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                loadStrategies();
+            });
+        });
 
-                if (!res.ok) {
-                    const errorData = await res.json().catch(() => ({}));
-                    console.error(`API error: ${res.status}`, errorData);
-                    showAlert(`Failed to send ${action}: ${errorData.detail || res.statusText}`, 'error');
-                    return;
-                }
-
-                showAlert(`✅ ${action} command sent to ${strategyName}`, 'success');
-                setTimeout(loadStrategies, 500);
-            } catch (e) {
-                console.error('Intent error:', e);
-                showAlert(`Error sending intent: ${e.message}`, 'error');
-            }
-        }
-
-        // Tab switching
-        function switchTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById(tab).classList.add('active');
-        }
-
-        // Alert helper
-        function showAlert(message, type) {
-            const alert = document.getElementById('alert');
-            const title = type === 'success' ? message : message;
-            alert.innerHTML = `<div class="alert-title">${title}</div>`;
-            alert.className = `alert show alert-${type}`;
-            setTimeout(() => alert.classList.remove('show'), 3500);
-        }
-
-        // Initialize
         loadStrategies();
-        setInterval(loadStrategies, 5000);
+        loadMonitorData();
+        setInterval(loadStrategies, 7000);
+        setInterval(loadMonitorData, 5000);
     </script>
 </body>
 </html>

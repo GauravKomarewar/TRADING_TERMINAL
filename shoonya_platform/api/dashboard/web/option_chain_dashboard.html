@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="/dashboard/web/styles/common.css">
     <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/pages-config.js" defer></script>
     <script src="/dashboard/web/shared/layout.js" defer></script>
     <style>
         :root {
@@ -28,68 +29,15 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: var(--bg);
             color: var(--text);
             line-height: 1.4;
             font-size: 12px;
         }
         
-        /* Header */
-        header {
-            height: 56px;
-            background: var(--panel);
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            padding: 0 16px;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 1000;
-        }
-        
-        .nav-left {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-        
-        .brand {
-            font-weight: 700;
-            font-size: 18px;
-            color: var(--primary);
-            cursor: pointer;
-        }
-        
-        .nav-link {
-            color: var(--muted);
-            font-size: 13px;
-            text-decoration: none;
-            padding: 6px 10px;
-            border-radius: 4px;
-            transition: all 0.2s;
-            display: inline-block;
-            border: 1px solid transparent;
-        }
-        
-        .nav-link:hover {
-            color: var(--text);
-            background: rgba(28, 35, 51, 0.8);
-            border-color: var(--primary);
-        }
-        
-        .nav-link.active {
-            color: var(--primary);
-            background: rgba(59, 130, 246, 0.15);
-            border-color: var(--primary);
-            font-weight: 600;
-        }
-        
         /* Main Layout */
         main {
-            margin-top: 56px;
             padding: 12px;
             display: flex;
             flex-direction: column;

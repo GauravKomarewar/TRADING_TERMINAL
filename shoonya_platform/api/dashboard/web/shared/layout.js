@@ -10,8 +10,10 @@
     const pageId = body.dataset.page || 'dashboard';
     body.classList.add('dashboard-shell', `page-${pageId}`);
 
-    /* ── Config ── */
-    const NAV_ITEMS = [
+    /* ── Navigation Configuration (Auto-discovered from pages-config.js) ── */
+    // NAV_ITEMS will be populated from pages-config.js if available
+    // Fallback to defaults if config not loaded
+    let NAV_ITEMS = [
         { id: 'dashboard',    label: 'Dashboard',    href: '/dashboard/web/dashboard.html' },
         { id: 'option-chain', label: 'Option Chain',  href: '/dashboard/web/option_chain_dashboard.html' },
         { id: 'orders',       label: 'Orders',        href: '/dashboard/web/orderbook.html' },
@@ -19,6 +21,11 @@
         { id: 'strategy',     label: 'Strategy',      href: '/dashboard/web/strategy.html' },
         { id: 'diagnostics',  label: 'Diagnostics',   href: '/dashboard/web/diagnostics.html' },
     ];
+
+    // Check if pages-config.js is loaded and use it
+    if (typeof getNavItems === 'function') {
+        NAV_ITEMS = getNavItems();
+    }
 
     /* Ticker — all symbols scroll continuously like stock exchange ticker */
     const ALL_SYMBOLS = ['INDIAVIX', 'NIFTY', 'SENSEX', 'BANKNIFTY', 'GOLDPETAL', 'SILVERMIC', 'NATGASMINI', 'CRUDEOILM', 'FINNIFTY'];

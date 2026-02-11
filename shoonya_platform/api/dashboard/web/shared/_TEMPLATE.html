@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Your Page Title – Shoonya Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- REQUIRED: Common styles and layout -->
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    
+    <!-- REQUIRED: Pages configuration (loads PAGES array and helper functions) -->
+    <script src="/dashboard/web/shared/pages-config.js" defer></script>
+    
+    <!-- REQUIRED: Shared layout (navigation bar + ticker ribbon) -->
+    <script src="/dashboard/web/shared/layout.js" defer></script>
+    
+    <style>
+        /* ═════════════════════════════════════════
+           YOUR CUSTOM PAGE STYLES
+           ═════════════════════════════════════════ */
+        
+        /* Use system font stack for consistency */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-size: 13px;
+        }
+        
+        main {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Add your styles below */
+        
+    </style>
+</head>
+
+<!-- REQUIRED: Add data-page attribute matching the page ID from pages-config.js -->
+<body data-page="your-page-id">
+    
+    <!-- REQUIRED: This div is populated by layout.js with header + navigation -->
+    <div id="app-header"></div>
+    
+    <!-- Your page content goes here -->
+    <main>
+        <h1>Your Page Title</h1>
+        <p>Page content goes here...</p>
+    </main>
+    
+    <script>
+        // Your page-specific JavaScript here
+        
+        // Check authentication
+        async function checkAuth() {
+            try {
+                const res = await fetch('/dashboard/home/status', {
+                    credentials: 'include'
+                });
+                if (res.status === 401) {
+                    window.location.href = '/';
+                }
+            } catch (e) {
+                console.log('Auth check');
+            }
+        }
+        
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+            // Your initialization code here
+        });
+    </script>
+</body>
+</html>

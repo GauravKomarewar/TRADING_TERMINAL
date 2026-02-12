@@ -2391,15 +2391,14 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
 # Global runner instance
 _runner_instance = None
 
-def get_runner_singleton():
+def get_runner_singleton(ctx=Depends(require_dashboard_auth)):
     """Get or create global runner instance"""
     global _runner_instance
     if _runner_instance is None:
         logger.info("Initializing StrategyRunner singleton")
         try:
-            from shoonya_platform.database.broker import get_broker
-            broker = get_broker()
-            _runner_instance = StrategyRunner(bot=broker)
+            bot = ctx["bot"]
+            _runner_instance = StrategyRunner(bot=bot, poll_interval=2.0)
         except Exception as e:
             logger.error(f"Failed to initialize runner: {e}")
             raise
@@ -2420,7 +2419,7 @@ def start_runner(ctx=Depends(require_dashboard_auth)):
         }
     """
     try:
-        runner = get_runner_singleton()
+        runner = get_runner_singleton(ctx)
         
         # Load all strategies from saved_configs/
         result = runner.load_strategies_from_json(
@@ -2455,7 +2454,7 @@ def stop_runner(ctx=Depends(require_dashboard_auth)):
         }
     """
     try:
-        runner = get_runner_singleton()
+        runner = get_runner_singleton(ctx)
         
         # Stop all active strategies
         stopped_count = len(runner.active_strategies)
@@ -2489,7 +2488,7 @@ def get_runner_status(ctx=Depends(require_dashboard_auth)):
         }
     """
     try:
-        runner = get_runner_singleton()
+        runner = get_runner_singleton(ctx)
         
         return {
             "runner_active": runner is not None,

@@ -298,7 +298,8 @@ class ConfigResolutionService:
         """
         try:
             # Check if this instrument REQUIRES limit orders
-            if requires_limit_order(exchange, symbol, instrument_type):
+            # requires_limit_order uses keyword-only arguments
+            if requires_limit_order(exchange=exchange, tradingsymbol=symbol):
                 if requested_order_type != "LIMIT":
                     self.warnings.append(
                         f"{symbol} requires LIMIT orders. "

@@ -305,9 +305,17 @@ async function submitModify(){
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify(payload)
         });
-        if(res.ok){closeModify();loadOrderbook()}
-        else{alert('Modify failed')}
-    }catch(err){alert('Modify error')}
+        const data=await res.json();
+        if(res.ok && data.accepted){
+            alert('Order modification request submitted');
+            closeModify();
+            loadOrderbook();
+        }else{
+            alert('Modify failed: '+(data.detail||data.error||'Unknown error'));
+        }
+    }catch(err){
+        alert('Modify error: '+err.message);
+    }
 }
 
 async function cancelOrder(id,type){
@@ -319,9 +327,16 @@ async function cancelOrder(id,type){
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({order_id:id})
         });
-        if(res.ok){loadOrderbook()}
-        else{alert('Cancel failed')}
-    }catch(err){alert('Cancel error')}
+        const data=await res.json();
+        if(res.ok && data.accepted){
+            alert('Order cancellation request submitted');
+            loadOrderbook();
+        }else{
+            alert('Cancel failed: '+(data.detail||data.error||'Unknown error'));
+        }
+    }catch(err){
+        alert('Cancel error: '+err.message);
+    }
 }
 
 async function cancelAllSystem(){
@@ -334,9 +349,15 @@ async function cancelAllSystem(){
             headers:{'Content-Type':'application/json'}
         });
         const data=await res.json();
-        alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);
-        loadOrderbook();
-    }catch(err){alert('Cancel all failed')}
+        if(res.ok && data.accepted){
+            alert(`Cancellation request submitted for ${pending.length} system orders`);
+            loadOrderbook();
+        }else{
+            alert('Cancel all failed: '+(data.detail||data.error||'Unknown error'));
+        }
+    }catch(err){
+        alert('Cancel all error: '+err.message);
+    }
 }
 
 async function cancelAllBroker(){
@@ -349,9 +370,15 @@ async function cancelAllBroker(){
             headers:{'Content-Type':'application/json'}
         });
         const data=await res.json();
-        alert(`Cancelled: ${data.cancelled||0} / ${pending.length}`);
-        loadOrderbook();
-    }catch(err){alert('Cancel all failed')}
+        if(res.ok && data.accepted){
+            alert(`Cancellation request submitted for ${pending.length} broker orders`);
+            loadOrderbook();
+        }else{
+            alert('Cancel all failed: '+(data.detail||data.error||'Unknown error'));
+        }
+    }catch(err){
+        alert('Cancel all error: '+err.message);
+    }
 }
 
 function exportSystemCSV(){

@@ -713,6 +713,28 @@ def modify_broker_order(
     )
     return {"accepted": True}
 
+@router.post("/orders/cancel/broker/all")
+def cancel_all_broker_orders(
+    intent: DashboardIntentService = Depends(get_intent),
+):
+    """
+    Cancel ALL pending BROKER orders for client.
+    Consumer decides exact scope.
+    """
+    intent_id = f"DASH-CANCEL-BRK-ALL-{uuid4().hex[:8]}"
+
+    intent.submit_raw_intent(
+        intent_id=intent_id,
+        intent_type="CANCEL_ALL_BROKER_ORDERS",
+        payload={
+            "reason": "DASHBOARD_CANCEL_ALL",
+        },
+    )
+
+    return {
+        "accepted": True,
+        "intent_id": intent_id,
+    }
 
 # ==================================================
 # STRATEGY DISCOVERY & MANAGEMENT  
@@ -2415,20 +2437,40 @@ def start_runner(ctx=Depends(require_dashboard_auth)):
     try:
         runner = get_runner_singleton(ctx)
         
+        # Check if already running
+        if runner._thread and runner._thread.is_alive():
+            logger.warning("ℹ️ Runner already running")
+            active_strategies = list(runner._strategies.keys())
+            return {
+                "success": True,
+                "runner_started": False,
+                "message": "Runner already running",
+                "strategies_loaded": len(active_strategies),
+                "strategies": active_strategies,
+                "timestamp": datetime.now().isoformat()
+            }
+        
         # Load all strategies from saved_configs/
         result = runner.load_strategies_from_json(
             config_dir=str(STRATEGY_CONFIG_DIR),
             strategy_factory=None  # Will use default factory
         )
         
-        logger.info(f"✅ Runner started with {len(result.get('strategies', []))} strategies")
+        # Extract loaded strategy names (those with True value)
+        loaded_strategies = [name for name, success in result.items() if success]
+        logger.info(f"📖 Loaded {len(loaded_strategies)} strategies: {loaded_strategies}")
+        
+        # Start the runner thread
+        runner.start()
+        
+        logger.info(f"✅ Runner started with {len(loaded_strategies)} strategies")
         
         return {
             "success": True,
             "runner_started": True,
-            "strategies_loaded": len(result.get('strategies', [])),
-            "strategies": result.get('strategies', []),
-            "errors": result.get('errors', []),
+            "strategies_loaded": len(loaded_strategies),
+            "strategies": loaded_strategies,
+            "errors": [name for name, success in result.items() if not success],
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:

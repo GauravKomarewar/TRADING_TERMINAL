@@ -38,7 +38,18 @@ def check_database():
     db_path = Path("shoonya_platform/market_data/option_chain/data/option_chain.db")
     
     if not db_path.exists():
-        return False, f"❌ Database not found: {db_path}"
+        # Check alternative paths
+        alt_paths = [
+            Path("shoonya_platform/market_data/data/option_chain.db"),
+            Path("market_data/option_chain.db"),
+            Path("option_chain.db"),
+        ]
+        for alt in alt_paths:
+            if alt.exists():
+                db_path = alt
+                break
+        else:
+            return False, f"⚠️  Database not found: {db_path} | Need to create/populate with live market data"
     
     try:
         import sqlite3
@@ -50,7 +61,7 @@ def check_database():
         tables = cursor.fetchall()
         
         if not tables:
-            return False, f"❌ Database empty (no tables)"
+            return False, f"❌ Database exists but empty (no tables): {db_path}"
         
         conn.close()
         return True, f"✅ Database found with {len(tables)} table(s): {db_path}"
@@ -67,14 +78,18 @@ def check_environment():
         return False, f"❌ Environment file not found: {env_path}"
     
     try:
-        with open(env_path) as f:
+        with open(env_path, encoding="utf-8") as f:
             lines = f.readlines()
         
         # Check for key variables (broker token, etc.)
         content = "".join(lines)
-        required_vars = ["BROKER", "TOKEN"]  # Generic names, adjust as needed
+        required_vars = ["USER_NAME", "USER_ID", "PASSWORD"]  # Shoonya credentials
+        missing = [v for v in required_vars if v not in content]
         
-        return True, f"✅ Environment file found: {env_path} ({len(lines)} lines)"
+        if missing:
+            return False, f"❌ Missing env vars: {missing}"
+        
+        return True, f"✅ Environment file valid: {env_path} ({len(lines)} lines)"
     
     except Exception as e:
         return False, f"❌ Environment error: {e}"
@@ -83,8 +98,8 @@ def check_environment():
 def check_strategy_module():
     """✅ Check if strategy module is importable"""
     try:
-        from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleStrategy
-        return True, f"✅ Strategy module importable"
+        from shoonya_platform.strategies.delta_neutral.dnss import DeltaNeutralShortStrangleStrategy
+        return True, f"✅ Strategy module importable (from dnss.py)"
     except Exception as e:
         return False, f"❌ Strategy import error: {e}"
 
@@ -97,7 +112,7 @@ def check_standalone_runner():
         return False, f"❌ Standalone runner not found: {runner_path}"
     
     try:
-        with open(runner_path) as f:
+        with open(runner_path, encoding="utf-8") as f:
             content = f.read()
         
         required_classes = ["DNSSStandaloneRunner", "convert_dashboard_config_to_execution"]

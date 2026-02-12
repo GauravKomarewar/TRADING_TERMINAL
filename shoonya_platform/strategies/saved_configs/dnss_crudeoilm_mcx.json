@@ -12,7 +12,7 @@
     "strategy_type": "dnss",
     "exchange": "MCX",
     "underlying": "CRUDEOILM",
-    "instrument_type": "FUTUROPT",
+    "instrument_type": "OPTFUT",
     "expiry_mode": "monthly_current",
     "expiry_custom": null,
     "product_type": "NRML",

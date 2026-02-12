@@ -1254,12 +1254,19 @@ def dashboard_snapshot(
     broker=Depends(get_broker),
     system=Depends(get_system),
 ):
+    # 🔧 Safely get broker limits with fallback
+    try:
+        limits = broker.get_limits()
+    except (RuntimeError, Exception) as e:
+        logger.warning(f"Failed to get broker limits: {e}, returning empty limits")
+        limits = {}
+    
     return {
         "broker": {
             "positions": broker.get_positions(),
             "positions_summary": broker.get_positions_summary(),
             "holdings": broker.get_holdings(),
-            "limits": broker.get_limits(),
+            "limits": limits,
             "orders": broker.get_order_book(),
         },
         "system": {

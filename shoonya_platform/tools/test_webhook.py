@@ -1,8 +1,17 @@
 import requests
 import time
+import os
+import sys
 from requests.exceptions import ReadTimeout, ConnectionError
 
 URL = "http://13.201.178.26/webhook"
+
+# ⚠️ SECURITY: Load webhook secret from environment
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+if not WEBHOOK_SECRET:
+    print("❌ ERROR: WEBHOOK_SECRET not set in environment")
+    print("   Set in .env: WEBHOOK_SECRET=<your-secret>")
+    sys.exit(1)
 
 def send(payload, label):
     print(f"\n🚀 Sending {label}")
@@ -22,7 +31,7 @@ def send(payload, label):
 # COMMON BASE
 # =================================================
 BASE = {
-    "secret_key": "GK_TRADINGVIEW_BOT_2408",
+    "secret_key": WEBHOOK_SECRET,
     "strategy_name": "nifty_live_test",
     "exchange": "NFO",
     "underlying": "NIFTY",

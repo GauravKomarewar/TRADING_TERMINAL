@@ -517,8 +517,7 @@ class ShoonyaBot:
                 strategy, market = self._live_strategies[strategy_name]
             except KeyError:
                 logger.error("Request ENTRY failed: strategy not registered: %s", strategy_name)
-                logger.error("Request ENTRY failed: strategy not registered: %s", strategy_name)
-            raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
+                raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
 
         try:
             # warm prepare
@@ -542,8 +541,7 @@ class ShoonyaBot:
                 strategy, market = self._live_strategies[strategy_name]
             except KeyError:
                 logger.error("Request ADJUST failed: strategy not registered: %s", strategy_name)
-                logger.error("Request ADJUST failed: strategy not registered: %s", strategy_name)
-            raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
+                raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
 
         try:
             if hasattr(market, "snapshot"):

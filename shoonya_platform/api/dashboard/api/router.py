@@ -320,8 +320,8 @@ def list_orphan_positions(
         # Get all strategy-owned positions
         orders = system.get_orders(500) or []
         strategy_symbols = set(
-            o.get("symbol") for o in orders 
-            if o.get("user") and o.get("user") not in ["", None]
+            o.symbol for o in orders 
+            if o.user and o.user not in ["", None]
         )
         
         orphan_positions = []
@@ -332,25 +332,20 @@ def list_orphan_positions(
             if netqty == 0 or not symbol or symbol in strategy_symbols:
                 continue
             
-            # Find order details for greeks
-            order = next((o for o in orders if o.get("symbol") == symbol), {})
+            # Find order details
+            order = next((o for o in orders if o.symbol == symbol), None)
             
             orphan_positions.append({
                 "symbol": symbol,
                 "exchange": pos.get("exch"),
                 "qty": abs(netqty),
                 "side": "BUY" if netqty > 0 else "SELL",
-                "entry_price": float(order.get("price", 0) or 0),
+                "entry_price": float(order.price if order else 0),
                 "avg_price": float(pos.get("avgprc", 0) or 0),
                 "ltp": float(pos.get("ltp", 0) or 0),
                 "unrealized_pnl": float(pos.get("upnl", 0) or 0),
                 "realized_pnl": float(pos.get("rpnl", 0) or 0),
-                "greeks": {
-                    "delta": float(order.get("delta", 0) or 0),
-                    "gamma": float(order.get("gamma", 0) or 0),
-                    "theta": float(order.get("theta", 0) or 0),
-                    "vega": float(order.get("vega", 0) or 0),
-                },
+                "order_type": order.order_type if order else "MARKET",
             })
         
         logger.info(f"Found {len(orphan_positions)} orphan positions")
@@ -387,8 +382,8 @@ def orphan_positions_summary(
         positions = broker.get_positions() or []
         orders = system.get_orders(500) or []
         strategy_symbols = set(
-            o.get("symbol") for o in orders 
-            if o.get("user") and o.get("user") not in ["", None]
+            o.symbol for o in orders 
+            if o.user and o.user not in ["", None]
         )
         
         # Collect orphan positions
@@ -400,21 +395,17 @@ def orphan_positions_summary(
             if netqty == 0 or not symbol or symbol in strategy_symbols:
                 continue
             
-            order = next((o for o in orders if o.get("symbol") == symbol), {})
+            order = next((o for o in orders if o.symbol == symbol), None)
             
             orphan_map[symbol] = {
                 "symbol": symbol,
                 "qty": abs(netqty),
                 "side": "BUY" if netqty > 0 else "SELL",
-                "delta": float(order.get("delta", 0) or 0),
-                "gamma": float(order.get("gamma", 0) or 0),
-                "theta": float(order.get("theta", 0) or 0),
-                "vega": float(order.get("vega", 0) or 0),
                 "ltp": float(pos.get("ltp", 0) or 0),
                 "unrealized_pnl": float(pos.get("upnl", 0) or 0),
             }
         
-        # If specific symbols selected, calculate combined greeks
+        # If specific symbols selected, calculate combined metrics
         selected_list = []
         if selected_symbols:
             selected_list = [s.strip() for s in selected_symbols.split(",")]
@@ -429,10 +420,6 @@ def orphan_positions_summary(
                 combined = {
                     "symbols": selected_list,
                     "count": len(selected_positions),
-                    "combined_delta": sum(p["delta"] for p in selected_positions),
-                    "combined_gamma": sum(p["gamma"] for p in selected_positions),
-                    "combined_theta": sum(p["theta"] for p in selected_positions),
-                    "combined_vega": sum(p["vega"] for p in selected_positions),
                     "total_unrealized_pnl": sum(p["unrealized_pnl"] for p in selected_positions),
                     "positions": selected_positions,
                 }
@@ -2457,9 +2444,8 @@ def stop_runner(ctx=Depends(require_dashboard_auth)):
         runner = get_runner_singleton(ctx)
         
         # Stop all active strategies
-        stopped_count = len(runner.active_strategies)
-        runner.active_strategies.clear()
-        runner.is_running = False
+        stopped_count = len(runner._strategies)
+        runner.stop()
         
         logger.info(f"✅ Runner stopped - {stopped_count} strategies halted")
         
@@ -2489,12 +2475,13 @@ def get_runner_status(ctx=Depends(require_dashboard_auth)):
     """
     try:
         runner = get_runner_singleton(ctx)
+        status = runner.get_status()
         
         return {
             "runner_active": runner is not None,
-            "is_running": getattr(runner, 'is_running', False),
-            "strategies_active": len(runner.active_strategies),
-            "active_strategies": list(runner.active_strategies.keys()),
+            "is_running": status.get("running", False),
+            "strategies_active": len(runner._strategies),
+            "active_strategies": list(runner._strategies.keys()),
             "total_strategies_available": len(get_all_strategies()),
             "timestamp": datetime.now().isoformat()
         }

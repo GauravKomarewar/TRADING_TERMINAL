@@ -1,5 +1,6 @@
 {
   "schema_version": "2.0",
+  "enabled": true,
   "name": "DNSS NIFTY Weekly (Example)",
   "id": "DNSS_NIFTY_WEEKLY_EXAMPLE",
   "description": "Example Delta Neutral Short Strangle configuration on NIFTY weekly expiry. Auto-adjusts via delta monitoring with profit stepping. Sells OTM CE + PE at target delta, monitors combined delta, adjusts when threshold breached.",

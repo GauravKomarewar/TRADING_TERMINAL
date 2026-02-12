@@ -2,6 +2,7 @@
   "strategy_name": "NIFTY_DELTA_AUTO_ADJUST",
   "strategy_type": "DELTA_NEUTRAL_SHORT_STRANGLE",
   "status": "ACTIVE",
+  "enabled": true,
   
   "identity": {
     "underlying": "NIFTY",

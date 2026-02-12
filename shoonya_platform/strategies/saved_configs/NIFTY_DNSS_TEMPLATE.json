@@ -2,7 +2,7 @@
   "name": "NIFTY_DNSS_TEMPLATE",
   "description": "Delta Neutral Short Strangle Template for NIFTY - Use this as a starting point",
   "version": "1.0.0",
-  "enabled": false,
+  "enabled": true,
   "market_config": {
     "market_type": "database_market",
     "exchange": "NFO",

@@ -734,7 +734,7 @@ def modify_broker_order(
 @router.get("/strategies/list")
 def list_available_strategies(ctx=Depends(require_dashboard_auth)):
     """Discover all available strategies from folder structure"""
-    from shoonya_platform.strategies.strategy_registry import list_strategy_templates
+    from shoonya_platform.strategies.universal_settings.universal_registry import list_strategy_templates
     
     templates = list_strategy_templates()
     return {
@@ -2026,3 +2026,615 @@ def list_available_indices():
             status_code=500,
             detail=f"Error listing indices: {str(e)}"
         )
+
+
+# ======================================================================
+# 📊 STRATEGY MANAGEMENT ENDPOINTS (NEW)
+# ======================================================================
+
+from shoonya_platform.strategies.strategy_config_validator import validate_strategy
+from shoonya_platform.strategies.strategy_logger import (
+    get_strategy_logger,
+    get_logger_manager,
+)
+from shoonya_platform.strategies.strategy_runner import StrategyRunner
+import os
+
+# Strategy configuration directory
+STRATEGY_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "strategies" / "saved_configs"
+
+def get_all_strategies():
+    """List all strategy JSON files from saved_configs/"""
+    if not STRATEGY_CONFIG_DIR.exists():
+        return []
+    
+    strategies = []
+    for json_file in STRATEGY_CONFIG_DIR.glob("*.json"):
+        if json_file.name == "STRATEGY_CONFIG_SCHEMA.json":
+            continue  # Skip schema file
+        try:
+            with open(json_file, 'r') as f:
+                config = json.load(f)
+                strategies.append({
+                    "name": json_file.stem,
+                    "filename": json_file.name,
+                    "created": json_file.stat().st_ctime,
+                    "modified": json_file.stat().st_mtime,
+                    "config": config
+                })
+        except Exception as e:
+            logger.warning(f"Failed to read strategy {json_file.name}: {e}")
+    
+    return strategies
+
+def load_strategy_json(name: str):
+    """Load strategy JSON by name"""
+    strategy_file = STRATEGY_CONFIG_DIR / f"{name}.json"
+    if not strategy_file.exists():
+        return None
+    
+    with open(strategy_file, 'r') as f:
+        return json.load(f)
+
+def save_strategy_json(name: str, config: dict):
+    """Save strategy JSON by name"""
+    STRATEGY_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    strategy_file = STRATEGY_CONFIG_DIR / f"{name}.json"
+    
+    with open(strategy_file, 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    return strategy_file
+
+# ======================================================================
+# 🎯 STRATEGY LIST
+# ======================================================================
+
+@router.get("/strategy/list")
+def list_all_strategies(ctx=Depends(require_dashboard_auth)):
+    """
+    List all saved strategies from saved_configs/ directory
+    
+    Returns:
+        {
+            "total": 3,
+            "strategies": [
+                {
+                    "name": "NIFTY_DNSS",
+                    "filename": "NIFTY_DNSS.json",
+                    "created": 1707000000.0,
+                    "modified": 1707000000.0,
+                    "config": {...}
+                }
+            ]
+        }
+    """
+    try:
+        strategies = get_all_strategies()
+        return {
+            "total": len(strategies),
+            "strategies": strategies,
+            "timestamp": datetime.now().isoformat(),
+            "directory": str(STRATEGY_CONFIG_DIR)
+        }
+    except Exception as e:
+        logger.error(f"Error listing strategies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# 🔍 GET SINGLE STRATEGY
+# ======================================================================
+
+@router.get("/strategy/{strategy_name}")
+def get_strategy_by_name(strategy_name: str, ctx=Depends(require_dashboard_auth)):
+    """
+    Get specific strategy by name
+    
+    Args:
+        strategy_name: Name of strategy (without .json extension)
+    
+    Returns:
+        {
+            "name": "NIFTY_DNSS",
+            "filename": "NIFTY_DNSS.json",
+            "config": {...},
+            "validation": {...}
+        }
+    """
+    try:
+        config = load_strategy_json(strategy_name)
+        if not config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Strategy '{strategy_name}' not found"
+            )
+        
+        # Validate the config
+        validation_result = validate_strategy(config, strategy_name)
+        
+        return {
+            "name": strategy_name,
+            "config": config,
+            "validation": validation_result.to_dict(),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting strategy {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# ✅ VALIDATE STRATEGY CONFIG
+# ======================================================================
+
+@router.post("/strategy/validate")
+def validate_strategy_config(
+    strategy_config: dict = Body(...),
+    strategy_name: str = Query(..., description="Name of strategy"),
+    ctx=Depends(require_dashboard_auth)
+):
+    """
+    Validate strategy JSON configuration BEFORE saving
+    
+    Args:
+        strategy_config: The JSON config to validate
+        strategy_name: Name of the strategy (for context)
+    
+    Returns:
+        {
+            "valid": true,
+            "name": "NIFTY_DNSS",
+            "errors": [],
+            "warnings": [...],
+            "info": [...],
+            "timestamp": "2026-02-12T..."
+        }
+    """
+    try:
+        result = validate_strategy(strategy_config, strategy_name)
+        return {
+            **result.to_dict(),
+            "name": strategy_name,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error validating strategy {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# ➕ CREATE STRATEGY
+# ======================================================================
+
+@router.post("/strategy/create")
+def create_new_strategy(
+    strategy_name: str = Query(..., description="Name of strategy"),
+    strategy_config: dict = Body(...),
+    ctx=Depends(require_dashboard_auth)
+):
+    """
+    Create new strategy - validates before saving
+    
+    Args:
+        strategy_name: Name of strategy (will create {name}.json)
+        strategy_config: The strategy JSON configuration
+    
+    Returns:
+        {
+            "success": true,
+            "name": "NIFTY_DNSS",
+            "filename": "NIFTY_DNSS.json",
+            "validation": {...},
+            "path": "/full/path/to/NIFTY_DNSS.json"
+        }
+    """
+    try:
+        # Validate first
+        validation_result = validate_strategy(strategy_config, strategy_name)
+        
+        if not validation_result.valid:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Strategy validation failed",
+                    "validation": validation_result.to_dict()
+                }
+            )
+        
+        # Check if already exists
+        existing = load_strategy_json(strategy_name)
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Strategy '{strategy_name}' already exists"
+            )
+        
+        # Save
+        filepath = save_strategy_json(strategy_name, strategy_config)
+        
+        return {
+            "success": True,
+            "name": strategy_name,
+            "filename": f"{strategy_name}.json",
+            "path": str(filepath),
+            "validation": validation_result.to_dict(),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating strategy {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# ✏️ UPDATE STRATEGY
+# ======================================================================
+
+@router.put("/strategy/{strategy_name}")
+def update_strategy(
+    strategy_name: str,
+    strategy_config: dict = Body(...),
+    ctx=Depends(require_dashboard_auth)
+):
+    """
+    Update existing strategy - validates before saving
+    
+    Args:
+        strategy_name: Name of strategy to update
+        strategy_config: New strategy configuration
+    
+    Returns:
+        {
+            "success": true,
+            "name": "NIFTY_DNSS",
+            "validation": {...},
+            "updated": true
+        }
+    """
+    try:
+        # Validate first
+        validation_result = validate_strategy(strategy_config, strategy_name)
+        
+        if not validation_result.valid:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Strategy validation failed",
+                    "validation": validation_result.to_dict()
+                }
+            )
+        
+        # Check if exists
+        existing = load_strategy_json(strategy_name)
+        if not existing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Strategy '{strategy_name}' not found"
+            )
+        
+        # Save updated
+        filepath = save_strategy_json(strategy_name, strategy_config)
+        
+        return {
+            "success": True,
+            "name": strategy_name,
+            "updated": True,
+            "path": str(filepath),
+            "validation": validation_result.to_dict(),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating strategy {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# 🗑️ DELETE STRATEGY
+# ======================================================================
+
+@router.delete("/strategy/{strategy_name}")
+def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
+    """
+    Delete strategy file from saved_configs/
+    
+    Args:
+        strategy_name: Name of strategy to delete
+    
+    Returns:
+        {
+            "success": true,
+            "name": "NIFTY_DNSS",
+            "deleted": true
+        }
+    """
+    try:
+        strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
+        
+        if not strategy_file.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Strategy '{strategy_name}' not found"
+            )
+        
+        # Check if running
+        logger_mgr = get_logger_manager()
+        if strategy_name in logger_mgr.loggers:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot delete running strategy '{strategy_name}'"
+            )
+        
+        # Delete file
+        strategy_file.unlink()
+        
+        # Clear any logs if existed
+        logger_mgr.clear_strategy_logs(strategy_name)
+        
+        return {
+            "success": True,
+            "name": strategy_name,
+            "deleted": True,
+            "path": str(strategy_file),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting strategy {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# 🎮 RUNNER CONTROL
+# ======================================================================
+
+# Global runner instance
+_runner_instance = None
+
+def get_runner_singleton():
+    """Get or create global runner instance"""
+    global _runner_instance
+    if _runner_instance is None:
+        logger.info("Initializing StrategyRunner singleton")
+        try:
+            from shoonya_platform.database.broker import get_broker
+            broker = get_broker()
+            _runner_instance = StrategyRunner(bot=broker)
+        except Exception as e:
+            logger.error(f"Failed to initialize runner: {e}")
+            raise
+    return _runner_instance
+
+@router.post("/runner/start")
+def start_runner(ctx=Depends(require_dashboard_auth)):
+    """
+    Start the strategy runner - loads all strategies from saved_configs/
+    
+    Returns:
+        {
+            "success": true,
+            "runner_started": true,
+            "strategies_loaded": 3,
+            "strategies": ["NIFTY_DNSS", "BANKNIFTY_THETA", "MCX_OIL"],
+            "timestamp": "2026-02-12T..."
+        }
+    """
+    try:
+        runner = get_runner_singleton()
+        
+        # Load all strategies from saved_configs/
+        result = runner.load_strategies_from_json(
+            config_dir=str(STRATEGY_CONFIG_DIR),
+            strategy_factory=None  # Will use default factory
+        )
+        
+        logger.info(f"✅ Runner started with {len(result.get('strategies', []))} strategies")
+        
+        return {
+            "success": True,
+            "runner_started": True,
+            "strategies_loaded": len(result.get('strategies', [])),
+            "strategies": result.get('strategies', []),
+            "errors": result.get('errors', []),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error starting runner: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/runner/stop")
+def stop_runner(ctx=Depends(require_dashboard_auth)):
+    """
+    Stop the strategy runner
+    
+    Returns:
+        {
+            "success": true,
+            "runner_stopped": true,
+            "strategies_stopped": 3
+        }
+    """
+    try:
+        runner = get_runner_singleton()
+        
+        # Stop all active strategies
+        stopped_count = len(runner.active_strategies)
+        runner.active_strategies.clear()
+        runner.is_running = False
+        
+        logger.info(f"✅ Runner stopped - {stopped_count} strategies halted")
+        
+        return {
+            "success": True,
+            "runner_stopped": True,
+            "strategies_stopped": stopped_count,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error stopping runner: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/runner/status")
+def get_runner_status(ctx=Depends(require_dashboard_auth)):
+    """
+    Get runner status and active strategies
+    
+    Returns:
+        {
+            "runner_active": true,
+            "is_running": true,
+            "strategies_active": 3,
+            "active_strategies": ["NIFTY_DNSS", "BANKNIFTY_THETA"],
+            "timestamp": "2026-02-12T..."
+        }
+    """
+    try:
+        runner = get_runner_singleton()
+        
+        return {
+            "runner_active": runner is not None,
+            "is_running": getattr(runner, 'is_running', False),
+            "strategies_active": len(runner.active_strategies),
+            "active_strategies": list(runner.active_strategies.keys()),
+            "total_strategies_available": len(get_all_strategies()),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting runner status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# 📋 STRATEGY LOGGING
+# ======================================================================
+
+@router.get("/strategy/{strategy_name}/logs")
+def get_strategy_logs(
+    strategy_name: str,
+    lines: int = Query(100, ge=1, le=1000),
+    level: Optional[str] = Query(None, description="Filter by log level"),
+    ctx=Depends(require_dashboard_auth)
+):
+    """
+    Get recent logs for specific strategy
+    
+    Args:
+        strategy_name: Name of strategy
+        lines: Number of recent lines to return (1-1000)
+        level: Filter by log level (DEBUG, INFO, WARNING, ERROR)
+    
+    Returns:
+        {
+            "strategy": "NIFTY_DNSS",
+            "lines_returned": 50,
+            "logs": [
+                {
+                    "timestamp": "2026-02-12 10:30:45",
+                    "level": "INFO",
+                    "logger": "STRATEGY.NIFTY_DNSS",
+                    "message": "Entry condition met"
+                }
+            ]
+        }
+    """
+    try:
+        logger_obj = get_strategy_logger(strategy_name)
+        logs = logger_obj.get_recent_logs(lines=lines, level=level)
+        
+        return {
+            "strategy": strategy_name,
+            "lines_returned": len(logs),
+            "logs": logs,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting logs for {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/runner/logs")
+def get_all_runner_logs(
+    lines: int = Query(50, ge=1, le=500),
+    ctx=Depends(require_dashboard_auth)
+):
+    """
+    Get recent logs from all running strategies combined
+    
+    Args:
+        lines: Number of recent lines to return
+    
+    Returns:
+        {
+            "strategies_with_logs": 3,
+            "total_lines": 75,
+            "logs": [
+                {
+                    "strategy": "NIFTY_DNSS",
+                    "timestamp": "2026-02-12 10:30:45",
+                    "level": "INFO",
+                    "message": "Entry condition met"
+                }
+            ]
+        }
+    """
+    try:
+        manager = get_logger_manager()
+        combined_logs = manager.get_all_logs_combined(lines=lines)
+        
+        return {
+            "strategies_with_logs": len(manager.loggers),
+            "total_lines": len(combined_logs),
+            "logs": combined_logs,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting all logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================================
+# 🔌 WEBSOCKET - LOG STREAMING (OPTIONAL - FUTURE)
+# ======================================================================
+
+@router.websocket("/runner/logs/stream")
+async def websocket_log_stream(websocket):
+    """
+    WebSocket endpoint for real-time log streaming
+    
+    Connect to: ws://localhost:8000/dashboard/runner/logs/stream
+    
+    Receives:
+        - Real-time log events as JSON objects
+        - One per line in strategy logs
+        - Format: {"strategy": "...", "level": "...", "message": "..."}
+    
+    Note: This is optional - frontend can also poll /runner/logs endpoint
+    """
+    await websocket.accept()
+    try:
+        import asyncio
+        manager = get_logger_manager()
+        last_index = {}
+        
+        while True:
+            # Get logs from each strategy manager
+            for strategy_name, logger_obj in manager.loggers.items():
+                logs = logger_obj.get_recent_logs(lines=10)
+                
+                if strategy_name not in last_index:
+                    last_index[strategy_name] = 0
+                
+                # Send only new logs
+                for log in logs[last_index[strategy_name]:]:
+                    await websocket.send_json({
+                        "strategy": strategy_name,
+                        "timestamp": log.get("timestamp"),
+                        "level": log.get("level"),
+                        "message": log.get("message")
+                    })
+                
+                last_index[strategy_name] = len(logs)
+            
+            # Sleep before next poll
+            await asyncio.sleep(1)
+    
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        await websocket.close()

@@ -101,7 +101,7 @@ import pyotp
 from NorenRestApiPy.NorenApi import NorenApi
 
 from shoonya_platform.core.config import Config
-from shoonya_platform.domain.models import OrderResult, AccountInfo
+from shoonya_platform.domain.business_models import OrderResult, AccountInfo
 
 
 logger = logging.getLogger(__name__)

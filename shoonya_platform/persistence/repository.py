@@ -31,7 +31,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from shoonya_platform.persistence.database import get_connection
-from shoonya_platform.persistence.models import OrderRecord
+from shoonya_platform.persistence.order_record import OrderRecord
 
 
 class OrderRepository:

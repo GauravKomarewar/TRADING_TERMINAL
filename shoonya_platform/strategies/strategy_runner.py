@@ -41,9 +41,12 @@ import threading
 import time
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 from dataclasses import dataclass, field
 from collections import defaultdict
+
+from shoonya_platform.strategies.market_adapter_factory import MarketAdapterFactory
+from shoonya_platform.strategies.strategy_logger import get_strategy_logger
 
 logger = logging.getLogger("STRATEGY_RUNNER")
 
@@ -89,6 +92,8 @@ class StrategyContext:
     name: str
     strategy: Any
     market: Any
+    market_type: Literal["database_market", "live_feed_market"] = "live_feed_market"
+    market_adapter: Optional[Any] = None  # DatabaseMarketAdapter or LiveFeedMarketAdapter
     
     # Thread safety
     lock: threading.Lock = field(default_factory=threading.Lock, init=False)
@@ -206,6 +211,88 @@ class StrategyRunner:
             
             return True
     
+    def register_with_config(
+        self,
+        *,
+        name: str,
+        strategy,
+        market,
+        config: Dict[str, Any],
+        market_type: Literal["database_market", "live_feed_market"] = "live_feed_market",
+    ) -> bool:
+        """
+        Register strategy with market adapter selection (latch pattern).
+        
+        Automatically creates appropriate market adapter based on market_type.
+        
+        Args:
+            name: Unique strategy identifier
+            strategy: Strategy instance (must implement prepare() and on_tick())
+            market: Market data provider
+            config: Strategy configuration with exchange, symbol, db_path, etc.
+            market_type: "database_market" or "live_feed_market"
+            
+        Returns:
+            True if registered successfully, False otherwise
+        """
+        with self._strategies_lock:
+            if name in self._strategies:
+                logger.error(f"❌ Strategy already registered: {name}")
+                return False
+            
+            # Validate interface
+            if not self._validate_strategy(strategy):
+                logger.error(f"❌ Strategy {name} missing required methods")
+                return False
+            
+            # Validate config for market type
+            is_valid, error = MarketAdapterFactory.validate_config_for_market(
+                market_type=market_type,
+                config=config,
+            )
+            if not is_valid:
+                logger.error(f"❌ Config validation failed: {error}")
+                return False
+            
+            # Create market adapter (latch - selects market backend)
+            try:
+                logger.info(f"🔄 Creating market adapter for {name} (market_type={market_type})...")
+                market_adapter = MarketAdapterFactory.create(
+                    market_type=market_type,
+                    config=config,
+                )
+                logger.info(f"✓ Market adapter created")
+            except Exception as e:
+                logger.error(f"❌ Failed to create market adapter: {e}")
+                return False
+            
+            # Create context with adapter
+            context = StrategyContext(
+                name=name,
+                strategy=strategy,
+                market=market,
+                market_type=market_type,
+                market_adapter=market_adapter,
+            )
+            
+            self._strategies[name] = context
+            
+            # Log to strategy logger
+            strategy_logger = get_strategy_logger(name)
+            strategy_logger.info(f"Strategy registered - market={market_type}")
+            
+            # Register with bot (reporting only)
+            try:
+                self.bot.register_live_strategy(name, strategy, market)
+            except Exception as e:
+                logger.warning(f"⚠️ Bot registration failed for {name}: {e}")
+            
+            logger.info(
+                f"✅ Strategy registered: {name} | market={market_type} | total={len(self._strategies)}"
+            )
+            
+            return True
+    
     def unregister(self, name: str) -> bool:
         """
         Unregister a strategy
@@ -244,6 +331,142 @@ class StrategyRunner:
                 return False
         
         return True
+    
+    # ========================================================
+    # JSON CONFIGURATION LOADING
+    # ========================================================
+    
+    def load_strategies_from_json(
+        self,
+        config_dir: str,
+        strategy_factory,
+    ) -> Dict[str, bool]:
+        """
+        Load strategies from JSON configuration files.
+        
+        Loads all .json files from config_dir directory and registers them.
+        Each JSON file must contain strategy configuration.
+        
+        Args:
+            config_dir: Directory containing strategy JSON files (e.g., saved_configs/)
+            strategy_factory: Callable that creates strategy instances from config
+                             Signature: strategy_factory(config) → strategy_instance
+            
+        Returns:
+            Dict of {strategy_name: success_boolean}
+            
+        Example:
+            results = runner.load_strategies_from_json(
+                config_dir="strategies/saved_configs/",
+                strategy_factory=lambda cfg: DNSS(cfg)
+            )
+        """
+        import json
+        from pathlib import Path
+        
+        results = {}
+        config_path = Path(config_dir)
+        
+        # Validate directory exists
+        if not config_path.exists():
+            logger.error(f"❌ Config directory not found: {config_dir}")
+            return results
+        
+        if not config_path.is_dir():
+            logger.error(f"❌ Not a directory: {config_dir}")
+            return results
+        
+        # Find all JSON files
+        json_files = list(config_path.glob("*.json"))
+        if not json_files:
+            logger.warning(f"⚠️ No JSON files found in {config_dir}")
+            return results
+        
+        logger.info(f"📖 Loading {len(json_files)} strategy configs from {config_dir}")
+        
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r') as f:
+                    config = json.load(f)
+                
+                # Skip template/schema files
+                if config.get("name", "").endswith("TEMPLATE") or config.get("name", "").endswith("SCHEMA"):
+                    logger.debug(f"⊘ Skipping template: {json_file.name}")
+                    continue
+                
+                # Check if enabled
+                if not config.get("enabled", False):
+                    logger.info(f"⊘ Strategy disabled in config: {config.get('name', json_file.name)}")
+                    results[json_file.stem] = False
+                    continue
+                
+                strategy_name = config.get("name")
+                if not strategy_name:
+                    logger.error(f"❌ No 'name' field in {json_file.name}")
+                    results[json_file.stem] = False
+                    continue
+                
+                # Validate required config fields
+                required_fields = ["market_config", "entry", "exit"]
+                for field in required_fields:
+                    if field not in config:
+                        logger.error(f"❌ Missing required field '{field}' in {strategy_name}")
+                        results[strategy_name] = False
+                        continue
+                
+                market_config = config.get("market_config", {})
+                market_type = market_config.get("market_type", "database_market")
+                
+                # Create strategy instance using factory
+                try:
+                    strategy = strategy_factory(config)
+                    if not strategy:
+                        logger.error(f"❌ Strategy factory returned None for {strategy_name}")
+                        results[strategy_name] = False
+                        continue
+                except Exception as e:
+                    logger.error(f"❌ Failed to create strategy from {json_file.name}: {e}")
+                    results[strategy_name] = False
+                    continue
+                
+                # Prepare strategy (call prepare method)
+                try:
+                    strategy.prepare()
+                except Exception as e:
+                    logger.error(f"❌ Strategy prepare() failed for {strategy_name}: {e}")
+                    results[strategy_name] = False
+                    continue
+                
+                # Register with runner
+                success = self.register_with_config(
+                    name=strategy_name,
+                    strategy=strategy,
+                    market=None,  # Market is managed via market_adapter
+                    config=market_config,
+                    market_type=market_type,
+                )
+                
+                results[strategy_name] = success
+                
+                if success:
+                    logger.info(f"✅ Loaded strategy: {strategy_name} from {json_file.name}")
+                else:
+                    logger.error(f"❌ Failed to register strategy: {strategy_name}")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Invalid JSON in {json_file.name}: {e}")
+                results[json_file.stem] = False
+            except Exception as e:
+                logger.error(f"❌ Error loading {json_file.name}: {e}")
+                results[json_file.stem] = False
+        
+        # Summary
+        successful = sum(1 for v in results.values() if v)
+        logger.info(
+            f"📊 Config loading complete: {successful}/{len(results)} strategies loaded"
+        )
+        
+        return results
     
     # ========================================================
     # LIFECYCLE
@@ -361,15 +584,20 @@ class StrategyRunner:
         - NO auto-recovery or auto-exit
         """
         tick_start = time.time()
+        strategy_logger = get_strategy_logger(context.name)
         
         try:
             with context.lock:
                 # 1️⃣ Prepare market snapshot
                 snapshot = context.market.snapshot()
                 context.strategy.prepare(snapshot)
+                strategy_logger.debug(f"Market snapshot prepared - {len(snapshot) if isinstance(snapshot, dict) else '?'} items")
                 
                 # 2️⃣ Execute strategy logic
                 commands = context.strategy.on_tick(now) or []
+                
+                if commands:
+                    strategy_logger.info(f"Generated {len(commands)} command(s)")
                 
                 # 3️⃣ Route commands to OMS (if any)
                 if commands:
@@ -383,16 +611,21 @@ class StrategyRunner:
                     # Update metrics (passive)
                     context.metrics.total_commands += len(commands)
                     self._global_commands += len(commands)
+                    strategy_logger.info(f"Routed {len(commands)} command(s) to OMS")
                 
                 # Update metrics - SUCCESS
                 tick_duration_ms = (time.time() - tick_start) * 1000
                 context.metrics.total_ticks += 1
                 context.metrics.last_tick_time = now
                 context.metrics.update_tick_duration(tick_duration_ms)
+                
+                if tick_duration_ms > 100:  # Log slow ticks as warning
+                    strategy_logger.warning(f"Slow tick: {tick_duration_ms:.1f}ms")
         
         except Exception as e:
             # Error isolation - log and count (PASSIVE)
             logger.exception(f"❌ {context.name} execution failed")
+            strategy_logger.error(f"Execution failed: {str(e)}")
             context.metrics.total_errors += 1
             self._global_errors += 1
             

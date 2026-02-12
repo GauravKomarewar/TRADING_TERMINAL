@@ -12,7 +12,7 @@ BROKER INTERFACE (FINAL — BOT-ROUTED)
 import logging
 from typing import List, Optional, Dict, Any
 
-from shoonya_platform.execution.models import Intent
+from shoonya_platform.execution.strategy_intent import Intent
 from shoonya_platform.utils.json_builder import (
     build_leg,
     build_strategy_json,

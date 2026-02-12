@@ -16,7 +16,7 @@ import logging
 from datetime import datetime
 
 from shoonya_platform.logging.logger_config import get_component_logger
-from shoonya_platform.persistence.models import OrderRecord
+from shoonya_platform.persistence.order_record import OrderRecord
 
 from shoonya_platform.execution.intent import UniversalOrderCommand
 from shoonya_platform.execution.validation import validate_order

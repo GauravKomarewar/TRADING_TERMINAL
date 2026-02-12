@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional, Literal
 import uuid
 
-from shoonya_platform.persistence.models import OrderRecord
+from shoonya_platform.persistence.order_record import OrderRecord
 
 # =========================
 # ENUM-LIKE TYPES

@@ -93,10 +93,10 @@ from shoonya_platform.execution.generic_control_consumer import GenericControlIn
 from shoonya_platform.execution.strategy_control_consumer import StrategyControlConsumer
 
 # ---------------- REPORTING ----------------
-from shoonya_platform.strategies.strategy_reporter import build_strategy_report
+from shoonya_platform.strategies.universal_settings.universal_strategy_reporter import build_strategy_report
 
 #--------------------MODELS--------------
-from shoonya_platform.domain.models import TradeRecord, AlertData, LegResult, BotStats, OrderResult, AccountInfo
+from shoonya_platform.domain.business_models import TradeRecord, AlertData, LegResult, BotStats, OrderResult, AccountInfo
 #--------------------UTILS--------------
 from shoonya_platform.utils.utils import (
     validate_webhook_signature, 
@@ -116,7 +116,7 @@ from shoonya_platform.market_data.feeds import index_tokens_subscriber
 
 #---------------------- strategies runner  ----------------
 from shoonya_platform.strategies.strategy_runner import StrategyRunner
-from shoonya_platform.strategies.strategy_run_writer import StrategyRunWriter
+from shoonya_platform.strategies.universal_settings.writer import StrategyRunWriter
 from shoonya_platform.strategies.delta_neutral.dnss import (
     DeltaNeutralShortStrangleStrategy,
 )

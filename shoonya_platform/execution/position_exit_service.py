@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from shoonya_platform.brokers.shoonya.client import ShoonyaClient
 from shoonya_platform.persistence.repository import OrderRepository
-from shoonya_platform.persistence.models import OrderRecord
+from shoonya_platform.persistence.order_record import OrderRecord
 
 logger = logging.getLogger(__name__)
 

@@ -21,9 +21,13 @@ from .adapter import (
     dnss_config_to_universal,
 )
 
+# Shorthand alias for convenience
+DNSS = DeltaNeutralShortStrangleStrategy
+
 __all__ = [
     # Strategy classes
     "DeltaNeutralShortStrangleStrategy",
+    "DNSS",  # Shorthand alias
     "StrategyConfig",
     "StrategyState", 
     "Leg",

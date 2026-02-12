@@ -854,7 +854,7 @@ def start_strategy_execution(
             }
         
         # Load the strategy from saved_configs/
-        from shoonya_platform.strategies.standalone_implementations.delta_neutral.dnss import DNSS
+        from shoonya_platform.strategies.standalone_implementations.delta_neutral import DNSS
         
         strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
         if not strategy_file.exists():

@@ -853,8 +853,8 @@ def start_strategy_execution(
                 "timestamp": datetime.now().isoformat()
             }
         
-        # Load the strategy from saved_configs/
-        from shoonya_platform.strategies.standalone_implementations.delta_neutral import DNSS
+        # Load the strategy config from saved_configs/
+        from shoonya_platform.strategies.strategy_factory import create_strategy
         
         strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
         if not strategy_file.exists():
@@ -877,12 +877,19 @@ def start_strategy_execution(
         
         # Register and start only this strategy
         try:
-            strategy = DNSS(config)
-            registered = runner.register(
+            # Use factory to create strategy (respects strategy_type in config)
+            strategy = create_strategy(config)
+            
+            # Extract market_type from config (default: live_feed_market)
+            market_config = config.get("market_config", {})
+            market_type = market_config.get("market_type", "live_feed_market")
+            
+            registered = runner.register_with_config(
                 name=strategy_name,
                 strategy=strategy,
-                config=config,
-                market_type="live_feed_market"
+                market=None,  # Market managed via market_adapter
+                config=market_config,
+                market_type=market_type
             )
             
             if not registered:
@@ -2589,9 +2596,11 @@ def start_runner(ctx=Depends(require_dashboard_auth)):
             }
         
         # Load all strategies from saved_configs/
+        from shoonya_platform.strategies.strategy_factory import create_strategy
+        
         result = runner.load_strategies_from_json(
             config_dir=str(STRATEGY_CONFIG_DIR),
-            strategy_factory=None  # Will use default factory
+            strategy_factory=create_strategy
         )
         
         # Extract loaded strategy names (those with True value)

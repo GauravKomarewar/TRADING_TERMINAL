@@ -16,7 +16,7 @@ from .dnss import (
     DeltaNeutralShortStrangleStrategy,
     StrategyConfig,
 )
-from shoonya_platform.strategies.universal_config import UniversalStrategyConfig
+from shoonya_platform.strategies.universal_settings.universal_config.universal_strategy_config import UniversalStrategyConfig
 
 
 def create_dnss_from_universal_config(

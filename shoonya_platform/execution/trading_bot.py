@@ -117,7 +117,7 @@ from shoonya_platform.market_data.feeds import index_tokens_subscriber
 #---------------------- strategies runner  ----------------
 from shoonya_platform.strategies.strategy_runner import StrategyRunner
 from shoonya_platform.strategies.universal_settings.writer import StrategyRunWriter
-from shoonya_platform.strategies.delta_neutral.dnss import (
+from shoonya_platform.strategies.standalone_implementations.delta_neutral.dnss import (
     DeltaNeutralShortStrangleStrategy,
 )
 

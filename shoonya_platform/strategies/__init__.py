@@ -22,6 +22,7 @@ keeping execution/ clean for OMS concerns only (orders, positions, risk).
 
 from .database_market.adapter import DatabaseMarketAdapter
 from .live_feed_market.adapter import LiveFeedMarketAdapter
+from .market import DBBackedMarket, LiveMarket
 from .universal_settings.universal_config import UniversalStrategyConfig
 from .market_adapter_factory import MarketAdapterFactory
 from .strategy_runner import StrategyRunner
@@ -30,6 +31,9 @@ __all__ = [
     # Market adapters
     "DatabaseMarketAdapter",
     "LiveFeedMarketAdapter",
+    # Backward-compatible market classes
+    "DBBackedMarket",
+    "LiveMarket",
     # Factory
     "MarketAdapterFactory",
     # Config

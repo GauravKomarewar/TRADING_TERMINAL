@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from shoonya_platform.strategies.market import DBBackedMarket
-from shoonya_platform.strategies.universal_config.universal_strategy_config import (
+from shoonya_platform.strategies.universal_settings.universal_config.universal_strategy_config import (
     UniversalStrategyConfig
 )
 

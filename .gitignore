@@ -20,14 +20,21 @@ scripts/scriptmaster_store/raw/
 scripts/scriptmaster_store/processed/
 
 # ===============================
+# EC2 & runtime logs
+# ===============================
+ec2Logs-downloaded/
+
+# ===============================
 # Environment & secrets
 # ===============================
-config_env/
 env/
 ENV/
 venv/
 .venv/
-.env*
+.env
+.env.local
+primary.env
+yeleshwar_a_komarewar.env
 credentials.json
 cookies.txt
 

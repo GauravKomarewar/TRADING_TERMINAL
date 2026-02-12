@@ -96,10 +96,13 @@ class GenericControlIntentConsumer:
                 logger.exception("❌ Control intent loop error")
                 time.sleep(2)
 
-    def _execute_generic_payload(self, payload: dict, intent_id: str) -> str:
+    def _execute_generic_payload(self, payload: dict, intent_id: str, order_index: int = 0) -> str:
         """
         Execute ONE GenericIntent payload via process_alert().
         Returns final status: ACCEPTED / REJECTED / FAILED
+        
+        🔥 CRITICAL FIX: For basket orders, use unique strategy_name per leg
+        to prevent ExecutionGuard from blocking 2nd+ legs as duplicates.
         """
 
         leg = {
@@ -127,23 +130,58 @@ class GenericControlIntentConsumer:
             if payload.get("trail_when") is not None:
                 leg["trailing_activation_price"] = float(payload["trail_when"])
 
+        # 🔥 UNIQUE STRATEGY NAME PER ORDER (prevents ExecutionGuard blocking)
+        unique_strategy_name = f"__BASKET__:{intent_id}:LEG_{order_index}"
+        
         alert_payload = {
             "secret_key": self.bot.config.webhook_secret,
             "execution_type": payload.get("execution_type", "ENTRY"),
             "exchange": payload.get("exchange", "NFO"),
-            "strategy_name": f"__DASHBOARD__:{intent_id}",
+            "strategy_name": unique_strategy_name,
             "test_mode": payload.get("test_mode"),
             "legs": [leg],
         }
 
-        result = self.bot.process_alert(alert_payload)
-        status = result.get("status", "")
+        try:
+            result = self.bot.process_alert(alert_payload)
+            status = result.get("status", "")
 
-        if status in ("COMPLETED SUCCESSFULLY", "PARTIALLY COMPLETED"):
-            return "ACCEPTED"
-        elif status in ("blocked", "FAILED", "error"):
-            return "REJECTED"
-        return "FAILED"
+            if status in ("COMPLETED SUCCESSFULLY", "PARTIALLY COMPLETED", "INTENTS_REGISTERED", "PARTIALLY_REGISTERED"):
+                logger.info(
+                    "✅ BASKET ORDER ACCEPTED | intent=%s | leg=%d | symbol=%s | status=%s",
+                    intent_id,
+                    order_index,
+                    payload["symbol"],
+                    status,
+                )
+                return "ACCEPTED"
+            elif status in ("blocked", "FAILED", "error"):
+                logger.error(
+                    "❌ BASKET ORDER REJECTED | intent=%s | leg=%d | symbol=%s | status=%s",
+                    intent_id,
+                    order_index,
+                    payload["symbol"],
+                    status,
+                )
+                return "REJECTED"
+            else:
+                logger.warning(
+                    "⚠️  BASKET ORDER UNKNOWN STATUS | intent=%s | leg=%d | symbol=%s | status=%s",
+                    intent_id,
+                    order_index,
+                    payload["symbol"],
+                    status,
+                )
+                return "FAILED"
+        except Exception as e:
+            logger.exception(
+                "❌ BASKET ORDER ERROR | intent=%s | leg=%d | symbol=%s | error=%s",
+                intent_id,
+                order_index,
+                payload["symbol"],
+                str(e),
+            )
+            return "FAILED"
 
     def _handle_broker_control_intent(self, intent_type: str, payload: dict, intent_id: str) -> str:
         """
@@ -245,31 +283,66 @@ class GenericControlIntentConsumer:
                     len(execution_plan),
                 )
 
-                for step, order_payload in enumerate(execution_plan, start=1):
+                failed_orders = []
+                successful_orders = []
+
+                for order_index, order_payload in enumerate(execution_plan):
+                    symbol = order_payload.get("symbol", "UNKNOWN")
                     try:
-                        result = self._execute_generic_payload(order_payload, intent_id)
+                        # 🔥 PASS order_index to ensure unique strategy_name
+                        result = self._execute_generic_payload(order_payload, intent_id, order_index)
 
-                        if result != "ACCEPTED":
-                            logger.error(
-                                "❌ BASKET FAILED | %s | step %d",
+                        if result == "ACCEPTED":
+                            successful_orders.append(symbol)
+                        else:
+                            logger.warning(
+                                "⚠️  BASKET ORDER NOT ACCEPTED | %s | order=%d | symbol=%s | result=%s",
                                 intent_id,
-                                step,
+                                order_index,
+                                symbol,
+                                result,
                             )
-                            self._update_status(intent_id, "FAILED")
-                            return True
+                            failed_orders.append(symbol)
 
-                    except Exception:
+                    except Exception as e:
                         logger.exception(
-                            "❌ BASKET ERROR | %s | step %d",
+                            "❌ BASKET ORDER EXCEPTION | %s | order=%d | symbol=%s | error=%s",
                             intent_id,
-                            step,
+                            order_index,
+                            symbol,
+                            str(e),
                         )
-                        self._update_status(intent_id, "FAILED")
-                        return True
+                        failed_orders.append(symbol)
 
-                self._update_status(intent_id, "ACCEPTED")
-                logger.info("✅ BASKET COMPLETED | %s", intent_id)
-                return True
+                # 🔥 IMPROVED ERROR HANDLING: Partial execution allowed
+                if not successful_orders:
+                    # All orders failed
+                    logger.error(
+                        "❌ BASKET COMPLETELY FAILED | %s | failed=%s",
+                        intent_id,
+                        failed_orders,
+                    )
+                    self._update_status(intent_id, "FAILED")
+                    return True
+                elif failed_orders:
+                    # Partial success
+                    logger.warning(
+                        "⚠️  BASKET PARTIALLY COMPLETED | %s | success=%s | failed=%s",
+                        intent_id,
+                        successful_orders,
+                        failed_orders,
+                    )
+                    self._update_status(intent_id, "PARTIALLY_ACCEPTED")
+                    return True
+                else:
+                    # All orders succeeded
+                    logger.info(
+                        "✅ BASKET COMPLETED SUCCESSFULLY | %s | orders=%s",
+                        intent_id,
+                        successful_orders,
+                    )
+                    self._update_status(intent_id, "ACCEPTED")
+                    return True
 
             # ==================================================
             # SYSTEM ORDER CONTROL (OMS-LEVEL)

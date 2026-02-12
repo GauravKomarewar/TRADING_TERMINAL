@@ -176,16 +176,59 @@ class StrategyControlConsumer:
                 # Load saved strategy config to get symbol, exchange, etc.
                 saved_config = self._load_strategy_config(strategy_name)
                 if not saved_config:
+                    logger.error(
+                        "❌ STRATEGY CONFIG NOT FOUND | %s | check /strategies/saved_configs/",
+                        strategy_name,
+                    )
                     raise RuntimeError(f"Strategy config not found: {strategy_name}")
+                
+                logger.info(
+                    "📋 Loaded strategy config | %s | identity=%s",
+                    strategy_name,
+                    saved_config.get("identity", {}),
+                )
                 
                 # Merge payload (intent data) with saved config
                 # Intent overrides config if provided
                 merged_payload = {**saved_config, **payload}
                 merged_payload["strategy_name"] = strategy_name  # Ensure correct name
                 
-                universal_config = build_universal_config(merged_payload)
+                # 🔥 VALIDATE REQUIRED FIELDS BEFORE BUILD
+                required_fields = ["exchange", "symbol", "instrument_type", "entry_time", "exit_time", "lot_qty"]
+                missing = [f for f in required_fields if f not in merged_payload]
+                if missing:
+                    logger.error(
+                        "❌ MISSING REQUIRED FIELDS | %s | missing=%s | payload=%s",
+                        strategy_name,
+                        missing,
+                        list(merged_payload.keys()),
+                    )
+                    raise RuntimeError(f"Missing required fields: {missing}")
+                
+                try:
+                    universal_config = build_universal_config(merged_payload)
+                except Exception as e:
+                    logger.error(
+                        "❌ FAILED TO BUILD CONFIG | %s | error=%s | payload=%s",
+                        strategy_name,
+                        str(e),
+                        merged_payload,
+                    )
+                    raise RuntimeError(f"Failed to build universal config: {e}")
+                
                 if strategy_name != universal_config.strategy_name:
                     raise RuntimeError("Strategy name mismatch in payload")
+                
+                logger.info(
+                    "🚀 STARTING STRATEGY | %s | %s %s | entry_time=%s | exit_time=%s | lot_qty=%d",
+                    strategy_name,
+                    universal_config.exchange,
+                    universal_config.symbol,
+                    universal_config.entry_time,
+                    universal_config.exit_time,
+                    universal_config.lot_qty,
+                )
+                
                 try:
                     self.strategy_manager.start_strategy(
                         strategy_name=universal_config.strategy_name,
@@ -196,10 +239,22 @@ class StrategyControlConsumer:
                             "symbol": universal_config.symbol,
                         },
                     )
+                    logger.warning(
+                        "✅ STRATEGY STARTED SUCCESSFULLY | %s",
+                        strategy_name,
+                    )
                 except RuntimeError as e:
                     if "already running" in str(e):
-                        logger.info("Strategy already running — ENTRY treated as idempotent")
+                        logger.info(
+                            "ℹ️ Strategy already running — ENTRY treated as idempotent | %s",
+                            strategy_name,
+                        )
                     else:
+                        logger.error(
+                            "❌ FAILED TO START STRATEGY | %s | error=%s",
+                            strategy_name,
+                            str(e),
+                        )
                         raise
 
             elif action == "EXIT":

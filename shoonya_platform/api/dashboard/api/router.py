@@ -755,16 +755,41 @@ def start_strategy(
     
     LEGACY: For backward compatibility only.
     NEW: Use /intent/strategy/entry for intent-based control
+    
+    Returns:
+    - { "started": true, "pid": 12345 } on success
+    - HTTPException with error details on failure
     """
     cfg = payload.get("config_path")
     if not cfg:
+        logger.error("🔥 Strategy start failed: config_path required")
         raise HTTPException(status_code=400, detail="config_path required")
+    
     try:
+        logger.info(
+            "🚀 Starting strategy subprocess | config_path=%s | python=%s",
+            cfg,
+            __import__("sys").executable,
+        )
         res = svc.start(cfg)
-        return {"started": True, "pid": res.get("pid")}
+        logger.warning(
+            "✅ Strategy started successfully | config_path=%s | pid=%s",
+            cfg,
+            res.get("pid"),
+        )
+        return {"started": True, "pid": res.get("pid"), "config_path": cfg}
+    except FileNotFoundError as e:
+        logger.error("❌ Strategy module not found | config_path=%s | error=%s", cfg, str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Strategy module not found: {cfg}. Check if the strategy exists in strategies/ folder",
+        )
     except Exception as e:
-        logger.exception("Strategy start failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("❌ Strategy start failed | config_path=%s", cfg)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Strategy start failed: {str(e)}. Check logs for details.",
+        )
 
 
 @router.post("/strategy/stop")

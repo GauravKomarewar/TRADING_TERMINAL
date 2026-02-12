@@ -37,17 +37,40 @@ class SupervisorService:
         logger.info("Starting strategy process: %s", " ".join(cmd))
 
         # Launch detached process
-        if os.name == "nt":
-            proc = subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
-        else:
-            proc = subprocess.Popen(cmd, start_new_session=True)
+        try:
+            if os.name == "nt":
+                proc = subprocess.Popen(
+                    cmd,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            else:
+                proc = subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+        except FileNotFoundError as e:
+            logger.error("❌ Python executable not found: %s", python)
+            raise RuntimeError(f"Python executable not found: {python}")
+        except Exception as e:
+            logger.error("❌ Failed to start strategy process: %s", str(e))
+            raise RuntimeError(f"Failed to start subprocess: {e}")
 
         pid = proc.pid
+        
+        # Store PID file
         pidfile = self._pidfile_for(config_path)
-        with pidfile.open("w") as f:
-            json.dump({"pid": pid}, f)
+        try:
+            with pidfile.open("w") as f:
+                json.dump({"pid": pid, "config_path": config_path, "started_at": str(__import__("datetime").datetime.now())}, f)
+        except Exception as e:
+            logger.warning("Failed to write PID file: %s", e)
 
-        return {"pid": pid, "pidfile": str(pidfile)}
+        logger.warning("✅ Strategy process started | pid=%d | config=%s", pid, config_path)
+        return {"pid": pid, "pidfile": str(pidfile), "config_path": config_path}
 
     def stop(self, config_path: Optional[str] = None, pid: Optional[int] = None) -> dict:
         if config_path:

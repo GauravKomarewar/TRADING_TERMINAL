@@ -1197,7 +1197,7 @@ main {
 
 
 <!-- ═══════════════════════════════════════════
-     STRATEGY CONSTRUCTOR MODAL (SIMPLIFIED)
+     STRATEGY CONSTRUCTOR MODAL
      ═══════════════════════════════════════════ -->
 <div id="modalOverlay" onclick="handleOverlayClick(event)">
   <div class="builder-modal" id="builderModal">
@@ -1211,9 +1211,12 @@ main {
     </div>
 
     <div class="builder-nav">
-      <button class="bnav-tab active" data-sec="quick" onclick="switchBSec('quick',this)">⚡ Quick Config</button>
-      <button class="bnav-tab" data-sec="json" onclick="switchBSec('json',this)">📄 JSON Editor</button>
-      <button class="bnav-tab" data-sec="validation" onclick="switchBSec('validation',this)">✓ Validation</button>
+      <button class="bnav-tab active" data-sec="identity" onclick="switchBSec('identity',this)">⚡ Quick Config</button>
+      <button class="bnav-tab" data-sec="entry" onclick="switchBSec('entry',this)">📋 Entry</button>
+      <button class="bnav-tab" data-sec="adjustment" onclick="switchBSec('adjustment',this)">↩ Adjustment</button>
+      <button class="bnav-tab" data-sec="exit" onclick="switchBSec('exit',this)">🚪 Exit</button>
+      <button class="bnav-tab" data-sec="risk" onclick="switchBSec('risk',this)">⚠ Risk Mgmt</button>
+      <button class="bnav-tab" data-sec="schedule" onclick="switchBSec('schedule',this)">📅 Schedule</button>
     </div>
 
     <div class="builder-body">
@@ -1546,6 +1549,12 @@ main {
       <div class="footer-actions">
         <button class="btn-cancel" onclick="closeBuilder()">Cancel</button>
         <button class="btn-save" id="btnSave" onclick="saveStrategy()">
+          💾 Save Strategy
+        </button>
+      </div>
+    </div>
+  </div><!-- /builder-modal -->
+</div><!-- /modalOverlay -->
           💾 Save Strategy
         </button>
       </div>
@@ -1899,13 +1908,180 @@ function updateLegTitle(section, id, val) {
   if(lbl) lbl.textContent = val.replace(/_/g,' ');
 }
 
-function updateBadge(section) {
-  const mapSec = { entry: 'Entry', adj: 'Adj', exit: 'Exit' };
-  const badgeId = `badge${mapSec[section]}`;
-  const badge = document.getElementById(badgeId);
-  if(!badge) return;
-  const container = document.getElementById(section === 'entry' ? 'entryLegs' : section === 'adj' ? 'adjLegs' : 'exitLegs');
-  badge.textContent = container ? container.querySelectorAll('.leg-card').length : 0;
+/* ═════════════════════════════════════════════════
+   PARAMETER BUILDER FUNCTIONS
+   ═════════════════════════════════════════════════ */
+
+// Available columns from option chain .sqlite files
+const SQLITE_COLUMNS = {
+  price: ['ltp', 'bid', 'ask', 'mid', 'close', 'open', 'high', 'low', 'spread'],
+  market: ['spot', 'futures', 'basis', 'atm_strike', 'strike_diff'],
+  greeks: ['delta', 'gamma', 'theta', 'vega', 'rho', 'charm', 'vanna', 'volga'],
+  volatility: ['iv', 'hv', 'iv_rank', 'iv_percentile', 'vix', 'pcr_iv'],
+  volume: ['oi', 'oi_change', 'oi_change_pct', 'volume', 'pcr_oi', 'pcr_volume'],
+  time: ['entry_time', 'exit_time', 'market_open', 'expiry_time', 'day_of_week']
+};
+
+const COMPARISON_OPS = ['==', '!=', '>', '<', '>=', '<=', 'contains', 'in_range'];
+let conditions = [];
+
+function initializeParameterList() {
+  const paramList = document.getElementById('paramList');
+  if(!paramList) return;
+  paramList.innerHTML = '';
+  
+  // Flatten all columns and create buttons
+  const allCols = [];
+  Object.values(SQLITE_COLUMNS).forEach(cols => allCols.push(...cols));
+  
+  allCols.forEach(col => {
+    const btn = document.createElement('button');
+    btn.className = 'f-button';
+    btn.textContent = col;
+    btn.style.cssText = 'padding:6px 8px;font-size:10px;border:1px solid var(--border);background:var(--panel-3);cursor:pointer;border-radius:4px;transition:all 0.2s;';
+    btn.onmouseover = () => btn.style.background = 'var(--primary)';
+    btn.onmouseout = () => btn.style.background = 'var(--panel-3)';
+    btn.onclick = () => addCondition(col, 'number');
+    paramList.appendChild(btn);
+  });
+}
+
+function addCondition(param, type = 'number') {
+  try {
+    // Ensure conditions array exists
+    if(!Array.isArray(conditions)) {
+      window.conditions = [];
+    }
+    
+    const condId = 'cond_' + Date.now();
+    const condObj = {
+      id: condId,
+      param: param,
+      operator: '==',
+      value: '',
+      type: type
+    };
+    conditions.push(condObj);
+    
+    if(typeof renderConditions === 'function') {
+      renderConditions();
+    }
+    
+    if(typeof addLog === 'function') {
+      addLog(`Condition added: ${param}`, 'INFO');
+    }
+  } catch(err) {
+    console.error('Error adding condition:', err);
+  }
+}
+
+function removeCondition(condId) {
+  try {
+    if(Array.isArray(conditions)) {
+      conditions = conditions.filter(c => c.id !== condId);
+      if(typeof renderConditions === 'function') {
+        renderConditions();
+      }
+    }
+  } catch(err) {
+    console.error('Error removing condition:', err);
+  }
+}
+
+function updateCondition(condId, field, value) {
+  try {
+    if(Array.isArray(conditions)) {
+      const cond = conditions.find(c => c.id === condId);
+      if(cond) {
+        cond[field] = value;
+        if(typeof renderConditions === 'function') {
+          renderConditions();
+        }
+      }
+    }
+  } catch(err) {
+    console.error('Error updating condition:', err);
+  }
+}
+
+function renderConditions() {
+  try {
+    const condList = document.getElementById('conditionsList');
+    if(!condList) return;
+    
+    // Ensure conditions is an array
+    if(!Array.isArray(conditions)) {
+      window.conditions = [];
+    }
+    
+    if(conditions.length === 0) {
+      condList.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px;">No conditions added yet. Click a parameter to add one.</div>';
+      return;
+    }
+    
+    condList.innerHTML = conditions.map(cond => `
+      <div style="display:flex;gap:6px;align-items:center;background:var(--panel-3);border:1px solid var(--border);border-radius:4px;padding:8px;font-size:11px;">
+        <span style="min-width:60px;font-weight:bold;color:var(--accent);">${cond.param}</span>
+        <select onchange="updateCondition('${cond.id}','operator',this.value)" style="padding:4px;border-radius:3px;border:1px solid var(--border);">
+          ${COMPARISON_OPS.map(op => `<option value="${op}" ${cond.operator===op?'selected':''}>${op}</option>`).join('')}
+        </select>
+        <input type="text" placeholder="value" value="${cond.value}" onchange="updateCondition('${cond.id}','value',this.value)" style="flex:1;padding:4px;border-radius:3px;border:1px solid var(--border);">
+        <button onclick="removeCondition('${cond.id}')" style="padding:4px 8px;background:var(--danger);color:white;border:none;border-radius:3px;cursor:pointer;font-size:10px;">✕</button>
+      </div>
+    `).join('');
+  } catch(err) {
+    console.error('Error rendering conditions:', err);
+  }
+}
+
+function addTimeCondition(timeType) {
+  try {
+    let param = timeType;
+    let defaultVal = '';
+    
+    if(timeType === 'entry_time') defaultVal = document.getElementById('quickEntryTime').value || '09:20';
+    else if(timeType === 'exit_time') defaultVal = document.getElementById('quickExitTime').value || '15:15';
+    else if(timeType === 'market_open') defaultVal = '09:15';
+    else if(timeType === 'expiry_time') defaultVal = 'third_thursday';
+    
+    addCondition(param, 'time');
+    
+    // Ensure conditions array exists and has elements
+    if(conditions && conditions.length > 0) {
+      const lastCond = conditions[conditions.length - 1];
+      if(lastCond) {
+        lastCond.operator = 'after';
+        lastCond.value = defaultVal;
+        renderConditions();
+      }
+    }
+  } catch(err) {
+    console.error('Error adding time condition:', err);
+    addLog('Error adding time condition: ' + err.message, 'ERROR');
+  }
+}
+
+function syncConditionsToJSON() {
+  const jsonEditor = document.getElementById('jsonEditor');
+  if(!jsonEditor) return;
+  const paramsObj = {
+    conditions: conditions.map(c => ({
+      param: c.param,
+      operator: c.operator,
+      value: c.value
+    }))
+  };
+  jsonEditor.value = JSON.stringify(paramsObj, null, 2);
+  updateJSONStatus('✓ Synced from builder', 'success');
+  addLog('Conditions exported to JSON', 'INFO');
+}
+
+function conditionsClearAll() {
+  if(confirm('Clear all conditions?')) {
+    conditions = [];
+    renderConditions();
+    addLog('All conditions cleared', 'INFO');
+  }
 }
 
 /* ═════════════════════════════════════════════════
@@ -1913,25 +2089,78 @@ function updateBadge(section) {
    ═════════════════════════════════════════════════ */
 
 function openBuilder(editData = null) {
-  if(editData) {
-    state.editing = editData.id;
-    document.getElementById('modalSubtitle').textContent = `Editing: ${editData.name}`;
-  } else {
-    state.editing = null;
-    document.getElementById('modalSubtitle').textContent = 'Define every parameter of your trading strategy';
-    document.getElementById('sName').value = '';
-    document.getElementById('sId').value = '';
-    document.getElementById('entryLegs').innerHTML = '';
-    document.getElementById('adjLegs').innerHTML = '';
-    document.getElementById('exitLegs').innerHTML = '';
-    document.getElementById('entryCombined').innerHTML = '';
-    document.getElementById('adjCombined').innerHTML = '';
-    document.getElementById('exitCombined').innerHTML = '';
-    legIds = { entry: 0, adj: 0, exit: 0 };
-    ['badgeEntry','badgeAdj','badgeExit'].forEach(b => { const el=document.getElementById(b); if(el)el.textContent='0'; });
+  try {
+    console.log('openBuilder called', { editData });
+    
+    if(editData) {
+      state.editing = editData.id;
+      const subtitle = document.getElementById('modalSubtitle');
+      if(subtitle) subtitle.textContent = `Editing: ${editData.name}`;
+      
+      // Populate form with existing data from 6-section form layout
+      const fields = {
+        sName: editData.name || '',
+        sId: editData.id || '',
+        sDesc: editData.description || ''
+      };
+      
+      if(editData.identity) {
+        fields.sSegment = editData.identity.exchange || 'NFO';
+        fields.sUnderlying = editData.identity.symbol || '';
+        fields.sType = editData.identity.instrument_type || 'OPTIDX';
+        fields.schEntry = editData.identity.entry_time || '09:20';
+        fields.schExit = editData.identity.exit_time || '15:15';
+        fields.sOrderType = editData.identity.order_type || 'MKT';
+        fields.sProduct = editData.identity.product || 'MIS';
+        fields.sLots = (editData.identity.lot_qty || '1').toString();
+      }
+      
+      // Set all fields
+      Object.entries(fields).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if(el) el.value = val;
+      });
+    } else {
+      state.editing = null;
+      const subtitle = document.getElementById('modalSubtitle');
+      if(subtitle) subtitle.textContent = 'Fast & easy strategy configuration';
+      
+      // Reset all form fields to defaults
+      const resetFields = {
+        sName: '', sId: '', sDesc: '',
+        sType: 'custom', sUnderlying: 'NIFTY', sSegment: 'NFO',
+        sProduct: 'MIS', sOrderType: 'MKT', sLots: '1', sReentry: '0',
+        schEntry: '09:20', schExit: '15:15',
+        schFreq: 'daily', schExpiry: 'weekly',
+        rTargetAmt: '', rTargetPct: '', rTargetAction: 'exit_all',
+        rSlAmt: '', rSlPct: '', rSlAction: 'exit_all',
+        rTrailAmt: '', rTrailStep: '', rLockIn: '',
+        rMaxDelta: '', rDeltaAction: 'hedge',
+        rMaxIv: '', rMinIv: '', rMaxCap: '', rMaxLegs: '4'
+      };
+      
+      Object.entries(resetFields).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if(el) el.value = val;
+      });
+    }
+    
+    // Switch to identity tab
+    const btn = document.querySelector('.bnav-tab[data-sec="identity"]');
+    if(btn) switchBSec('identity', btn);
+    
+    // Open modal
+    const modal = document.getElementById('modalOverlay');
+    if(modal) {
+      modal.classList.add('open');
+      console.log('Modal opened successfully');
+    } else {
+      console.error('Modal element not found');
+    }
+  } catch(err) {
+    console.error('Error opening builder:', err);
+    alert('Error opening strategy builder. Check browser console.\n\n' + err.message);
   }
-  switchBSec('identity', document.querySelector('.bnav-tab[data-sec="identity"]'));
-  document.getElementById('modalOverlay').classList.add('open');
 }
 
 function closeBuilder() {
@@ -1954,85 +2183,318 @@ function switchBSec(sec, btn) {
   }
 }
 
-// Auto-generate strategy ID from name
+/* ═════════════════════════════════════════════════
+   QUICK CONFIG TAB FUNCTIONS
+   ═════════════════════════════════════════════════ */
+
+function onExchangeChange() {
+  const exchange = document.getElementById('quickExchange').value;
+  const instType = document.getElementById('quickInstrumentType');
+  
+  // Auto-detect instrument type based on exchange
+  if(exchange === 'MCX') {
+    instType.value = 'MCX';
+  } else if(exchange === 'NFO' || exchange === 'BFO') {
+    instType.value = 'OPTIDX';
+  }
+  
+  addLog(`Exchange changed to: ${exchange}`, 'INFO');
+}
+
+function onSymbolChange() {
+  const symbol = document.getElementById('quickSymbol').value;
+  if(symbol) {
+    addLog(`Symbol selected: ${symbol}`, 'INFO');
+  }
+}
+
+/* ═════════════════════════════════════════════════
+   JSON EDITOR FUNCTIONS
+   ═════════════════════════════════════════════════ */
+
+function formatJSON() {
+  const editor = document.getElementById('jsonEditor');
+  try {
+    const obj = JSON.parse(editor.value);
+    editor.value = JSON.stringify(obj, null, 2);
+    updateJSONStatus('✓ Formatted', 'success');
+  } catch(e) {
+    updateJSONStatus(`✗ Invalid JSON: ${e.message}`, 'error');
+  }
+}
+
+function validateJSON() {
+  const editor = document.getElementById('jsonEditor');
+  try {
+    const obj = JSON.parse(editor.value);
+    
+    if(obj.conditions && Array.isArray(obj.conditions)) {
+      const required = ['param', 'operator', 'value'];
+      const invalid = obj.conditions.filter(c => !required.every(r => r in c));
+      
+      if(invalid.length > 0) {
+        updateJSONStatus(`⚠ Some conditions missing fields`, 'warning');
+      } else {
+        updateJSONStatus('✓ Valid conditions', 'success');
+      }
+    } else {
+      updateJSONStatus('✓ Valid JSON', 'success');
+    }
+  } catch(e) {
+    updateJSONStatus(`✗ Parse error: ${e.message}`, 'error');
+  }
+}
+
+function updateJSONStatus(msg, type) {
+  const status = document.getElementById('jsonStatus');
+  status.textContent = msg;
+  status.style.color = type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--warning)';
+}
+
+/* ═════════════════════════════════════════════════
+   VALIDATION TAB FUNCTIONS
+   ═════════════════════════════════════════════════ */
+
+function runBuildTest() {
+  const name = document.getElementById('quickName').value.trim();
+  const version = document.getElementById('quickVersion').value.trim() || '1.0';
+  const exchange = document.getElementById('quickExchange').value;
+  const symbol = document.getElementById('quickSymbol').value;
+  const instrumentType = document.getElementById('quickInstrumentType').value || (exchange === 'MCX' ? 'MCX' : 'OPTIDX');
+  const entryTime = document.getElementById('quickEntryTime').value;
+  const exitTime = document.getElementById('quickExitTime').value;
+  const orderType = document.getElementById('quickOrderType').value;
+  const product = document.getElementById('quickProduct').value;
+  const lotQty = parseInt(document.getElementById('quickLotQty').value) || 1;
+
+  const resultDiv = document.getElementById('buildTestResult');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<div style="color:var(--muted);">⏳ Testing build...</div>';
+
+  // Build the test config just like saveStrategy does
+  const testConfig = {
+    strategy_name: name || 'TEST',
+    strategy_version: version,
+    exchange: exchange || 'NFO',
+    symbol: symbol || 'NIFTY',
+    instrument_type: instrumentType,
+    entry_time: entryTime || '09:20',
+    exit_time: exitTime || '15:15',
+    order_type: orderType || 'MKT',
+    product: product || 'NRML',
+    lot_qty: lotQty,
+    params: conditions.length > 0 ? { conditions } : {},
+    poll_interval: 2.0,
+    cooldown_seconds: 0
+  };
+
+  // Test validation
+  const errors = [];
+  const warnings = [];
+  
+  if(!testConfig.strategy_name || !testConfig.strategy_name.trim()) errors.push('strategy_name is required');
+  if(!testConfig.exchange) errors.push('exchange is required');
+  if(!testConfig.symbol) errors.push('symbol is required (NIFTY, BANKNIFTY, etc)');
+  if(!testConfig.instrument_type) warnings.push('instrument_type: will auto-detect to OPTIDX');
+  if(!testConfig.entry_time) errors.push('entry_time is required (HH:MM format)');
+  if(!testConfig.exit_time) errors.push('exit_time is required (HH:MM format)');
+  if(!testConfig.order_type) errors.push('order_type is required (MKT, LMT, SLM)');
+  if(!testConfig.product) errors.push('product is required (MIS or NRML)');
+  if(testConfig.lot_qty < 1) errors.push('lot_qty must be >= 1');
+
+  let html = '<div style="color:var(--success);margin-bottom:8px;">✓ UniversalStrategyConfig Test Results:</div>';
+  html += '<div style="font-size:10px;margin-bottom:10px;color:var(--muted);">';
+  html += `<div>Name: ${testConfig.strategy_name}</div>`;
+  html += `<div>Version: ${testConfig.strategy_version}</div>`;
+  html += `<div>Exchange: ${testConfig.exchange} | Symbol: ${testConfig.symbol}</div>`;
+  if(conditions.length > 0) {
+    html += `<div>Conditions: ${conditions.length} rules</div>`;
+  }
+  html += '</div>';
+
+  if(errors.length > 0) {
+    html += '<div style="color:var(--danger);margin-bottom:8px;">❌ Errors:</div>';
+    errors.forEach(e => html += `<div style="color:var(--danger);margin-left:12px;">• ${e}</div>`);
+  }
+
+  if(warnings.length > 0) {
+    html += '<div style="color:var(--warning);margin-bottom:8px;">⚠ Warnings:</div>';
+    warnings.forEach(w => html += `<div style="color:var(--warning);margin-left:12px;">• ${w}</div>`);
+  }
+
+  if(errors.length === 0 && warnings.length === 0) {
+    html += '<div style="color:var(--success);">✓ All validations passed! Configuration is ready to save.</div>';
+  } else if(errors.length === 0) {
+    html += '<div style="color:var(--warning);">⚠ Can save with warnings.</div>';
+  }
+
+  resultDiv.innerHTML = html;
+}
+
+/* ═════════════════════════════════════════════════
+   LOGGER FUNCTIONS
+   ═════════════════════════════════════════════════ */
+
+let allLogs = [];
+
+function addLog(message, level = 'INFO') {
+  const now = new Date();
+  const time = now.toLocaleTimeString('en-US', { hour12: false });
+  allLogs.push({ message, level, time });
+  renderLogs();
+}
+
+function renderLogs() {
+  const loggerBody = document.getElementById('loggerBody');
+  const filter = document.getElementById('logFilter').value;
+  
+  const filteredLogs = filter ? allLogs.filter(l => l.level === filter) : allLogs;
+  const displayLogs = filteredLogs.slice(-50); // Show last 50
+
+  if(displayLogs.length === 0) {
+    loggerBody.innerHTML = '<div class="log-empty">No logs yet — run a strategy to see events</div>';
+    return;
+  }
+
+  loggerBody.innerHTML = displayLogs.map(log => `
+    <div class="log-entry ${log.level}">
+      <div class="log-timestamp">${log.time}</div>
+      <div class="log-level">${log.level}</div>
+      <div class="log-message">${log.message}</div>
+    </div>
+  `).join('');
+  
+  // Auto-scroll to bottom
+  loggerBody.scrollTop = loggerBody.scrollHeight;
+}
+
+function filterLogs(level) {
+  renderLogs();
+}
+
+function clearLogs() {
+  allLogs = [];
+  document.getElementById('loggerBody').innerHTML = '<div class="log-empty">No logs yet — run a strategy to see events</div>';
+}
+
+function toggleLogger() {
+  const logger = document.getElementById('strategyLogger');
+  logger.classList.toggle('minimized');
+}
+
+// Initialize strategies and parameter list
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize form with auto-generated ID from name
   const nameInput = document.getElementById('sName');
-  if(nameInput) nameInput.addEventListener('input', () => {
-    const id = nameInput.value.toUpperCase().replace(/\s+/g,'_').replace(/[^A-Z0-9_]/g,'');
-    document.getElementById('sId').value = id;
-  });
+  if(nameInput) {
+    nameInput.addEventListener('input', () => {
+      const id = nameInput.value.toUpperCase().replace(/\s+/g,'_').replace(/[^A-Z0-9_]/g,'');
+      const sIdEl = document.getElementById('sId');
+      if(sIdEl) sIdEl.value = id;
+    });
+  }
+  
   loadStrategies();
   setInterval(loadStrategies, 6000);
   setInterval(refreshMonitorMock, 4000);
+  addLog('Strategy management system initialized', 'INFO');
 });
 
 /* ═════════════════════════════════════════════════
    SAVE STRATEGY
    ═════════════════════════════════════════════════ */
 async function saveStrategy() {
+  // Validate all required fields from the 6-section form
   const name = document.getElementById('sName').value.trim();
-  if(!name) { showAlert('Strategy name is required.', 'error'); return; }
+  const exchange = document.getElementById('sSegment').value;
+  const symbol = document.getElementById('sUnderlying').value;
+  const instrumentType = document.getElementById('sType').value || 'OPTIDX';
+  const entryTime = document.getElementById('schEntry').value;
+  const exitTime = document.getElementById('schExit').value;
+  const orderType = document.getElementById('sOrderType').value;
+  const product = document.getElementById('sProduct').value;
+  const lotQty = parseInt(document.getElementById('sLots').value) || 1;
+  const version = '1.0';
+  const pollInterval = 2.0;
+  const cooldown = 0;
 
-  const id = document.getElementById('sId').value || name.toUpperCase().replace(/\s+/g,'_');
+  // Validation
+  const errors = [];
+  if(!name) errors.push('Strategy name is required');
+  if(!exchange) errors.push('Exchange is required');
+  if(!symbol) errors.push('Symbol is required');
+  if(!entryTime) errors.push('Entry time is required');
+  if(!exitTime) errors.push('Exit time is required');
+  if(!orderType) errors.push('Order type is required');
+  if(!product) errors.push('Product is required');
+  if(lotQty < 1) errors.push('Lot quantity must be >= 1');
 
-  // Collect entry legs
-  const entryLegsEl = document.querySelectorAll('#entryLegs .leg-card');
-  const adjLegsEl   = document.querySelectorAll('#adjLegs .leg-card');
-  const exitLegsEl  = document.querySelectorAll('#exitLegs .leg-card');
+  if(errors.length > 0) {
+    showAlert(`Validation errors: ${errors.join(', ')}`, 'error');
+    return;
+  }
 
+  // Build params from form data (simplified - start with empty params)
+  let params = {};
+
+  // Build payload with UniversalStrategyConfig structure
+  // Map the 6-tab form values to UniversalStrategyConfig fields
+  // Note: exchange maps from Segment field (NFO, BFO, MCX)
+  const exchange_mapped = exchange === 'NFO' ? 'NFO' : exchange === 'BFO' ? 'BFO' : 'MCX';
+  const id = name.toUpperCase().replace(/\s+/g,'_');
   const payload = {
-    id, name,
-    type:          document.getElementById('sType').value,
-    underlying:    document.getElementById('sUnderlying').value,
-    segment:       document.getElementById('sSegment').value,
-    product:       document.getElementById('sProduct').value,
-    order_type:    document.getElementById('sOrderType').value,
-    lots:          parseInt(document.getElementById('sLots').value)||1,
-    reentry:       parseInt(document.getElementById('sReentry').value)||0,
-    description:   document.getElementById('sDesc').value,
-    entry: {
-      legs:        entryLegsEl.length,
-      combined_conditions: document.getElementById('entryCombined').querySelectorAll('.combined-cond-row').length,
-    },
-    adjustment: {
-      rules:       adjLegsEl.length,
-      combined_conditions: document.getElementById('adjCombined').querySelectorAll('.combined-cond-row').length,
-    },
-    exit: {
-      rules:       exitLegsEl.length,
-      combined_conditions: document.getElementById('exitCombined').querySelectorAll('.combined-cond-row').length,
-    },
-    risk: {
-      target_amt:  parseFloat(document.getElementById('rTargetAmt').value)||null,
-      target_pct:  parseFloat(document.getElementById('rTargetPct').value)||null,
-      sl_amt:      parseFloat(document.getElementById('rSlAmt').value)||null,
-      sl_pct:      parseFloat(document.getElementById('rSlPct').value)||null,
-      trail_amt:   parseFloat(document.getElementById('rTrailAmt').value)||null,
-      lock_in:     parseFloat(document.getElementById('rLockIn').value)||null,
-      max_delta:   parseFloat(document.getElementById('rMaxDelta').value)||null,
-      max_iv:      parseFloat(document.getElementById('rMaxIv').value)||null,
-      min_iv:      parseFloat(document.getElementById('rMinIv').value)||null,
-      max_capital: parseFloat(document.getElementById('rMaxCap').value)||null,
-    },
-    schedule: {
-      frequency:    document.getElementById('schFreq').value,
-      entry_time:   document.getElementById('schEntry').value,
-      exit_time:    document.getElementById('schExit').value,
-      expiry_type:  document.getElementById('schExpiry').value,
-      dte_min:      parseInt(document.getElementById('schDteMin').value)||null,
-      dte_max:      parseInt(document.getElementById('schDteMax').value)||null,
-    },
+    id,
+    name,
+    schema_version: '2.0',
+    description: `Strategy: ${name}`,
     status: 'IDLE',
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    tags: ['user-created'],
+    
+    // Map to UniversalStrategyConfig fields
+    identity: {
+      strategy_name: id,
+      strategy_version: version,
+      exchange: exchange_mapped,
+      symbol: symbol,
+      instrument_type: instrumentType,
+      entry_time: entryTime,
+      exit_time: exitTime,
+      order_type: orderType,
+      product: product,
+      lot_qty: lotQty,
+      params: params,
+      poll_interval: pollInterval,
+      cooldown_seconds: cooldown,
+    }
   };
 
   const btn = document.getElementById('btnSave');
   const statusEl = document.getElementById('saveStatus');
   btn.disabled = true;
-  statusEl.textContent = '⏳ Saving...';
+  statusEl.textContent = '⏳ Validating and saving...';
   statusEl.style.color = 'var(--muted)';
 
   try {
+    // First validate the config
+    const validateRes = await fetch('/dashboard/api/validate-strategy-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload.identity),
+      credentials: 'include'
+    }).catch(() => null); // Ignore if endpoint doesn't exist yet
+
+    if(validateRes && !validateRes.ok) {
+      const err = await validateRes.json().catch(() => ({}));
+      statusEl.textContent = `❌ Validation failed: ${err.detail || err.message || 'Unknown error'}`;
+      statusEl.style.color = 'var(--danger)';
+      showAlert(`Validation failed: ${err.detail || err.message || 'Config does not match UniversalStrategyConfig'}`, 'error');
+      btn.disabled = false;
+      return;
+    }
+
+    // Now save the config
     const res = await fetch('/dashboard/strategy/config/save-all', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2043,22 +2505,22 @@ async function saveStrategy() {
     if(res.ok) {
       statusEl.textContent = '✅ Saved successfully!';
       statusEl.style.color = 'var(--success)';
-      showAlert('Strategy saved and deployed to control panel.', 'success');
+      addLog(`✓ Strategy saved: ${name}`, 'INFO');
+      showAlert(`Strategy "${name}" saved and ready to run!`, 'success');
       setTimeout(() => { closeBuilder(); loadStrategies(); }, 1200);
     } else {
-      const err = await res.json().catch(()=>({}));
-      statusEl.textContent = `❌ ${err.detail || res.statusText}`;
+      const err = await res.json().catch(() => ({}));
+      const errMsg = err.detail || err.message || res.statusText;
+      statusEl.textContent = `❌ ${errMsg}`;
       statusEl.style.color = 'var(--danger)';
-      showAlert(err.detail || 'Failed to save strategy.', 'error');
+      addLog(`✗ Failed to save strategy: ${errMsg}`, 'ERROR');
+      showAlert(`Failed to save: ${errMsg}`, 'error');
     }
   } catch(e) {
-    // Fallback: save to local memory if API unavailable
-    statusEl.textContent = '⚠ API offline — saved locally';
+    statusEl.textContent = '⚠ Error: ' + e.message;
     statusEl.style.color = 'var(--warning)';
-    strategies.push(payload);
-    renderStrategies(strategies);
-    showAlert('Strategy saved locally (API unavailable).', 'success');
-    setTimeout(() => closeBuilder(), 1200);
+    addLog(`✗ Exception: ${e.message}`, 'ERROR');
+    showAlert(`Error: ${e.message}`, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -2070,6 +2532,7 @@ function showAlert(msg, type) {
   box.innerHTML = `<span>${type==='success'?'✓':'✕'}</span> ${msg}`;
   setTimeout(() => box.classList.remove('show'), 4000);
 }
+
 
 /* ═════════════════════════════════════════════════
    LOAD + RENDER STRATEGIES
@@ -2461,5 +2924,162 @@ document.addEventListener('keydown', e => {
   if(e.key === 'Escape') closeBuilder();
 });
 </script>
+
+<!-- ═══════════════════════════════════════════
+     STRATEGY LOGGER WINDOW
+     ═══════════════════════════════════════════ -->
+<div id="strategyLogger" class="strategy-logger">
+  <div class="logger-header">
+    <div class="logger-title">📋 Strategy Execution Logger</div>
+    <div class="logger-controls">
+      <select id="logFilter" onchange="filterLogs(this.value)" class="logger-select">
+        <option value="">All Levels</option>
+        <option value="INFO">INFO</option>
+        <option value="WARNING">WARNING</option>
+        <option value="ERROR">ERROR</option>
+      </select>
+      <button onclick="clearLogs()" class="logger-btn">Clear</button>
+      <button onclick="toggleLogger()" class="logger-btn">−</button>
+    </div>
+  </div>
+  <div class="logger-body" id="loggerBody">
+    <div class="log-empty">No logs yet — run a strategy to see events</div>
+  </div>
+</div>
+
+<style>
+/* Strategy Logger Styles */
+.strategy-logger {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  height: 250px;
+  background: var(--panel-2);
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  box-shadow: 0 -5px 20px rgba(0,0,0,0.3);
+}
+
+.strategy-logger.minimized {
+  height: 32px;
+}
+
+.strategy-logger.minimized .logger-body {
+  display: none;
+}
+
+.logger-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--panel-3);
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.logger-title {
+  font-weight: 700;
+  color: var(--primary);
+  flex: 1;
+}
+
+.logger-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.logger-select {
+  padding: 4px 8px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.logger-btn {
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s;
+}
+
+.logger-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+}
+
+.logger-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-entry {
+  display: flex;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  line-height: 1.3;
+  font-size: 10px;
+}
+
+.log-entry.INFO {
+  background: rgba(59,130,246,0.1);
+  color: #60a5fa;
+}
+
+.log-entry.WARNING {
+  background: rgba(245,158,11,0.1);
+  color: #fbbf24;
+}
+
+.log-entry.ERROR {
+  background: rgba(239,68,68,0.1);
+  color: #f87171;
+}
+
+.log-timestamp {
+  color: var(--muted);
+  min-width: 110px;
+  text-align: right;
+}
+
+.log-level {
+  font-weight: 700;
+  min-width: 65px;
+}
+
+.log-message {
+  flex: 1;
+  word-break: break-word;
+}
+
+.log-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  font-size: 11px;
+}
+</style>
+
 </body>
 </html>

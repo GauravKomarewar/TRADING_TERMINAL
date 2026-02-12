@@ -551,6 +551,13 @@ main { padding: 20px; max-width: 1800px; margin: 0 auto; }
           <tbody id="active-strategies-list">
           </tbody>
         </table>
+
+        <h3 style="font-size: 13px; margin-bottom: 12px; margin-top: 20px;">📋 Live Logs</h3>
+        <div class="logger-container" style="height: 300px; overflow-y: auto;">
+          <div class="logger-body" id="control-logs-body" style="font-size: 11px; line-height: 1.4;">
+            <div style="color: var(--muted); text-align: center; padding: 20px;">Waiting for logs...</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -665,6 +672,7 @@ function displayStrategies(strategies) {
           <th>Market Type</th>
           <th>Symbol</th>
           <th>Validation</th>
+          <th>Execution</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -676,6 +684,10 @@ function displayStrategies(strategies) {
             <td>${s.config.market_config?.symbol || '-'}</td>
             <td>
               <button class="btn btn-secondary" onclick="validateExisting('${s.name}')" style="padding: 3px 6px; font-size: 10px;">✓ Check</button>
+            </td>
+            <td>
+              <button class="btn btn-success" onclick="startIndividualStrategy('${s.name}')" style="padding: 3px 6px; font-size: 10px;">▶ Start</button>
+              <button class="btn btn-danger" onclick="stopIndividualStrategy('${s.name}')" style="padding: 3px 6px; font-size: 10px;">⏹ Stop</button>
             </td>
             <td>
               <button class="btn btn-secondary" onclick="editStrategy('${s.name}')" style="padding: 3px 6px;">✏️</button>
@@ -847,6 +859,48 @@ function clearValidationResult() {
 }
 
 // ═══════════════════════════════════════════════════
+// INDIVIDUAL STRATEGY EXECUTION (Per-Strategy Control)
+// ═══════════════════════════════════════════════════
+
+async function startIndividualStrategy(strategyName) {
+  try {
+    const result = await apiCall('POST', `/strategy/${strategyName}/start-execution`);
+    if (result.success) {
+      showSuccess(`✓ Strategy '${strategyName}' started`);
+      updateRunnerStatus();
+      loadLogs(); // Auto-load logs when strategy starts
+      // Switch to logs tab
+      document.getElementById('logs').classList.add('active');
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        if (b.textContent.includes('Logs')) b.classList.add('active');
+      });
+    } else {
+      showError(result.message || 'Failed to start strategy');
+    }
+  } catch (e) {
+    console.error('Failed to start strategy:', e);
+  }
+}
+
+async function stopIndividualStrategy(strategyName) {
+  if (!confirm(`Stop strategy '${strategyName}'?`)) return;
+  
+  try {
+    const result = await apiCall('POST', `/strategy/${strategyName}/stop-execution`);
+    if (result.success) {
+      showSuccess(`✓ Strategy '${strategyName}' stopped`);
+      updateRunnerStatus();
+      loadLogs();
+    } else {
+      showError(result.message || 'Failed to stop strategy');
+    }
+  } catch (e) {
+    console.error('Failed to stop strategy:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════════
 // CONTROL TAB
 // ═══════════════════════════════════════════════════
 
@@ -857,6 +911,7 @@ async function startRunner() {
     updateRunnerStatus();
     showSuccess(`✓ Runner started with ${result.strategies_loaded} strategies`);
     displayActiveStrategies(result.strategies);
+    loadLogs(); // Auto-load logs
   } catch (e) {
     console.error('Failed to start runner:', e);
   }
@@ -869,6 +924,7 @@ async function stopRunner() {
     updateRunnerStatus();
     showSuccess('✓ Runner stopped');
     document.getElementById('active-strategies-widget').style.display = 'none';
+    loadLogs();
   } catch (e) {
     console.error('Failed to stop runner:', e);
   }
@@ -885,6 +941,11 @@ async function updateRunnerStatus() {
     
     if (result.active_strategies && result.active_strategies.length > 0) {
       document.getElementById('active-strategies-widget').style.display = 'block';
+      displayActiveStrategies(result.active_strategies);
+      // Auto-load logs when strategies are active
+      loadLogs();
+    } else {
+      document.getElementById('active-strategies-widget').style.display = 'none';
     }
   } catch (e) {
     console.error('Failed to get runner status:', e);
@@ -923,22 +984,51 @@ async function loadLogs() {
 }
 
 function displayLogs(logs) {
-  const container = document.getElementById('logger-body');
+  const mainContainer = document.getElementById('logger-body');
+  const controlContainer = document.getElementById('control-logs-body');
+  
   if (!logs || !logs.length) {
-    container.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 40px;">No logs available</div>';
+    const emptyMsg = '<div style="color: var(--muted); text-align: center; padding: 40px;">No logs available</div>';
+    if (mainContainer) mainContainer.innerHTML = emptyMsg;
+    if (controlContainer && runnerActive) controlContainer.innerHTML = '<div style="color: var(--muted); text-align: center; padding: 20px;">No logs yet...</div>';
     return;
   }
 
-  container.innerHTML = logs.map(log => `
-    <div class="log-entry ${log.level}">
-      <span class="log-time">${log.timestamp}</span>
-      <span class="log-level">${log.level}</span>
-      <span>${log.message}</span>
+  const logsHtml = logs.map(log => `
+    <div class="log-entry ${log.level}" style="padding: 6px; border-bottom: 1px solid rgba(255,255,255,0.03);">
+      <span class="log-time" style="color: var(--muted); font-size: 10px;">${log.timestamp}</span>
+      <span class="log-level" style="font-weight: 600; color: ${
+        log.level === 'ERROR' ? 'var(--danger)' : 
+        log.level === 'WARNING' ? 'var(--warning)' :
+        log.level === 'INFO' ? 'var(--success)' : 
+        'var(--primary)'
+      };">[${log.level}]</span>
+      <span style="margin-left: 8px;">${log.message}</span>
     </div>
   `).join('');
 
-  // Auto-scroll to bottom
-  container.scrollTop = container.scrollHeight;
+  // Update main logs panel
+  if (mainContainer) {
+    mainContainer.innerHTML = logsHtml;
+    mainContainer.scrollTop = mainContainer.scrollHeight;
+  }
+  
+  // Update control panel logs (show last 10 entries only to save space)
+  if (controlContainer && runnerActive) {
+    const recentLogs = logs.slice(-10).reverse().map(log => `
+      <div style="padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 10px;">
+        <span style="color: var(--muted);">${log.timestamp}</span>
+        <span style="margin: 0 4px; color: ${
+          log.level === 'ERROR' ? 'var(--danger)' : 
+          log.level === 'WARNING' ? 'var(--warning)' :
+          'inherit'
+        };">${log.level}</span>
+        <span style="color: var(--text);">${log.message.substring(0, 100)}</span>
+      </div>
+    `).join('');
+    controlContainer.innerHTML = recentLogs;
+    controlContainer.scrollTop = controlContainer.scrollHeight;
+  }
 }
 
 function clearLogs() {
@@ -968,15 +1058,21 @@ window.addEventListener('load', () => {
   reloadStrategies();
   updateRunnerStatus();
   
-  // Poll runner status every 5 seconds
-  setInterval(updateRunnerStatus, 5000);
+  // Poll runner status every 3 seconds to check for active strategies
+  setInterval(updateRunnerStatus, 3000);
   
-  // Poll logs every 3 seconds when on logs tab
-  setInterval(() => {
-    if (document.getElementById('logs').classList.contains('active')) {
-      loadLogs();
+  // Poll logs frequently when strategies are active - every 2 seconds
+  let logsPollInterval = setInterval(() => {
+    try {
+      const result = document.getElementById('logger-body');
+      if (result && runnerActive) {
+        // Load logs whenever runner is active, not just on logs tab
+        loadLogs();
+      }
+    } catch (e) {
+      // Silent error handling for polling
     }
-  }, 3000);
+  }, 2000);
 });
 
 </script>

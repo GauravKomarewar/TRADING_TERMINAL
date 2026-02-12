@@ -820,6 +820,144 @@ def stop_strategy(
         logger.exception("Strategy stop failed")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==================================================
+# PER-STRATEGY RUNNER CONTROL (Individual Start/Stop)
+# ==================================================
+
+@router.post("/strategy/{strategy_name}/start-execution")
+def start_strategy_execution(
+    strategy_name: str,
+    ctx=Depends(require_dashboard_auth)
+):
+    """
+    Start a specific strategy by name from saved_configs/
+    
+    Returns:
+        {
+            "success": true,
+            "strategy_name": "NIFTY_DNSS",
+            "message": "Strategy started",
+            "timestamp": "2026-02-12T..."
+        }
+    """
+    try:
+        runner = get_runner_singleton(ctx)
+        
+        # Check if strategy is already running
+        if strategy_name in runner._strategies:
+            logger.info(f"ℹ️ Strategy {strategy_name} already running")
+            return {
+                "success": False,
+                "strategy_name": strategy_name,
+                "message": "Strategy already running",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Load the strategy from saved_configs/
+        from shoonya_platform.strategies.delta_neutral.dnss import DNSS
+        
+        strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
+        if not strategy_file.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Strategy config not found: {strategy_name}.json"
+            )
+        
+        with open(strategy_file, 'r') as f:
+            config = json.load(f)
+        
+        # Validate config is enabled
+        if not config.get("enabled", False):
+            return {
+                "success": False,
+                "strategy_name": strategy_name,
+                "message": "Strategy is disabled in config",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Register and start only this strategy
+        try:
+            strategy = DNSS(config)
+            registered = runner.register(
+                name=strategy_name,
+                strategy=strategy,
+                config=config,
+                market_type="live_feed_market"
+            )
+            
+            if not registered:
+                raise Exception("Failed to register strategy")
+            
+            # If runner not already executing, start it
+            if not (runner._thread and runner._thread.is_alive()):
+                runner.start()
+                logger.info(f"🚀 Runner started for strategy: {strategy_name}")
+            
+            logger.info(f"✅ Strategy {strategy_name} registered and started")
+            
+            return {
+                "success": True,
+                "strategy_name": strategy_name,
+                "message": f"Strategy {strategy_name} started",
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"❌ Failed to start strategy {strategy_name}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting strategy execution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/strategy/{strategy_name}/stop-execution")
+def stop_strategy_execution(
+    strategy_name: str,
+    ctx=Depends(require_dashboard_auth)
+):
+    """
+    Stop a specific running strategy
+    
+    Returns:
+        {
+            "success": true,
+            "strategy_name": "NIFTY_DNSS",
+            "message": "Strategy stopped",
+            "timestamp": "2026-02-12T..."
+        }
+    """
+    try:
+        runner = get_runner_singleton(ctx)
+        
+        # Check if strategy is running
+        if strategy_name not in runner._strategies:
+            return {
+                "success": False,
+                "strategy_name": strategy_name,
+                "message": "Strategy not running",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Unregister the strategy
+        runner.unregister(strategy_name)
+        logger.info(f"✅ Strategy {strategy_name} stopped")
+        
+        # If no more strategies, stop the runner
+        if not runner._strategies:
+            runner.stop()
+            logger.info("ℹ️ No more strategies running - runner stopped")
+        
+        return {
+            "success": True,
+            "strategy_name": strategy_name,
+            "message": f"Strategy {strategy_name} stopped",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error stopping strategy execution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================================================
 # STRATEGY CONFIG — Save / Load / List

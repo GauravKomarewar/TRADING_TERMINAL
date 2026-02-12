@@ -17,6 +17,7 @@ from .dnss import (
     StrategyConfig,
 )
 from shoonya_platform.strategies.universal_settings.universal_config.universal_strategy_config import UniversalStrategyConfig
+from scripts.scriptmaster import options_expiry
 
 
 def create_dnss_from_universal_config(
@@ -119,7 +120,11 @@ def create_dnss_from_universal_config(
     # Calculate current expiry if not provided
     if expiry is None:
         expiry_mode = params.get("expiry_mode", "weekly_current")
-        expiry = _calculate_expiry(expiry_mode)
+        expiry = _calculate_expiry(
+            exchange=universal_config.exchange,
+            symbol=universal_config.symbol,
+            expiry_mode=expiry_mode
+        )
     
     # Create and return fully initialized DNSS strategy
     strategy = DeltaNeutralShortStrangleStrategy(
@@ -134,50 +139,93 @@ def create_dnss_from_universal_config(
     return strategy
 
 
-def _calculate_expiry(expiry_mode: str) -> str:
+def _calculate_expiry(exchange: str, symbol: str, expiry_mode: str) -> str:
     """
-    Calculate current expiry based on mode
+    Get current option expiry from ScriptMaster (NOT date calculation)
+    
+    DNSS trades option strangles, so we query OPTION expiries, not futures.
+    ScriptMaster has the ACTUAL expiry dates per exchange:
+    - NFO NIFTY: Weekly Thursdays
+    - MCX CRUDEOILM: Different dates (17-FEB, 17-MAR, 16-APR, etc.)
+    - MCX has no fixed day pattern - use scriptmaster truth
     
     Args:
-        expiry_mode: "weekly_current" or "monthly_current"
+        exchange: "NFO", "BFO", or "MCX"
+        symbol: "NIFTY", "BANKNIFTY", "CRUDEOILM", etc.
+        expiry_mode: "weekly_current" or "monthly_current" (hint for selection)
     
     Returns:
-        Expiry date string in format "12FEB2026"
+        Expiry date string in format "12FEB2026" (from ScriptMaster)
+    
+    Raises:
+        ValueError: If no option expiry found for the symbol
     """
-    today = date.today()
-    
-    if expiry_mode == "weekly_current":
-        # Find next Thursday (or current if today is Thursday)
-        days_until_thursday = (3 - today.weekday()) % 7
+    try:
+        exchange = exchange.upper()
+        symbol = symbol.upper()
         
-        if days_until_thursday == 0 and today.weekday() == 3:
-            # Today is Thursday
-            next_thursday = today
+        # Query ScriptMaster for ACTUAL option expiry dates
+        expiries = options_expiry(symbol, exchange)
+        
+        if not expiries:
+            raise ValueError(
+                f"No option expiries found for {symbol} on {exchange}. "
+                f"Check if instrument is tradable."
+            )
+        
+        # Find appropriate expiry based on mode
+        today = date.today()
+        today_str = today.strftime("%d-%b-%Y").upper()
+        
+        # Filter expiries >= today (upcoming expiries only)
+        upcoming = []
+        for exp_str in expiries:
+            try:
+                exp_date = datetime.strptime(exp_str, "%d-%b-%Y").date()
+                if exp_date >= today:
+                    upcoming.append(exp_str)
+            except ValueError:
+                continue
+        
+        if not upcoming:
+            # No upcoming expiry today, use first available
+            upcoming = expiries
+        
+        # Select based on mode
+        if expiry_mode == "weekly_current":
+            # For weekly: use 1st upcoming expiry (nearest)
+            selected = upcoming[0]
+        elif expiry_mode == "monthly_current":
+            # For monthly: find the LAST expiry of current month
+            current_month = today.month
+            current_year = today.year
+            
+            month_expiries = []
+            for exp_str in upcoming:
+                try:
+                    exp_date = datetime.strptime(exp_str, "%d-%b-%Y").date()
+                    if exp_date.month == current_month and exp_date.year == current_year:
+                        month_expiries.append(exp_str)
+                except ValueError:
+                    continue
+            
+            if month_expiries:
+                # Use last expiry of current month
+                selected = month_expiries[-1]
+            else:
+                # No monthly expiry in current month, use first upcoming
+                selected = upcoming[0]
         else:
-            next_thursday = today + timedelta(days=days_until_thursday)
+            # Default: first upcoming
+            selected = upcoming[0]
         
-        return next_thursday.strftime("%d%b%Y").upper()
+        # Return in format "12FEB2026" (uppercase, no dashes)
+        return selected.replace("-", "").upper()
     
-    elif expiry_mode == "monthly_current":
-        # Last Thursday of current month
-        # Get first day of next month, then subtract 1 day to get last day of this month
-        next_month = today.replace(day=28) + timedelta(days=4)
-        last_day_of_month = (next_month - timedelta(days=next_month.day)).day
-        
-        # Find last Thursday working backward from last day
-        for day in range(last_day_of_month, 0, -1):
-            candidate = today.replace(day=day)
-            if candidate.weekday() == 3:  # 3 = Thursday
-                return candidate.strftime("%d%b%Y").upper()
-        
-        # Fallback (should not happen)
-        return today.strftime("%d%b%Y").upper()
-    
-    else:
-        # Default: closest weekly Thursday
-        days_until_thursday = (3 - today.weekday()) % 7
-        next_thursday = today + timedelta(days=days_until_thursday)
-        return next_thursday.strftime("%d%b%Y").upper()
+    except Exception as e:
+        raise ValueError(
+            f"Failed to get option expiry for {symbol} on {exchange}: {e}"
+        )
 
 
 # ============================================================

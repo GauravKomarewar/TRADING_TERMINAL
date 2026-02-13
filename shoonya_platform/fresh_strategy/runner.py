@@ -944,31 +944,44 @@ class FreshStrategyRunner:
 
     def _dispatch_alert(self, alert: Dict):
         """
-        Send alert to process_alert() via the global trading bot.
+        Send alert to the OMS via HTTP POST to the webhook endpoint.
 
         This is the ONLY point where fresh_strategy talks to the OMS.
+        Posts to http://127.0.0.1:{port}/webhook (same as TradingView webhooks).
         """
+        import json as _json
+        import urllib.request
+        import urllib.error
+
         logger.info(
             f"→ ALERT: {alert['execution_type']} | {self.strategy_name} | "
             f"{len(alert['legs'])} legs | "
             f"symbols={[l['tradingsymbol'] for l in alert['legs']]}"
         )
 
+        webhook_url = os.environ.get("WEBHOOK_URL", "http://127.0.0.1:5000/webhook")
+        payload = _json.dumps(alert).encode("utf-8")
+
         try:
-            from shoonya_platform.execution.trading_bot import get_global_bot
-            bot = get_global_bot()
-
-            result = bot.process_alert(alert)
-            logger.info(f"← ALERT RESULT: {result}")
-            self.state.total_trades_today += len(alert["legs"])
-
-        except RuntimeError as e:
-            logger.error(
-                f"Global bot not initialized — alert NOT dispatched: {e}. "
-                f"Is main.py running?"
+            req = urllib.request.Request(
+                webhook_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
-        except ImportError as e:
-            logger.error(f"Cannot import trading_bot: {e}")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = _json.loads(resp.read().decode("utf-8"))
+                logger.info(f"← ALERT RESULT ({resp.status}): {result}")
+                self.state.total_trades_today += len(alert["legs"])
+
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            logger.error(f"Webhook HTTP {e.code}: {body}")
+        except urllib.error.URLError as e:
+            logger.error(
+                f"Cannot reach webhook at {webhook_url}: {e.reason}. "
+                f"Is main.py (trading service) running?"
+            )
         except Exception as e:
             logger.error(f"Alert dispatch failed: {e}", exc_info=True)
 

@@ -1087,13 +1087,13 @@ class FreshStrategyRunner:
         success = self._dispatch_alert(alert)
         if success:
             self._clear_position()
-        self._sync_with_broker()
+            self._sync_with_broker()
         else:
             logger.error(
                 "EXIT webhook FAILED — position state NOT cleared. "
                 "Will retry exit on next tick."
             )
-        self._sync_with_broker()
+            self._sync_with_broker()
 
     def _send_exit_alert_for_legs(self, legs: List[Dict], reason: str = ""):
         """Send an EXIT alert for specific legs only."""

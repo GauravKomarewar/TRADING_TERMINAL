@@ -1095,9 +1095,17 @@ class FreshStrategyRunner:
         self.state.pe_pnl = 0.0
         self.state.pe_pnl_pct = 0.0
 
+        self.state.combined_pnl = 0.0
+        self.state.combined_pnl_pct = 0.0
         self.state.peak_pnl = 0.0
         self.state.trailing_stop_active = False
         self.state.trailing_stop_level = 0.0
+
+        # Reset timing so next cycle doesn't inherit stale adjustment time
+        self._entry_timestamp = 0.0
+        self._last_adjustment_time = 0.0
+        self.state.last_adjustment_time = 0.0
+        self.state.entry_time = None
 
     # ─── Helpers ──────────────────────────────────────────────────────────
 

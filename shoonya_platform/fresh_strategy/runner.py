@@ -1,28 +1,28 @@
-    def _sync_with_broker(self):
-        """Fetch broker positions from /positions endpoint and reconcile state."""
-        import urllib.request
-        import json as _json
-        try:
-            url = os.environ.get("BROKER_POSITIONS_URL", "http://127.0.0.1:5000/positions")
-            with urllib.request.urlopen(url, timeout=5) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
-                if data.get("status") != "ok":
-                    logger.warning(f"Broker sync failed: {data}")
-                    return
-                positions = data.get("positions", [])
-                # Find open positions for this strategy (by symbol & exchange)
-                open_legs = [p for p in positions if p.get("exchange", "").upper() == self.exchange.upper() and p.get("symbol", "").upper() == self.symbol.upper() and p.get("qty", 0) != 0]
-                if not open_legs:
-                    if self.state.has_position:
-                        logger.warning("Broker shows NO open positions, but runner thinks it has a position. Forcing state clear.")
-                        self._clear_position()
-                else:
-                    if not self.state.has_position:
-                        logger.warning("Broker shows open positions, but runner thinks it has none. Forcing state to match broker.")
-                        self.state.has_position = True
-                        # Optionally, update leg details here if needed
-        except Exception as e:
-            logger.error(f"Broker sync error: {e}")
+def _sync_with_broker(self):
+    """Fetch broker positions from /positions endpoint and reconcile state."""
+    import urllib.request
+    import json as _json
+    try:
+        url = os.environ.get("BROKER_POSITIONS_URL", "http://127.0.0.1:5000/positions")
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+            if data.get("status") != "ok":
+                logger.warning(f"Broker sync failed: {data}")
+                return
+            positions = data.get("positions", [])
+            # Find open positions for this strategy (by symbol & exchange)
+            open_legs = [p for p in positions if p.get("exchange", "").upper() == self.exchange.upper() and p.get("symbol", "").upper() == self.symbol.upper() and p.get("qty", 0) != 0]
+            if not open_legs:
+                if self.state.has_position:
+                    logger.warning("Broker shows NO open positions, but runner thinks it has a position. Forcing state clear.")
+                    self._clear_position()
+            else:
+                if not self.state.has_position:
+                    logger.warning("Broker shows open positions, but runner thinks it has none. Forcing state to match broker.")
+                    self.state.has_position = True
+                    # Optionally, update leg details here if needed
+    except Exception as e:
+        logger.error(f"Broker sync error: {e}")
 #!/usr/bin/env python3
 """
 runner.py — Fresh Strategy Runner

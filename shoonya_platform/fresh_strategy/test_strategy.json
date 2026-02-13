@@ -1,0 +1,88 @@
+{
+  "schema_version": "3.0",
+  "name": "NIFTY_QuickTest_Strangle",
+  "description": "Quick test: entry immediately, adjust profitable leg after 1 min, exit 1 min after adjustment",
+  "poll_interval_sec": 2,
+  "basic": {
+    "exchange": "NFO",
+    "underlying": "NIFTY",
+    "expiry_mode": "weekly_current",
+    "lots": 1,
+    "enabled": true
+  },
+  "timing": {
+    "entry_time": "09:15",
+    "exit_time": "15:29"
+  },
+  "market_data": {
+    "source": "database"
+  },
+  "entry": {
+    "rule_type": "always",
+    "conditions": {},
+    "action": {
+      "type": "short_both",
+      "description": "Short CE and PE at delta ~0.3"
+    }
+  },
+  "adjustment": {
+    "enabled": true,
+    "check_interval_min": 0,
+    "max_adjustments_per_day": 5,
+    "cooldown_seconds": 60,
+    "rules": [
+      {
+        "priority": 1,
+        "name": "Timed Adjustment (1 min after entry)",
+        "rule_type": "if_then",
+        "conditions": {
+          "parameter": "time_in_position_sec",
+          "comparator": ">=",
+          "value": 60,
+          "description": "1 minute since entry"
+        },
+        "action": {
+          "type": "close_higher_pnl_leg",
+          "details": {
+            "close_leg": "most_profitable_leg",
+            "enter_new": true,
+            "new_leg_delta": 0.3,
+            "avoid_same_strike": true,
+            "same_type": true,
+            "same_direction": true,
+            "description": "Close the most profitable leg, re-enter at delta ~0.3 (different strike)"
+          }
+        }
+      }
+    ]
+  },
+  "exit": {
+    "rule_type": "if_any",
+    "conditions": [
+      {
+        "parameter": "time_since_last_adjustment_sec",
+        "comparator": ">=",
+        "value": 60,
+        "description": "1 minute after adjustment → exit all"
+      },
+      {
+        "parameter": "time_current",
+        "comparator": ">=",
+        "value": "15:29",
+        "description": "Hard exit time"
+      }
+    ],
+    "action": {
+      "type": "close_all_positions",
+      "description": "Close all legs"
+    }
+  },
+  "risk_management": {
+    "max_loss_per_day": 5000,
+    "max_trades_per_day": 20,
+    "position_sizing": {
+      "max_lots": 1,
+      "scale_enabled": false
+    }
+  }
+}

@@ -52,10 +52,19 @@ def main():
         default=None,
         help="Override webhook URL (default: http://127.0.0.1:5000/webhook)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG-level logging (shows per-tick scan details)",
+    )
     args = parser.parse_args()
 
     setup_logging()
     logger = logging.getLogger("run_strategy")
+
+    if args.debug:
+        logging.getLogger("fresh_strategy").setLevel(logging.DEBUG)
+        logger.info("DEBUG logging enabled for fresh_strategy")
 
     # Resolve config path
     if args.config:

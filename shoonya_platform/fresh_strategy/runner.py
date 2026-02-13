@@ -81,6 +81,7 @@ class FreshStrategyRunner:
         # ─── Timing ─────────────────────────────────────────────────────
         self._poll_interval: float = 5.0  # seconds between ticks
         self._last_adjustment_time: float = 0.0  # timestamp of last adjustment
+        self._entry_timestamp: float = 0.0  # epoch seconds of entry
         self._tick_count: int = 0  # total ticks processed
     # ─── Lifecycle ────────────────────────────────────────────────────────
 
@@ -382,8 +383,18 @@ class FreshStrategyRunner:
         # Update delta state from the chain even before position entry
         self._update_entry_scan_state()
 
+        # Per-tick debug log
+        logger.debug(
+            f"[TICK-{self._tick_count}] ENTRY SCAN | "
+            f"spot={self.state.spot_price} atm={self.state.atm_strike} | "
+            f"CE: {self.state.ce_trading_symbol} δ={self.state.ce_delta:.3f} ltp={self.state.ce_ltp:.1f} | "
+            f"PE: {self.state.pe_trading_symbol} δ={self.state.pe_delta:.3f} ltp={self.state.pe_ltp:.1f}"
+        )
+
         result = evaluate_entry_rules(self.config, self.state)
         if not result.triggered:
+            if self._tick_count <= 5 or self._tick_count % 30 == 0:
+                logger.info(f"[TICK-{self._tick_count}] Entry not triggered (rule: {result.rule_name})")
             return
 
         action = result.action
@@ -472,6 +483,21 @@ class FreshStrategyRunner:
                 self._populate_leg_state("CE", ce_atm)
             if pe_atm:
                 self._populate_leg_state("PE", pe_atm)
+
+        # ─── "always" entry fallback: auto-scan δ≈0.3 if no conditions ──
+        rule_type = entry.get("rule_type", "")
+        if rule_type == "always" and not conditions:
+            default_delta = 0.3
+            if not self.state.ce_trading_symbol:
+                ce_opt = self.reader.find_option_by_delta("CE", default_delta, tolerance=0.1)
+                if ce_opt:
+                    self._populate_leg_state("CE", ce_opt)
+                    logger.debug(f"Auto-scan CE: δ={ce_opt.get('delta')} strike={ce_opt.get('strike')}")
+            if not self.state.pe_trading_symbol:
+                pe_opt = self.reader.find_option_by_delta("PE", default_delta, tolerance=0.1)
+                if pe_opt:
+                    self._populate_leg_state("PE", pe_opt)
+                    logger.debug(f"Auto-scan PE: δ={pe_opt.get('delta')} strike={pe_opt.get('strike')}")
 
     def _populate_leg_state(self, leg_type: str, option_data: Dict):
         """Set state fields for a CE or PE leg from option chain row."""
@@ -680,6 +706,7 @@ class FreshStrategyRunner:
         if legs:
             self.state.has_position = True
             self.state.entry_time = datetime.now()
+            self._entry_timestamp = time.time()
             logger.info(
                 f"Entry built: {len(legs)} legs | "
                 f"CE={self.state.ce_trading_symbol}@{self.state.ce_strike} "
@@ -696,6 +723,16 @@ class FreshStrategyRunner:
         if result.triggered:
             logger.info(f"EXIT TRIGGERED: {result.rule_name}")
             self._send_exit_alert(result.rule_name)
+        else:
+            if self._tick_count % 15 == 0:
+                import time as _tt
+                pos_sec = _tt.time() - self._entry_timestamp if self._entry_timestamp else 0
+                adj_sec = _tt.time() - self._last_adjustment_time if self._last_adjustment_time else 0
+                logger.debug(
+                    f"[TICK-{self._tick_count}] EXIT check | "
+                    f"pos_sec={pos_sec:.0f} adj_sec={adj_sec:.0f} "
+                    f"combined_pnl=₹{self.state.combined_pnl:.0f}"
+                )
 
     # ─── Adjustments ──────────────────────────────────────────────────────
 
@@ -719,6 +756,12 @@ class FreshStrategyRunner:
 
         results = evaluate_adjustment_rules(self.config, self.state)
         if not results:
+            if self._tick_count % 15 == 0:
+                logger.debug(
+                    f"[TICK-{self._tick_count}] ADJ check | "
+                    f"time_in_position={self.state.time_in_position_sec:.0f}s "
+                    f"time_since_adj={self.state.time_since_last_adjustment_sec:.0f}s"
+                )
             return
 
         # Act on the FIRST triggered rule only (highest priority)
@@ -828,6 +871,54 @@ class FreshStrategyRunner:
                 f"(current PnL=₹{self.state.combined_pnl:.0f}, trail=₹{trail_by})"
             )
 
+        # ─── Close most/least profitable leg and re-enter ────────────
+        elif action_type in ("close_higher_pnl_leg", "close_most_profitable"):
+            target_leg = self.state.most_profitable_leg
+            old_strike = self.state.ce_strike if target_leg == "CE" else self.state.pe_strike
+            logger.info(f"Adjusting {target_leg} (most profitable) | old_strike={old_strike}")
+
+            close_legs = self._build_close_leg(target_leg)
+            if close_legs:
+                self._send_exit_alert_for_legs(close_legs, f"adj_{result.rule_name}")
+
+            if details.get("enter_new", False):
+                target_delta = float(details.get("new_leg_delta", 0.3))
+                avoid_same = details.get("avoid_same_strike", False)
+                new_option = self.reader.find_option_by_delta(
+                    target_leg, target_delta, tolerance=0.1
+                )
+                # If same strike returned and avoid requested, look further
+                if new_option and avoid_same and float(new_option.get("strike", 0)) == old_strike:
+                    # Try slightly different delta to get different strike
+                    for offset in [0.05, -0.05, 0.1, -0.1]:
+                        alt = self.reader.find_option_by_delta(
+                            target_leg, target_delta + offset, tolerance=0.1
+                        )
+                        if alt and float(alt.get("strike", 0)) != old_strike:
+                            new_option = alt
+                            break
+
+                if new_option:
+                    direction = self.state.ce_direction if target_leg == "CE" else self.state.pe_direction
+                    new_legs = [self._make_leg(
+                        new_option.get("trading_symbol", ""), direction, qty
+                    )]
+                    self._send_entry_alert(new_legs)
+
+                    if target_leg == "CE":
+                        self.state.ce_strike = float(new_option.get("strike", 0))
+                        self.state.ce_trading_symbol = new_option.get("trading_symbol", "")
+                        self.state.ce_entry_price = float(new_option.get("ltp", 0))
+                    else:
+                        self.state.pe_strike = float(new_option.get("strike", 0))
+                        self.state.pe_trading_symbol = new_option.get("trading_symbol", "")
+                        self.state.pe_entry_price = float(new_option.get("ltp", 0))
+
+                    logger.info(
+                        f"Re-entered {target_leg} at strike="
+                        f"{new_option.get('strike')} δ={new_option.get('delta')}"
+                    )
+
         else:
             logger.warning(f"Unhandled adjustment action: {action_type}")
             return
@@ -835,6 +926,7 @@ class FreshStrategyRunner:
         # Update counters
         self.state.adjustments_today += 1
         self._last_adjustment_time = time.time()
+        self.state.last_adjustment_time = self._last_adjustment_time
 
     def _build_close_leg(self, leg_type: str) -> List[Dict]:
         """Build a close (exit) leg dict for a given leg type."""

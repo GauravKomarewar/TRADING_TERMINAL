@@ -54,11 +54,12 @@ VALID_PARAMETERS = {
     "net_delta", "combined_pnl", "combined_pnl_pct", "delta_diff",
     "any_leg_delta", "both_legs_delta", "both_legs_delta_below",
     "higher_delta_leg", "lower_delta_leg",
+    "most_profitable_leg", "least_profitable_leg",
     # Spot / market
     "spot_price", "spot_change", "spot_change_pct",
     "atm_strike", "fut_ltp",
     # Time
-    "time_current",
+    "time_current", "time_in_position_sec", "time_since_last_adjustment_sec",
     # Position
     "adjustments_today", "total_trades_today",
     # Premium
@@ -76,6 +77,7 @@ VALID_ENTRY_ACTIONS = {
 
 VALID_ADJUSTMENT_ACTIONS = {
     "close_higher_delta", "close_lower_delta",
+    "close_higher_pnl_leg", "close_most_profitable",
     "close_ce", "close_pe",
     "roll_ce", "roll_pe", "roll_both",
     "add_hedge", "remove_hedge",

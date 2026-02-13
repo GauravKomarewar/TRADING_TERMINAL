@@ -15,6 +15,7 @@ Capabilities:
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -85,6 +86,9 @@ class StrategyState:
         self.trailing_stop_active: bool = False
         self.trailing_stop_level: float = 0.0
 
+        # ─── Timing (set by runner) ────────────────────────────────────
+        self.last_adjustment_time: float = 0.0  # epoch seconds
+
     # ─── Derived calculations ──────────────────────────────────────────
 
     @property
@@ -153,6 +157,30 @@ class StrategyState:
             return 0.0
         return ((total_entry - self.total_premium) / total_entry) * 100.0
 
+    @property
+    def most_profitable_leg(self) -> str:
+        """Which leg has higher P&L: 'CE' or 'PE'."""
+        return "CE" if self.ce_pnl >= self.pe_pnl else "PE"
+
+    @property
+    def least_profitable_leg(self) -> str:
+        """Which leg has lower P&L: 'CE' or 'PE'."""
+        return "PE" if self.ce_pnl >= self.pe_pnl else "CE"
+
+    @property
+    def time_in_position_sec(self) -> float:
+        """Seconds since entry."""
+        if self.entry_time is None:
+            return 0.0
+        return (datetime.now() - self.entry_time).total_seconds()
+
+    @property
+    def time_since_last_adjustment_sec(self) -> float:
+        """Seconds since last adjustment (0 if no adjustment yet)."""
+        if self.last_adjustment_time <= 0:
+            return 0.0
+        return time.time() - self.last_adjustment_time
+
     def get_param(self, name: str) -> Any:
         """
         Resolve a parameter name to its current value.
@@ -197,6 +225,10 @@ class StrategyState:
             "total_premium": lambda: self.total_premium,
             "total_premium_decay_pct": lambda: self.total_premium_decay_pct,
             "time_current": lambda: datetime.now().strftime("%H:%M"),
+            "time_in_position_sec": lambda: self.time_in_position_sec,
+            "time_since_last_adjustment_sec": lambda: self.time_since_last_adjustment_sec,
+            "most_profitable_leg": lambda: self.most_profitable_leg,
+            "least_profitable_leg": lambda: self.least_profitable_leg,
         }
 
         resolver = param_map.get(name)
@@ -295,8 +327,9 @@ def _compare(actual: Any, comparator: str, value: Any, tolerance: float = 0.0) -
         return a != v
     if comparator == "~=":
         # Approximately equal (within tolerance)
+        # Use abs() on both sides for delta-like signed values
         tol = tolerance if tolerance > 0 else abs(v) * 0.1
-        return abs(a - v) <= tol
+        return abs(abs(a) - abs(v)) <= tol
 
     logger.error(f"Unknown comparator: {comparator}")
     return False

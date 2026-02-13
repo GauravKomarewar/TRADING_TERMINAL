@@ -257,6 +257,9 @@ class FreshStrategyRunner:
         age = self.reader.get_snapshot_age_seconds()
         if age < 90000 and age > 120:  # Stale data > 2 min (90000 = no timestamp)
             logger.warning(f"Market snapshot is {age:.0f}s old — may be stale")
+            if age > 300:
+                logger.error(f"Data is {age:.0f}s old (>5 min) — SKIPPING tick to prevent stale trades")
+                return
 
         # Periodic state summary (every 60 ticks)
         if self._tick_count % 60 == 0:
@@ -555,6 +558,14 @@ class FreshStrategyRunner:
         qty = self.lots * self.lot_size
         legs = []
 
+        # Safety: reject entry if LTP is zero (data gap)
+        if self.state.ce_trading_symbol and self.state.ce_ltp <= 0:
+            logger.error(f"CE LTP is {self.state.ce_ltp} — refusing entry (data gap)")
+            return []
+        if self.state.pe_trading_symbol and self.state.pe_ltp <= 0:
+            logger.error(f"PE LTP is {self.state.pe_ltp} — refusing entry (data gap)")
+            return []
+
         # ─── Short strategies (sell both) ─────────────────────────────
         if action_type in ("short_both", "short_strangle", "short_straddle"):
             if self.state.ce_trading_symbol:
@@ -704,9 +715,6 @@ class FreshStrategyRunner:
             logger.warning(f"Unhandled entry action type: {action_type}")
 
         if legs:
-            self.state.has_position = True
-            self.state.entry_time = datetime.now()
-            self._entry_timestamp = time.time()
             logger.info(
                 f"Entry built: {len(legs)} legs | "
                 f"CE={self.state.ce_trading_symbol}@{self.state.ce_strike} "
@@ -714,6 +722,12 @@ class FreshStrategyRunner:
             )
 
         return legs
+
+    def _commit_entry_state(self):
+        """Mark position as active. Called ONLY after webhook confirms."""
+        self.state.has_position = True
+        self.state.entry_time = datetime.now()
+        self._entry_timestamp = time.time()
 
     # ─── Exit ─────────────────────────────────────────────────────────────
 
@@ -790,6 +804,7 @@ class FreshStrategyRunner:
             close_legs = self._build_close_leg(target_leg)
             if close_legs:
                 self._send_exit_alert_for_legs(close_legs, f"adj_{result.rule_name}")
+                self._reset_leg_state(target_leg)
 
             # Re-enter if specified
             if details.get("enter_new", False):
@@ -827,6 +842,7 @@ class FreshStrategyRunner:
             close_legs = self._build_close_leg(leg)
             if close_legs:
                 self._send_exit_alert_for_legs(close_legs, f"adj_{action_type}")
+                self._reset_leg_state(leg)
 
         # ─── Roll operations ─────────────────────────────────────────
         elif action_type in ("roll_ce", "roll_pe", "roll_both"):
@@ -842,6 +858,7 @@ class FreshStrategyRunner:
                 close_legs = self._build_close_leg(leg)
                 if close_legs:
                     self._send_exit_alert_for_legs(close_legs, f"roll_close_{leg}")
+                    self._reset_leg_state(leg)
 
                 # Re-enter at new delta/strike
                 target_delta = details.get("target_delta", 0.3)
@@ -880,6 +897,7 @@ class FreshStrategyRunner:
             close_legs = self._build_close_leg(target_leg)
             if close_legs:
                 self._send_exit_alert_for_legs(close_legs, f"adj_{result.rule_name}")
+                self._reset_leg_state(target_leg)
 
             if details.get("enter_new", False):
                 target_delta = float(details.get("new_leg_delta", 0.3))
@@ -944,6 +962,28 @@ class FreshStrategyRunner:
             ))
         return legs
 
+    def _reset_leg_state(self, leg_type: str):
+        """Zero out state for a single closed leg (after partial exit)."""
+        if leg_type == "CE":
+            self.state.ce_strike = 0.0
+            self.state.ce_entry_price = 0.0
+            self.state.ce_trading_symbol = ""
+            self.state.ce_direction = ""
+            self.state.ce_qty = 0
+            self.state.ce_ltp = 0.0
+            self.state.ce_pnl = 0.0
+            self.state.ce_pnl_pct = 0.0
+            self.state.ce_delta = 0.0
+        elif leg_type == "PE":
+            self.state.pe_strike = 0.0
+            self.state.pe_entry_price = 0.0
+            self.state.pe_trading_symbol = ""
+            self.state.pe_direction = ""
+            self.state.pe_qty = 0
+            self.state.pe_ltp = 0.0
+            self.state.pe_pnl = 0.0
+            self.state.pe_pnl_pct = 0.0
+            self.state.pe_delta = 0.0
     # ─── Alert Construction & Sending ─────────────────────────────────────
 
     def _make_leg(self, tradingsymbol: str, direction: str, qty: int) -> Dict:
@@ -961,8 +1001,8 @@ class FreshStrategyRunner:
         """Get webhook secret from environment."""
         return os.getenv("WEBHOOK_SECRET_KEY", "")
 
-    def _send_entry_alert(self, legs: List[Dict]):
-        """Send an ENTRY alert to process_alert."""
+    def _send_entry_alert(self, legs: List[Dict]) -> bool:
+        """Send an ENTRY alert. Returns True if webhook confirmed."""
         alert = {
             "secret_key": self._get_webhook_secret(),
             "execution_type": "ENTRY",
@@ -975,7 +1015,16 @@ class FreshStrategyRunner:
         if self.test_mode:
             alert["test_mode"] = "true"
 
-        self._dispatch_alert(alert)
+        success = self._dispatch_alert(alert)
+        if success:
+            self._commit_entry_state()
+        else:
+            logger.error("ENTRY webhook FAILED — position NOT committed")
+            # Reset entry state so next tick can retry
+            self.state.has_position = False
+            self.state.ce_qty = 0
+            self.state.pe_qty = 0
+        return success
 
     def _send_exit_alert(self, reason: str = ""):
         """Send an EXIT alert for ALL positions."""
@@ -1008,8 +1057,14 @@ class FreshStrategyRunner:
             alert["test_mode"] = "true"
 
         logger.info(f"EXIT alert ({reason}): {len(legs)} legs")
-        self._dispatch_alert(alert)
-        self._clear_position()
+        success = self._dispatch_alert(alert)
+        if success:
+            self._clear_position()
+        else:
+            logger.error(
+                "EXIT webhook FAILED — position state NOT cleared. "
+                "Will retry exit on next tick."
+            )
 
     def _send_exit_alert_for_legs(self, legs: List[Dict], reason: str = ""):
         """Send an EXIT alert for specific legs only."""
@@ -1062,6 +1117,7 @@ class FreshStrategyRunner:
                 result = _json.loads(resp.read().decode("utf-8"))
                 logger.info(f"← ALERT RESULT ({resp.status}): {result}")
                 self.state.total_trades_today += len(alert["legs"])
+                return True
 
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
@@ -1073,9 +1129,17 @@ class FreshStrategyRunner:
             )
         except Exception as e:
             logger.error(f"Alert dispatch failed: {e}", exc_info=True)
+        return False
 
     def _clear_position(self):
         """Reset position state after full exit."""
+        # Accumulate this cycle's PnL into cumulative daily tracker
+        self.state.cumulative_daily_pnl += self.state.combined_pnl
+        logger.info(
+            f"Position closed | cycle_pnl=₹{self.state.combined_pnl:.0f} | "
+            f"cumulative_daily_pnl=₹{self.state.cumulative_daily_pnl:.0f}"
+        )
+
         self.state.has_position = False
         self.state.ce_strike = 0.0
         self.state.ce_entry_price = 0.0
@@ -1085,6 +1149,11 @@ class FreshStrategyRunner:
         self.state.ce_ltp = 0.0
         self.state.ce_pnl = 0.0
         self.state.ce_pnl_pct = 0.0
+        self.state.ce_delta = 0.0
+        self.state.ce_gamma = 0.0
+        self.state.ce_theta = 0.0
+        self.state.ce_vega = 0.0
+        self.state.ce_iv = 0.0
 
         self.state.pe_strike = 0.0
         self.state.pe_entry_price = 0.0
@@ -1094,9 +1163,14 @@ class FreshStrategyRunner:
         self.state.pe_ltp = 0.0
         self.state.pe_pnl = 0.0
         self.state.pe_pnl_pct = 0.0
+        self.state.pe_delta = 0.0
+        self.state.pe_gamma = 0.0
+        self.state.pe_theta = 0.0
+        self.state.pe_vega = 0.0
+        self.state.pe_iv = 0.0
 
-        self.state.combined_pnl = 0.0
-        self.state.combined_pnl_pct = 0.0
+        # combined_pnl/combined_pnl_pct are computed properties — they auto-zero
+        # when ce_pnl + pe_pnl == 0
         self.state.peak_pnl = 0.0
         self.state.trailing_stop_active = False
         self.state.trailing_stop_level = 0.0

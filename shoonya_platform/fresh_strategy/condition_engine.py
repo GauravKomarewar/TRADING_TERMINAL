@@ -89,12 +89,15 @@ class StrategyState:
         # ─── Timing (set by runner) ────────────────────────────────────
         self.last_adjustment_time: float = 0.0  # epoch seconds
 
+        # ─── Cumulative daily P&L (survives position resets) ────────────
+        self.cumulative_daily_pnl: float = 0.0
+
     # ─── Derived calculations ──────────────────────────────────────────
 
     @property
     def net_delta(self) -> float:
-        """Combined absolute delta of both legs."""
-        return abs(self.ce_delta) + abs(self.pe_delta)
+        """Directional net delta (CE + PE, where PE delta is negative)."""
+        return self.ce_delta + self.pe_delta
 
     @property
     def combined_pnl(self) -> float:
@@ -597,12 +600,13 @@ def evaluate_risk_management(config: Dict[str, Any], state: StrategyState) -> Op
     if not risk:
         return None
 
-    # Max loss
+    # Max loss — check CUMULATIVE daily P&L (all cycles, not just current position)
     max_loss = risk.get("max_loss_per_day")
-    if max_loss is not None and state.combined_pnl <= -abs(max_loss):
+    daily_pnl = state.cumulative_daily_pnl + state.combined_pnl
+    if max_loss is not None and daily_pnl <= -abs(max_loss):
         return RuleResult(
             True, "risk_max_loss_breached",
-            {"type": "close_all_positions", "reason": f"Max loss ₹{max_loss} breached"}
+            {"type": "close_all_positions", "reason": f"Max daily loss ₹{max_loss} breached (daily PnL=₹{daily_pnl:.0f})"}
         )
 
     # Max trades
@@ -635,10 +639,11 @@ def evaluate_trailing_stop(state: StrategyState) -> Optional[RuleResult]:
 
     # Update trailing stop level as P&L makes new highs
     if state.combined_pnl > state.peak_pnl:
+        old_peak = state.peak_pnl
         state.peak_pnl = state.combined_pnl
-        # Re-derive stop level: move stop up by same distance
-        distance = state.peak_pnl - state.trailing_stop_level
-        state.trailing_stop_level = state.combined_pnl - distance
+        # Move stop up by the same amount the peak moved
+        gain = state.peak_pnl - old_peak
+        state.trailing_stop_level += gain
 
     if state.combined_pnl <= state.trailing_stop_level:
         logger.info(

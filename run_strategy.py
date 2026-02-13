@@ -25,6 +25,33 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+
+def load_env_file():
+    """Load environment variables from config_env/primary.env (needed for WEBHOOK_SECRET_KEY)."""
+    env_path = PROJECT_ROOT / "config_env" / "primary.env"
+    if not env_path.exists():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            # Strip inline comments (e.g. VALUE # comment)
+            if " #" in value:
+                value = value.split(" #")[0]
+            value = value.strip().strip('"').strip("'")
+            # Don't override existing env vars (e.g. from shell export)
+            if key not in os.environ:
+                os.environ[key] = value
+
+
+# Load env BEFORE importing runner (which may use env vars at import time)
+load_env_file()
+
 from shoonya_platform.fresh_strategy.runner import FreshStrategyRunner
 
 

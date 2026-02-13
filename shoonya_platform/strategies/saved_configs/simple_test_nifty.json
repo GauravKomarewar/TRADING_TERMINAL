@@ -1,0 +1,139 @@
+{
+  "schema_version": "2.0",
+  "name": "Simple Test NIFTY",
+  "id": "SIMPLE_TEST_NIFTY",
+  "description": "Simple test strategy — entry, adjust 1min, exit 1min. For pipeline verification.",
+  "tags": ["test", "nifty"],
+  "strategy_type": "simple_test",
+  "enabled": true,
+  "status": "IDLE",
+  "identity": {
+    "strategy_type": "simple_test",
+    "exchange": "NFO",
+    "underlying": "NIFTY",
+    "instrument_type": "OPTIDX",
+    "expiry_mode": "weekly_current",
+    "expiry_custom": null,
+    "product_type": "NRML",
+    "order_type": "MARKET"
+  },
+  "market_config": {
+    "market_type": "database_market",
+    "exchange": "NFO",
+    "symbol": "NIFTY",
+    "db_path": null,
+    "_note": "db_path set to null - will be resolved at runtime or set manually to mock DB path"
+  },
+  "entry": {
+    "timing": {
+      "entry_time": "09:16",
+      "entry_end_time": "15:28",
+      "entry_delay_seconds": 0,
+      "active_days": ["mon", "tue", "wed", "thu", "fri"],
+      "skip_expiry_day": false
+    },
+    "condition": {
+      "type": "time_based"
+    },
+    "position": {
+      "lots": 1,
+      "max_open_positions": 1,
+      "lot_size_override": null,
+      "scale_in_enabled": false
+    },
+    "hedging": {
+      "hedge_on_entry": false
+    },
+    "execution": {
+      "auto_confirm": true,
+      "retry_on_reject": true,
+      "retry_count": 2,
+      "slippage_points": 2
+    },
+    "legs": {
+      "leg_type": "strangle",
+      "target_entry_delta": 0.30,
+      "atm_offset": 0,
+      "strike_selection": "delta"
+    }
+  },
+  "adjustment": {
+    "general": {
+      "enabled": true,
+      "check_interval_min": 1,
+      "max_adj_per_day": 5,
+      "max_adj_per_session": 10,
+      "cooldown_seconds": 60
+    },
+    "delta": {
+      "trigger": 0.50,
+      "target": 0.30,
+      "emergency_trigger": 0.65,
+      "mode": "shift"
+    },
+    "pnl": {
+      "profit_lock_trigger": 1000
+    },
+    "leg_level": {
+      "per_leg_delta_max": 0.65
+    }
+  },
+  "exit": {
+    "time": {
+      "exit_time": "15:29",
+      "force_exit_before_expiry_min": 1,
+      "exit_on_expiry_day": true,
+      "early_exit_if_profitable_after": null
+    },
+    "profit": {
+      "target_rupees": null,
+      "target_pct": null,
+      "min_profit_to_book": null
+    },
+    "stop_loss": {
+      "sl_rupees": null,
+      "sl_pct": null,
+      "sl_premium_pct": null
+    },
+    "trailing": {
+      "type": "none",
+      "value": null,
+      "activate_at": null
+    }
+  },
+  "rms": {
+    "position": {
+      "max_lots": 1,
+      "max_margin_pct": 70,
+      "max_notional": null
+    },
+    "daily": {
+      "loss_limit": null,
+      "profit_target": null,
+      "max_trades": 10,
+      "max_adjustments": 5
+    },
+    "greeks": {
+      "max_delta": null,
+      "max_theta": null
+    },
+    "circuit": {
+      "amount": null,
+      "kill_switch": false
+    },
+    "margin": {
+      "buffer_pct": 20,
+      "block_above_pct": 85
+    },
+    "notifications": {
+      "telegram": true,
+      "on_risk_breach": true
+    },
+    "auto": {
+      "square_off_on_breach": false,
+      "reduce_to_lots": 0
+    }
+  },
+  "created_at": "2026-02-13T09:00:00",
+  "updated_at": "2026-02-13T09:00:00"
+}

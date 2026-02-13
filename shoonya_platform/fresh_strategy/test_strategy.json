@@ -1,18 +1,18 @@
 {
   "schema_version": "3.0",
-  "name": "NIFTY_QuickTest_Strangle",
-  "description": "Quick test: entry immediately, adjust profitable leg after 1 min, exit 1 min after adjustment",
+  "name": "CRUDEOILM_QuickTest_Strangle",
+  "description": "Quick test on MCX CRUDEOILM: entry immediately, adjust profitable leg after 1 min, exit 1 min after adjustment",
   "poll_interval_sec": 2,
   "basic": {
-    "exchange": "NFO",
-    "underlying": "NIFTY",
-    "expiry_mode": "weekly_current",
+    "exchange": "MCX",
+    "underlying": "CRUDEOILM",
+    "expiry_mode": "monthly_current",
     "lots": 1,
     "enabled": true
   },
   "timing": {
-    "entry_time": "09:15",
-    "exit_time": "15:29"
+    "entry_time": "09:00",
+    "exit_time": "23:29"
   },
   "market_data": {
     "source": "database"

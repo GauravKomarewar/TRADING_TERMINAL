@@ -68,7 +68,7 @@
       {
         "parameter": "time_current",
         "comparator": ">=",
-        "value": "15:29",
+        "value": "23:29",
         "description": "Hard exit time"
       }
     ],

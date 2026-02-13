@@ -1116,7 +1116,21 @@ class FreshStrategyRunner:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 result = _json.loads(resp.read().decode("utf-8"))
                 logger.info(f"← ALERT RESULT ({resp.status}): {result}")
-                self.state.total_trades_today += len(alert["legs"])
+
+                # Check if the OMS actually executed any legs
+                successful = result.get("successful_legs", None)
+                oms_status = result.get("status", "")
+
+                if successful is not None and successful == 0:
+                    logger.error(
+                        f"OMS returned {oms_status}: 0 of {result.get('expected_legs', '?')} "
+                        f"legs succeeded — treating as FAILED"
+                    )
+                    return False
+
+                # Only count legs that actually succeeded
+                legs_to_count = successful if successful is not None else len(alert["legs"])
+                self.state.total_trades_today += legs_to_count
                 return True
 
         except urllib.error.HTTPError as e:

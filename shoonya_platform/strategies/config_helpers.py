@@ -359,7 +359,7 @@ def convert_v2_to_factory_format(config: dict) -> dict:
     strategy_type = identity.get("strategy_type") or config.get("strategy_type", "")
     instrument_type = identity.get("instrument_type") or config.get("instrument_type", "OPTIDX")
     order_type = identity.get("order_type") or config.get("order_type", "MARKET")
-    product_type = identity.get("product_type") or config.get("product", "MIS")
+    product_type = identity.get("product_type") or config.get("product", "NRML")
 
     # Timing
     timing = entry.get("timing", {}) or {}

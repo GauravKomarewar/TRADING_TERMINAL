@@ -23,6 +23,9 @@ STRATEGY_REGISTRY = {
     "DNSS": None,
     "delta_neutral_short_strangle": None,
     "DELTA_NEUTRAL_SHORT_STRANGLE": None,
+    # Simple test strategy
+    "simple_test": None,
+    "SIMPLE_TEST": None,
 }
 
 
@@ -39,6 +42,20 @@ def _lazy_load_dnss():
             logger.info("✅ DNSS strategy loaded into registry")
         except ImportError as e:
             logger.error(f"❌ Failed to load DNSS: {e}")
+            raise
+
+
+def _lazy_load_simple_test():
+    """Lazy load SimpleTestStrategy"""
+    global STRATEGY_REGISTRY
+    if STRATEGY_REGISTRY.get("simple_test") is None:
+        try:
+            from shoonya_platform.strategies.standalone_implementations.simple_test import SimpleTestStrategy
+            STRATEGY_REGISTRY["simple_test"] = SimpleTestStrategy
+            STRATEGY_REGISTRY["SIMPLE_TEST"] = SimpleTestStrategy
+            logger.info("✅ SimpleTestStrategy loaded into registry")
+        except ImportError as e:
+            logger.error(f"❌ Failed to load SimpleTestStrategy: {e}")
             raise
 
 
@@ -61,6 +78,7 @@ def create_strategy(config: Dict[str, Any]) -> Any:
         strategy = create_strategy(config)
     """
     _lazy_load_dnss()
+    _lazy_load_simple_test()
     
     # Extract strategy_type (case-insensitive)
     # Support both root-level and nested (identity.strategy_type) locations
@@ -151,6 +169,18 @@ def create_strategy(config: Dict[str, Any]) -> Any:
             config["market_config"]["db_path"] = getattr(strategy, "db_path", None)
             config["market_config"]["exchange"] = config.get("exchange", "")
             config["market_config"]["symbol"] = config.get("symbol", "")
+
+        # For ALL strategies: inject db_path if strategy resolved it
+        # (covers non-DNSS strategies that resolve their own db_path)
+        if hasattr(strategy, 'db_path') and strategy.db_path:
+            if "market_config" not in config:
+                config["market_config"] = {}
+            if not config["market_config"].get("db_path"):
+                config["market_config"]["db_path"] = strategy.db_path
+                config["market_config"].setdefault("exchange", config.get("exchange", ""))
+                config["market_config"].setdefault("symbol", config.get("symbol", ""))
+                config["market_config"].setdefault("market_type", "database_market")
+                logger.info(f"Injected db_path from strategy: {strategy.db_path}")
 
         strategy_name = config.get("strategy_name", strategy_type)
         logger.info(f"✅ Created strategy: {strategy_name} ({strategy_type})")

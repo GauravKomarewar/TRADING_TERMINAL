@@ -303,8 +303,16 @@ function toast(msg, type='success') {
   const d = document.createElement('div');
   d.className = 'toast toast-' + type;
   d.textContent = msg;
+  d.style.maxWidth = '500px';
+  d.style.fontSize = '14px';
+  d.style.padding = '14px 20px';
   document.body.appendChild(d);
-  setTimeout(() => d.remove(), 3000);
+  // Errors stay longer (8s) so user sees them
+  const duration = type === 'error' ? 8000 : 3000;
+  setTimeout(() => d.remove(), duration);
+  // Always log to console for debugging
+  if (type === 'error') console.error('[Strategy Error]', msg);
+  else console.log('[Strategy]', msg);
 }
 
 function switchTab(tabName, btn) {
@@ -331,10 +339,18 @@ async function api(method, endpoint, data=null) {
     window.location.href = '/';
     throw new Error('Session expired — redirecting to login');
   }
-  const j = await r.json();
+  let j;
+  try { j = await r.json(); } catch(_) { throw new Error('Server error (' + r.status + '): non-JSON response'); }
   if (!r.ok) throw new Error(j.detail ? (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)) : 'API error ' + r.status);
   return j;
 }
+
+// ====== UTILITIES: HTML Escaping ======
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function escAttr(s) { return escHtml(s); }
 
 // ====== STRATEGY LIST ======
 async function reloadStrategies() {
@@ -358,25 +374,37 @@ function displayStrategies(strategies) {
     const status = c.status || 'IDLE';
     const enabled = c.enabled !== false;
     const badgeCls = status === 'RUNNING' ? 'badge-running' : status === 'STOPPED' ? 'badge-stopped' : 'badge-idle';
-    return '<div class="strat-card" id="card-' + s.name + '">' +
+    const safeName = escAttr(s.name);
+    return '<div class="strat-card" id="card-' + safeName + '">' +
       '<div class="strat-card-header">' +
-        '<div><span class="strat-card-name">' + (c.name || s.name) + '</span></div>' +
+        '<div><span class="strat-card-name">' + escHtml(c.name || s.name) + '</span></div>' +
         '<div class="strat-card-actions">' +
-          '<button class="btn btn-success btn-sm" onclick="startStrategy(\'' + s.name + '\')" title="Start">\u25B6 Start</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="stopStrategy(\'' + s.name + '\')" title="Stop">\u23F9 Stop</button>' +
-          '<button class="btn btn-secondary btn-sm" onclick="editStrategy(\'' + s.name + '\')" title="Edit">\u270F</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="deleteStrategy(\'' + s.name + '\')" title="Delete">\uD83D\uDDD1</button>' +
+          '<button class="btn btn-success btn-sm" data-slug="' + safeName + '" data-action="start" title="Start">\u25B6 Start</button>' +
+          '<button class="btn btn-danger btn-sm" data-slug="' + safeName + '" data-action="stop" title="Stop">\u23F9 Stop</button>' +
+          '<button class="btn btn-secondary btn-sm" data-slug="' + safeName + '" data-action="edit" title="Edit">\u270F</button>' +
+          '<button class="btn btn-danger btn-sm" data-slug="' + safeName + '" data-action="delete" title="Delete">\uD83D\uDDD1</button>' +
         '</div>' +
       '</div>' +
       '<div class="strat-card-meta">' +
-        '<span>Type: <b>' + stType + '</b></span>' +
-        '<span>Exchange: <b>' + exchange + '</b></span>' +
-        '<span>Symbol: <b>' + symbol + '</b></span>' +
+        '<span>Type: <b>' + escHtml(stType) + '</b></span>' +
+        '<span>Exchange: <b>' + escHtml(exchange) + '</b></span>' +
+        '<span>Symbol: <b>' + escHtml(symbol) + '</b></span>' +
         '<span>Enabled: <b>' + (enabled ? 'Yes' : 'No') + '</b></span>' +
-        '<span>Status: <span class="badge ' + badgeCls + '">' + status + '</span></span>' +
+        '<span>Status: <span class="badge ' + badgeCls + '">' + escHtml(status) + '</span></span>' +
       '</div>' +
     '</div>';
   }).join('');
+  // Attach event listeners via delegation (avoids onclick/quote issues)
+  el.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slug = btn.dataset.slug;
+      const action = btn.dataset.action;
+      if (action === 'start') startStrategy(slug);
+      else if (action === 'stop') stopStrategy(slug);
+      else if (action === 'edit') editStrategy(slug);
+      else if (action === 'delete') deleteStrategy(slug);
+    });
+  });
 }
 
 function filterStrategies() {
@@ -386,20 +414,74 @@ function filterStrategies() {
 
 // ====== PER-STRATEGY START / STOP ======
 async function startStrategy(slug) {
+  console.log('[Strategy] Starting:', slug);
+  // Show loading state on the card
+  const card = document.getElementById('card-' + slug);
+  const errorDiv = document.getElementById('error-' + slug);
+  if (errorDiv) errorDiv.remove();
+  if (card) {
+    const btn = card.querySelector('.btn-success');
+    if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
+  }
   try {
     const r = await api('POST', '/strategy/' + slug + '/start-execution');
-    if (r.success) { toast(r.message); reloadStrategies(); loadLogs(); }
-    else toast(r.message || 'Could not start', 'error');
-  } catch(e) { toast(e.message, 'error'); }
+    console.log('[Strategy] Start response:', JSON.stringify(r));
+    if (r.success) {
+      toast(r.message);
+      reloadStrategies();
+      loadLogs();
+    } else {
+      const msg = r.message || 'Could not start';
+      toast(msg, 'error');
+      showStrategyError(slug, msg);
+    }
+  } catch(e) {
+    console.error('[Strategy] Start failed:', e);
+    const msg = e.message || 'Unknown error';
+    toast('Start failed: ' + msg, 'error');
+    showStrategyError(slug, msg);
+  } finally {
+    // Reset button state
+    if (card) {
+      const btn = card.querySelector('.btn-success');
+      if (btn) { btn.textContent = '\u25B6 Start'; btn.disabled = false; }
+    }
+  }
+}
+
+function showStrategyError(slug, msg) {
+  const card = document.getElementById('card-' + slug);
+  if (!card) return;
+  // Remove previous error if any
+  const prev = document.getElementById('error-' + slug);
+  if (prev) prev.remove();
+  // Add persistent error message below the card
+  const errDiv = document.createElement('div');
+  errDiv.id = 'error-' + slug;
+  errDiv.style.cssText = 'background:rgba(251,113,133,0.15);border:1px solid rgba(251,113,133,0.4);border-radius:6px;padding:10px 12px;margin-top:-6px;margin-bottom:10px;font-size:12px;color:#fb7185;word-break:break-word;';
+  errDiv.innerHTML = '<b>Start Error:</b> ' + escHtml(msg) + '<br><button class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:10px;" onclick="this.parentElement.remove()">Dismiss</button>';
+  card.insertAdjacentElement('afterend', errDiv);
 }
 
 async function stopStrategy(slug) {
   if (!confirm('Stop strategy "' + slug + '"?')) return;
+  // Show loading state on the card
+  const card = document.getElementById('card-' + slug);
+  if (card) {
+    const btn = card.querySelector('[data-action="stop"]');
+    if (btn) { btn.textContent = '\u23F3 Stopping...'; btn.disabled = true; }
+  }
   try {
     const r = await api('POST', '/strategy/' + slug + '/stop-execution');
     if (r.success) { toast(r.message); reloadStrategies(); loadLogs(); }
     else toast(r.message || 'Could not stop', 'error');
   } catch(e) { toast(e.message, 'error'); }
+  finally {
+    if (card) {
+      const btn = card.querySelector('[data-action="stop"]');
+      if (btn) { btn.textContent = '\u23F9 Stop'; btn.disabled = false; }
+    }
+  }
 }
 
 async function deleteStrategy(slug) {
@@ -471,32 +553,32 @@ function populateForm(c) {
   // Entry
   $('f-entry-time').value = tm.entry_time || c.entry_time || '';
   $('f-entry-end-time').value = tm.entry_end_time || '';
-  $('f-lots').value = pos.lots || c.lot_qty || 1;
-  $('f-max-positions').value = pos.max_open_positions || 1;
+  $('f-lots').value = pos.lots ?? c.lot_qty ?? 1;
+  $('f-max-positions').value = pos.max_open_positions ?? 1;
   $('f-leg-type').value = lg.leg_type || 'strangle';
-  $('f-target-delta').value = lg.target_entry_delta || 0.30;
+  $('f-target-delta').value = lg.target_entry_delta ?? 0.30;
   $('f-strike-selection').value = lg.strike_selection || 'delta';
-  $('f-entry-delay').value = tm.entry_delay_seconds || 0;
+  $('f-entry-delay').value = tm.entry_delay_seconds ?? 0;
   $('f-skip-expiry').value = String(tm.skip_expiry_day || false);
-  $('f-atm-offset').value = lg.atm_offset || 0;
+  $('f-atm-offset').value = lg.atm_offset ?? 0;
   $('f-premium-target').value = lg.premium_target != null ? lg.premium_target : '';
 
   // Adjustment
   $('f-adj-enabled').value = String(ag.enabled !== false);
-  $('f-adj-cooldown').value = ag.cooldown_seconds || 60;
-  $('f-adj-max-day').value = ag.max_adj_per_day || 5;
-  $('f-adj-check-interval').value = ag.check_interval_min || 5;
-  $('f-delta-trigger').value = ad.trigger || 0.50;
-  $('f-delta-target').value = ad.target || 0.20;
-  $('f-delta-emergency').value = ad.emergency_trigger || 0.65;
+  $('f-adj-cooldown').value = ag.cooldown_seconds ?? 60;
+  $('f-adj-max-day').value = ag.max_adj_per_day ?? 5;
+  $('f-adj-check-interval').value = ag.check_interval_min ?? 5;
+  $('f-delta-trigger').value = ad.trigger ?? 0.50;
+  $('f-delta-target').value = ad.target ?? 0.20;
+  $('f-delta-emergency').value = ad.emergency_trigger ?? 0.65;
   $('f-delta-mode').value = ad.mode || 'shift';
   $('f-profit-lock').value = ap.profit_lock_trigger != null ? ap.profit_lock_trigger : '';
-  $('f-per-leg-delta-max').value = al.per_leg_delta_max || 0.65;
+  $('f-per-leg-delta-max').value = al.per_leg_delta_max ?? 0.65;
   $('f-pnl-action').value = ap.pnl_action || 'roll_strike';
 
   // Exit
   $('f-exit-time').value = et.exit_time || c.exit_time || '';
-  $('f-force-exit-min').value = et.force_exit_before_expiry_min || 10;
+  $('f-force-exit-min').value = et.force_exit_before_expiry_min ?? 10;
   $('f-exit-on-expiry').value = String(et.exit_on_expiry_day !== false);
   $('f-early-exit').value = et.early_exit_if_profitable_after || '';
   $('f-profit-target').value = ep.target_rupees != null ? ep.target_rupees : '';
@@ -508,14 +590,14 @@ function populateForm(c) {
   $('f-trailing-activate').value = etr.activate_at != null ? etr.activate_at : '';
 
   // RMS
-  $('f-rms-max-lots').value = rp.max_lots || 10;
-  $('f-rms-max-margin').value = rp.max_margin_pct || 70;
+  $('f-rms-max-lots').value = rp.max_lots ?? 10;
+  $('f-rms-max-margin').value = rp.max_margin_pct ?? 70;
   $('f-rms-daily-loss').value = rd.loss_limit != null ? rd.loss_limit : '';
   $('f-rms-daily-profit').value = rd.profit_target != null ? rd.profit_target : '';
-  $('f-rms-max-trades').value = rd.max_trades || 10;
+  $('f-rms-max-trades').value = rd.max_trades ?? 10;
   $('f-rms-circuit').value = rc.amount != null ? rc.amount : '';
   $('f-rms-kill-switch').value = String(rc.kill_switch || false);
-  $('f-rms-margin-buffer').value = rm.buffer_pct || 20;
+  $('f-rms-margin-buffer').value = rm.buffer_pct ?? 20;
   $('f-rms-telegram').value = String(rn.telegram !== false);
   $('f-rms-auto-squareoff').value = String(ra.square_off_on_breach !== false);
   $('f-rms-max-delta').value = rg.max_delta != null ? rg.max_delta : '';
@@ -563,14 +645,14 @@ function buildConfig() {
       timing: {
         entry_time: $('f-entry-time').value.trim() || null,
         entry_end_time: $('f-entry-end-time').value.trim() || null,
-        entry_delay_seconds: intOrNull($('f-entry-delay').value) || 0,
+        entry_delay_seconds: intOrNull($('f-entry-delay').value) ?? 0,
         active_days: ["mon","tue","wed","thu","fri"],
         skip_expiry_day: boolVal($('f-skip-expiry').value),
       },
       condition: { type: "time_based", price_above:null, price_below:null, iv_above:null, iv_below:null, vix_min:null, vix_max:null, oi_min_lakhs:null, pcr_min:null, pcr_max:null, premium_min:null, indicator:null, indicator_period:14, indicator_threshold:null },
       position: {
-        lots: intOrNull($('f-lots').value) || 1,
-        max_open_positions: intOrNull($('f-max-positions').value) || 1,
+        lots: intOrNull($('f-lots').value) ?? 1,
+        max_open_positions: intOrNull($('f-max-positions').value) ?? 1,
         lot_size_override: null,
         scale_in_enabled: false,
         scale_in_lots: 1,
@@ -580,8 +662,8 @@ function buildConfig() {
       execution: { auto_confirm:true, retry_on_reject:true, retry_count:2, slippage_points:2 },
       legs: {
         leg_type: $('f-leg-type').value || 'strangle',
-        target_entry_delta: numOrNull($('f-target-delta').value) || 0.30,
-        atm_offset: intOrNull($('f-atm-offset').value) || 0,
+        target_entry_delta: numOrNull($('f-target-delta').value) ?? 0.30,
+        atm_offset: intOrNull($('f-atm-offset').value) ?? 0,
         ce_offset: 100,
         pe_offset: 100,
         strike_selection: $('f-strike-selection').value || 'delta',
@@ -591,15 +673,15 @@ function buildConfig() {
     adjustment: {
       general: {
         enabled: boolVal($('f-adj-enabled').value),
-        check_interval_min: intOrNull($('f-adj-check-interval').value) || 5,
-        max_adj_per_day: intOrNull($('f-adj-max-day').value) || 5,
+        check_interval_min: intOrNull($('f-adj-check-interval').value) ?? 5,
+        max_adj_per_day: intOrNull($('f-adj-max-day').value) ?? 5,
         max_adj_per_session: 10,
-        cooldown_seconds: intOrNull($('f-adj-cooldown').value) || 60,
+        cooldown_seconds: intOrNull($('f-adj-cooldown').value) ?? 60,
       },
       delta: {
-        trigger: numOrNull($('f-delta-trigger').value) || 0.50,
-        target: numOrNull($('f-delta-target').value) || 0.20,
-        emergency_trigger: numOrNull($('f-delta-emergency').value) || 0.65,
+        trigger: numOrNull($('f-delta-trigger').value) ?? 0.50,
+        target: numOrNull($('f-delta-target').value) ?? 0.20,
+        emergency_trigger: numOrNull($('f-delta-emergency').value) ?? 0.65,
         mode: $('f-delta-mode').value || 'shift',
       },
       gamma_theta: { max_gamma:null, min_theta:null, gamma_hedge_trigger:null, theta_rebalance_time:null },
@@ -615,14 +697,14 @@ function buildConfig() {
       leg_level: {
         per_leg_sl: null,
         per_leg_target: null,
-        per_leg_delta_max: numOrNull($('f-per-leg-delta-max').value) || 0.65,
+        per_leg_delta_max: numOrNull($('f-per-leg-delta-max').value) ?? 0.65,
         rebalance_individual: false,
       },
     },
     exit: {
       time: {
         exit_time: $('f-exit-time').value.trim() || null,
-        force_exit_before_expiry_min: intOrNull($('f-force-exit-min').value) || 10,
+        force_exit_before_expiry_min: intOrNull($('f-force-exit-min').value) ?? 10,
         exit_on_expiry_day: boolVal($('f-exit-on-expiry').value),
         early_exit_if_profitable_after: $('f-early-exit').value.trim() || null,
       },
@@ -654,14 +736,14 @@ function buildConfig() {
     rms: {
       position: {
         max_value: null,
-        max_lots: intOrNull($('f-rms-max-lots').value) || 10,
-        max_margin_pct: intOrNull($('f-rms-max-margin').value) || 70,
+        max_lots: intOrNull($('f-rms-max-lots').value) ?? 10,
+        max_margin_pct: intOrNull($('f-rms-max-margin').value) ?? 70,
         max_notional: null,
       },
       daily: {
         loss_limit: numOrNull($('f-rms-daily-loss').value),
         profit_target: numOrNull($('f-rms-daily-profit').value),
-        max_trades: intOrNull($('f-rms-max-trades').value) || 10,
+        max_trades: intOrNull($('f-rms-max-trades').value) ?? 10,
         max_adjustments: 5,
       },
       weekly: { loss_limit:null, profit_target:null },
@@ -679,7 +761,7 @@ function buildConfig() {
         kill_switch: boolVal($('f-rms-kill-switch').value),
       },
       margin: {
-        buffer_pct: intOrNull($('f-rms-margin-buffer').value) || 20,
+        buffer_pct: intOrNull($('f-rms-margin-buffer').value) ?? 20,
         block_above_pct: 85,
       },
       combined: { track:true, sl:null, target:null },
@@ -717,8 +799,8 @@ function showValidation(v) {
     return;
   }
   let h = '<div class="validation-result">';
-  (v.errors || []).forEach(e => h += '<div class="validation-error">\u274C ' + e.field + ': ' + e.message + '</div>');
-  (v.warnings || []).forEach(w => h += '<div class="validation-warning">\u26A0 ' + w.field + ': ' + w.message + '</div>');
+  (v.errors || []).forEach(e => h += '<div class="validation-error">\u274C ' + escHtml(e.field) + ': ' + escHtml(e.message) + '</div>');
+  (v.warnings || []).forEach(w => h += '<div class="validation-warning">\u26A0 ' + escHtml(w.field) + ': ' + escHtml(w.message) + '</div>');
   h += '</div>';
   el.innerHTML = h;
 }
@@ -752,16 +834,16 @@ function displayLogs(logs) {
   const el = $('logger-body');
   if (!logs.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">No logs available</div>'; return; }
   el.innerHTML = logs.map(l =>
-    '<div class="log-entry ' + l.level + '">' +
-    '<span style="color:var(--muted);min-width:140px;font-size:10px;">' + (l.timestamp||'') + '</span>' +
-    '<span style="font-weight:600;min-width:60px;">[' + l.level + ']</span>' +
-    '<span style="margin-left:4px;">' + (l.message||'') + '</span>' +
+    '<div class="log-entry ' + escAttr(l.level) + '">' +
+    '<span style="color:var(--muted);min-width:140px;font-size:10px;">' + escHtml(l.timestamp||'') + '</span>' +
+    '<span style="font-weight:600;min-width:60px;">[' + escHtml(l.level) + ']</span>' +
+    '<span style="margin-left:4px;">' + escHtml(l.message||'') + '</span>' +
     '</div>'
   ).join('');
   el.scrollTop = el.scrollHeight;
 }
 
-function clearLogs() { $('logger-body').innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">Cleared</div>'; }
+function clearLogs() { $('logger-body').innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">Cleared</div>'; $('log-count').textContent = '0 entries'; }
 
 // ====== RUNNER STATUS ======
 async function updateRunnerStatus() {

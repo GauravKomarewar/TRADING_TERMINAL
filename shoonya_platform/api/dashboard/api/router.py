@@ -897,13 +897,55 @@ def start_strategy_execution(
         try:
             # Convert v2.0 config to flat factory format if needed
             factory_config = get_factory_config(config)
+            logger.info(f"Factory config for {strategy_name}: exchange={factory_config.get('exchange')}, symbol={factory_config.get('symbol')}")
 
             # Use factory to create strategy (respects strategy_type in config)
             strategy = create_strategy(factory_config)
+            logger.info(f"Strategy created: {strategy_name}, db_path={getattr(strategy, 'db_path', 'N/A')}")
+            
+            # Prepare strategy (initial call with empty market data)
+            try:
+                strategy.prepare({})
+                logger.info(f"Strategy {strategy_name} prepared successfully")
+            except Exception as prep_err:
+                logger.warning(f"Strategy {strategy_name} prepare() warning: {prep_err}")
+                # prepare() may fail if no market snapshot yet - that's OK,
+                # the runner will call prepare() on each tick with real data
             
             # Extract market_type from factory config
             market_config = factory_config.get("market_config", {})
             market_type = market_config.get("market_type", "database_market")
+            
+            # Log what we're about to validate
+            logger.info(
+                f"Registering {strategy_name}: market_type={market_type}, "
+                f"exchange={market_config.get('exchange')}, "
+                f"symbol={market_config.get('symbol')}, "
+                f"db_path={market_config.get('db_path')}"
+            )
+            
+            # Auto-resolve db_path if still null (for non-DNSS strategies)
+            if market_type == "database_market" and not market_config.get("db_path"):
+                try:
+                    from shoonya_platform.strategies.config_resolution_service import ConfigResolutionService
+                    resolver = ConfigResolutionService()
+                    resolved = resolver.resolve(
+                        config={},
+                        exchange=market_config.get("exchange") or factory_config.get("exchange", ""),
+                        symbol=market_config.get("symbol") or factory_config.get("symbol", ""),
+                        instrument_type=factory_config.get("instrument_type", "OPTIDX"),
+                        expiry_mode=factory_config.get("params", {}).get("expiry_mode", "weekly_current"),
+                    )
+                    if resolved.get("valid") and resolved.get("db_path"):
+                        market_config["db_path"] = resolved["db_path"]
+                        logger.info(f"Auto-resolved db_path for {strategy_name}: {resolved['db_path']}")
+                    else:
+                        logger.warning(
+                            f"Could not auto-resolve db_path for {strategy_name}: "
+                            f"{resolved.get('errors', [])}"
+                        )
+                except Exception as res_err:
+                    logger.warning(f"db_path resolution failed for {strategy_name}: {res_err}")
             
             registered = runner.register_with_config(
                 name=strategy_name,
@@ -914,7 +956,13 @@ def start_strategy_execution(
             )
             
             if not registered:
-                raise Exception("Failed to register strategy")
+                # Get specific failure reason
+                from shoonya_platform.strategies.market_adapter_factory import MarketAdapterFactory
+                is_valid, error_msg = MarketAdapterFactory.validate_config_for_market(
+                    market_type=market_type, config=market_config
+                )
+                detail = error_msg if not is_valid else "Strategy interface validation or registration failed"
+                raise Exception(f"Failed to register strategy: {detail}")
             
             # If runner not already executing, start it
             if not (runner._thread and runner._thread.is_alive()):

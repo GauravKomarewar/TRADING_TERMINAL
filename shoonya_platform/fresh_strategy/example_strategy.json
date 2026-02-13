@@ -1,0 +1,201 @@
+{
+  "schema_version": "3.0",
+  "name": "NIFTY_DeltaNeutral_Strangle",
+  "description": "Delta neutral strangle with intelligent adjustment based on net delta and leg delta thresholds",
+  "basic": {
+    "exchange": "NFO",
+    "underlying": "NIFTY",
+    "expiry_mode": "weekly_current",
+    "lots": 1,
+    "enabled": true
+  },
+  "timing": {
+    "entry_time": "09:20",
+    "exit_time": "15:15"
+  },
+  "market_data": {
+    "source": "database"
+  },
+  "calculated_params": {
+    "net_delta": {
+      "formula": "abs(ce_delta) + abs(pe_delta)",
+      "description": "Combined absolute delta of both legs"
+    },
+    "combined_pnl": {
+      "formula": "ce_pnl + pe_pnl",
+      "description": "Total P&L of both legs"
+    },
+    "delta_diff": {
+      "formula": "abs(abs(ce_delta) - abs(pe_delta))",
+      "description": "Difference between CE and PE deltas"
+    },
+    "higher_delta_leg": {
+      "formula": "leg_with_max(abs(ce_delta), abs(pe_delta))",
+      "description": "Leg with higher absolute delta"
+    },
+    "lower_delta_leg": {
+      "formula": "leg_with_min(abs(ce_delta), abs(pe_delta))",
+      "description": "Leg with lower absolute delta"
+    }
+  },
+  "entry": {
+    "rule_type": "if_then",
+    "conditions": {
+      "operator": "AND",
+      "rules": [
+        {
+          "parameter": "ce_delta",
+          "comparator": "~=",
+          "value": 0.3,
+          "tolerance": 0.05,
+          "description": "CE delta approximately 0.30 (±0.05)"
+        },
+        {
+          "parameter": "pe_delta",
+          "comparator": "~=",
+          "value": 0.3,
+          "tolerance": 0.05,
+          "description": "PE delta approximately 0.30 (±0.05)"
+        }
+      ]
+    },
+    "action": {
+      "type": "short_both",
+      "description": "Short both CE and PE options at specified delta"
+    }
+  },
+  "adjustment": {
+    "enabled": true,
+    "check_interval_min": 5,
+    "max_adjustments_per_day": 10,
+    "cooldown_seconds": 60,
+    "rules": [
+      {
+        "priority": 1,
+        "name": "High Delta Adjustment",
+        "rule_type": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "net_delta",
+              "comparator": ">",
+              "value": 0.2,
+              "description": "Net delta exceeds threshold"
+            },
+            {
+              "parameter": "any_leg_delta",
+              "comparator": ">",
+              "value": 0.65,
+              "description": "Any single leg delta exceeds 0.65"
+            }
+          ]
+        },
+        "action": {
+          "type": "close_higher_delta",
+          "details": {
+            "close_leg": "higher_delta_leg",
+            "enter_new": true,
+            "match_other_leg_delta": true,
+            "same_type": true,
+            "same_direction": true,
+            "description": "Close the leg with higher delta and enter new leg matching the other leg's delta"
+          }
+        }
+      },
+      {
+        "priority": 2,
+        "name": "Normal Delta Adjustment",
+        "rule_type": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "net_delta",
+              "comparator": ">",
+              "value": 0.2,
+              "description": "Net delta exceeds threshold"
+            },
+            {
+              "parameter": "both_legs_delta",
+              "comparator": "<",
+              "value": 0.65,
+              "description": "Both legs delta below 0.65"
+            }
+          ]
+        },
+        "action": {
+          "type": "close_lower_delta",
+          "details": {
+            "close_leg": "lower_delta_leg",
+            "enter_new": true,
+            "match_other_leg_delta": true,
+            "same_type": true,
+            "same_direction": true,
+            "new_leg_delta_requirement": "lower_than_other_leg",
+            "description": "Close the leg with lower delta and enter new leg with delta matching other leg but ensuring new leg has lower current delta"
+          }
+        }
+      },
+      {
+        "priority": 3,
+        "name": "Profit Lock Adjustment",
+        "rule_type": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "combined_pnl",
+              "comparator": ">=",
+              "value": 1000,
+              "description": "Combined profit reaches ₹1000"
+            }
+          ]
+        },
+        "action": {
+          "type": "lock_profit",
+          "details": {
+            "method": "trailing_stop_loss",
+            "trail_by": 200,
+            "description": "Lock profit by setting trailing stop loss at ₹200 below current P&L"
+          }
+        }
+      }
+    ]
+  },
+  "exit": {
+    "rule_type": "if_any",
+    "conditions": [
+      {
+        "parameter": "combined_pnl",
+        "comparator": ">=",
+        "value": 2000,
+        "description": "Profit target reached"
+      },
+      {
+        "parameter": "combined_pnl",
+        "comparator": "<=",
+        "value": -1000,
+        "description": "Stop loss hit"
+      },
+      {
+        "parameter": "time_current",
+        "comparator": ">=",
+        "value": "15:15",
+        "description": "Exit time reached"
+      }
+    ],
+    "action": {
+      "type": "close_all_positions",
+      "description": "Close all legs and exit completely"
+    }
+  },
+  "risk_management": {
+    "max_loss_per_day": 5000,
+    "max_trades_per_day": 10,
+    "position_sizing": {
+      "max_lots": 10,
+      "scale_enabled": false
+    }
+  }
+}

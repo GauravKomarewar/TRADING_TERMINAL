@@ -272,6 +272,11 @@ def main():
         logger.info("✅ Global bot instance registered")
 
         # -------------------------------------------------
+        # FRESH STRATEGY RUNNERS (BACKGROUND THREADS)
+        # -------------------------------------------------
+        _start_fresh_strategies(config, logger)
+
+        # -------------------------------------------------
         # SIGNAL HANDLERS (MUST BE IN MAIN THREAD)
         # -------------------------------------------------
         signal.signal(signal.SIGINT, signal_handler)
@@ -414,5 +419,58 @@ def main():
 # ---------------------------------------------------------------------
 # ENTRY POINT
 # ---------------------------------------------------------------------
+
+def _start_fresh_strategies(config, logger):
+    """
+    Scan for fresh_strategy JSON configs and launch each as a background thread.
+
+    Looks in: shoonya_platform/fresh_strategy/configs/
+    Falls back to: shoonya_platform/fresh_strategy/example_strategy.json
+    """
+    import glob as _glob
+    from pathlib import Path as _Path
+
+    try:
+        from shoonya_platform.fresh_strategy.runner import FreshStrategyRunner
+    except ImportError as e:
+        logger.warning(f"fresh_strategy module not available: {e}")
+        return
+
+    base = _Path(__file__).resolve().parent / "shoonya_platform" / "fresh_strategy"
+    configs_dir = base / "configs"
+    config_files = []
+
+    if configs_dir.exists():
+        config_files = sorted(configs_dir.glob("*.json"))
+
+    # Fallback: use example_strategy if no configs/ folder
+    if not config_files:
+        example = base / "example_strategy.json"
+        if example.exists():
+            config_files = [example]
+
+    if not config_files:
+        logger.info("No fresh_strategy configs found — skipping")
+        return
+
+    for cfg_path in config_files:
+        try:
+            import json as _json
+            with open(cfg_path) as f:
+                raw = _json.load(f)
+            if not raw.get("basic", {}).get("enabled", True):
+                logger.info(f"Fresh strategy '{cfg_path.name}' is disabled — skipping")
+                continue
+
+            runner = FreshStrategyRunner(str(cfg_path), test_mode=False)
+            thread = runner.start_async()
+            logger.info(
+                f"✅ Fresh strategy launched: {cfg_path.name} "
+                f"(thread={thread.name})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to start fresh strategy {cfg_path.name}: {e}")
+
+
 if __name__ == "__main__":
     main()

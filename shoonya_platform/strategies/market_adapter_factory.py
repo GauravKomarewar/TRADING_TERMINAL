@@ -127,10 +127,10 @@ class MarketAdapterFactory:
         if market_type == "database_market":
             db_path = config.get("db_path")
             if not db_path:
-                return False, "database_market requires 'db_path' in config"
+                return False, "database_market requires 'db_path' in config. The ConfigResolutionService may have failed to resolve the database path. Check ScriptMaster data and supervisor status."
             
             if not Path(db_path).exists():
-                return False, f"Database file not found: {db_path}"
+                return False, f"Database file not found: {db_path}. The option chain supervisor may not have created it yet. Ensure the supervisor is running and collecting data for this symbol/expiry."
         
         elif market_type == "live_feed_market":
             # Live feed markets don't have additional required config

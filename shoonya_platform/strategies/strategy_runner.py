@@ -251,19 +251,20 @@ class StrategyRunner:
                 config=config,
             )
             if not is_valid:
-                logger.error(f"❌ Config validation failed: {error}")
+                logger.error(f"❌ Config validation failed for {name}: {error}")
+                logger.error(f"   market_type={market_type}, config keys={list(config.keys())}, db_path={config.get('db_path')}")
                 return False
             
             # Create market adapter (latch - selects market backend)
             try:
-                logger.info(f"🔄 Creating market adapter for {name} (market_type={market_type})...")
+                logger.info(f"🔄 Creating market adapter for {name} (market_type={market_type}, db_path={config.get('db_path')})...")
                 market_adapter = MarketAdapterFactory.create(
                     market_type=market_type,
                     config=config,
                 )
-                logger.info(f"✓ Market adapter created")
+                logger.info(f"✓ Market adapter created for {name}")
             except Exception as e:
-                logger.error(f"❌ Failed to create market adapter: {e}")
+                logger.error(f"❌ Failed to create market adapter for {name}: {e}", exc_info=True)
                 return False
             
             # Create context with adapter
@@ -430,13 +431,12 @@ class StrategyRunner:
                     results[strategy_name] = False
                     continue
                 
-                # Prepare strategy (call prepare method)
+                # Prepare strategy (initial call with empty market data)
                 try:
-                    strategy.prepare()
+                    strategy.prepare({})
                 except Exception as e:
-                    logger.error(f"❌ Strategy prepare() failed for {strategy_name}: {e}")
-                    results[strategy_name] = False
-                    continue
+                    logger.warning(f"⚠️ Strategy prepare() initial call warning for {strategy_name}: {e}")
+                    # Don't fail — runner will call prepare() with real data on each tick
                 
                 # Register with runner
                 success = self.register_with_config(

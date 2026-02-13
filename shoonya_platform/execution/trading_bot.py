@@ -256,21 +256,33 @@ class ShoonyaBot:
         # -------------------------------------------------
         # 🔐 INITIAL LOGIN (ONCE, BLOCKING)
         # -------------------------------------------------
-        try:
-            self.login()
-            
-            # 🔥 FIX: Retry feed startup (EC2 may have network delay)
-            max_feed_attempts = 3
-            for attempt in range(1, max_feed_attempts + 1):
-                timeout = 15.0 + (attempt - 1) * 5.0  # 15s, 20s, 25s
-                logger.info(f"🔄 Feed startup attempt {attempt}/{max_feed_attempts} (timeout={timeout}s)")
-                
+        # 🔥 FIX: Check login() return value and handle failure properly
+        login_ok = self.login()
+        if not login_ok:
+            # TOTP may have just changed — wait for next 30s window and retry once
+            logger.warning("⚠️ First login failed — waiting 35s for fresh TOTP window and retrying")
+            time.sleep(35)
+            login_ok = self.login()
+
+        if not login_ok:
+            logger.critical("❌ Broker login failed after 2 attempts — aborting startup")
+            raise RuntimeError("BROKER_LOGIN_FAILED")
+
+        # -------------------------------------------------
+        # 📡 LIVE FEED STARTUP (with retry + re-login)
+        # -------------------------------------------------
+        feed_started = False
+        max_feed_attempts = 3
+        for attempt in range(1, max_feed_attempts + 1):
+            timeout = 15.0 + (attempt - 1) * 5.0  # 15s, 20s, 25s
+            logger.info(f"🔄 Feed startup attempt {attempt}/{max_feed_attempts} (timeout={timeout}s)")
+
+            try:
                 if start_live_feed(self.api_proxy, timeout=timeout):
                     logger.info("✅ Live feed initialized successfully")
-                    
-                    # 🔥 NEW: Subscribe to index tokens for live dashboard
+
+                    # Subscribe to index tokens for live dashboard
                     try:
-                        # Resolve MCX futures tokens (nearest expiry)
                         try:
                             index_tokens_subscriber.resolve_futures_tokens(self.api_proxy)
                         except Exception as e:
@@ -282,19 +294,25 @@ class ShoonyaBot:
                         logger.info(f"📊 Index tokens subscribed: {count} indices ({symbols})")
                     except Exception as e:
                         logger.warning(f"⚠️  Index token subscription failed: {e}")
-                        # Continue anyway - index tokens are nice-to-have, not critical
-                    
+
+                    feed_started = True
                     break
-                
-                if attempt < max_feed_attempts:
-                    logger.warning(f"⚠️ Feed attempt {attempt} failed, retrying...")
-                    time.sleep(2)
+            except Exception as e:
+                logger.warning(f"⚠️ Feed attempt {attempt} exception: {e}")
+
+            if attempt < max_feed_attempts:
+                logger.warning(f"⚠️ Feed attempt {attempt} failed, retrying...")
+                # 🔥 FIX: Re-login if session died (common on EC2 after network blip)
+                if not self.api.is_logged_in():
+                    logger.info("🔄 Session lost — re-logging before next feed attempt")
+                    time.sleep(5)
+                    self.login()
                 else:
-                    logger.critical("❌ Failed to start live feed after 3 attempts")
-                    raise RuntimeError("Live feed startup failed")
-        except Exception:
-            logger.critical("❌ Initial broker login failed — aborting startup")
-            raise
+                    time.sleep(3)
+
+        if not feed_started:
+            logger.critical("❌ Failed to start live feed after %d attempts", max_feed_attempts)
+            raise RuntimeError("Live feed startup failed — check broker session and network")
         
         #--------------------------------------------------
         self.broker_view = BrokerView(self.api_proxy)

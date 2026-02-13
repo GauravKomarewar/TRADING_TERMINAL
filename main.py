@@ -367,7 +367,29 @@ def main():
     except Exception as exc:
         if logger:
             log_exception("execution_service.main", exc)
-            logger.critical(f"FATAL ERROR: {exc}", exc_info=True)
+            err_str = str(exc)
+            # Provide actionable guidance based on error type
+            if "BROKER_LOGIN_FAILED" in err_str or "SESSION_RECOVERY_FAILED" in err_str:
+                logger.critical(
+                    "FATAL ERROR: Broker login failed — %s\n"
+                    "  Possible causes:\n"
+                    "  1. EC2 clock drift → run: sudo chronyc makestep\n"
+                    "  2. Invalid TOTP key in config_env\n"
+                    "  3. Broker API down or rate-limited\n"
+                    "  4. Network connectivity issue from this server",
+                    exc,
+                )
+            elif "Live feed startup failed" in err_str:
+                logger.critical(
+                    "FATAL ERROR: WebSocket feed failed — %s\n"
+                    "  Possible causes:\n"
+                    "  1. Broker session expired mid-startup\n"
+                    "  2. WebSocket port blocked by firewall\n"
+                    "  3. Shoonya API WebSocket endpoint unreachable",
+                    exc,
+                )
+            else:
+                logger.critical(f"FATAL ERROR: {exc}", exc_info=True)
         else:
             print(f"CRITICAL ERROR: {exc}")
             import traceback

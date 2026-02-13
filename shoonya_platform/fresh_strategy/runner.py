@@ -1043,14 +1043,14 @@ class FreshStrategyRunner:
         success = self._dispatch_alert(alert)
         if success:
             self._commit_entry_state()
-        self._sync_with_broker()
+            self._sync_with_broker()
         else:
             logger.error("ENTRY webhook FAILED — position NOT committed")
             # Reset entry state so next tick can retry
             self.state.has_position = False
             self.state.ce_qty = 0
             self.state.pe_qty = 0
-        self._sync_with_broker()
+            self._sync_with_broker()
         return success
 
     def _send_exit_alert(self, reason: str = ""):

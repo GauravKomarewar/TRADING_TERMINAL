@@ -1,3 +1,28 @@
+    def _sync_with_broker(self):
+        """Fetch broker positions from /positions endpoint and reconcile state."""
+        import urllib.request
+        import json as _json
+        try:
+            url = os.environ.get("BROKER_POSITIONS_URL", "http://127.0.0.1:5000/positions")
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+                if data.get("status") != "ok":
+                    logger.warning(f"Broker sync failed: {data}")
+                    return
+                positions = data.get("positions", [])
+                # Find open positions for this strategy (by symbol & exchange)
+                open_legs = [p for p in positions if p.get("exchange", "").upper() == self.exchange.upper() and p.get("symbol", "").upper() == self.symbol.upper() and p.get("qty", 0) != 0]
+                if not open_legs:
+                    if self.state.has_position:
+                        logger.warning("Broker shows NO open positions, but runner thinks it has a position. Forcing state clear.")
+                        self._clear_position()
+                else:
+                    if not self.state.has_position:
+                        logger.warning("Broker shows open positions, but runner thinks it has none. Forcing state to match broker.")
+                        self.state.has_position = True
+                        # Optionally, update leg details here if needed
+        except Exception as e:
+            logger.error(f"Broker sync error: {e}")
 #!/usr/bin/env python3
 """
 runner.py — Fresh Strategy Runner
@@ -1018,12 +1043,14 @@ class FreshStrategyRunner:
         success = self._dispatch_alert(alert)
         if success:
             self._commit_entry_state()
+        self._sync_with_broker()
         else:
             logger.error("ENTRY webhook FAILED — position NOT committed")
             # Reset entry state so next tick can retry
             self.state.has_position = False
             self.state.ce_qty = 0
             self.state.pe_qty = 0
+        self._sync_with_broker()
         return success
 
     def _send_exit_alert(self, reason: str = ""):
@@ -1060,11 +1087,13 @@ class FreshStrategyRunner:
         success = self._dispatch_alert(alert)
         if success:
             self._clear_position()
+        self._sync_with_broker()
         else:
             logger.error(
                 "EXIT webhook FAILED — position state NOT cleared. "
                 "Will retry exit on next tick."
             )
+        self._sync_with_broker()
 
     def _send_exit_alert_for_legs(self, legs: List[Dict], reason: str = ""):
         """Send an EXIT alert for specific legs only."""
@@ -1085,6 +1114,7 @@ class FreshStrategyRunner:
 
         logger.info(f"Partial EXIT ({reason}): {len(legs)} legs")
         self._dispatch_alert(alert)
+        self._sync_with_broker()
 
     def _dispatch_alert(self, alert: Dict):
         """

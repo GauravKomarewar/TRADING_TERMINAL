@@ -85,6 +85,19 @@ class ExecutionApp:
                 ), 500
 
         # -------------------------------
+        # Broker Positions Endpoint
+        # -------------------------------
+        @self.app.route("/positions", methods=["GET"])
+        def positions():
+            try:
+                # Returns the broker's current open positions (truth)
+                positions = self.bot.get_positions()
+                return jsonify({"positions": positions, "status": "ok"}), 200
+            except Exception as e:
+                log_exception("positions", e)
+                return jsonify({"status": "error", "message": str(e)}), 500
+
+        # -------------------------------
         # Telegram Webhook
         # -------------------------------
         @self.app.route("/telegram/webhook", methods=["POST"])

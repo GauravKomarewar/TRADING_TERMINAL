@@ -113,13 +113,10 @@ class FreshStrategyRunner:
             self.lots = basic.get("lots", 1)
             self.lot_size = LOT_SIZES.get(self.symbol, 1)
 
-            # Poll interval from adjustment config (if specified)
-            adj = self.config.get("adjustment", {})
-            check_min = adj.get("check_interval_min", 0)
-            if check_min and check_min > 0:
-                self._poll_interval = check_min * 60
-            else:
-                self._poll_interval = 5.0  # Default 5s
+            # Poll interval — DB is local SQLite, no API calls, so tick fast
+            self._poll_interval = float(
+                self.config.get("poll_interval_sec", 2)
+            )
 
             logger.info(
                 f"Config loaded: {self.strategy_name} | "

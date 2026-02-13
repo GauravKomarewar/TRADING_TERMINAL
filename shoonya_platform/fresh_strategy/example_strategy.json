@@ -2,6 +2,7 @@
   "schema_version": "3.0",
   "name": "NIFTY_DeltaNeutral_Strangle",
   "description": "Delta neutral strangle with intelligent adjustment based on net delta and leg delta thresholds",
+  "poll_interval_sec": 2,
   "basic": {
     "exchange": "NFO",
     "underlying": "NIFTY",

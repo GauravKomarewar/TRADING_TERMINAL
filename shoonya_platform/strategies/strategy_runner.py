@@ -408,11 +408,12 @@ class StrategyRunner:
                 
                 # Validate required config fields
                 required_fields = ["market_config", "entry", "exit"]
-                for field in required_fields:
-                    if field not in config:
-                        logger.error(f"❌ Missing required field '{field}' in {strategy_name}")
-                        results[strategy_name] = False
-                        continue
+                missing_fields = [f for f in required_fields if f not in config]
+                if missing_fields:
+                    for f in missing_fields:
+                        logger.error(f"❌ Missing required field '{f}' in {strategy_name}")
+                    results[strategy_name] = False
+                    continue
                 
                 market_config = config.get("market_config", {})
                 market_type = market_config.get("market_type", "database_market")
@@ -589,7 +590,17 @@ class StrategyRunner:
         try:
             with context.lock:
                 # 1️⃣ Prepare market snapshot
-                snapshot = context.market.snapshot()
+                # Use market_adapter (preferred) or market fallback
+                if context.market_adapter is not None:
+                    snapshot = context.market_adapter.get_market_snapshot()
+                elif context.market is not None and hasattr(context.market, 'get_market_snapshot'):
+                    snapshot = context.market.get_market_snapshot()
+                elif context.market is not None and hasattr(context.market, 'snapshot'):
+                    snapshot = context.market.snapshot()
+                else:
+                    snapshot = {}
+                    strategy_logger.warning("No market source available — empty snapshot")
+
                 context.strategy.prepare(snapshot)
                 strategy_logger.debug(f"Market snapshot prepared - {len(snapshot) if isinstance(snapshot, dict) else '?'} items")
                 
@@ -673,7 +684,7 @@ class StrategyRunner:
     
     def get_status(self) -> Dict[str, Any]:
         """Get runner status (READ-ONLY)"""
-        is_running = self._thread and self._thread.is_alive()
+        is_running = bool(self._thread and self._thread.is_alive())
         
         with self._strategies_lock:
             strategy_count = len(self._strategies)
@@ -687,22 +698,20 @@ class StrategyRunner:
         }
     
     def print_metrics(self):
-        """Print metrics to console (for monitoring)"""
-        print("=" * 80)
-        print("📊 STRATEGY RUNNER METRICS")
-        print("=" * 80)
-        print(
+        """Print metrics to log (for monitoring)"""
+        lines = ["=" * 80, "📊 STRATEGY RUNNER METRICS", "=" * 80]
+        lines.append(
             f"Global | "
             f"ticks={self._global_ticks} | "
             f"commands={self._global_commands} | "
             f"errors={self._global_errors}"
         )
-        print("-" * 80)
+        lines.append("-" * 80)
         
         with self._strategies_lock:
             for name, ctx in self._strategies.items():
                 m = ctx.metrics
-                print(
+                lines.append(
                     f"{name:20s} | "
                     f"ticks={m.total_ticks:6d} | "
                     f"cmds={m.total_commands:5d} | "
@@ -710,5 +719,6 @@ class StrategyRunner:
                     f"avg={m.avg_tick_duration_ms:6.1f}ms"
                 )
         
-        print("=" * 80)
+        lines.append("=" * 80)
+        logger.info("\n".join(lines))
 

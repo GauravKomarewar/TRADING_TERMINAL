@@ -27,6 +27,7 @@ import sqlite3
 import time
 import json
 import re
+import threading
 
 from shoonya_platform.api.dashboard.deps import require_dashboard_auth
 from shoonya_platform.api.dashboard.services.broker_service import BrokerService
@@ -40,6 +41,12 @@ from shoonya_platform.api.dashboard.services.option_chain_service import (
     find_nearest_option,
 )
 from shoonya_platform.market_data.feeds import index_tokens_subscriber
+from shoonya_platform.strategies.config_helpers import (
+    ensure_complete_config,
+    convert_v2_to_factory_format,
+    is_v2_config,
+    get_factory_config,
+)
 
 from shoonya_platform.api.dashboard.api.schemas import (
     StrategyIntentRequest,
@@ -547,31 +554,31 @@ def list_orphan_rules(
     """
     try:
         # Query control intents for ORPHAN_POSITION_RULE type
-        db = sqlite3.connect(
-            str(Path(__file__).resolve().parents[4] / "shoonya_platform" / "persistence" / "data" / "orders.db"),
-            timeout=5
-        )
-        cur = db.cursor()
-        
-        cur.execute(
-            """
-            SELECT id, payload
-            FROM control_intents
-            WHERE type = 'ORPHAN_POSITION_RULE'
-            ORDER BY created_at DESC
-            LIMIT 50
-            """
-        )
-        
-        rules = []
-        for row in cur.fetchall():
-            try:
-                payload = json.loads(row[1])
-                rules.append(payload)
-            except Exception:
-                pass
-        
-        db.close()
+        db_path = str(Path(__file__).resolve().parents[4] / "shoonya_platform" / "persistence" / "data" / "orders.db")
+        db = sqlite3.connect(db_path, timeout=5)
+        try:
+            cur = db.cursor()
+            
+            cur.execute(
+                """
+                SELECT id, payload
+                FROM control_intents
+                WHERE type = 'ORPHAN_POSITION_RULE'
+                  AND (status IS NULL OR status != 'DELETED')
+                ORDER BY created_at DESC
+                LIMIT 50
+                """
+            )
+            
+            rules = []
+            for row in cur.fetchall():
+                try:
+                    payload = json.loads(row[1])
+                    rules.append(payload)
+                except Exception:
+                    pass
+        finally:
+            db.close()
         
         return {
             "total": len(rules),
@@ -602,19 +609,24 @@ def delete_orphan_rule(
             str(Path(__file__).resolve().parents[4] / "shoonya_platform" / "persistence" / "data" / "orders.db"),
             timeout=5
         )
-        cur = db.cursor()
-        
-        cur.execute(
-            """
-            UPDATE control_intents
-            SET status = 'DELETED'
-            WHERE id = ? AND type = 'ORPHAN_POSITION_RULE'
-            """,
-            (rule_id,)
-        )
-        
-        db.commit()
-        db.close()
+        try:
+            cur = db.cursor()
+            
+            cur.execute(
+                """
+                UPDATE control_intents
+                SET status = 'DELETED'
+                WHERE id = ? AND type = 'ORPHAN_POSITION_RULE'
+                """,
+                (rule_id,)
+            )
+            
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
+            
+            db.commit()
+        finally:
+            db.close()
         
         return {
             "rule_id": rule_id,
@@ -685,11 +697,14 @@ def cancel_broker_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
 ):
+    order_id = payload.get("order_id")
+    if not order_id:
+        raise HTTPException(status_code=400, detail="Missing required field: order_id")
     intent.submit_raw_intent(
-        intent_id=f"DASH-CANCEL-{payload['order_id']}",
+        intent_id=f"DASH-CANCEL-{order_id}",
         intent_type="CANCEL_BROKER_ORDER",
         payload={
-            "broker_order_id": payload["order_id"],
+            "broker_order_id": order_id,
             "reason": "DASHBOARD_CANCEL",
         },
     )
@@ -700,11 +715,14 @@ def modify_broker_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
 ):
+    order_id = payload.get("order_id")
+    if not order_id:
+        raise HTTPException(status_code=400, detail="Missing required field: order_id")
     intent.submit_raw_intent(
-        intent_id=f"DASH-MODIFY-{payload['order_id']}",
+        intent_id=f"DASH-MODIFY-{order_id}",
         intent_type="MODIFY_BROKER_ORDER",
         payload={
-            "broker_order_id": payload["order_id"],
+            "broker_order_id": order_id,
             "order_type": payload.get("order_type"),
             "price": payload.get("price"),
             "quantity": payload.get("quantity"),
@@ -871,18 +889,21 @@ def start_strategy_execution(
             return {
                 "success": False,
                 "strategy_name": strategy_name,
-                "message": "Strategy is disabled in config",
+                "message": "Strategy is disabled in config. Enable it first.",
                 "timestamp": datetime.now().isoformat()
             }
         
         # Register and start only this strategy
         try:
+            # Convert v2.0 config to flat factory format if needed
+            factory_config = get_factory_config(config)
+
             # Use factory to create strategy (respects strategy_type in config)
-            strategy = create_strategy(config)
+            strategy = create_strategy(factory_config)
             
-            # Extract market_type from config (default: live_feed_market)
-            market_config = config.get("market_config", {})
-            market_type = market_config.get("market_type", "live_feed_market")
+            # Extract market_type from factory config
+            market_config = factory_config.get("market_config", {})
+            market_type = market_config.get("market_type", "database_market")
             
             registered = runner.register_with_config(
                 name=strategy_name,
@@ -898,9 +919,14 @@ def start_strategy_execution(
             # If runner not already executing, start it
             if not (runner._thread and runner._thread.is_alive()):
                 runner.start()
-                logger.info(f"🚀 Runner started for strategy: {strategy_name}")
+                logger.info(f"\U0001f680 Runner started for strategy: {strategy_name}")
             
-            logger.info(f"✅ Strategy {strategy_name} registered and started")
+            # Update config status to RUNNING
+            config["status"] = "RUNNING"
+            config["status_updated_at"] = datetime.now().isoformat()
+            strategy_file.write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
+            
+            logger.info(f"\u2705 Strategy {strategy_name} registered and started")
             
             return {
                 "success": True,
@@ -909,7 +935,7 @@ def start_strategy_execution(
                 "timestamp": datetime.now().isoformat()
             }
         except Exception as e:
-            logger.error(f"❌ Failed to start strategy {strategy_name}: {e}", exc_info=True)
+            logger.error(f"\u274c Failed to start strategy {strategy_name}: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
             
     except HTTPException:
@@ -949,6 +975,17 @@ def stop_strategy_execution(
         # Unregister the strategy
         runner.unregister(strategy_name)
         logger.info(f"✅ Strategy {strategy_name} stopped")
+        
+        # Update config status to STOPPED
+        try:
+            strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
+            if strategy_file.exists():
+                cfg = json.loads(strategy_file.read_text(encoding="utf-8"))
+                cfg["status"] = "STOPPED"
+                cfg["status_updated_at"] = datetime.now().isoformat()
+                strategy_file.write_text(json.dumps(cfg, indent=2, default=str), encoding="utf-8")
+        except Exception as se:
+            logger.warning(f"Could not update status for {strategy_name}: {se}")
         
         # If no more strategies, stop the runner
         if not runner._strategies:
@@ -1251,11 +1288,19 @@ def save_strategy_config_all(
         if section in payload and isinstance(payload[section], dict):
             existing[section] = payload[section]
 
+    # Copy root-level fields that are not sections
+    for key in ("enabled", "strategy_type", "status"):
+        if key in payload:
+            existing[key] = payload[key]
+
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     if "created_at" not in existing:
         existing["created_at"] = now
     existing["updated_at"] = now
     existing.setdefault("status", "IDLE")
+
+    # Ensure ALL v2.0 schema fields are present (even if None)
+    existing = ensure_complete_config(existing)
 
     filepath.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
     logger.info("Strategy config saved (all): %s", name)
@@ -1621,65 +1666,66 @@ def get_option_chain(
 
     conn = sqlite3.connect(db_file, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
+    try:
+        cur = conn.cursor()
 
-    # --------------------------------------------------
-    # META
-    # --------------------------------------------------
-    meta_rows = cur.execute(
-        "SELECT key, value FROM meta"
-    ).fetchall()
-    meta = {row["key"]: row["value"] for row in meta_rows}
+        # --------------------------------------------------
+        # META
+        # --------------------------------------------------
+        meta_rows = cur.execute(
+            "SELECT key, value FROM meta"
+        ).fetchall()
+        meta = {row["key"]: row["value"] for row in meta_rows}
 
-    snapshot_ts = float(meta.get("snapshot_ts", 0))
-    age = time.time() - snapshot_ts
+        snapshot_ts = float(meta.get("snapshot_ts", 0))
+        age = time.time() - snapshot_ts
 
-    # Flag staleness in meta instead of blocking with 409
-    # This lets the dashboard show data (even if old) and display a warning
-    meta["snapshot_age"] = round(age, 1)
-    meta["is_stale"] = age > max_age
+        # Flag staleness in meta instead of blocking with 409
+        # This lets the dashboard show data (even if old) and display a warning
+        meta["snapshot_age"] = round(age, 1)
+        meta["is_stale"] = age > max_age
 
-    # --------------------------------------------------
-    # OPTION CHAIN (FULL CONTRACT)
-    # --------------------------------------------------
-    rows = cur.execute(
-        """
-        SELECT
-            strike,
-            option_type,
+        # --------------------------------------------------
+        # OPTION CHAIN (FULL CONTRACT)
+        # --------------------------------------------------
+        rows = cur.execute(
+            """
+            SELECT
+                strike,
+                option_type,
 
-            token,
-            trading_symbol,
-            exchange,
-            lot_size,
+                token,
+                trading_symbol,
+                exchange,
+                lot_size,
 
-            ltp,
-            change_pct,
-            volume,
-            oi,
-            open,
-            high,
-            low,
-            close,
-            bid,
-            ask,
-            bid_qty,
-            ask_qty,
+                ltp,
+                change_pct,
+                volume,
+                oi,
+                open,
+                high,
+                low,
+                close,
+                bid,
+                ask,
+                bid_qty,
+                ask_qty,
 
-            last_update,
+                last_update,
 
-            -- Greeks (persisted, may be NULL)
-            iv,
-            delta,
-            gamma,
-            theta,
-            vega
-        FROM option_chain
-        ORDER BY strike ASC, option_type
-        """
-    ).fetchall()
-
-    conn.close()
+                -- Greeks (persisted, may be NULL)
+                iv,
+                delta,
+                gamma,
+                theta,
+                vega
+            FROM option_chain
+            ORDER BY strike ASC, option_type
+            """
+        ).fetchall()
+    finally:
+        conn.close()
 
     return {
         "meta": meta,
@@ -1914,23 +1960,23 @@ def get_strategy_positions_detailed(
             if netqty == 0 or not symbol:
                 continue
             
-            # Find corresponding order/greek data
-            order_detail = next((o for o in orders if o.get("symbol") == symbol), {})
+            # Find corresponding order/greek data (OrderRecord is a dataclass — use getattr)
+            order_detail = next((o for o in orders if getattr(o, "symbol", None) == symbol), None)
             
             leg_data = {
                 "symbol": symbol,
                 "exchange": pos.get("exch"),
                 "qty": abs(netqty),
                 "side": "BUY" if netqty > 0 else "SELL",
-                "entry_price": float(order_detail.get("price", 0) or 0),
+                "entry_price": float(getattr(order_detail, "price", 0) or 0) if order_detail else 0.0,
                 "ltp": float(pos.get("ltp", 0) or 0),
                 "avg_price": float(pos.get("avgprc", 0) or 0),
                 
                 # Greeks (if available in order detail)
-                "delta": float(order_detail.get("delta", 0) or 0),
-                "gamma": float(order_detail.get("gamma", 0) or 0),
-                "theta": float(order_detail.get("theta", 0) or 0),
-                "vega": float(order_detail.get("vega", 0) or 0),
+                "delta": float(getattr(order_detail, "delta", 0) or 0) if order_detail else 0.0,
+                "gamma": float(getattr(order_detail, "gamma", 0) or 0) if order_detail else 0.0,
+                "theta": float(getattr(order_detail, "theta", 0) or 0) if order_detail else 0.0,
+                "vega": float(getattr(order_detail, "vega", 0) or 0) if order_detail else 0.0,
                 
                 # PnL
                 "realized_pnl": float(pos.get("rpnl", 0) or 0),
@@ -1940,8 +1986,8 @@ def get_strategy_positions_detailed(
             
             legs_by_symbol[symbol] = leg_data
             
-            # Get strategy name from order
-            strat = order_detail.get("user") or strategy_name or "UNKNOWN"
+            # Get strategy name from order (OrderRecord is dataclass)
+            strat = (getattr(order_detail, "strategy_name", None) if order_detail else None) or strategy_name or "UNKNOWN"
             
             if strat not in strategy_positions:
                 strategy_positions[strat] = {
@@ -2020,8 +2066,8 @@ def get_leg_greeks(
         if not position:
             raise HTTPException(status_code=404, detail=f"Position not found: {symbol}")
         
-        # Find order details
-        order = next((o for o in orders if o.get("symbol") == symbol), {})
+        # Find order details (OrderRecord is a dataclass — use getattr)
+        order = next((o for o in orders if getattr(o, "symbol", None) == symbol), None)
         
         netqty = int(position.get("netqty", 0))
         
@@ -2031,7 +2077,7 @@ def get_leg_greeks(
             "position": {
                 "qty": abs(netqty),
                 "side": "BUY" if netqty > 0 else "SELL",
-                "entry_price": float(order.get("price", 0) or 0),
+                "entry_price": float(getattr(order, "price", 0) or 0) if order else 0.0,
                 "avg_price": float(position.get("avgprc", 0) or 0),
                 "ltp": float(position.get("ltp", 0) or 0),
             },
@@ -2041,15 +2087,15 @@ def get_leg_greeks(
                 "total": float(position.get("upnl", 0) or 0) + float(position.get("rpnl", 0) or 0),
             },
             "greeks": {
-                "delta": float(order.get("delta", 0) or 0),
-                "gamma": float(order.get("gamma", 0) or 0),
-                "theta": float(order.get("theta", 0) or 0),
-                "vega": float(order.get("vega", 0) or 0),
-                "rho": float(order.get("rho", 0) or 0),
+                "delta": float(getattr(order, "delta", 0) or 0) if order else 0.0,
+                "gamma": float(getattr(order, "gamma", 0) or 0) if order else 0.0,
+                "theta": float(getattr(order, "theta", 0) or 0) if order else 0.0,
+                "vega": float(getattr(order, "vega", 0) or 0) if order else 0.0,
+                "rho": float(getattr(order, "rho", 0) or 0) if order else 0.0,
             },
             "metadata": {
-                "strategy": order.get("user", "UNKNOWN"),
-                "order_count": len([o for o in orders if o.get("symbol") == symbol]),
+                "strategy": getattr(order, "strategy_name", "UNKNOWN") if order else "UNKNOWN",
+                "order_count": len([o for o in orders if getattr(o, "symbol", None) == symbol]),
                 "updated_at": position.get("upl_time", ""),
             }
         }
@@ -2070,7 +2116,8 @@ def get_index_tokens_prices(
     symbols: Optional[str] = Query(
         None,
         description="Comma-separated list (e.g., 'NIFTY,BANKNIFTY,SENSEX'). If None, returns all subscribed."
-    )
+    ),
+    ctx=Depends(require_dashboard_auth),
 ):
     """
     Get live index token prices from the live feed.
@@ -2148,7 +2195,7 @@ def get_index_tokens_prices(
 
 
 @router.get("/index-tokens/list")
-def list_available_indices():
+def list_available_indices(ctx=Depends(require_dashboard_auth)):
     """
     Get list of all available index tokens.
     
@@ -2238,13 +2285,25 @@ def load_strategy_json(name: str):
         return json.load(f)
 
 def save_strategy_json(name: str, config: dict):
-    """Save strategy JSON by name"""
+    """Save strategy JSON by name — ensures ALL schema fields are present."""
     STRATEGY_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     strategy_file = STRATEGY_CONFIG_DIR / f"{name}.json"
-    
+
+    # Ensure all v2.0 schema fields are present (even if None)
+    complete = ensure_complete_config(config)
+    # Guarantee name/id are set
+    complete["name"] = complete.get("name") or name
+    complete["id"] = complete.get("id") or name.upper().replace(" ", "_").strip("_")
+
+    import time as _t
+    now = _t.strftime("%Y-%m-%dT%H:%M:%S")
+    if not complete.get("created_at"):
+        complete["created_at"] = now
+    complete["updated_at"] = now
+
     with open(strategy_file, 'w') as f:
-        json.dump(config, f, indent=2)
-    
+        json.dump(complete, f, indent=2, default=str)
+
     return strategy_file
 
 # ======================================================================
@@ -2310,8 +2369,9 @@ def get_strategy_by_name(strategy_name: str, ctx=Depends(require_dashboard_auth)
                 detail=f"Strategy '{strategy_name}' not found"
             )
         
-        # Validate the config
-        validation_result = validate_strategy(config, strategy_name)
+        # Normalize for validation (adds market_config from identity etc.)
+        normalized = ensure_complete_config(config)
+        validation_result = validate_strategy(normalized, strategy_name)
         
         return {
             "name": strategy_name,
@@ -2331,33 +2391,23 @@ def get_strategy_by_name(strategy_name: str, ctx=Depends(require_dashboard_auth)
 
 @router.post("/strategy/validate")
 def validate_strategy_config(
-    strategy_config: dict = Body(...),
-    strategy_name: str = Query(..., description="Name of strategy"),
-    ctx=Depends(require_dashboard_auth)
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
 ):
     """
-    Validate strategy JSON configuration BEFORE saving
-    
-    Args:
-        strategy_config: The JSON config to validate
-        strategy_name: Name of the strategy (for context)
-    
-    Returns:
-        {
-            "valid": true,
-            "name": "NIFTY_DNSS",
-            "errors": [],
-            "warnings": [...],
-            "info": [...],
-            "timestamp": "2026-02-12T..."
-        }
+    Validate strategy JSON configuration BEFORE saving.
+    Accepts the full strategy config as request body.
+    Extracts name from payload['name'].
     """
     try:
+        strategy_name = payload.get("name", "UNKNOWN")
+        # Normalize config so validator sees all fields including market_config
+        strategy_config = ensure_complete_config(payload)
         result = validate_strategy(strategy_config, strategy_name)
         return {
             **result.to_dict(),
             "name": strategy_name,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         logger.error(f"Error validating strategy {strategy_name}: {e}", exc_info=True)
@@ -2369,62 +2419,55 @@ def validate_strategy_config(
 
 @router.post("/strategy/create")
 def create_new_strategy(
-    strategy_name: str = Query(..., description="Name of strategy"),
-    strategy_config: dict = Body(...),
-    ctx=Depends(require_dashboard_auth)
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
 ):
     """
-    Create new strategy - validates before saving
-    
-    Args:
-        strategy_name: Name of strategy (will create {name}.json)
-        strategy_config: The strategy JSON configuration
-    
-    Returns:
-        {
-            "success": true,
-            "name": "NIFTY_DNSS",
-            "filename": "NIFTY_DNSS.json",
-            "validation": {...},
-            "path": "/full/path/to/NIFTY_DNSS.json"
-        }
+    Create new strategy.
+    Accepts full config as body; name extracted from payload['name'].
+    Validates, ensures all fields, then saves.
     """
     try:
-        # Validate first
-        validation_result = validate_strategy(strategy_config, strategy_name)
-        
+        strategy_name = (payload.get("name") or "").strip()
+        if not strategy_name:
+            raise HTTPException(400, "Strategy name is required (payload.name)")
+
+        # Ensure complete + validate
+        complete = ensure_complete_config(payload)
+        validation_result = validate_strategy(complete, strategy_name)
+
         if not validation_result.valid:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "message": "Strategy validation failed",
-                    "validation": validation_result.to_dict()
-                }
+                    "validation": validation_result.to_dict(),
+                },
             )
-        
+
+        # Slugify for filename
+        slug = _slugify(strategy_name)
+
         # Check if already exists
-        existing = load_strategy_json(strategy_name)
+        existing = load_strategy_json(slug)
         if existing:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Strategy '{strategy_name}' already exists"
-            )
-        
-        # Save
-        filepath = save_strategy_json(strategy_name, strategy_config)
-        
+            raise HTTPException(409, f"Strategy '{strategy_name}' already exists")
+
+        # Save (ensure_complete_config called again inside save_strategy_json)
+        filepath = save_strategy_json(slug, complete)
+
         return {
             "success": True,
             "name": strategy_name,
-            "filename": f"{strategy_name}.json",
+            "filename": f"{slug}.json",
             "path": str(filepath),
             "validation": validation_result.to_dict(),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating strategy {strategy_name}: {e}", exc_info=True)
+        logger.error(f"Error creating strategy: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # ======================================================================
@@ -2435,54 +2478,38 @@ def create_new_strategy(
 def update_strategy(
     strategy_name: str,
     strategy_config: dict = Body(...),
-    ctx=Depends(require_dashboard_auth)
+    ctx=Depends(require_dashboard_auth),
 ):
     """
-    Update existing strategy - validates before saving
-    
-    Args:
-        strategy_name: Name of strategy to update
-        strategy_config: New strategy configuration
-    
-    Returns:
-        {
-            "success": true,
-            "name": "NIFTY_DNSS",
-            "validation": {...},
-            "updated": true
-        }
+    Update existing strategy — validates before saving.
+    Ensures all fields are present in saved JSON.
     """
     try:
-        # Validate first
-        validation_result = validate_strategy(strategy_config, strategy_name)
-        
+        complete = ensure_complete_config(strategy_config)
+        validation_result = validate_strategy(complete, strategy_name)
+
         if not validation_result.valid:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "message": "Strategy validation failed",
-                    "validation": validation_result.to_dict()
-                }
+                    "validation": validation_result.to_dict(),
+                },
             )
-        
-        # Check if exists
+
         existing = load_strategy_json(strategy_name)
         if not existing:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Strategy '{strategy_name}' not found"
-            )
-        
-        # Save updated
-        filepath = save_strategy_json(strategy_name, strategy_config)
-        
+            raise HTTPException(404, f"Strategy '{strategy_name}' not found")
+
+        filepath = save_strategy_json(strategy_name, complete)
+
         return {
             "success": True,
             "name": strategy_name,
             "updated": True,
             "path": str(filepath),
             "validation": validation_result.to_dict(),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except HTTPException:
         raise
@@ -2551,18 +2578,21 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
 
 # Global runner instance
 _runner_instance = None
+_runner_lock = threading.Lock()
 
 def get_runner_singleton(ctx=Depends(require_dashboard_auth)):
     """Get or create global runner instance"""
     global _runner_instance
     if _runner_instance is None:
-        logger.info("Initializing StrategyRunner singleton")
-        try:
-            bot = ctx["bot"]
-            _runner_instance = StrategyRunner(bot=bot, poll_interval=2.0)
-        except Exception as e:
-            logger.error(f"Failed to initialize runner: {e}")
-            raise
+        with _runner_lock:
+            if _runner_instance is None:  # Double-checked locking
+                logger.info("Initializing StrategyRunner singleton")
+                try:
+                    bot = ctx["bot"]
+                    _runner_instance = StrategyRunner(bot=bot, poll_interval=2.0)
+                except Exception as e:
+                    logger.error(f"Failed to initialize runner: {e}")
+                    raise
     return _runner_instance
 
 @router.post("/runner/start")
@@ -2793,30 +2823,43 @@ async def websocket_log_stream(websocket):
     try:
         import asyncio
         manager = get_logger_manager()
-        last_index = {}
+        # Track how many logs we've already sent per strategy
+        sent_count = {}
         
         while True:
             # Get logs from each strategy manager
             for strategy_name, logger_obj in manager.loggers.items():
-                logs = logger_obj.get_recent_logs(lines=10)
+                # Get a larger window and track by count sent
+                logs = logger_obj.get_recent_logs(lines=50)
                 
-                if strategy_name not in last_index:
-                    last_index[strategy_name] = 0
+                if strategy_name not in sent_count:
+                    sent_count[strategy_name] = 0
                 
-                # Send only new logs
-                for log in logs[last_index[strategy_name]:]:
+                total_available = len(logs)
+                already_sent = sent_count[strategy_name]
+                
+                # Detect log rotation (new total < what we've sent)
+                if total_available < already_sent:
+                    already_sent = 0
+                
+                # Send only new logs (from the end of the list)
+                new_logs = logs[already_sent:] if already_sent < total_available else []
+                for log in new_logs:
                     await websocket.send_json({
                         "strategy": strategy_name,
-                        "timestamp": log.get("timestamp"),
-                        "level": log.get("level"),
-                        "message": log.get("message")
+                        "timestamp": log.get("timestamp") if isinstance(log, dict) else str(log),
+                        "level": log.get("level") if isinstance(log, dict) else "INFO",
+                        "message": log.get("message") if isinstance(log, dict) else str(log),
                     })
                 
-                last_index[strategy_name] = len(logs)
+                sent_count[strategy_name] = total_available
             
             # Sleep before next poll
             await asyncio.sleep(1)
     
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        await websocket.close()
+        try:
+            await websocket.close()
+        except Exception:
+            pass

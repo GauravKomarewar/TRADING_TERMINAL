@@ -21,7 +21,7 @@ from shoonya_platform.strategies.universal_settings.universal_config.universal_s
 from shoonya_platform.strategies.config_resolution_service import ConfigResolutionService
 from shoonya_platform.logging.logger_config import get_component_logger
 
-logger = get_component_logger('dnss_adapter')
+logger = get_component_logger('strategy')
 
 
 def create_dnss_from_universal_config(
@@ -104,35 +104,19 @@ def create_dnss_from_universal_config(
     if missing:
         raise ValueError(f"Missing required DNSS params: {missing}")
     
-    # Create DNSS-specific strategy config
-    dnss_config = StrategyConfig(
-        entry_time=universal_config.entry_time,
-        exit_time=universal_config.exit_time,
-        
-        target_entry_delta=float(params["target_entry_delta"]),
-        delta_adjust_trigger=float(params["delta_adjust_trigger"]),
-        max_leg_delta=float(params["max_leg_delta"]),
-        
-        profit_step=float(params["profit_step"]),
-        cooldown_seconds=int(params["cooldown_seconds"]),
-    )
-    
-    # Get option selection function
-    if get_option_func is None:
-        get_option_func = market.get_nearest_option
-    
     # ============================================================
-    # 🔧 RESOLVE & VALIDATE CONFIG (CRITICAL)
+    # 🔧 RESOLVE EVERYTHING FROM SCRIPTMASTER FIRST (CRITICAL)
     # ============================================================
-    # Validate exchange, symbol, instrument type
-    # Resolve expiry from ScriptMaster (not date math)
-    # Determine correct .sqlite database file
-    # Validate order_type rules
+    # 1. Validate exchange + symbol in ScriptMaster
+    # 2. Resolve expiry from ScriptMaster (not date math)
+    # 3. Resolve lot_size from ScriptMaster
+    # 4. Resolve order_type from ScriptMaster instrument rules
+    # 5. Determine correct .sqlite database file from supervisor
     # ============================================================
     resolver = ConfigResolutionService()
     
     resolved = resolver.resolve(
-        config={},  # Pass full config if available for validation
+        config={},
         exchange=universal_config.exchange,
         symbol=universal_config.symbol,
         instrument_type=params.get("instrument_type", "OPTIDX"),
@@ -144,24 +128,67 @@ def create_dnss_from_universal_config(
         logger.error(f"❌ {error_msg}")
         raise ValueError(error_msg)
     
-    # Use resolved values
-    expiry = resolved["expiry"]
-    db_path = resolved["db_path"]
-    order_type = resolved["order_type_resolved"]
+    # Use resolved values — ALL from ScriptMaster, no assumptions
+    resolved_expiry = resolved["expiry"]
+    resolved_db_path = resolved["db_path"]
+    resolved_order_type = resolved["order_type_resolved"]
+    resolved_lot_size = resolved.get("lot_size")
+    
+    # Compute actual order quantity: lot_qty (from user) × lot_size (from ScriptMaster)
+    user_lot_qty = universal_config.lot_qty
+    if resolved_lot_size and resolved_lot_size > 0:
+        actual_quantity = user_lot_qty * resolved_lot_size
+    else:
+        logger.warning(
+            f"⚠️ Could not resolve lot_size from ScriptMaster for "
+            f"{universal_config.symbol}. Using lot_qty={user_lot_qty} as raw quantity."
+        )
+        actual_quantity = user_lot_qty
     
     logger.info(
         f"✅ Config RESOLVED: {universal_config.symbol} "
-        f"Expiry={expiry}, OrderType={order_type}, DB={Path(db_path).name}"
+        f"Expiry={resolved_expiry}, OrderType={resolved_order_type}, "
+        f"LotSize={resolved_lot_size}, Qty={user_lot_qty}×{resolved_lot_size}={actual_quantity}, "
+        f"DB={Path(resolved_db_path).name}"
     )
+    
+    # Create DNSS config with ALL RESOLVED values (not user input for order_type)
+    dnss_config = StrategyConfig(
+        entry_time=universal_config.entry_time,
+        exit_time=universal_config.exit_time,
+        
+        target_entry_delta=float(params["target_entry_delta"]),
+        delta_adjust_trigger=float(params["delta_adjust_trigger"]),
+        max_leg_delta=float(params["max_leg_delta"]),
+        
+        profit_step=float(params["profit_step"]),
+        cooldown_seconds=int(params["cooldown_seconds"]),
+        lot_qty=actual_quantity,  # actual broker qty (lots × lot_size)
+        order_type=resolved_order_type,  # from ScriptMaster rules
+        product=universal_config.product,
+    )
+    
+    # Re-create market with the correct resolved db_path
+    # The market passed in uses DEFAULT_DB_PATH (orders.db) which is WRONG.
+    from shoonya_platform.strategies.market import DBBackedMarket as _DBBackedMarket
+    market = _DBBackedMarket(
+        db_path=resolved_db_path,
+        exchange=universal_config.exchange,
+        symbol=universal_config.symbol,
+    )
+    
+    # Bind option selection function to the CORRECT resolved market
+    get_option_func = market.get_nearest_option
     
     # Create and return fully initialized DNSS strategy
     strategy = DeltaNeutralShortStrangleStrategy(
         exchange=universal_config.exchange,
         symbol=universal_config.symbol,
-        expiry=expiry,
-        lot_qty=universal_config.lot_qty,
+        expiry=resolved_expiry,
         get_option_func=get_option_func,
         config=dnss_config,
+        lot_size=resolved_lot_size,
+        db_path=resolved_db_path,
     )
     
     return strategy

@@ -70,26 +70,30 @@ class DatabaseMarketAdapter:
         """
         Get current option chain snapshot from database.
         
-        Args:
-            include_greeks: Include Greek calculations
-            max_age_seconds: Maximum age of snapshot (seconds)
-            
+        The .sqlite file is per-symbol (e.g. NFO_NIFTY_13-Feb-2026.sqlite),
+        so all rows in option_chain belong to this symbol already.
+        
         Returns:
-            Snapshot dict with option data
+            Snapshot dict with option data, spot_price from meta table
         """
         try:
             conn = self._get_connection()
             cur = conn.cursor()
             
-            # Get latest snapshot
-            query = """
-                SELECT * FROM option_chain
-                WHERE symbol = ?
-                ORDER BY updated_at DESC
-                LIMIT 100
-            """
+            # option_chain table has no 'symbol' column — all rows are this symbol
+            rows = cur.execute("SELECT * FROM option_chain").fetchall()
             
-            rows = cur.execute(query, (self.symbol,)).fetchall()
+            # Read spot price and metadata from meta table
+            spot_price = None
+            meta = {}
+            try:
+                meta_rows = cur.execute("SELECT key, value FROM meta").fetchall()
+                for row in meta_rows:
+                    meta[row[0]] = row[1]
+                spot_price = float(meta.get("spot_ltp", 0)) or None
+            except Exception:
+                pass
+            
             conn.close()
             
             if not rows:
@@ -102,6 +106,9 @@ class DatabaseMarketAdapter:
             return {
                 "option_chain": data,
                 "symbol": self.symbol,
+                "exchange": self.exchange,
+                "spot_price": spot_price,
+                "expiry": meta.get("expiry"),
                 "count": len(data),
             }
             
@@ -138,13 +145,14 @@ class DatabaseMarketAdapter:
                 value=target_value,
                 symbol=self.symbol,
                 option_type=option_type,
+                db_path=self.db_path,
             )
             
             if option:
                 self.logger.info(
                     f"✓ Found {greek} option: "
-                    f"{option.get('symbol')} {option_type} "
-                    f"{greek}={option.get(greek, 'N/A'):.4f}"
+                    f"{option.get('trading_symbol')} {option_type} "
+                    f"{greek}={option.get(greek, 'N/A')}"
                 )
                 return option
             
@@ -180,13 +188,14 @@ class DatabaseMarketAdapter:
                 value=target_premium,
                 symbol=self.symbol,
                 option_type=option_type,
+                db_path=self.db_path,
             )
             
             if option:
                 self.logger.info(
                     f"✓ Found premium option: "
-                    f"{option.get('symbol')} {option_type} "
-                    f"LTP={option.get('ltp', 'N/A'):.2f}"
+                    f"{option.get('trading_symbol')} {option_type} "
+                    f"LTP={option.get('ltp', 'N/A')}"
                 )
                 return option
             
@@ -202,7 +211,7 @@ class DatabaseMarketAdapter:
         Get price for instrument token from database.
         
         Args:
-            token: Instrument token
+            token: Instrument token (or trading_symbol)
             
         Returns:
             Last traded price or None
@@ -211,8 +220,11 @@ class DatabaseMarketAdapter:
             conn = self._get_connection()
             cur = conn.cursor()
             
-            query = "SELECT ltp FROM instruments WHERE token = ? LIMIT 1"
-            result = cur.execute(query, (token,)).fetchone()
+            # Try token first, then trading_symbol in option_chain table
+            result = cur.execute(
+                "SELECT ltp FROM option_chain WHERE token = ? OR trading_symbol = ? LIMIT 1",
+                (token, token)
+            ).fetchone()
             conn.close()
             
             if result:
@@ -244,7 +256,7 @@ class DatabaseMarketAdapter:
             cur = conn.cursor()
             
             placeholders = ",".join("?" * len(tokens))
-            query = f"SELECT token, ltp FROM instruments WHERE token IN ({placeholders})"
+            query = f"SELECT token, ltp FROM option_chain WHERE token IN ({placeholders})"
             
             rows = cur.execute(query, tokens).fetchall()
             conn.close()

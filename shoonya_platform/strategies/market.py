@@ -36,7 +36,7 @@ def _get_current_weekly_expiry() -> str:
     Calculate the next Thursday (current weekly expiry).
     
     Returns:
-        Expiry date string in format "12FEB2026" (uppercase)
+        Expiry date string in format "13-FEB-2026" (uppercase, with hyphens)
     """
     today = date.today()
     # Calculate days until Thursday (weekday 3)
@@ -48,7 +48,7 @@ def _get_current_weekly_expiry() -> str:
     else:
         next_thursday = today + timedelta(days=days_until_thursday)
     
-    return next_thursday.strftime("%d%b%Y").upper()
+    return next_thursday.strftime("%d-%b-%Y").upper()
 
 
 class DBBackedMarket(DatabaseMarketAdapter):

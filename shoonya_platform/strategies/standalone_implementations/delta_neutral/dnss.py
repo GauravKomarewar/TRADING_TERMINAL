@@ -143,10 +143,21 @@ class StrategyState:
         return self.total_unrealized_pnl() - self.entry_pnl_base
     
     def total_delta(self) -> float:
-        """Sum of absolute deltas - Rule 14.1"""
+        """Net portfolio delta — Rule 14.1
+        
+        total_delta = abs(CE_delta + PE_delta)
+        
+        For a delta-neutral strangle at entry:
+          CE delta ≈ +0.30, PE delta ≈ -0.30 → total = abs(0.30 + (-0.30)) = 0.0
+        
+        When market drifts:
+          CE delta ≈ +0.45, PE delta ≈ -0.20 → total = abs(0.45 + (-0.20)) = 0.25
+        
+        Adjustment triggers when total_delta > delta_adjust_trigger (e.g. 0.10)
+        """
         if not self.has_both_legs():
             return 0.0
-        return self.ce_leg.abs_delta() + self.pe_leg.abs_delta()
+        return abs(self.ce_leg.delta + self.pe_leg.delta)
 
 
 # ============================================================
@@ -168,11 +179,15 @@ class DeltaNeutralShortStrangleStrategy:
         expiry: str,
         get_option_func,
         config: StrategyConfig,
+        lot_size: Optional[int] = None,
+        db_path: Optional[str] = None,
     ):
         self.exchange = exchange
         self.symbol = symbol
         self.get_option = get_option_func
         self.config = config
+        self.lot_size = lot_size  # from ScriptMaster, for reference
+        self.db_path = db_path    # resolved .sqlite path
         
         self.state = StrategyState()
         self.state.expiry = expiry
@@ -180,7 +195,8 @@ class DeltaNeutralShortStrangleStrategy:
         
         logger.info(
             f"🎯 Strategy initialized | {symbol} {exchange} | "
-            f"Expiry={expiry} | Qty={config.lot_qty}"
+            f"Expiry={expiry} | Qty={config.lot_qty} | "
+            f"LotSize={lot_size} | OrderType={config.order_type}"
         )
     
     # ========================================================
@@ -303,7 +319,16 @@ class DeltaNeutralShortStrangleStrategy:
         Used during recovery to rebuild state when internal state was lost.
         """
         for symbol, broker_data in broker_symbols.items():
-            option_type = "CE" if "C" in symbol else "PE"
+            # Detect option type from symbol — look for "CE" or "PE" substring
+            # (not just "C" which matches commodity names like CRUDEOIL)
+            symbol_upper = symbol.upper()
+            if "CE" in symbol_upper:
+                option_type = "CE"
+            elif "PE" in symbol_upper:
+                option_type = "PE"
+            else:
+                logger.warning(f"⚠️ Cannot determine option type from symbol: {symbol}")
+                continue
             
             leg = Leg(
                 symbol=symbol,
@@ -415,14 +440,43 @@ class DeltaNeutralShortStrangleStrategy:
     
     def prepare(self, market: dict) -> None:
         """
-        Called before on_tick to update market data from DB
-        DB-backed execution: greeks and spot are pre-loaded
+        Called before on_tick to update market data from snapshot.
+        
+        Supports multiple snapshot formats:
+        - {"greeks": DataFrame, "spot": float}  (legacy / engine format)
+        - {"option_chain": [...], "symbol": ..., "count": ...}  (adapter format)
+        - Empty dict {} (no data available)
         """
-        self.state.greeks_df = market.get("greeks")
-        self.state.spot_price = market.get("spot")
+        if not market:
+            return
+        
+        # Legacy format: greeks DataFrame directly
+        if "greeks" in market:
+            self.state.greeks_df = market.get("greeks")
+            self.state.spot_price = market.get("spot")
+        # Adapter format: option_chain list of dicts
+        elif "option_chain" in market:
+            chain = market.get("option_chain", [])
+            if chain:
+                try:
+                    import pandas as pd
+                    self.state.greeks_df = pd.DataFrame(chain)
+                    # Try to extract spot price from underlying price or first ATM strike
+                    self.state.spot_price = market.get("spot") or market.get("spot_price")
+                except ImportError:
+                    # No pandas — store as list, _has_valid_greeks will handle
+                    self.state.greeks_df = chain
+                    self.state.spot_price = market.get("spot")
+        else:
+            # Unknown format — try to use whatever keys exist
+            self.state.greeks_df = market.get("greeks") or market.get("option_chain")
+            self.state.spot_price = market.get("spot") or market.get("spot_price")
 
-        if self.state.greeks_df is not None and not self.state.greeks_df.empty:
-            self.state.last_greeks_time = datetime.now()
+        if self.state.greeks_df is not None:
+            # Check for DataFrame .empty or list length
+            is_empty = getattr(self.state.greeks_df, 'empty', False) if hasattr(self.state.greeks_df, 'empty') else len(self.state.greeks_df) == 0
+            if not is_empty:
+                self.state.last_greeks_time = datetime.now()
     
     def on_tick(self, now: datetime) -> List[UniversalOrderCommand]:
         """
@@ -506,9 +560,16 @@ class DeltaNeutralShortStrangleStrategy:
             logger.error("❌ Entry failed: Could not select options")
             self.state.failed = True
             return []
-                
+        
+        # option_chain table returns 'trading_symbol' not 'symbol'
+        ce_tsym = ce_option.get("trading_symbol") or ce_option.get("symbol", "")
+        pe_tsym = pe_option.get("trading_symbol") or pe_option.get("symbol", "")
+        ce_ltp = ce_option.get("ltp")
+        pe_ltp = pe_option.get("ltp")
+        
         logger.info(
-            f"📤 ENTRY | CE={ce_option['symbol']} | PE={pe_option['symbol']}"
+            f"📤 ENTRY | CE={ce_tsym} (Δ={ce_option.get('delta')}, LTP={ce_ltp}) "
+            f"| PE={pe_tsym} (Δ={pe_option.get('delta')}, LTP={pe_ltp})"
         )
         self.state.entry_sent = True
         
@@ -516,13 +577,15 @@ class DeltaNeutralShortStrangleStrategy:
         return [
             self._cmd(
                 side="SELL",
-                symbol=ce_option["symbol"],
+                symbol=ce_tsym,
                 tag="ENTRY_CE",
+                ltp=ce_ltp,
             ),
             self._cmd(
                 side="SELL",
-                symbol=pe_option["symbol"],
+                symbol=pe_tsym,
                 tag="ENTRY_PE",
+                ltp=pe_ltp,
             ),
         ]
     
@@ -549,9 +612,20 @@ class DeltaNeutralShortStrangleStrategy:
         
         # ENTRY FILLS - STRICT PARTIAL FILL DETECTION
         if self.state.entry_sent and not self.state.active:
-            # Defensive: require delta in entry fills (broker must provide greeks)
+            # If broker did not provide delta (Shoonya API doesn't),
+            # resolve it from the option_chain database
             if delta is None:
-                logger.critical("❌ Entry fill missing delta - forcing safe exit")
+                delta = self._lookup_delta_from_db(symbol)
+            
+            if delta is None:
+                # Last resort: estimate from greeks_df if available
+                delta = self._lookup_delta_from_greeks(symbol)
+            
+            if delta is None:
+                logger.critical(
+                    f"❌ Entry fill missing delta and could not resolve from DB. "
+                    f"symbol={symbol} — forcing safe exit"
+                )
                 self.state.failed = True
                 return self._force_exit("MISSING_FILL_DELTA")
 
@@ -562,6 +636,9 @@ class DeltaNeutralShortStrangleStrategy:
             return self._handle_adjustment_exit_fill(symbol, price)
         
         if self.state.adjustment_phase == "ENTRY":
+            # Resolve delta from DB if broker didn't provide it
+            if delta is None:
+                delta = self._lookup_delta_from_db(symbol) or self._lookup_delta_from_greeks(symbol) or 0.0
             self._handle_adjustment_entry_fill(symbol, price, qty, delta)
             return []
         
@@ -672,8 +749,12 @@ class DeltaNeutralShortStrangleStrategy:
             self.state.adjustment_phase = None
             return self._force_exit("ADJ_SELECTION_FAILED")
         
+        new_tsym = new_option.get("trading_symbol") or new_option.get("symbol", "")
+        new_ltp = new_option.get("ltp")
+        
         logger.info(
-            f"📤 ADJ RE-ENTRY | {self.state.adjustment_leg_type}={new_option['symbol']} "
+            f"📤 ADJ RE-ENTRY | {self.state.adjustment_leg_type}={new_tsym} "
+            f"(Δ={new_option.get('delta')}, LTP={new_ltp}) "
             f"| Target_Delta={self.state.adjustment_target_delta:.4f}"
         )
         
@@ -684,8 +765,9 @@ class DeltaNeutralShortStrangleStrategy:
         return [
             self._cmd(
                 side="SELL",
-                symbol=new_option["symbol"],
+                symbol=new_tsym,
                 tag=f"ADJ_ENTRY_{self.state.adjustment_leg_type}",
+                ltp=new_ltp,
             )
         ]
     
@@ -815,6 +897,10 @@ class DeltaNeutralShortStrangleStrategy:
         total_delta = self.state.total_delta()
         
         # DELTA ADJUSTMENT TRIGGER (Rule 14.1)
+        # total_delta = abs(ce_delta + pe_delta)  → net portfolio delta
+        # At entry: ≈ 0.0 (perfectly neutral)
+        # delta_adjust_trigger is the absolute threshold (e.g. 0.10)
+        # Triggers when net delta drifts beyond threshold
         delta_triggered = total_delta > self.config.delta_adjust_trigger
         
         # PROFIT ADJUSTMENT TRIGGER (Rule 14.5)
@@ -891,6 +977,7 @@ class DeltaNeutralShortStrangleStrategy:
                 side="BUY",
                 symbol=exit_leg.symbol,
                 tag=f"ADJ_{reason}",
+                ltp=exit_leg.current_price,
             )
         ]
     
@@ -912,6 +999,7 @@ class DeltaNeutralShortStrangleStrategy:
                     side="BUY",
                     symbol=self.state.ce_leg.symbol,
                     tag=reason,
+                    ltp=self.state.ce_leg.current_price,
                 )
             )
             logger.info(f"🚪 EXIT CE | Reason={reason}")
@@ -922,6 +1010,7 @@ class DeltaNeutralShortStrangleStrategy:
                     side="BUY",
                     symbol=self.state.pe_leg.symbol,
                     tag=reason,
+                    ltp=self.state.pe_leg.current_price,
                 )
             )
             logger.info(f"🚪 EXIT PE | Reason={reason}")
@@ -941,16 +1030,29 @@ class DeltaNeutralShortStrangleStrategy:
         side: str,
         symbol: str,
         tag: str,
+        ltp: Optional[float] = None,
     ) -> UniversalOrderCommand:
         """
         Centralized UniversalOrderCommand creation.
         
         RULES:
-        - Strategy creates ONLY base command (side, symbol, qty, tag)
-        - OMS/Dashboard injects execution params (order_type, price, product)
-        - No pricing logic in strategy
+        - Strategy creates command with side, symbol, qty, tag
+        - For LIMIT orders, price is set to LTP (best available)
         - No broker-specific inference
         """
+        # For LIMIT orders, price MUST be provided
+        price = None
+        if self.config.order_type == "LIMIT":
+            if ltp is not None and ltp > 0:
+                price = ltp
+            else:
+                # Try to get LTP from greeks data
+                price = self._get_current_ltp(symbol)
+                if price is None:
+                    logger.warning(
+                        f"⚠️ LIMIT order for {symbol} but no LTP available. "
+                        f"OMS/OrderWatcher will resolve price from market."
+                    )
         
         return UniversalOrderCommand.new(
             source="STRATEGY",
@@ -961,7 +1063,7 @@ class DeltaNeutralShortStrangleStrategy:
             side=side,
             product=self.config.product,
             order_type=self.config.order_type,
-            price=None,  # Dashboard/OMS fills if LIMIT
+            price=price,
             strategy_name=self.symbol,
             comment=tag,
         )
@@ -971,34 +1073,162 @@ class DeltaNeutralShortStrangleStrategy:
     # ========================================================
     
     def _has_valid_greeks(self) -> bool:
-        """Check if greeks data is available"""
+        """Check if greeks data is available (supports DataFrame or list)"""
         df = self.state.greeks_df
-        return df is not None and not df.empty
+        if df is None:
+            return False
+        # pandas DataFrame
+        if hasattr(df, 'empty'):
+            return not df.empty
+        # list of dicts
+        if isinstance(df, list):
+            return len(df) > 0
+        return False
   
     def _refresh_leg_data(self, leg: Leg) -> None:
         """ 
-        Update leg with latest price and delta from Greeks dataframe.
-        SAFE: Uses MultiIndex columns explicitly.
+        Update leg with latest price and delta from greeks data.
+        
+        Supports flat column format from sqlite option_chain table:
+          trading_symbol, ltp, delta, gamma, theta, vega, strike, option_type, ...
+        Also supports legacy MultiIndex DataFrame format as fallback.
         """
         df = self.state.greeks_df
-        opt = leg.option_type
-
-        symbol_col = ("Symbol", opt)
-        price_col = ("Last Price", opt)
-        delta_col = ("Delta", opt)
-
-        if symbol_col not in df.columns:
-            logger.error("❌ Greeks dataframe missing Symbol column")
+        if df is None:
+            logger.error("❌ No greeks data available for refresh")
             return
 
-        row = df[df[symbol_col] == leg.symbol]
-        if row.empty:
-            logger.error(f"❌ Cannot find {leg.symbol} in Greeks")
-            return
+        try:
+            import pandas as pd
+            
+            # Ensure we have a DataFrame
+            if isinstance(df, list):
+                df = pd.DataFrame(df)
+            
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                logger.error("❌ Greeks data empty or invalid type")
+                return
+            
+            # Flat column format from sqlite (trading_symbol, ltp, delta, ...)
+            if 'trading_symbol' in df.columns:
+                row = df[df['trading_symbol'] == leg.symbol]
+                if row.empty:
+                    # Try matching by option_type as fallback
+                    row = df[df['option_type'] == leg.option_type]
+                    if row.empty:
+                        logger.error(f"❌ Cannot find {leg.symbol} in greeks data")
+                        return
+                    # Pick the one closest to current strike
+                    if len(row) > 1:
+                        logger.warning(f"⚠️ Multiple {leg.option_type} rows, using first match")
+                
+                leg.current_price = float(row['ltp'].iloc[0]) if 'ltp' in row.columns else leg.current_price
+                leg.delta = float(row['delta'].iloc[0]) if 'delta' in row.columns else leg.delta
+                return
+            
+            # Legacy MultiIndex format: ("Symbol", "CE"), ("Delta", "CE"), etc.
+            opt = leg.option_type
+            symbol_col = ("Symbol", opt)
+            if symbol_col in df.columns:
+                row = df[df[symbol_col] == leg.symbol]
+                if row.empty:
+                    logger.error(f"❌ Cannot find {leg.symbol} in legacy format Greeks")
+                    return
+                leg.current_price = float(row[("Last Price", opt)].iloc[0])
+                leg.delta = float(row[("Delta", opt)].iloc[0])
+                return
+            
+            logger.error(f"❌ Greeks dataframe has unrecognized column format: {list(df.columns)[:5]}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to refresh leg data for {leg.symbol}: {e}")
 
-        leg.current_price = float(row[price_col].iloc[0])
-        leg.delta = float(row[delta_col].iloc[0])
-    
+    def _lookup_delta_from_db(self, trading_symbol: str) -> Optional[float]:
+        """
+        Look up current delta for a trading_symbol directly from the .sqlite DB.
+        Used when broker fill doesn't include delta (Shoonya API doesn't).
+        """
+        if not self.db_path:
+            return None
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT delta FROM option_chain WHERE trading_symbol = ? LIMIT 1",
+                (trading_symbol,),
+            ).fetchone()
+            conn.close()
+            if row and row["delta"] is not None:
+                delta = float(row["delta"])
+                logger.info(f"📊 Delta resolved from DB: {trading_symbol} → Δ={delta:.4f}")
+                return delta
+        except Exception as e:
+            logger.warning(f"⚠️ Delta lookup from DB failed for {trading_symbol}: {e}")
+        return None
+
+    def _lookup_delta_from_greeks(self, trading_symbol: str) -> Optional[float]:
+        """
+        Look up delta from the in-memory greeks_df (last snapshot).
+        Falls back to option_type matching if exact symbol not found.
+        """
+        df = self.state.greeks_df
+        if df is None:
+            return None
+        try:
+            import pandas as pd
+            if isinstance(df, list):
+                df = pd.DataFrame(df)
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return None
+            
+            if 'trading_symbol' in df.columns:
+                row = df[df['trading_symbol'] == trading_symbol]
+                if not row.empty and 'delta' in row.columns:
+                    delta = float(row['delta'].iloc[0])
+                    logger.info(f"📊 Delta resolved from greeks_df: {trading_symbol} → Δ={delta:.4f}")
+                    return delta
+        except Exception as e:
+            logger.warning(f"⚠️ Delta lookup from greeks_df failed: {e}")
+        return None
+
+    def _get_current_ltp(self, trading_symbol: str) -> Optional[float]:
+        """
+        Get current LTP for a trading_symbol from DB or greeks_df.
+        Used to set price for LIMIT orders.
+        """
+        # Try greeks_df first (faster, in-memory)
+        df = self.state.greeks_df
+        if df is not None:
+            try:
+                import pandas as pd
+                if isinstance(df, list):
+                    df = pd.DataFrame(df)
+                if isinstance(df, pd.DataFrame) and 'trading_symbol' in df.columns:
+                    row = df[df['trading_symbol'] == trading_symbol]
+                    if not row.empty and 'ltp' in row.columns:
+                        return float(row['ltp'].iloc[0])
+            except Exception:
+                pass
+        
+        # Fallback: read from database
+        if self.db_path:
+            try:
+                import sqlite3
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT ltp FROM option_chain WHERE trading_symbol = ? LIMIT 1",
+                    (trading_symbol,),
+                ).fetchone()
+                conn.close()
+                if row:
+                    return float(row["ltp"])
+            except Exception:
+                pass
+        return None
+
     def get_status(self) -> dict:
         """
         Get current strategy status for reporting

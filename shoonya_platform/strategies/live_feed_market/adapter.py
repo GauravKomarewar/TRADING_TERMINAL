@@ -35,16 +35,18 @@ class LiveFeedMarketAdapter:
     Handles real-time option chain snapshots.
     """
 
-    def __init__(self, exchange: str, symbol: str):
+    def __init__(self, exchange: str, symbol: str, db_path: Optional[str] = None):
         """
         Initialize live feed market adapter.
         
         Args:
             exchange: NFO, MCX, etc.
             symbol: NIFTY, BANKNIFTY, etc.
+            db_path: Optional path to SQLite DB for option lookups
         """
         self.exchange = exchange
         self.symbol = symbol
+        self.db_path = db_path
         self.logger = logger
 
     def get_market_snapshot(
@@ -107,13 +109,15 @@ class LiveFeedMarketAdapter:
                 value=target_value,
                 symbol=self.symbol,
                 option_type=option_type,
+                db_path=self.db_path,
             )
             
             if option:
+                greek_val = option.get(greek, 'N/A')
                 self.logger.info(
                     f"✓ Found {greek} option: "
-                    f"{option.get('symbol')} {option_type} "
-                    f"{greek}={option.get(greek, 'N/A'):.4f}"
+                    f"{option.get('trading_symbol', option.get('symbol'))} {option_type} "
+                    f"{greek}={greek_val}"
                 )
                 return option
             
@@ -149,13 +153,15 @@ class LiveFeedMarketAdapter:
                 value=target_premium,
                 symbol=self.symbol,
                 option_type=option_type,
+                db_path=self.db_path,
             )
             
             if option:
+                ltp_val = option.get('ltp', 'N/A')
                 self.logger.info(
                     f"✓ Found premium option: "
-                    f"{option.get('symbol')} {option_type} "
-                    f"LTP={option.get('ltp', 'N/A'):.2f}"
+                    f"{option.get('trading_symbol', option.get('symbol'))} {option_type} "
+                    f"LTP={ltp_val}"
                 )
                 return option
             

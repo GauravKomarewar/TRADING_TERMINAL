@@ -13,7 +13,10 @@
 import sqlite3
 import threading
 import os
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ======================================================
 # DATABASE PATH (EC2 / WINDOWS / DOCKER SAFE)
@@ -47,7 +50,7 @@ def _resolve_db_path():
     )
     db_parent = _DB_PATH.parent
     db_parent.mkdir(parents=True, exist_ok=True)
-    print("DB PATH IN USE:", _DB_PATH)
+    logger.info(f"DB PATH IN USE: {_DB_PATH}")
     return _DB_PATH
 
 def get_connection():

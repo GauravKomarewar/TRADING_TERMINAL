@@ -87,7 +87,7 @@ class StrategyConfigValidator:
     
     # Valid enum values
     VALID_MARKET_TYPES = ["database_market", "live_feed_market"]
-    VALID_EXCHANGES = ["NFO", "MCX", "NCDEX", "CDSL"]
+    VALID_EXCHANGES = ["NFO", "BFO", "MCX", "CDS", "NCDEX", "NSE", "BSE"]
     VALID_ENTRY_TYPES = ["delta_neutral", "directional", "calendar_spread", "butterfly", "iron_condor"]
     VALID_ADJUSTMENT_TYPES = ["delta_drift", "stop_loss_triggered", "time_decay", "vega_spike"]
     VALID_EXIT_TYPES = ["profit_target", "stop_loss", "time_based", "manual"]
@@ -134,7 +134,9 @@ class StrategyConfigValidator:
             # Phase 6: Optional configs
             self._validate_adjustment_config(config.get("adjustment", {}))
             self._validate_execution_config(config.get("execution", {}))
-            self._validate_risk_management_config(config.get("risk_management", {}))
+            # Support both v1 key "risk_management" and v2 key "rms"
+            rms_config = config.get("risk_management") or config.get("rms", {})
+            self._validate_risk_management_config(rms_config)
             
             # Phase 7: Smart cross-field validation
             self._validate_cross_fields(config)
@@ -159,20 +161,51 @@ class StrategyConfigValidator:
             return
     
     def _validate_required_fields(self, config: Dict):
-        """Validate all required fields are present"""
-        required = ["name", "market_config", "entry", "exit"]
-        
-        for field in required:
+        """Validate all required fields are present (supports v1 + v2.0 formats)"""
+        # Name is always required
+        if "name" not in config:
+            self.result.add_error("name", "Required field 'name' is missing", "missing_field")
+        elif config["name"] is None:
+            self.result.add_error("name", "Required field 'name' cannot be null", "null_value")
+
+        # Market info: accept market_config OR identity
+        has_market = bool(config.get("market_config")) or bool(config.get("identity"))
+        if not has_market:
+            self.result.add_error(
+                "market_config/identity",
+                "Market configuration is required (provide 'market_config' or 'identity' section)",
+                "missing_field",
+            )
+
+        # Entry and exit are always required
+        for field in ("entry", "exit"):
             if field not in config:
                 self.result.add_error(field, f"Required field '{field}' is missing", "missing_field")
             elif config[field] is None:
                 self.result.add_error(field, f"Required field '{field}' cannot be null", "null_value")
             elif isinstance(config[field], dict) and not config[field]:
                 self.result.add_warning(field, f"Field '{field}' is empty dict", "empty_dict")
+
+        # strategy_type: root or identity.strategy_type
+        strategy_type = (config.get("strategy_type") or "").strip()
+        if not strategy_type:
+            identity = config.get("identity", {})
+            if isinstance(identity, dict):
+                strategy_type = (identity.get("strategy_type") or "").strip()
+        if not strategy_type:
+            self.result.add_error(
+                "strategy_type",
+                "Required field 'strategy_type' is missing (expected at root or in 'identity' section)",
+                "missing_field",
+            )
     
     def _validate_market_config(self, market_config: Dict):
-        """Validate market configuration"""
-        if not isinstance(market_config, dict):
+        """Validate market configuration (supports both market_config and identity)"""
+        if not isinstance(market_config, dict) or not market_config:
+            # If market_config is empty, it may have been populated from identity by
+            # ensure_complete_config. If it's still empty, skip (handled by required_fields).
+            if not market_config:
+                return
             self.result.add_error("market_config", "Must be a JSON object", "invalid_type")
             return
         
@@ -229,13 +262,16 @@ class StrategyConfigValidator:
                     )
     
     def _validate_entry_config(self, entry_config: Dict):
-        """Validate entry configuration"""
+        """Validate entry configuration (supports v1 flat and v2 nested format)"""
         if not isinstance(entry_config, dict):
             self.result.add_error("entry", "Must be a JSON object", "invalid_type")
             return
         
-        # Entry time
-        entry_time = entry_config.get("entry_time")
+        # Support v2.0 nested timing.entry_time or v1 flat entry_time
+        timing = entry_config.get("timing", {})
+        if not isinstance(timing, dict):
+            timing = {}
+        entry_time = timing.get("entry_time") or entry_config.get("entry_time")
         if entry_time:
             if not self._is_valid_time_format(entry_time):
                 self.result.add_error(
@@ -255,15 +291,19 @@ class StrategyConfigValidator:
                 "unknown_value"
             )
         
-        # Target deltas
-        ce_delta = entry_config.get("target_ce_delta")
+        # Target deltas: from v2 legs section or v1 flat
+        legs = entry_config.get("legs", {})
+        if not isinstance(legs, dict):
+            legs = {}
+        ce_delta = legs.get("target_entry_delta") or entry_config.get("target_ce_delta")
+        pe_delta = entry_config.get("target_pe_delta")
+
         if ce_delta is not None:
             if not isinstance(ce_delta, (int, float)):
                 self.result.add_error("entry.target_ce_delta", "Must be a number", "invalid_type")
             elif not (0 <= ce_delta <= 1):
                 self.result.add_error("entry.target_ce_delta", "Delta must be between 0 and 1", "out_of_range")
         
-        pe_delta = entry_config.get("target_pe_delta")
         if pe_delta is not None:
             if not isinstance(pe_delta, (int, float)):
                 self.result.add_error("entry.target_pe_delta", "Must be a number", "invalid_type")
@@ -281,8 +321,11 @@ class StrategyConfigValidator:
                 "unusual_value"
             )
         
-        # Quantity
-        quantity = entry_config.get("quantity")
+        # Quantity: from v2 position.lots or v1 flat quantity
+        position = entry_config.get("position", {})
+        if not isinstance(position, dict):
+            position = {}
+        quantity = position.get("lots") or entry_config.get("quantity")
         if quantity is not None:
             if not isinstance(quantity, int):
                 self.result.add_error("entry.quantity", "Must be an integer", "invalid_type")
@@ -290,13 +333,16 @@ class StrategyConfigValidator:
                 self.result.add_error("entry.quantity", "Quantity must be positive", "invalid_value")
     
     def _validate_exit_config(self, exit_config: Dict):
-        """Validate exit configuration"""
+        """Validate exit configuration (supports v1 flat and v2 nested format)"""
         if not isinstance(exit_config, dict):
             self.result.add_error("exit", "Must be a JSON object", "invalid_type")
             return
         
-        # Exit time
-        exit_time = exit_config.get("exit_time")
+        # Exit time: v2 time.exit_time or v1 flat exit_time
+        time_cfg = exit_config.get("time", {})
+        if not isinstance(time_cfg, dict):
+            time_cfg = {}
+        exit_time = time_cfg.get("exit_time") or exit_config.get("exit_time")
         if exit_time:
             if not self._is_valid_time_format(exit_time):
                 self.result.add_error(
@@ -316,16 +362,22 @@ class StrategyConfigValidator:
                 "unknown_value"
             )
         
-        # Profit target
-        profit = exit_config.get("profit_target")
+        # Profit target: v2 profit.target_rupees or v1 flat profit_target
+        profit_cfg = exit_config.get("profit", {})
+        if not isinstance(profit_cfg, dict):
+            profit_cfg = {}
+        profit = profit_cfg.get("target_rupees") or exit_config.get("profit_target")
         if profit is not None:
             if not isinstance(profit, (int, float)):
                 self.result.add_error("exit.profit_target", "Must be a number", "invalid_type")
             elif profit <= 0:
                 self.result.add_error("exit.profit_target", "Profit target must be positive", "invalid_value")
         
-        # Max loss
-        loss = exit_config.get("max_loss")
+        # Max loss: v2 stop_loss.sl_rupees or v1 flat max_loss
+        sl_cfg = exit_config.get("stop_loss", {})
+        if not isinstance(sl_cfg, dict):
+            sl_cfg = {}
+        loss = sl_cfg.get("sl_rupees") or exit_config.get("max_loss")
         if loss is not None:
             if not isinstance(loss, (int, float)):
                 self.result.add_error("exit.max_loss", "Must be a number", "invalid_type")
@@ -341,7 +393,7 @@ class StrategyConfigValidator:
             )
     
     def _validate_adjustment_config(self, adjustment_config: Dict):
-        """Validate adjustment configuration"""
+        """Validate adjustment configuration (supports v1 flat + v2 nested)"""
         if not isinstance(adjustment_config, dict):
             if adjustment_config is not None:
                 self.result.add_error("adjustment", "Must be a JSON object", "invalid_type")
@@ -350,30 +402,24 @@ class StrategyConfigValidator:
         if not adjustment_config:
             return  # Empty is okay
         
-        enabled = adjustment_config.get("enabled", True)
+        # v2 nested: adjustment.general.enabled / v1 flat: adjustment.enabled
+        general = adjustment_config.get("general", {}) if isinstance(adjustment_config.get("general"), dict) else {}
+        enabled = general.get("enabled") if general else adjustment_config.get("enabled", True)
         if not isinstance(enabled, bool):
             self.result.add_warning("adjustment.enabled", "Should be boolean", "invalid_type")
         
         if enabled:
-            # Adjustment type
-            adj_type = adjustment_config.get("adjustment_type", "delta_drift")
-            if adj_type not in self.VALID_ADJUSTMENT_TYPES:
-                self.result.add_warning(
-                    "adjustment.adjustment_type",
-                    f"Unknown adjustment_type '{adj_type}'. Known types: {', '.join(self.VALID_ADJUSTMENT_TYPES)}",
-                    "unknown_value"
-                )
-            
-            # Delta drift trigger
-            trigger = adjustment_config.get("delta_drift_trigger")
+            # v2 nested: adjustment.delta.trigger / v1 flat: adjustment.delta_drift_trigger
+            delta_cfg = adjustment_config.get("delta", {}) if isinstance(adjustment_config.get("delta"), dict) else {}
+            trigger = delta_cfg.get("trigger") or adjustment_config.get("delta_drift_trigger")
             if trigger is not None:
                 if not isinstance(trigger, (int, float)):
-                    self.result.add_error("adjustment.delta_drift_trigger", "Must be a number", "invalid_type")
+                    self.result.add_error("adjustment.delta.trigger", "Must be a number", "invalid_type")
                 elif not (0 <= trigger <= 1):
-                    self.result.add_error("adjustment.delta_drift_trigger", "Must be between 0 and 1", "out_of_range")
+                    self.result.add_error("adjustment.delta.trigger", "Must be between 0 and 1", "out_of_range")
             
-            # Cooldown
-            cooldown = adjustment_config.get("cooldown_seconds", 60)
+            # v2 nested: adjustment.general.cooldown_seconds / v1 flat: adjustment.cooldown_seconds
+            cooldown = general.get("cooldown_seconds") or adjustment_config.get("cooldown_seconds", 60)
             if not isinstance(cooldown, int):
                 self.result.add_error("adjustment.cooldown_seconds", "Must be an integer", "invalid_type")
             elif cooldown < 0:
@@ -428,15 +474,18 @@ class StrategyConfigValidator:
                 self.result.add_error("risk_management.max_total_loss", "Must be positive", "invalid_value")
     
     def _validate_cross_fields(self, config: Dict):
-        """Validate relationships between fields"""
+        """Validate relationships between fields (supports v1 + v2 formats)"""
         try:
-            # Entry time before exit time
             entry = config.get("entry", {})
             exit_cfg = config.get("exit", {})
-            
-            entry_time = entry.get("entry_time")
-            exit_time = exit_cfg.get("exit_time")
-            
+
+            # Extract times from v2 nested or v1 flat
+            timing = entry.get("timing", {}) if isinstance(entry.get("timing"), dict) else {}
+            time_cfg = exit_cfg.get("time", {}) if isinstance(exit_cfg.get("time"), dict) else {}
+
+            entry_time = timing.get("entry_time") or entry.get("entry_time")
+            exit_time = time_cfg.get("exit_time") or exit_cfg.get("exit_time")
+
             if entry_time and exit_time and self._is_valid_time_format(entry_time) and self._is_valid_time_format(exit_time):
                 if entry_time >= exit_time:
                     self.result.add_error(
@@ -444,11 +493,13 @@ class StrategyConfigValidator:
                         f"Entry time ({entry_time}) must be before exit time ({exit_time})",
                         "invalid_time_range"
                     )
-            
+
             # Profit target vs max loss
-            profit = exit_cfg.get("profit_target")
-            loss = exit_cfg.get("max_loss")
-            
+            profit_cfg = exit_cfg.get("profit", {}) if isinstance(exit_cfg.get("profit"), dict) else {}
+            sl_cfg = exit_cfg.get("stop_loss", {}) if isinstance(exit_cfg.get("stop_loss"), dict) else {}
+            profit = profit_cfg.get("target_rupees") or exit_cfg.get("profit_target")
+            loss = sl_cfg.get("sl_rupees") or exit_cfg.get("max_loss")
+
             if profit and loss and isinstance(profit, (int, float)) and isinstance(loss, (int, float)):
                 if profit <= loss:
                     self.result.add_warning(
@@ -456,11 +507,12 @@ class StrategyConfigValidator:
                         f"Profit target ({profit}) should typically be > max loss ({loss})",
                         "unusual_risk_ratio"
                     )
-            
-            # Asymmetric deltas warning
-            ce_delta = entry.get("target_ce_delta")
+
+            # Asymmetric deltas warning (v2 uses target_entry_delta for both)
+            legs = entry.get("legs", {}) if isinstance(entry.get("legs"), dict) else {}
+            ce_delta = legs.get("target_entry_delta") or entry.get("target_ce_delta")
             pe_delta = entry.get("target_pe_delta")
-            
+
             if ce_delta is not None and pe_delta is not None:
                 if ce_delta != pe_delta:
                     self.result.add_warning(
@@ -468,21 +520,25 @@ class StrategyConfigValidator:
                         f"Asymmetric deltas: CE={ce_delta}, PE={pe_delta} (intentional?)",
                         "asymmetric_deltas"
                     )
-        
+
         except Exception as e:
             self.result.add_warning("_cross_fields", f"Could not validate cross-fields: {str(e)}", "validation_skip")
     
     @staticmethod
     def _is_valid_time_format(time_str: str) -> bool:
-        """Check if time is in HH:MM format"""
+        """Check if time is in HH:MM or HH:MM:SS format"""
         if not isinstance(time_str, str):
             return False
         try:
             parts = time_str.split(":")
-            if len(parts) != 2:
+            if len(parts) not in (2, 3):
                 return False
             hours = int(parts[0])
             minutes = int(parts[1])
+            if len(parts) == 3:
+                seconds = int(parts[2])
+                if not (0 <= seconds < 60):
+                    return False
             return 0 <= hours < 24 and 0 <= minutes < 60
         except (ValueError, AttributeError):
             return False

@@ -213,7 +213,8 @@ let timer=null,currentModifyId=null,currentModifyType=null,systemOrdersCache=[],
 
 async function loadOrderbook(){
     try{
-        const res=await fetch('/dashboard/orderbook');
+        const res=await fetch('/dashboard/orderbook',{credentials:'include'});
+        if(res.status===401||res.status===403){stopOrderbookAutoRefresh();window.location.href='/';return;}
         const data=await res.json();
         systemOrdersCache=data.system_orders||[];
         brokerOrdersCache=data.broker_orders||[];
@@ -303,9 +304,11 @@ async function submitModify(){
         const res=await fetch(endpoint,{
             method:'POST',
             headers:{'Content-Type':'application/json'},
-            body:JSON.stringify(payload)
+            body:JSON.stringify(payload),
+            credentials:'include'
         });
         const data=await res.json();
+        if(res.status===401||res.status===403){window.location.href='/';return;}
         if(res.ok && data.accepted){
             alert('Order modification request submitted');
             closeModify();
@@ -325,9 +328,11 @@ async function cancelOrder(id,type){
         const res=await fetch(endpoint,{
             method:'POST',
             headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({order_id:id})
+            body:JSON.stringify({order_id:id}),
+            credentials:'include'
         });
         const data=await res.json();
+        if(res.status===401||res.status===403){window.location.href='/';return;}
         if(res.ok && data.accepted){
             alert('Order cancellation request submitted');
             loadOrderbook();
@@ -346,9 +351,11 @@ async function cancelAllSystem(){
     try{
         const res=await fetch('/dashboard/orders/cancel/system/all',{
             method:'POST',
-            headers:{'Content-Type':'application/json'}
+            headers:{'Content-Type':'application/json'},
+            credentials:'include'
         });
         const data=await res.json();
+        if(res.status===401||res.status===403){window.location.href='/';return;}
         if(res.ok && data.accepted){
             alert(`Cancellation request submitted for ${pending.length} system orders`);
             loadOrderbook();
@@ -367,7 +374,8 @@ async function cancelAllBroker(){
     try{
         const res=await fetch('/dashboard/orders/cancel/broker/all',{
             method:'POST',
-            headers:{'Content-Type':'application/json'}
+            headers:{'Content-Type':'application/json'},
+            credentials:'include'
         });
         const data=await res.json();
         if(res.ok && data.accepted){

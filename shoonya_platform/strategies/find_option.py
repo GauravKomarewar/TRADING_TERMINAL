@@ -85,17 +85,22 @@ def find_option(
             raise ValueError(f"Field '{field}' not found. Available fields: {available}")
         
         # Build base query
-        query = "SELECT * FROM option_chain WHERE symbol = ?"
-        params = [symbol]
+        # NOTE: option_chain table has NO 'symbol' column — the .sqlite file is
+        # already per-symbol (e.g. NFO_NIFTY_13-Feb-2026.sqlite), so all rows
+        # in the file belong to the requested symbol.  We only filter by option_type.
+        query = "SELECT * FROM option_chain"
+        params = []
         
         if option_type:
-            query += " AND option_type = ?"
+            query += " WHERE option_type = ?"
             params.append(option_type)
         
         # Execute query
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
-        conn.close()
+        
+        # Get column names BEFORE closing connection
+        all_columns = [d[0] for d in cursor.description] if cursor.description else []
         
         if not rows:
             return None
@@ -107,9 +112,6 @@ def find_option(
             if use_absolute:
                 row_val = abs(row_val)
             return abs(row_val - value)
-        
-        # Get all column names (in lowercase for case-insensitive matching)
-        all_columns = [d[0] for d in cursor.description] if cursor.description else []
         
         nearest = None
         min_distance = float('inf')
@@ -185,14 +187,14 @@ def find_options(
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        query = "SELECT * FROM option_chain WHERE symbol = ?"
-        params = [symbol]
+        query = "SELECT * FROM option_chain"
+        params = []
         
         if option_type:
-            query += " AND option_type = ?"
+            query += " WHERE option_type = ?"
             params.append(option_type)
         
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
         
@@ -277,14 +279,14 @@ def find_option_by_multiple_criteria(
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        query = "SELECT * FROM option_chain WHERE symbol = ?"
-        params = [symbol]
+        query = "SELECT * FROM option_chain"
+        params = []
         
         if option_type:
-            query += " AND option_type = ?"
+            query += " WHERE option_type = ?"
             params.append(option_type)
         
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
         
@@ -352,7 +354,7 @@ def get_option_details(symbol: Optional[str] = None, token: Optional[int] = None
         cursor = conn.cursor()
         
         if symbol:
-            cursor.execute("SELECT * FROM option_chain WHERE symbol = ?", (symbol,))
+            cursor.execute("SELECT * FROM option_chain WHERE trading_symbol = ?", (symbol,))
         elif token:
             cursor.execute("SELECT * FROM option_chain WHERE token = ?", (token,))
         else:
@@ -371,19 +373,37 @@ def get_option_details(symbol: Optional[str] = None, token: Optional[int] = None
 
 
 def _find_database_path() -> Optional[str]:
-    """Auto-detect database path from common locations."""
-    possible_paths = [
-        "market_data.sqlite",
-        "market_data.db",
-        Path.home() / ".shoonya" / "market_data.sqlite",
-        Path(__file__).parent / "market_data.sqlite",
-    ]
+    """Auto-detect database path from supervisor DB pattern.
     
-    for path in possible_paths:
-        if isinstance(path, str):
-            path = Path(path)
-        if path.exists():
-            return str(path)
+    Searches the supervisor data directory for .sqlite files matching
+    the pattern: {DB_BASE_DIR}/{EXCHANGE}_{SYMBOL}_{EXPIRY}.sqlite
+    
+    Returns the most recently modified .sqlite file, or None.
+    """
+    try:
+        from shoonya_platform.market_data.option_chain.supervisor import DB_BASE_DIR
+        if DB_BASE_DIR.exists():
+            sqlite_files = sorted(
+                DB_BASE_DIR.glob("*.sqlite"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if sqlite_files:
+                return str(sqlite_files[0])
+    except ImportError:
+        pass
+    
+    # Legacy fallback paths
+    project_root = Path(__file__).resolve().parents[2]
+    data_dir = project_root / "shoonya_platform" / "market_data" / "option_chain" / "data"
+    if data_dir.exists():
+        sqlite_files = sorted(
+            data_dir.glob("*.sqlite"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if sqlite_files:
+            return str(sqlite_files[0])
     
     return None
 

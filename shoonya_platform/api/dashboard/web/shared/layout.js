@@ -229,8 +229,12 @@
     function fetchTickerPrices() {
         const query = ALL_SYMBOLS.join(',');
         fetch(`/dashboard/index-tokens/prices?symbols=${query}`, { credentials: 'include' })
-            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(r => {
+                if (r.status === 401 || r.status === 403) { window.location.href = '/'; return Promise.reject(); }
+                return r.ok ? r.json() : Promise.reject();
+            })
             .then(data => {
+                if (!data) return;
                 const indices = data.indices || {};
                 ALL_SYMBOLS.forEach(s => {
                     if (indices[s]) {

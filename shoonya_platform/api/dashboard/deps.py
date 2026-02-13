@@ -10,7 +10,6 @@ RULES:
 - No side effects
 """
 from fastapi import Cookie, HTTPException, Request
-from fastapi.responses import RedirectResponse
 from typing import Optional
 import logging
 
@@ -28,23 +27,16 @@ async def require_dashboard_auth(
     Enforce dashboard authentication.
 
     RULES:
-    - HTML requests → redirect to /
-    - API / JS requests → 401
+    - Always raise 401 for unauthenticated requests
+    - Frontend JS handles 401 → redirect to login
     - No side effects
     """
-
-    def redirect_to_login():
-        return RedirectResponse(url="/", status_code=302)
 
     # -----------------------------
     # Missing cookie
     # -----------------------------
     if not dashboard_session:
         logger.warning("🚫 Dashboard access denied: no session cookie")
-
-        if "text/html" in request.headers.get("accept", ""):
-            return redirect_to_login()
-
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     # -----------------------------
@@ -53,10 +45,6 @@ async def require_dashboard_auth(
     session = active_sessions.get(dashboard_session)
     if not session:
         logger.warning("🚫 Dashboard access denied: invalid session")
-
-        if "text/html" in request.headers.get("accept", ""):
-            return redirect_to_login()
-
         raise HTTPException(status_code=401, detail="Session expired")
 
     # -----------------------------

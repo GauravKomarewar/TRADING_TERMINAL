@@ -1,9 +1,9 @@
 {
   "schema_version": "2.0",
-  "name": "DNSS NIFTY Weekly",
-  "id": "DNSS_NIFTY_WEEKLY",
+  "name": "DNSS NIFTY Correct",
+  "id": "DNSS_NIFTY_CORRECT",
   "enabled": true,
-  "description": "Delta Neutral Short Strangle on NIFTY - Weekly expiry. Auto-adjusts via delta monitoring with profit stepping. Sells OTM CE + PE at target delta, monitors combined delta, adjusts when threshold breached.",
+  "description": "Delta Neutral Short Strangle on NIFTY - Sells OTM calls and puts at 30 delta, auto-adjusts when delta drifts >10%, targets Rs 1500 profit per step",
   "tags": ["nifty", "strangle", "delta-neutral", "weekly", "options"],
   "status": "IDLE",
   "strategy_type": "dnss",
@@ -17,7 +17,7 @@
     "expiry_mode": "weekly_current",
     "expiry_custom": null,
     "product_type": "NRML",
-    "order_type": "LIMIT"
+    "order_type": "MARKET"
   },
   "market_config": {
     "market_type": "database_market",
@@ -71,7 +71,7 @@
     },
     "legs": {
       "leg_type": "strangle",
-      "target_entry_delta": 0.20,
+      "target_entry_delta": 0.30,
       "atm_offset": 0,
       "ce_offset": 100,
       "pe_offset": 100,
@@ -85,11 +85,11 @@
       "check_interval_min": 5,
       "max_adj_per_day": 5,
       "max_adj_per_session": 10,
-      "cooldown_seconds": 60
+      "cooldown_seconds": 300
     },
     "delta": {
-      "trigger": 0.50,
-      "target": 0.20,
+      "trigger": 0.10,
+      "target": 0.30,
       "emergency_trigger": 0.65,
       "mode": "shift"
     },
@@ -126,7 +126,7 @@
   },
   "exit": {
     "time": {
-      "exit_time": "15:15",
+      "exit_time": "15:28",
       "force_exit_before_expiry_min": 10,
       "exit_on_expiry_day": true,
       "early_exit_if_profitable_after": null

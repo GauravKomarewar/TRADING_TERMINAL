@@ -89,6 +89,7 @@ class MarketAdapterFactory:
             adapter = LiveFeedMarketAdapter(
                 exchange=exchange,
                 symbol=symbol,
+                db_path=config.get("db_path"),
             )
             logger.info(f"✓ Live feed adapter initialized for {exchange}:{symbol}")
             return adapter

@@ -251,10 +251,20 @@ class OrderWatcherEngine(threading.Thread):
         """
         try:
             symbol = broker_order.get("tsym", record.symbol)
-            side = (broker_order.get("side") or "").upper()
-            qty = int(broker_order.get("fillshares", 0))
-            price = float(broker_order.get("avgprc", 0))
-            delta = broker_order.get("delta")  # May be None or string
+            # Shoonya API returns trantype as "B"/"S", not "BUY"/"SELL"
+            raw_side = (
+                broker_order.get("side")
+                or broker_order.get("trantype")
+                or record.side
+                or ""
+            ).upper()
+            # Normalize: B → BUY, S → SELL
+            side_map = {"B": "BUY", "S": "SELL", "BUY": "BUY", "SELL": "SELL"}
+            side = side_map.get(raw_side, raw_side)
+            
+            qty = int(broker_order.get("fillshares") or broker_order.get("qty") or 0)
+            price = float(broker_order.get("avgprc") or broker_order.get("flprc") or 0)
+            delta = broker_order.get("delta")  # Shoonya doesn't provide this  # May be None or string
 
             if not symbol or not side or qty == 0:
                 logger.warning(

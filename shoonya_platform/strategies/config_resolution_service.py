@@ -34,11 +34,12 @@ from scripts.scriptmaster import (
     OPTION_INSTRUMENTS,
     SCRIPTMASTER,
     refresh_scriptmaster,
+    universal_symbol_search,
 )
 from scripts.scriptmaster import requires_limit_order
 from shoonya_platform.logging.logger_config import get_component_logger
 
-logger = get_component_logger('config_resolution')
+logger = get_component_logger('core')
 
 
 class ConfigResolutionService:
@@ -84,12 +85,13 @@ class ConfigResolutionService:
                 "expiry": "17-FEB-2026",
                 "db_path": "/path/to/MCX_CRUDEOILM_17-FEB-2026.sqlite",
                 "order_type_resolved": "LIMIT" or "MARKET",
+                "lot_size": 75,  # from ScriptMaster LotSize
                 "errors": [...],
                 "warnings": [...],
             }
         """
-        self.errors = []
-        self.warnings = []
+        errors: List[str] = []
+        warnings: List[str] = []
         
         exchange = exchange.upper()
         symbol = symbol.upper()
@@ -100,46 +102,47 @@ class ConfigResolutionService:
             "expiry": None,
             "db_path": None,
             "order_type_resolved": None,
+            "lot_size": None,
             "errors": [],
             "warnings": [],
         }
         
         # 1. Validate exchange exists in ScriptMaster
         if not self._validate_exchange(exchange):
-            self.errors.append(f"Exchange '{exchange}' not found in ScriptMaster")
-            result["errors"] = self.errors
+            errors.append(f"Exchange '{exchange}' not found in ScriptMaster")
+            result["errors"] = errors
             return result
         
         # 2. Validate symbol exists for this exchange
         if not self._validate_symbol(exchange, symbol):
-            self.errors.append(
+            errors.append(
                 f"Symbol '{symbol}' not found on {exchange} in ScriptMaster"
             )
-            result["errors"] = self.errors
+            result["errors"] = errors
             return result
         
         # 3. Validate instrument_type
         if not self._validate_instrument_type(exchange, instrument_type):
-            self.errors.append(
+            errors.append(
                 f"Instrument type '{instrument_type}' not valid for {exchange}"
             )
-            result["errors"] = self.errors
+            result["errors"] = errors
             return result
         
         # 4. Resolve expiry from ScriptMaster
         resolved_expiry = self._resolve_expiry(exchange, symbol, expiry_mode)
         if not resolved_expiry:
-            self.errors.append(
+            errors.append(
                 f"Could not resolve expiry for {symbol} on {exchange}"
             )
-            result["errors"] = self.errors
+            result["errors"] = errors
             return result
         
         # 5. Determine db_path based on supervisor pattern
         db_path = self._resolve_db_path(exchange, symbol, resolved_expiry)
         if not db_path:
-            self.errors.append(f"Could not resolve database path")
-            result["errors"] = self.errors
+            errors.append(f"Could not resolve database path")
+            result["errors"] = errors
             return result
         
         # 6. Validate order_type for this instrument
@@ -148,10 +151,10 @@ class ConfigResolutionService:
             exchange, symbol, instrument_type, order_type_config
         )
         if not resolved_order_type:
-            self.errors.append(
+            errors.append(
                 f"Order type '{order_type_config}' not valid for {symbol} on {exchange}"
             )
-            result["errors"] = self.errors
+            result["errors"] = errors
             return result
         
         # All validations passed
@@ -159,15 +162,17 @@ class ConfigResolutionService:
         result["expiry"] = resolved_expiry
         result["db_path"] = str(db_path)
         result["order_type_resolved"] = resolved_order_type
-        result["errors"] = self.errors
-        result["warnings"] = self.warnings
+        result["lot_size"] = self._resolve_lot_size(exchange, symbol, instrument_type)
+        result["errors"] = errors
+        result["warnings"] = warnings
         
-        if self.warnings:
-            logger.warning(f"Config resolution warnings: {self.warnings}")
+        if warnings:
+            logger.warning(f"Config resolution warnings: {warnings}")
         
         logger.info(
-            f"✅ Config RESOLVED: {symbol} {resolved_expiry} "
-            f"({instrument_type}) → {resolved_order_type}"
+            f"\u2705 Config RESOLVED: {symbol} {resolved_expiry} "
+            f"({instrument_type}) \u2192 {resolved_order_type} | "
+            f"lot_size={result['lot_size']}"
         )
         
         return result
@@ -321,6 +326,47 @@ class ConfigResolutionService:
             # Fallback to LIMIT (safer)
             self.warnings.append(f"Order type validation error: {e}. Using LIMIT.")
             return "LIMIT"
+
+    def _resolve_lot_size(
+        self,
+        exchange: str,
+        symbol: str,
+        instrument_type: str,
+    ) -> Optional[int]:
+        """
+        Resolve lot size from ScriptMaster for the given exchange+symbol+instrument.
+        
+        Returns:
+            Lot size (e.g. 75 for NIFTY, 15 for BANKNIFTY) or None
+        """
+        try:
+            records = universal_symbol_search(symbol, exchange)
+            if not records:
+                self.warnings.append(f"No ScriptMaster records for {symbol} on {exchange}")
+                return None
+            
+            # Filter to matching instrument type (OPTIDX, OPTSTK, OPTFUT, etc.)
+            for rec in records:
+                if rec.get("Instrument") == instrument_type:
+                    lot_size = rec.get("LotSize")
+                    if lot_size and int(lot_size) > 0:
+                        return int(lot_size)
+            
+            # Fallback: any record with a valid lot size for this symbol
+            for rec in records:
+                lot_size = rec.get("LotSize")
+                if lot_size and int(lot_size) > 0:
+                    self.warnings.append(
+                        f"LotSize from {rec.get('Instrument')} (not {instrument_type})"
+                    )
+                    return int(lot_size)
+            
+            self.warnings.append(f"No lot size found for {symbol}")
+            return None
+        
+        except Exception as e:
+            logger.error(f"Lot size resolution failed: {e}")
+            return None
 
 
 def validate_config(

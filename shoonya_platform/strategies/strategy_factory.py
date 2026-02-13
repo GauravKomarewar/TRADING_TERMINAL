@@ -63,9 +63,16 @@ def create_strategy(config: Dict[str, Any]) -> Any:
     _lazy_load_dnss()
     
     # Extract strategy_type (case-insensitive)
+    # Support both root-level and nested (identity.strategy_type) locations
     strategy_type = config.get("strategy_type", "").strip()
     if not strategy_type:
-        raise ValueError("Config missing 'strategy_type' field")
+        # Try looking in nested 'identity' object
+        identity = config.get("identity", {})
+        if isinstance(identity, dict):
+            strategy_type = identity.get("strategy_type", "").strip()
+    
+    if not strategy_type:
+        raise ValueError("Config missing 'strategy_type' field (expected at root or in 'identity' object)")
     
     # Look up in registry (case-insensitive)
     strategy_class = None
@@ -83,7 +90,68 @@ def create_strategy(config: Dict[str, Any]) -> Any:
     
     # Instantiate
     try:
-        strategy = strategy_class(config)
+        # Special handling for DNSS: use adapter instead of direct instantiation
+        if strategy_type.lower() in ["dnss", "delta_neutral_short_strangle"]:
+            from datetime import time as dt_time
+            from shoonya_platform.strategies.universal_settings.universal_config.universal_strategy_config import UniversalStrategyConfig
+            from shoonya_platform.strategies.standalone_implementations.delta_neutral.adapter import create_dnss_from_universal_config
+            from shoonya_platform.strategies.market import DBBackedMarket
+            
+            # Helper to parse time from string
+            def parse_time(val):
+                if isinstance(val, dt_time):
+                    return val
+                if isinstance(val, str):
+                    try:
+                        return dt_time.fromisoformat(val)
+                    except (ValueError, AttributeError):
+                        parts = val.split(":")
+                        return dt_time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+                return val
+            
+            # Convert config dict to UniversalStrategyConfig
+            universal_config = UniversalStrategyConfig(
+                strategy_name=config.get("strategy_name", ""),
+                strategy_version=config.get("strategy_version", "1.0"),
+                exchange=config.get("exchange", ""),
+                symbol=config.get("symbol", ""),
+                instrument_type=config.get("instrument_type", "OPTIDX"),
+                entry_time=parse_time(config.get("entry_time", "09:20")),
+                exit_time=parse_time(config.get("exit_time", "15:20")),
+                order_type=config.get("order_type", "MARKET"),
+                product=config.get("product", "MIS"),
+                lot_qty=int(config.get("lot_qty", 1)),
+                params=config.get("params", {}),
+                max_positions=int(config.get("max_positions", 1)),
+                poll_interval=float(config.get("poll_interval", 2.0)),
+                cooldown_seconds=int(config.get("cooldown_seconds", 0)),
+            )
+            
+            # Create market instance (initial — will be re-created with resolved db_path in adapter)
+            market = DBBackedMarket(
+                exchange=universal_config.exchange,
+                symbol=universal_config.symbol,
+            )
+            
+            # Use adapter to create DNSS with proper parameters
+            strategy = create_dnss_from_universal_config(
+                universal_config=universal_config,
+                market=market,
+            )
+        else:
+            # Direct instantiation for other strategies
+            strategy = strategy_class(config)
+        
+        # For DNSS: inject resolved db_path into market_config so the
+        # strategy_runner creates a DatabaseMarketAdapter (not a stub)
+        if strategy_type.lower() in ["dnss", "delta_neutral_short_strangle"]:
+            if "market_config" not in config:
+                config["market_config"] = {}
+            config["market_config"]["market_type"] = "database_market"
+            config["market_config"]["db_path"] = getattr(strategy, "db_path", None)
+            config["market_config"]["exchange"] = config.get("exchange", "")
+            config["market_config"]["symbol"] = config.get("symbol", "")
+
         strategy_name = config.get("strategy_name", strategy_type)
         logger.info(f"✅ Created strategy: {strategy_name} ({strategy_type})")
         return strategy

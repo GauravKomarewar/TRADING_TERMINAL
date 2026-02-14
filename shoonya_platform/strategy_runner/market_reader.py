@@ -117,25 +117,52 @@ class MarketReader:
         return str(chosen[0])
 
     def connect(self) -> bool:
-        """Open connection to the SQLite database."""
+        """Open connection with validation."""
         path = self.db_path
         if not path:
-            logger.error(f"Cannot connect: no DB found for {self.exchange}_{self.symbol}")
+            logger.error(f"No DB found for {self.exchange}_{self.symbol}")
             return False
-
-        if not Path(path).exists():
+        
+        # CRITICAL: Verify file exists and is not empty
+        path_obj = Path(path)
+        if not path_obj.exists():
             logger.error(f"DB file does not exist: {path}")
             return False
-
+        
+        if path_obj.stat().st_size < 1024:  # Less than 1KB = likely empty
+            logger.error(f"DB file too small (corrupt?): {path} ({path_obj.stat().st_size} bytes)")
+            return False
+        
         try:
-            # Read-only, WAL mode for concurrent reads
             uri = f"file:{path}?mode=ro"
             self._conn = sqlite3.connect(uri, uri=True, timeout=5)
             self._conn.row_factory = sqlite3.Row
-            logger.info(f"Connected to DB: {Path(path).name}")
+            
+            # VALIDATE schema exists
+            tables = self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+            
+            table_names = {row[0] for row in tables}
+            required_tables = {"option_chain", "meta"}
+            
+            if not required_tables.issubset(table_names):
+                logger.error(f"Missing required tables: {required_tables - table_names}")
+                self.close()
+                return False
+            
+            # VALIDATE has data
+            row_count = self._conn.execute("SELECT COUNT(*) FROM option_chain").fetchone()[0]
+            if row_count == 0:
+                logger.error(f"option_chain table is empty in {path}")
+                self.close()
+                return False
+            
+            logger.info(f"Connected to DB: {path_obj.name} ({row_count} rows)")
             return True
+            
         except Exception as e:
-            logger.error(f"Failed to connect to {path}: {e}")
+            logger.error(f"Connection failed: {path} | {e}")
             return False
 
     def close(self):

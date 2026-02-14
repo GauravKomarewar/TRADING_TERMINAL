@@ -188,36 +188,42 @@ def validate_config_file(path: str) -> Tuple[bool, List[ValidationError], Option
 
 
 def coerce_config_numerics(config: Any) -> Any:
-    """
-    Recursively walk the JSON config and coerce all numeric values to float.
-
-    Exceptions (kept as int):
-    - "lots", "qty", "max_lots", "max_adjustments_per_day", "max_trades_per_day"
-    - Any key containing "priority"
-
-    Time strings like "09:20" are left as-is.
-    Lists (e.g. [low, high] for 'between') are recursed into.
-    """
+    """Recursively coerce numerics with proper int preservation."""
     _INT_KEYS = {
-        "lots", "qty", "max_lots", "max_adjustments_per_day",
-        "max_trades_per_day", "priority",
+        # Position sizing
+        "lots", "qty", "max_lots",
+        # Counters
+        "max_adjustments_per_day", "max_trades_per_day",
+        "adjustments_today", "total_trades_today",
+        # Timing (seconds/minutes as integers)
+        "check_interval_min", "cooldown_seconds",
+        "timeout_sec", "poll_interval_sec",
+        # Priorities
+        "priority",
     }
-
+    
     def _walk(obj: Any, key: str = "") -> Any:
         if isinstance(obj, dict):
             return {k: _walk(v, k) for k, v in obj.items()}
+        
         if isinstance(obj, list):
             return [_walk(item, key) for item in obj]
-        if isinstance(obj, bool):
-            return obj  # bool before int — bool is subclass of int
-        if isinstance(obj, int):
-            if key in _INT_KEYS:
-                return obj
+        
+        # Time strings like "09:20" stay as-is
+        if isinstance(obj, str) and ":" in obj:
+            return obj
+        
+        # Numbers
+        if isinstance(obj, (int, float)):
+            # Force int for specific keys
+            if key in _INT_KEYS or "priority" in key.lower():
+                return int(obj)
+            # Everything else becomes float for precision
             return float(obj)
+        
         return obj
-
+    
     return _walk(config)
-
 
 # ─── Section validators ─────────────────────────────────────────────────────
 

@@ -257,33 +257,42 @@ class StrategyState:
 
 
 # ─── Comparator Functions ────────────────────────────────────────────────────
-
 def _compare(actual: Any, comparator: str, value: Any, tolerance: float = 0.0) -> bool:
     """
     Evaluate: actual <comparator> value
 
     Handles numeric, string (time), and special comparators.
+    
+    FIXED: Time comparison now converts to minutes properly.
     """
     if actual is None:
         return False
 
     # Time comparison: "HH:MM" strings
+    # CRITICAL FIX: Convert to minutes for proper comparison
     if comparator in (">", ">=", "<", "<=", "==", "!=") and isinstance(value, str) and ":" in str(value):
         try:
-            actual_t = _parse_time(str(actual))
-            target_t = _parse_time(value)
+            def to_minutes(time_str: str) -> int:
+                """Convert HH:MM to minutes since midnight."""
+                parts = str(time_str).split(":")
+                return int(parts[0]) * 60 + int(parts[1])
+            
+            actual_min = to_minutes(str(actual))
+            target_min = to_minutes(value)
+            
             if comparator == ">":
-                return actual_t > target_t
+                return actual_min > target_min
             if comparator == ">=":
-                return actual_t >= target_t
+                return actual_min >= target_min
             if comparator == "<":
-                return actual_t < target_t
+                return actual_min < target_min
             if comparator == "<=":
-                return actual_t <= target_t
+                return actual_min <= target_min
             if comparator == "==":
-                return actual_t == target_t
+                return actual_min == target_min
             if comparator == "!=":
-                return actual_t != target_t
+                return actual_min != target_min
+                
         except Exception as e:
             logger.error(f"Time comparison failed: {actual} {comparator} {value}: {e}")
             return False
@@ -330,14 +339,11 @@ def _compare(actual: Any, comparator: str, value: Any, tolerance: float = 0.0) -
         return a != v
     if comparator == "~=":
         # Approximately equal (within tolerance)
-        # Use abs() on both sides for delta-like signed values
         tol = tolerance if tolerance > 0 else abs(v) * 0.1
         return abs(abs(a) - abs(v)) <= tol
 
     logger.error(f"Unknown comparator: {comparator}")
     return False
-
-
 def _parse_time(time_str: str) -> int:
     """Convert HH:MM to minutes since midnight for comparison."""
     parts = str(time_str).split(":")

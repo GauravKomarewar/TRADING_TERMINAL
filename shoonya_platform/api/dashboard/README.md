@@ -23,13 +23,10 @@ Example (inside strategy runner):
 
 ```python
 from shoonya_platform.execution.trading_bot import ShoonyaBot
-from shoonya_platform.strategies.delta_neutral.delta_neutral_short_strategy import DeltaNeutralShortStrangleStrategy
+# Use strategy_runner-generated strategy instance/config, then register it:
+# bot.register_live_strategy("NIFTY_DNSS", strategy_instance, market_instance)
 
 bot = ShoonyaBot()
-
-strategy = DeltaNeutralShortStrangleStrategy(...)
-# market is the LiveMarket or DBBackedMarket instance used by Engine
-bot.register_live_strategy("NIFTY_DELTA_AUTO_ADJUST", strategy, market)
 ```
 
 What registration enables

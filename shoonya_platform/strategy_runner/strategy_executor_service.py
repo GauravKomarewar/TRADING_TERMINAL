@@ -54,12 +54,162 @@ from shoonya_platform.strategy_runner.condition_engine import (
 )
 from shoonya_platform.strategy_runner.market_reader import MarketReader
 from shoonya_platform.strategy_runner.config_schema import (
-    validate_config_file,
+    validate_config,
     coerce_config_numerics,
     LOT_SIZES,
 )
 
 logger = logging.getLogger("STRATEGY_EXECUTOR")
+
+
+def _is_runner_v3_config(config: Dict[str, Any]) -> bool:
+    return (
+        isinstance(config, dict)
+        and isinstance(config.get("basic"), dict)
+        and isinstance(config.get("timing"), dict)
+        and isinstance(config.get("entry"), dict)
+        and isinstance(config.get("exit"), dict)
+    )
+
+
+def _looks_like_dashboard_v2(config: Dict[str, Any]) -> bool:
+    return (
+        isinstance(config, dict)
+        and isinstance(config.get("identity"), dict)
+        and isinstance(config.get("entry"), dict)
+        and isinstance(config.get("exit"), dict)
+    )
+
+
+def _convert_dashboard_v2_to_runner_v3(config: Dict[str, Any], strategy_name: str) -> Dict[str, Any]:
+    identity = config.get("identity", {}) or {}
+    entry_v2 = config.get("entry", {}) or {}
+    adjustment_v2 = config.get("adjustment", {}) or {}
+    exit_v2 = config.get("exit", {}) or {}
+    rms_v2 = config.get("rms", {}) or {}
+    market_cfg = config.get("market_config", {}) or {}
+
+    timing_v2 = entry_v2.get("timing", {}) or {}
+    position_v2 = entry_v2.get("position", {}) or {}
+    legs_v2 = entry_v2.get("legs", {}) or {}
+    adj_general = adjustment_v2.get("general", {}) or {}
+    adj_delta = adjustment_v2.get("delta", {}) or {}
+    exit_time_cfg = exit_v2.get("time", {}) or {}
+    exit_profit_cfg = exit_v2.get("profit", {}) or {}
+    exit_sl_cfg = exit_v2.get("stop_loss", {}) or {}
+    rms_daily = rms_v2.get("daily", {}) or {}
+    rms_position = rms_v2.get("position", {}) or {}
+
+    entry_time = str(timing_v2.get("entry_time") or "09:20")
+    exit_time = str(exit_time_cfg.get("exit_time") or "15:20")
+    lots = int(position_v2.get("lots") or 1)
+    delta_target = float(legs_v2.get("target_entry_delta") or 0.30)
+    delta_trigger = float(adj_delta.get("trigger") or 0.10)
+
+    exit_conditions: List[Dict[str, Any]] = [
+        {
+            "parameter": "time_current",
+            "comparator": ">=",
+            "value": exit_time,
+            "description": "Hard exit time",
+        }
+    ]
+
+    target_rupees = exit_profit_cfg.get("target_rupees")
+    if target_rupees is not None:
+        exit_conditions.append(
+            {
+                "parameter": "combined_pnl",
+                "comparator": ">=",
+                "value": float(target_rupees),
+                "description": "Profit target",
+            }
+        )
+
+    sl_rupees = exit_sl_cfg.get("sl_rupees")
+    if sl_rupees is not None:
+        exit_conditions.append(
+            {
+                "parameter": "combined_pnl",
+                "comparator": "<=",
+                "value": -abs(float(sl_rupees)),
+                "description": "Stop loss",
+            }
+        )
+
+    converted = {
+        "schema_version": "3.0",
+        "name": config.get("name") or strategy_name,
+        "description": config.get("description", ""),
+        "basic": {
+            "exchange": identity.get("exchange", "NFO"),
+            "underlying": identity.get("underlying", "NIFTY"),
+            "expiry_mode": identity.get("expiry_mode", "weekly_current"),
+            "lots": lots,
+            "enabled": bool(config.get("enabled", True)),
+        },
+        "timing": {
+            "entry_time": entry_time,
+            "exit_time": exit_time,
+        },
+        "market_data": {
+            "source": "database",
+            "db_path": market_cfg.get("db_path"),
+        },
+        "entry": {
+            "rule_type": "always",
+            "conditions": {},
+            "action": {
+                "type": "short_both",
+                "target_delta": delta_target,
+            },
+        },
+        "adjustment": {
+            "enabled": bool(adj_general.get("enabled", False)),
+            "check_interval_min": int(adj_general.get("check_interval_min", 5) or 5),
+            "max_adjustments_per_day": int(adj_general.get("max_adj_per_day", 5) or 5),
+            "cooldown_seconds": int(adj_general.get("cooldown_seconds", 60) or 60),
+            "rules": [
+                {
+                    "priority": 1,
+                    "name": "Delta rebalance",
+                    "rule_type": "if_then",
+                    "conditions": {
+                        "parameter": "delta_diff",
+                        "comparator": ">=",
+                        "value": delta_trigger,
+                    },
+                    "action": {
+                        "type": "shift_strikes",
+                    },
+                }
+            ],
+        },
+        "exit": {
+            "rule_type": "if_any",
+            "conditions": exit_conditions,
+            "action": {
+                "type": "close_all_positions",
+            },
+        },
+        "risk_management": {
+            "max_loss_per_day": rms_daily.get("loss_limit"),
+            "max_trades_per_day": rms_daily.get("max_trades"),
+            "position_sizing": {
+                "max_lots": rms_position.get("max_lots"),
+            },
+        },
+    }
+
+    return converted
+
+
+def _normalize_config_for_runner(config: Dict[str, Any], strategy_name: str) -> Tuple[Dict[str, Any], bool]:
+    if _is_runner_v3_config(config):
+        return config, False
+    if _looks_like_dashboard_v2(config):
+        return _convert_dashboard_v2_to_runner_v3(config, strategy_name), True
+    return config, False
 
 
 # ===================================================================
@@ -590,6 +740,7 @@ class ExecutionVerifier:
     def verify_exit(
         self,
         strategy_name: str,
+        symbols: Optional[List[str]] = None,
         timeout_sec: int = 30
     ) -> Tuple[bool, str]:
         """Verify exit completed (all positions closed)."""
@@ -601,12 +752,19 @@ class ExecutionVerifier:
         while (time.time() - start_time) < timeout_sec:
             try:
                 positions = self.bot.broker_view.get_positions() or []
-                
-                # Find any positions for this strategy
-                has_positions = any(
-                    int(p.get("netqty", 0)) != 0
-                    for p in positions
-                )
+
+                # If symbols are known, scope verification to this strategy symbols only.
+                if symbols:
+                    symbol_set = {s for s in symbols if s}
+                    has_positions = any(
+                        int(p.get("netqty", 0)) != 0 and p.get("tsym") in symbol_set
+                        for p in positions
+                    )
+                else:
+                    has_positions = any(
+                        int(p.get("netqty", 0)) != 0
+                        for p in positions
+                    )
                 
                 if not has_positions:
                     elapsed = time.time() - start_time
@@ -735,9 +893,19 @@ class StrategyExecutorService:
         """
         logger.info(f"📝 Registering strategy: {name}")
         
-        # 1️⃣ Load and validate JSON
-        is_valid, errors, config = validate_config_file(config_path)
-        
+        # 1️⃣ Load JSON and normalize schema for runner
+        with open(config_path, "r", encoding="utf-8") as f:
+            raw_config = json.load(f)
+
+        config, was_converted = _normalize_config_for_runner(raw_config, name)
+        if was_converted:
+            logger.warning(
+                "⚠️ Schema adapter applied for strategy '%s': dashboard v2 -> runner v3",
+                name,
+            )
+
+        # 2️⃣ Validate normalized config
+        is_valid, errors = validate_config(config)
         if not is_valid:
             error_msg = f"❌ VALIDATION FAILED: {name}\n"
             for err in errors:
@@ -754,10 +922,10 @@ class StrategyExecutorService:
             for w in warnings:
                 logger.warning(f"  • {w.path}: {w.message}")
         
-        # 2️⃣ Coerce numerics
+        # 3️⃣ Coerce numerics
         config = coerce_config_numerics(config)
         
-        # 3️⃣ Validate market data source exists
+        # 4️⃣ Validate market data source exists
         basic = config.get("basic", {})
         exchange = basic.get("exchange", "NFO")
         underlying = basic.get("underlying", "NIFTY")
@@ -777,7 +945,7 @@ class StrategyExecutorService:
         
         reader.close()
         
-        # 4️⃣ Check timing window (warning only)
+        # 5️⃣ Check timing window (warning only)
         timing = config.get("timing", {})
         entry_time = timing.get("entry_time", "09:15")
         exit_time = timing.get("exit_time", "15:20")
@@ -797,10 +965,10 @@ class StrategyExecutorService:
                 f"   Strategy will wait until entry time"
             )
         
-        # 5️⃣ Create run_id for this session
+        # 6️⃣ Create run_id for this session
         run_id = f"{name}_{int(time.time())}"
         
-        # 6️⃣ Load or create execution state
+        # 7️⃣ Load or create execution state
         exec_state = self.state_mgr.load(name)
         if not exec_state:
             exec_state = ExecutionState(
@@ -817,7 +985,7 @@ class StrategyExecutorService:
                 logger.warning(f"⚠️ State reconciled: {name} | {reason}")
                 self.state_mgr.save(exec_state)
         
-        # 7️⃣ Register in executor
+        # 8️⃣ Register in executor
         self._strategies[name] = config
         self._exec_states[name] = exec_state
         self._engine_states[name] = StrategyState()
@@ -948,9 +1116,10 @@ class StrategyExecutorService:
         # 3️⃣ Reconcile with broker (periodic)
         seconds_since_reconcile = time.time() - exec_state.last_reconcile_timestamp
         if seconds_since_reconcile > 60:  # Every 60 seconds
-            basic = config.get("basic", {})
-            exchange = basic.get("exchange", "NFO")
-            underlying = basic.get("underlying", "NIFTY")
+            basic = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
+            identity = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+            exchange = basic.get("exchange") or identity.get("exchange") or "NFO"
+            underlying = basic.get("underlying") or identity.get("underlying") or "NIFTY"
             
             is_ok, reason = self.reconciler.reconcile(exec_state, exchange, underlying)
             if reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
@@ -1767,7 +1936,12 @@ class StrategyExecutorService:
             )
             
             # CRITICAL: Verify exit completed
-            is_verified, verify_reason = self.verifier.verify_exit(name, timeout_sec=30)
+            symbols = [exec_state.ce_symbol, exec_state.pe_symbol]
+            is_verified, verify_reason = self.verifier.verify_exit(
+                name,
+                symbols=symbols,
+                timeout_sec=30,
+            )
             
             if not is_verified:
                 logger.error(f"❌ EXIT VERIFICATION FAILED: {name} | {verify_reason}")

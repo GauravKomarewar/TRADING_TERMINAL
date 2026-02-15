@@ -1324,7 +1324,8 @@ async function loadStrategy() {
   try {
     // Get list of strategies
     const data = await apiCall('GET', '/strategy/configs');
-    const strategies = data.strategies || [];
+    // Backward-compatible: backend returns `configs`; keep `strategies` fallback.
+    const strategies = data.configs || data.strategies || [];
     
     if (!strategies.length) {
       showToast('No saved strategies found', 'error');
@@ -1368,7 +1369,7 @@ async function loadSelectedStrategy() {
   }
   
   try {
-    const config = await apiCall('GET', `/strategy/config/${selectedStrategyToLoad}`);
+    const config = await apiCall('GET', `/strategy/config/${encodeURIComponent(selectedStrategyToLoad)}`);
     
     // Populate form with loaded config
     populateForm(config);
@@ -1491,7 +1492,7 @@ async function startStrategy() {
   }
   
   try {
-    await apiCall('POST', '/strategy/start', { strategy_name: currentStrategyName });
+    await apiCall('POST', `/strategy/${encodeURIComponent(currentStrategyName)}/start-execution`);
     showToast('Strategy started: ' + currentStrategyName);
     updateStatusIndicator(true, true);
   } catch (e) {
@@ -1508,7 +1509,7 @@ async function stopStrategy() {
   if (!confirm(`Stop strategy: ${currentStrategyName}?`)) return;
   
   try {
-    await apiCall('POST', '/strategy/stop', { strategy_name: currentStrategyName });
+    await apiCall('POST', `/strategy/${encodeURIComponent(currentStrategyName)}/stop-execution`);
     showToast('Strategy stopped');
     updateStatusIndicator(true, false);
   } catch (e) {

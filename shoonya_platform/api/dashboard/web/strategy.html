@@ -512,7 +512,7 @@ function switchTab(name) {
 async function loadStrategies() {
   try {
     const r = await api('GET', '/strategy/configs');
-    allStrategies = r.strategies || [];
+    allStrategies = r.configs || r.strategies || [];
     renderStrategies();
   } catch(e) {
     toast('Failed to load strategies: ' + e.message, 'error');
@@ -580,8 +580,8 @@ function renderStrategies() {
         </div>
         <div class="strat-card-meta">
           <span><strong>Type:</strong> ${escHtml(s.strategy_type||'N/A')}</span>
-          <span><strong>Symbol:</strong> ${escHtml(s.basic?.underlying||'N/A')}</span>
-          <span><strong>Exchange:</strong> ${escHtml(s.basic?.exchange||'N/A')}</span>
+          <span><strong>Symbol:</strong> ${escHtml(s.identity?.underlying||s.basic?.underlying||'N/A')}</span>
+          <span><strong>Exchange:</strong> ${escHtml(s.identity?.exchange||s.basic?.exchange||'N/A')}</span>
           <span><strong>Updated:</strong> ${formatDate(s.updated_at)}</span>
         </div>
         ${s.description ? `<p style="margin-top:8px;font-size:11px;color:var(--muted);">${escHtml(s.description)}</p>` : ''}
@@ -611,7 +611,7 @@ function filterStrategies() {
 // ====== START/STOP ======
 async function startStrategy(name) {
   try {
-    await api('POST', '/strategy/start', { strategy_name: name });
+    await api('POST', `/strategy/${encodeURIComponent(name)}/start-execution`);
     toast(`Strategy "${name}" started`);
     setTimeout(loadStrategies, 1000);
   } catch(e) {
@@ -621,7 +621,7 @@ async function startStrategy(name) {
 
 async function stopStrategy(name) {
   try {
-    await api('POST', '/strategy/stop', { strategy_name: name });
+    await api('POST', `/strategy/${encodeURIComponent(name)}/stop-execution`);
     toast(`Strategy "${name}" stopped`);
     setTimeout(loadStrategies, 1000);
   } catch(e) {
@@ -664,7 +664,9 @@ async function confirmToggle() {
   
   try {
     const newEnabled = !currentToggleStrategy.currentlyEnabled;
-    await api('PUT', `/strategy/${currentToggleStrategy.name}`, { enabled: newEnabled });
+    const current = await api('GET', `/strategy/config/${encodeURIComponent(currentToggleStrategy.name)}`);
+    const updated = { ...current, enabled: newEnabled };
+    await api('POST', '/strategy/config/save-all', updated);
     toast(`Strategy ${newEnabled ? 'enabled' : 'disabled'}`);
     closeModal('toggle-modal');
     loadStrategies();
@@ -684,7 +686,7 @@ async function confirmDelete() {
   if (!currentDeleteStrategy) return;
   
   try {
-    await api('DELETE', `/strategy/config/${currentDeleteStrategy}`);
+    await api('DELETE', `/strategy/config/${encodeURIComponent(currentDeleteStrategy)}`);
     toast('Strategy deleted');
     closeModal('delete-modal');
     loadStrategies();
@@ -696,7 +698,7 @@ async function confirmDelete() {
 // ====== VIEW DETAILS ======
 async function viewDetails(name) {
   try {
-    const r = await api('GET', `/strategy/config/${name}`);
+    const r = await api('GET', `/strategy/config/${encodeURIComponent(name)}`);
     currentDetailsStrategy = r;
     
     const content = $('details-content');
@@ -721,8 +723,10 @@ function editCurrentStrategy() {
 // ====== CLONE ======
 async function cloneStrategy(name) {
   try {
-    const r = await api('POST', `/strategy/config/${name}/clone`);
-    toast('Strategy cloned as: ' + r.name);
+    const newName = prompt('Enter cloned strategy name');
+    if (!newName || !newName.trim()) return;
+    const r = await api('POST', `/strategy/config/${encodeURIComponent(name)}/clone`, { new_name: newName.trim() });
+    toast('Strategy cloned as: ' + (r.new_name || newName.trim()));
     loadStrategies();
   } catch(e) {
     toast('Failed to clone: ' + e.message, 'error');
@@ -838,8 +842,8 @@ async function loadRunningStrategies() {
       </div>
       <div class="strat-card-meta">
         <span><strong>Type:</strong> ${escHtml(s.strategy_type||'N/A')}</span>
-        <span><strong>Symbol:</strong> ${escHtml(s.basic?.underlying||'N/A')}</span>
-        <span><strong>Exchange:</strong> ${escHtml(s.basic?.exchange||'N/A')}</span>
+        <span><strong>Symbol:</strong> ${escHtml(s.identity?.underlying||s.basic?.underlying||'N/A')}</span>
+        <span><strong>Exchange:</strong> ${escHtml(s.identity?.exchange||s.basic?.exchange||'N/A')}</span>
       </div>
     </div>
   `).join('');

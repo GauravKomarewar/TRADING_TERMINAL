@@ -868,27 +868,28 @@ def start_strategy_execution(
         }
     """
     try:
+        strategy_key = _slugify(strategy_name)
         bot = ctx["bot"]
         service = bot.strategy_executor_service
 
-        if strategy_name in service._strategies:
-            logger.info(f"Strategy {strategy_name} already running")
+        if strategy_key in service._strategies:
+            logger.info(f"Strategy {strategy_key} already running")
             return {
                 "success": False,
-                "strategy_name": strategy_name,
+                "strategy_name": strategy_key,
                 "message": "Strategy already running",
                 "timestamp": datetime.now().isoformat()
             }
 
-        strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
+        strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_key}.json"
         if not strategy_file.exists():
             raise HTTPException(
                 status_code=404,
-                detail=f"Strategy config not found: {strategy_name}.json"
+                detail=f"Strategy config not found: {strategy_key}.json"
             )
 
         config = json.loads(strategy_file.read_text(encoding="utf-8"))
-        bot.start_strategy_executor(strategy_name=strategy_name, config=config)
+        bot.start_strategy_executor(strategy_name=strategy_key, config=config)
 
         config["status"] = "RUNNING"
         config["status_updated_at"] = datetime.now().isoformat()
@@ -896,8 +897,8 @@ def start_strategy_execution(
 
         return {
             "success": True,
-            "strategy_name": strategy_name,
-            "message": f"Strategy {strategy_name} started",
+            "strategy_name": strategy_key,
+            "message": f"Strategy {strategy_key} started",
             "timestamp": datetime.now().isoformat()
         }
     except HTTPException:
@@ -923,36 +924,37 @@ def stop_strategy_execution(
         }
     """
     try:
+        strategy_key = _slugify(strategy_name)
         bot = ctx["bot"]
         service = bot.strategy_executor_service
 
-        if strategy_name not in service._strategies:
+        if strategy_key not in service._strategies:
             return {
                 "success": False,
-                "strategy_name": strategy_name,
+                "strategy_name": strategy_key,
                 "message": "Strategy not running",
                 "timestamp": datetime.now().isoformat()
             }
 
-        service.unregister_strategy(strategy_name)
+        service.unregister_strategy(strategy_key)
         with bot._live_strategies_lock:
-            bot._live_strategies.pop(strategy_name, None)
-        logger.info(f"Strategy {strategy_name} stopped")
+            bot._live_strategies.pop(strategy_key, None)
+        logger.info(f"Strategy {strategy_key} stopped")
 
         try:
-            strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
+            strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_key}.json"
             if strategy_file.exists():
                 cfg = json.loads(strategy_file.read_text(encoding="utf-8"))
                 cfg["status"] = "STOPPED"
                 cfg["status_updated_at"] = datetime.now().isoformat()
                 strategy_file.write_text(json.dumps(cfg, indent=2, default=str), encoding="utf-8")
         except Exception as se:
-            logger.warning(f"Could not update status for {strategy_name}: {se}")
+            logger.warning(f"Could not update status for {strategy_key}: {se}")
 
         return {
             "success": True,
-            "strategy_name": strategy_name,
-            "message": f"Strategy {strategy_name} stopped",
+            "strategy_name": strategy_key,
+            "message": f"Strategy {strategy_key} stopped",
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
@@ -964,7 +966,7 @@ def stop_strategy_execution(
 # STRATEGY CONFIG — Save / Load / List
 # ==================================================
 _STRATEGY_CONFIGS_DIR = (
-    Path(__file__).resolve().parent.parent.parent.parent 
+    _PROJECT_ROOT
     / "shoonya_platform" 
     / "strategy_runner" 
     / "saved_configs"
@@ -972,6 +974,20 @@ _STRATEGY_CONFIGS_DIR = (
 _STRATEGY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
 
 _VALID_SECTIONS = {"identity", "entry", "adjustment", "exit", "rms"}
+
+
+def _get_strategy_configs_dir() -> Path:
+    """
+    Resolve canonical saved_configs directory.
+    Prefer runtime strategy directory when available.
+    """
+    runtime_dir = globals().get("STRATEGY_CONFIG_DIR")
+    if isinstance(runtime_dir, Path):
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        if any(runtime_dir.glob("*.json")):
+            return runtime_dir
+    _STRATEGY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
+    return _STRATEGY_CONFIGS_DIR
 
 def _slugify(name: str) -> str:
     """Convert strategy name to safe filename slug."""
@@ -1002,7 +1018,7 @@ def save_strategy_config(
         raise HTTPException(400, "config must be a JSON object")
 
     slug = _slugify(name)
-    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+    filepath = _get_strategy_configs_dir() / f"{slug}.json"
 
     # Load existing or create new
     existing = {}
@@ -1029,7 +1045,7 @@ def load_strategy_config(
 ):
     """Load a saved strategy config by name."""
     slug = _slugify(name)
-    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+    filepath = _get_strategy_configs_dir() / f"{slug}.json"
 
     if not filepath.exists():
         # Return empty config — not an error, just no saved data yet
@@ -1045,8 +1061,12 @@ def load_strategy_config(
 @router.get("/strategy/configs")
 def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
     """List all saved strategy configs with full data."""
+    cfg_dir = _get_strategy_configs_dir()
     configs = []
-    for f in sorted(_STRATEGY_CONFIGS_DIR.glob("*.json")):
+    parse_errors = []
+    for f in sorted(cfg_dir.glob("*.json")):
+        if f.name == "STRATEGY_CONFIG_SCHEMA.json":
+            continue
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             configs.append({
@@ -1066,9 +1086,15 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
                 "exit": data.get("exit", {}),
                 "rms": data.get("rms", {}),
             })
-        except Exception:
+        except Exception as e:
+            parse_errors.append(f"{f.name}: {e}")
             continue
-    return {"configs": configs, "total": len(configs)}
+    return {
+        "configs": configs,
+        "total": len(configs),
+        "directory": str(cfg_dir),
+        "parse_errors": parse_errors[:20],
+    }
 
 
 @router.get("/monitoring/all-strategies-status")
@@ -1094,9 +1120,10 @@ def get_all_strategies_execution_status(
     ✓ No hidden strategies or background execution
     """
     try:
+        cfg_dir = _get_strategy_configs_dir()
         # 1. Load all saved strategies
         all_configs = []
-        for f in sorted(_STRATEGY_CONFIGS_DIR.glob("*.json")):
+        for f in sorted(cfg_dir.glob("*.json")):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
                 all_configs.append({

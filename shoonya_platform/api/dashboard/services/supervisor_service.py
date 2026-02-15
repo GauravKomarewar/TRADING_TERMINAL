@@ -18,7 +18,7 @@ PID_DIR.mkdir(parents=True, exist_ok=True)
 class SupervisorService:
     """Lightweight strategy supervisor.
 
-    - start(config_path): Launches `python -m shoonya_platform.strategies.run <config_path>`
+    - start(config_path): Launches in-process strategy runner entrypoint
     - stop(pid or config_path): Attempts graceful stop via SIGTERM, then SIGKILL
     """
 
@@ -30,47 +30,10 @@ class SupervisorService:
         return self.pid_dir / f"{name}.pid"
 
     def start(self, config_path: str) -> dict:
-        # Use the same python executable
-        python = sys.executable or "python"
-        cmd = [python, "-m", "shoonya_platform.strategies.run", config_path]
-
-        logger.info("Starting strategy process: %s", " ".join(cmd))
-
-        # Launch detached process
-        try:
-            if os.name == "nt":
-                proc = subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-            else:
-                proc = subprocess.Popen(
-                    cmd,
-                    start_new_session=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-        except FileNotFoundError as e:
-            logger.error("❌ Python executable not found: %s", python)
-            raise RuntimeError(f"Python executable not found: {python}")
-        except Exception as e:
-            logger.error("❌ Failed to start strategy process: %s", str(e))
-            raise RuntimeError(f"Failed to start subprocess: {e}")
-
-        pid = proc.pid
-        
-        # Store PID file
-        pidfile = self._pidfile_for(config_path)
-        try:
-            with pidfile.open("w") as f:
-                json.dump({"pid": pid, "config_path": config_path, "started_at": str(__import__("datetime").datetime.now())}, f)
-        except Exception as e:
-            logger.warning("Failed to write PID file: %s", e)
-
-        logger.warning("✅ Strategy process started | pid=%d | config=%s", pid, config_path)
-        return {"pid": pid, "pidfile": str(pidfile), "config_path": config_path}
+        raise RuntimeError(
+            "SupervisorService subprocess mode is retired. "
+            "Use /dashboard/runner/start or /dashboard/strategy/{name}/start-execution."
+        )
 
     def stop(self, config_path: Optional[str] = None, pid: Optional[int] = None) -> dict:
         if config_path:

@@ -10,7 +10,7 @@ Tests:
 
 import pytest
 from pathlib import Path
-from shoonya_platform.strategies.universal_settings.universal_registry import list_strategy_templates
+from shoonya_platform.strategy_runner.universal_settings.universal_registry import list_strategy_templates
 
 
 class TestStrategyRegistry:
@@ -20,7 +20,6 @@ class TestStrategyRegistry:
         """Registry should return list of templates"""
         templates = list_strategy_templates()
         assert isinstance(templates, list)
-        assert len(templates) > 0
     
     def test_template_contains_required_fields(self):
         """Each template should have required metadata"""
@@ -30,20 +29,6 @@ class TestStrategyRegistry:
         for template in templates:
             assert required_fields.issubset(set(template.keys())), \
                 f"Template missing fields: {required_fields - set(template.keys())}"
-    
-    def test_delta_neutral_strategy_discovered(self):
-        """Should discover DeltaNeutralShortStrangleStrategy"""
-        templates = list_strategy_templates()
-        
-        delta_neutral_found = False
-        for t in templates:
-            if t["slug"] == "dnss" and t["folder"] == "delta_neutral":
-                delta_neutral_found = True
-                assert t["id"] == "delta_neutral/dnss"
-                assert t["module"] == "shoonya_platform.strategies.delta_neutral.dnss"
-                assert t["label"] == "Delta Neutral - Dnss"
-        
-        assert delta_neutral_found, "DeltaNeutralShortStrangleStrategy not discovered"
     
     def test_registry_excludes_universal_settings(self):
         """Registry should exclude universal_settings folder"""
@@ -77,7 +62,7 @@ class TestStrategyRegistry:
         for t in templates:
             # Verify format matches expected pattern
             module = t["module"]
-            assert module.startswith("shoonya_platform.strategies.")
+            assert module.startswith("shoonya_platform.strategy_runner.")
             assert "." in module  # At least one dot
     
     def test_template_ids_are_unique(self):

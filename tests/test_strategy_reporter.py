@@ -13,7 +13,7 @@ Tests:
 import pytest
 from typing import Optional
 from unittest.mock import Mock, MagicMock
-from shoonya_platform.strategies.universal_settings.universal_strategy_reporter import (
+from shoonya_platform.strategy_runner.universal_settings.universal_strategy_reporter import (
     build_strategy_report,
 )
 

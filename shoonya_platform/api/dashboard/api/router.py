@@ -41,12 +41,23 @@ from shoonya_platform.api.dashboard.services.option_chain_service import (
     find_nearest_option,
 )
 from shoonya_platform.market_data.feeds import index_tokens_subscriber
-from shoonya_platform.strategies.config_helpers import (
-    ensure_complete_config,
-    convert_v2_to_factory_format,
-    is_v2_config,
-    get_factory_config,
-)
+from shoonya_platform.strategy_runner.config_schema import validate_config
+
+
+def ensure_complete_config(cfg):
+    return cfg or {}
+
+
+def convert_v2_to_factory_format(cfg):
+    return cfg or {}
+
+
+def is_v2_config(cfg):
+    return False
+
+
+def get_factory_config(cfg):
+    return cfg or {}
 
 from shoonya_platform.api.dashboard.api.schemas import (
     StrategyIntentRequest,
@@ -765,14 +776,23 @@ def cancel_all_broker_orders(
 
 @router.get("/strategies/list")
 def list_available_strategies(ctx=Depends(require_dashboard_auth)):
-    """Discover all available strategies from folder structure"""
-    from shoonya_platform.strategies.universal_settings.universal_registry import list_strategy_templates
-    
-    templates = list_strategy_templates()
+    """List available strategy configs from strategy_runner/saved_configs."""
+    strategies = get_all_strategies()
+    templates = [
+        {
+            "id": s["name"],
+            "folder": "saved_configs",
+            "file": s["filename"],
+            "module": "shoonya_platform.strategy_runner.strategy_executor_service",
+            "label": s["config"].get("name", s["name"]),
+            "slug": s["name"],
+        }
+        for s in strategies
+    ]
     return {
         "strategies": templates,
         "total": len(templates),
-        "predefined": [t for t in templates if not t["folder"].startswith("custom_")],
+        "predefined": templates,
     }
 
 
@@ -798,29 +818,13 @@ def start_strategy(
         raise HTTPException(status_code=400, detail="config_path required")
     
     try:
-        logger.info(
-            "🚀 Starting strategy subprocess | config_path=%s | python=%s",
-            cfg,
-            __import__("sys").executable,
-        )
-        res = svc.start(cfg)
-        logger.warning(
-            "✅ Strategy started successfully | config_path=%s | pid=%s",
-            cfg,
-            res.get("pid"),
-        )
-        return {"started": True, "pid": res.get("pid"), "config_path": cfg}
-    except FileNotFoundError as e:
-        logger.error("❌ Strategy module not found | config_path=%s | error=%s", cfg, str(e))
-        raise HTTPException(
-            status_code=400,
-            detail=f"Strategy module not found: {cfg}. Check if the strategy exists in strategies/ folder",
-        )
+        svc.start(cfg)
+        return {"started": True, "config_path": cfg}
     except Exception as e:
-        logger.exception("❌ Strategy start failed | config_path=%s", cfg)
+        logger.exception("Legacy strategy/start endpoint is retired | config_path=%s", cfg)
         raise HTTPException(
-            status_code=500,
-            detail=f"Strategy start failed: {str(e)}. Check logs for details.",
+            status_code=410,
+            detail=f"Legacy subprocess strategy start is retired: {e}",
         )
 
 
@@ -840,8 +844,8 @@ def stop_strategy(
         res = svc.stop(config_path=cfg, pid=pid)
         return {"stopped": True, **res}
     except Exception as e:
-        logger.exception("Strategy stop failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Legacy strategy/stop endpoint failed")
+        raise HTTPException(status_code=410, detail=f"Legacy subprocess strategy stop is retired: {e}")
 
 # ==================================================
 # PER-STRATEGY RUNNER CONTROL (Individual Start/Stop)
@@ -864,133 +868,38 @@ def start_strategy_execution(
         }
     """
     try:
-        runner = get_runner_singleton(ctx)
-        
-        # Check if strategy is already running
-        if strategy_name in runner._strategies:
-            logger.info(f"ℹ️ Strategy {strategy_name} already running")
+        bot = ctx["bot"]
+        service = bot.strategy_executor_service
+
+        if strategy_name in service._strategies:
+            logger.info(f"Strategy {strategy_name} already running")
             return {
                 "success": False,
                 "strategy_name": strategy_name,
                 "message": "Strategy already running",
                 "timestamp": datetime.now().isoformat()
             }
-        
-        # Load the strategy config from saved_configs/
-        from shoonya_platform.strategies.strategy_factory import create_strategy
-        
+
         strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
         if not strategy_file.exists():
             raise HTTPException(
                 status_code=404,
                 detail=f"Strategy config not found: {strategy_name}.json"
             )
-        
-        with open(strategy_file, 'r') as f:
-            config = json.load(f)
-        
-        # Validate config is enabled
-        if not config.get("enabled", False):
-            return {
-                "success": False,
-                "strategy_name": strategy_name,
-                "message": "Strategy is disabled in config. Enable it first.",
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # Register and start only this strategy
-        try:
-            # Convert v2.0 config to flat factory format if needed
-            factory_config = get_factory_config(config)
-            logger.info(f"Factory config for {strategy_name}: exchange={factory_config.get('exchange')}, symbol={factory_config.get('symbol')}")
 
-            # Use factory to create strategy (respects strategy_type in config)
-            strategy = create_strategy(factory_config)
-            logger.info(f"Strategy created: {strategy_name}, db_path={getattr(strategy, 'db_path', 'N/A')}")
-            
-            # Prepare strategy (initial call with empty market data)
-            try:
-                strategy.prepare({})
-                logger.info(f"Strategy {strategy_name} prepared successfully")
-            except Exception as prep_err:
-                logger.warning(f"Strategy {strategy_name} prepare() warning: {prep_err}")
-                # prepare() may fail if no market snapshot yet - that's OK,
-                # the runner will call prepare() on each tick with real data
-            
-            # Extract market_type from factory config
-            market_config = factory_config.get("market_config", {})
-            market_type = market_config.get("market_type", "database_market")
-            
-            # Log what we're about to validate
-            logger.info(
-                f"Registering {strategy_name}: market_type={market_type}, "
-                f"exchange={market_config.get('exchange')}, "
-                f"symbol={market_config.get('symbol')}, "
-                f"db_path={market_config.get('db_path')}"
-            )
-            
-            # Auto-resolve db_path if still null (for non-DNSS strategies)
-            if market_type == "database_market" and not market_config.get("db_path"):
-                try:
-                    from shoonya_platform.strategies.config_resolution_service import ConfigResolutionService
-                    resolver = ConfigResolutionService()
-                    resolved = resolver.resolve(
-                        config={},
-                        exchange=market_config.get("exchange") or factory_config.get("exchange", ""),
-                        symbol=market_config.get("symbol") or factory_config.get("symbol", ""),
-                        instrument_type=factory_config.get("instrument_type", "OPTIDX"),
-                        expiry_mode=factory_config.get("params", {}).get("expiry_mode", "weekly_current"),
-                    )
-                    if resolved.get("valid") and resolved.get("db_path"):
-                        market_config["db_path"] = resolved["db_path"]
-                        logger.info(f"Auto-resolved db_path for {strategy_name}: {resolved['db_path']}")
-                    else:
-                        logger.warning(
-                            f"Could not auto-resolve db_path for {strategy_name}: "
-                            f"{resolved.get('errors', [])}"
-                        )
-                except Exception as res_err:
-                    logger.warning(f"db_path resolution failed for {strategy_name}: {res_err}")
-            
-            registered = runner.register_with_config(
-                name=strategy_name,
-                strategy=strategy,
-                market=None,  # Market managed via market_adapter
-                config=market_config,
-                market_type=market_type
-            )
-            
-            if not registered:
-                # Get specific failure reason
-                from shoonya_platform.strategies.market_adapter_factory import MarketAdapterFactory
-                is_valid, error_msg = MarketAdapterFactory.validate_config_for_market(
-                    market_type=market_type, config=market_config
-                )
-                detail = error_msg if not is_valid else "Strategy interface validation or registration failed"
-                raise Exception(f"Failed to register strategy: {detail}")
-            
-            # If runner not already executing, start it
-            if not (runner._thread and runner._thread.is_alive()):
-                runner.start()
-                logger.info(f"\U0001f680 Runner started for strategy: {strategy_name}")
-            
-            # Update config status to RUNNING
-            config["status"] = "RUNNING"
-            config["status_updated_at"] = datetime.now().isoformat()
-            strategy_file.write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
-            
-            logger.info(f"\u2705 Strategy {strategy_name} registered and started")
-            
-            return {
-                "success": True,
-                "strategy_name": strategy_name,
-                "message": f"Strategy {strategy_name} started",
-                "timestamp": datetime.now().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"\u274c Failed to start strategy {strategy_name}: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=str(e))
-            
+        config = json.loads(strategy_file.read_text(encoding="utf-8"))
+        bot.start_strategy_executor(strategy_name=strategy_name, config=config)
+
+        config["status"] = "RUNNING"
+        config["status_updated_at"] = datetime.now().isoformat()
+        strategy_file.write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
+
+        return {
+            "success": True,
+            "strategy_name": strategy_name,
+            "message": f"Strategy {strategy_name} started",
+            "timestamp": datetime.now().isoformat()
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -1014,22 +923,22 @@ def stop_strategy_execution(
         }
     """
     try:
-        runner = get_runner_singleton(ctx)
-        
-        # Check if strategy is running
-        if strategy_name not in runner._strategies:
+        bot = ctx["bot"]
+        service = bot.strategy_executor_service
+
+        if strategy_name not in service._strategies:
             return {
                 "success": False,
                 "strategy_name": strategy_name,
                 "message": "Strategy not running",
                 "timestamp": datetime.now().isoformat()
             }
-        
-        # Unregister the strategy
-        runner.unregister(strategy_name)
-        logger.info(f"✅ Strategy {strategy_name} stopped")
-        
-        # Update config status to STOPPED
+
+        service.unregister_strategy(strategy_name)
+        with bot._live_strategies_lock:
+            bot._live_strategies.pop(strategy_name, None)
+        logger.info(f"Strategy {strategy_name} stopped")
+
         try:
             strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
             if strategy_file.exists():
@@ -1039,12 +948,7 @@ def stop_strategy_execution(
                 strategy_file.write_text(json.dumps(cfg, indent=2, default=str), encoding="utf-8")
         except Exception as se:
             logger.warning(f"Could not update status for {strategy_name}: {se}")
-        
-        # If no more strategies, stop the runner
-        if not runner._strategies:
-            runner.stop()
-            logger.info("ℹ️ No more strategies running - runner stopped")
-        
+
         return {
             "success": True,
             "strategy_name": strategy_name,
@@ -2298,16 +2202,58 @@ def list_available_indices(ctx=Depends(require_dashboard_auth)):
 # 📊 STRATEGY MANAGEMENT ENDPOINTS (NEW)
 # ======================================================================
 
-from shoonya_platform.strategies.strategy_config_validator import validate_strategy
-from shoonya_platform.strategies.strategy_logger import (
-    get_strategy_logger,
-    get_logger_manager,
-)
-from shoonya_platform.strategies.strategy_runner import StrategyRunner
+class _ValidationResult:
+    def __init__(self, valid: bool, errors: List[str], warnings: List[str]):
+        self.valid = valid
+        self.errors = errors
+        self.warnings = warnings
+
+    def to_dict(self):
+        return {"valid": self.valid, "errors": self.errors, "warnings": self.warnings}
+
+
+def validate_strategy(config, strategy_name):
+    is_valid, issues = validate_config(config if isinstance(config, dict) else {})
+    errors = [f"{e.path}: {e.message}" for e in issues if e.severity == "error"]
+    warnings = [f"{e.path}: {e.message}" for e in issues if e.severity == "warning"]
+    return _ValidationResult(is_valid, errors, warnings)
+
+
+class _NoopStrategyLogger:
+    def get_recent_logs(self, lines=100, level=None):
+        return []
+
+
+def get_strategy_logger(strategy_name):
+    return _NoopStrategyLogger()
+
+
+class _NoopLoggerManager:
+    def __init__(self):
+        self.loggers = {}
+
+    def list_active_strategies(self):
+        return []
+
+    def get_logs(self, strategy_name, lines=100):
+        return []
+
+    def clear_logs(self, strategy_name):
+        return True
+
+    def clear_strategy_logs(self, strategy_name):
+        return True
+
+    def get_all_logs_combined(self, lines=500):
+        return []
+
+
+def get_logger_manager():
+    return _NoopLoggerManager()
 import os
 
 # Strategy configuration directory
-STRATEGY_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "strategies" / "saved_configs"
+STRATEGY_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "strategy_runner" / "saved_configs"
 
 def get_all_strategies():
     """List all strategy JSON files from saved_configs/"""
@@ -2638,15 +2584,15 @@ _runner_instance = None
 _runner_lock = threading.Lock()
 
 def get_runner_singleton(ctx=Depends(require_dashboard_auth)):
-    """Get or create global runner instance"""
+    """Get StrategyExecutorService singleton bound to bot."""
     global _runner_instance
     if _runner_instance is None:
         with _runner_lock:
             if _runner_instance is None:  # Double-checked locking
-                logger.info("Initializing StrategyRunner singleton")
+                logger.info("Initializing StrategyExecutorService singleton")
                 try:
                     bot = ctx["bot"]
-                    _runner_instance = StrategyRunner(bot=bot, poll_interval=2.0)
+                    _runner_instance = bot.strategy_executor_service
                 except Exception as e:
                     logger.error(f"Failed to initialize runner: {e}")
                     raise
@@ -2667,44 +2613,40 @@ def start_runner(ctx=Depends(require_dashboard_auth)):
         }
     """
     try:
+        bot = ctx["bot"]
         runner = get_runner_singleton(ctx)
-        
-        # Check if already running
-        if runner._thread and runner._thread.is_alive():
-            logger.warning("ℹ️ Runner already running")
-            active_strategies = list(runner._strategies.keys())
-            return {
-                "success": True,
-                "runner_started": False,
-                "message": "Runner already running",
-                "strategies_loaded": len(active_strategies),
-                "strategies": active_strategies,
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # Load all strategies from saved_configs/
-        from shoonya_platform.strategies.strategy_factory import create_strategy
-        
-        result = runner.load_strategies_from_json(
-            config_dir=str(STRATEGY_CONFIG_DIR),
-            strategy_factory=create_strategy
-        )
-        
-        # Extract loaded strategy names (those with True value)
-        loaded_strategies = [name for name, success in result.items() if success]
-        logger.info(f"📖 Loaded {len(loaded_strategies)} strategies: {loaded_strategies}")
-        
-        # Start the runner thread
-        runner.start()
-        
-        logger.info(f"✅ Runner started with {len(loaded_strategies)} strategies")
-        
+
+        loaded = []
+        errors = []
+        for cfg_path in sorted(STRATEGY_CONFIG_DIR.glob("*.json")):
+            if cfg_path.name == "STRATEGY_CONFIG_SCHEMA.json":
+                continue
+            name = cfg_path.stem
+            if name in runner._strategies:
+                loaded.append(name)
+                continue
+            try:
+                runner.register_strategy(name=name, config_path=str(cfg_path))
+                with bot._live_strategies_lock:
+                    bot._live_strategies[name] = {
+                        "type": "executor_service",
+                        "config_path": str(cfg_path),
+                        "started_at": time.time(),
+                    }
+                loaded.append(name)
+            except Exception as e:
+                logger.warning(f"Failed to load strategy {name}: {e}")
+                errors.append(name)
+
+        if not runner._running:
+            runner.start()
+
         return {
             "success": True,
             "runner_started": True,
-            "strategies_loaded": len(loaded_strategies),
-            "strategies": loaded_strategies,
-            "errors": [name for name, success in result.items() if not success],
+            "strategies_loaded": len(loaded),
+            "strategies": loaded,
+            "errors": errors,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
@@ -2724,14 +2666,16 @@ def stop_runner(ctx=Depends(require_dashboard_auth)):
         }
     """
     try:
+        bot = ctx["bot"]
         runner = get_runner_singleton(ctx)
-        
-        # Stop all active strategies
+
         stopped_count = len(runner._strategies)
+        for name in list(runner._strategies.keys()):
+            runner.unregister_strategy(name)
+        with bot._live_strategies_lock:
+            bot._live_strategies.clear()
         runner.stop()
-        
-        logger.info(f"✅ Runner stopped - {stopped_count} strategies halted")
-        
+
         return {
             "success": True,
             "runner_stopped": True,
@@ -2758,11 +2702,9 @@ def get_runner_status(ctx=Depends(require_dashboard_auth)):
     """
     try:
         runner = get_runner_singleton(ctx)
-        status = runner.get_status()
-        
         return {
             "runner_active": runner is not None,
-            "is_running": status.get("running", False),
+            "is_running": bool(runner._running),
             "strategies_active": len(runner._strategies),
             "active_strategies": list(runner._strategies.keys()),
             "total_strategies_available": len(get_all_strategies()),

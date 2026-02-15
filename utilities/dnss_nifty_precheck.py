@@ -1,158 +1,74 @@
 #!/usr/bin/env python3
 """
-DNSS NIFTY Configuration Pre-Flight Check
-==========================================
-Validates all requirements before testing strategy execution
+DNSS NIFTY pre-flight checks for strategy_runner architecture.
 """
 
 import json
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+from shoonya_platform.strategy_runner.config_schema import validate_config_file
+
 
 def check_config_file():
-    """✅ Check if config file exists and is valid"""
-    config_path = Path("shoonya_platform/strategies/saved_configs/dnss_nifty.json")
-    
+    config_path = Path("shoonya_platform/strategy_runner/saved_configs/dnss_nifty.json")
     if not config_path.exists():
-        return False, f"❌ Config file not found: {config_path}"
-    
-    try:
-        with open(config_path) as f:
-            config = json.load(f)
-        
-        required_keys = ["strategy_name", "identity", "entry", "adjustment", "exit", "params"]
-        missing = [k for k in required_keys if k not in config]
-        
-        if missing:
-            return False, f"❌ Config missing keys: {missing}"
-        
-        return True, f"✅ Config file valid: {config_path}"
-    
-    except Exception as e:
-        return False, f"❌ Config file error: {e}"
+        return False, f"Config file not found: {config_path}"
+
+    is_valid, issues, _ = validate_config_file(str(config_path))
+    if not is_valid:
+        errors = [f"{i.path}: {i.message}" for i in issues if i.severity == "error"]
+        return False, f"Config validation failed: {errors}"
+    return True, f"Config file valid: {config_path}"
 
 
 def check_database():
-    """✅ Check if SQLite database exists with data"""
     db_path = Path("shoonya_platform/market_data/option_chain/data/option_chain.db")
-    
     if not db_path.exists():
-        # Check alternative paths
-        alt_paths = [
-            Path("shoonya_platform/market_data/data/option_chain.db"),
-            Path("market_data/option_chain.db"),
-            Path("option_chain.db"),
-        ]
-        for alt in alt_paths:
-            if alt.exists():
-                db_path = alt
-                break
-        else:
-            return False, f"⚠️  Database not found: {db_path} | Need to create/populate with live market data"
-    
-    try:
-        import sqlite3
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        
-        # Check if tables exist
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = cursor.fetchall()
-        
-        if not tables:
-            return False, f"❌ Database exists but empty (no tables): {db_path}"
-        
-        conn.close()
-        return True, f"✅ Database found with {len(tables)} table(s): {db_path}"
-    
-    except Exception as e:
-        return False, f"❌ Database error: {e}"
+        return False, f"Option-chain DB not found: {db_path}"
+    return True, f"Database found: {db_path}"
 
 
 def check_environment():
-    """✅ Check if environment variables are configured"""
     env_path = Path("config_env/primary.env")
-    
     if not env_path.exists():
-        return False, f"❌ Environment file not found: {env_path}"
-    
-    try:
-        with open(env_path, encoding="utf-8") as f:
-            lines = f.readlines()
-        
-        # Check for key variables (broker token, etc.)
-        content = "".join(lines)
-        required_vars = ["USER_NAME", "USER_ID", "PASSWORD"]  # Shoonya credentials
-        missing = [v for v in required_vars if v not in content]
-        
-        if missing:
-            return False, f"❌ Missing env vars: {missing}"
-        
-        return True, f"✅ Environment file valid: {env_path} ({len(lines)} lines)"
-    
-    except Exception as e:
-        return False, f"❌ Environment error: {e}"
+        return False, f"Environment file not found: {env_path}"
+    return True, f"Environment file present: {env_path}"
 
 
-def check_strategy_module():
-    """✅ Check if strategy module is importable"""
-    try:
-        from shoonya_platform.strategies.delta_neutral.dnss import DeltaNeutralShortStrangleStrategy
-        return True, f"✅ Strategy module importable (from dnss.py)"
-    except Exception as e:
-        return False, f"❌ Strategy import error: {e}"
-
-
-def check_standalone_runner():
-    """✅ Check if standalone runner module exists"""
-    runner_path = Path("shoonya_platform/strategies/delta_neutral/__main__.py")
-    
-    if not runner_path.exists():
-        return False, f"❌ Standalone runner not found: {runner_path}"
-    
-    try:
-        with open(runner_path, encoding="utf-8") as f:
-            content = f.read()
-        
-        required_classes = ["DNSSStandaloneRunner", "convert_dashboard_config_to_execution"]
-        missing = [c for c in required_classes if c not in content]
-        
-        if missing:
-            return False, f"❌ Runner missing: {missing}"
-        
-        return True, f"✅ Standalone runner valid: {runner_path}"
-    
-    except Exception as e:
-        return False, f"❌ Runner error: {e}"
+def check_executor_modules():
+    required = [
+        Path("shoonya_platform/strategy_runner/strategy_executor_service.py"),
+        Path("shoonya_platform/strategy_runner/config_schema.py"),
+        Path("shoonya_platform/strategy_runner/condition_engine.py"),
+    ]
+    missing = [str(p) for p in required if not p.exists()]
+    if missing:
+        return False, f"Missing modules: {missing}"
+    return True, "Strategy runner modules are present"
 
 
 def print_summary(results):
-    """Print test results summary"""
     print("\n" + "=" * 70)
-    print(f"DNSS NIFTY PRE-FLIGHT CHECK")
+    print("DNSS NIFTY PRE-FLIGHT CHECK (strategy_runner)")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70 + "\n")
-    
+
     passed = sum(1 for success, _ in results.values() if success)
     total = len(results)
-    
     for check_name, (success, message) in results.items():
-        print(f"{check_name:30} → {message}")
-    
+        print(f"{check_name:30} -> {message}")
+
     print("\n" + "=" * 70)
     print(f"RESULT: {passed}/{total} checks passed")
-    
     if passed == total:
-        print("\n✅ ALL CHECKS PASSED - Ready to test strategy execution!")
-        print("\nRun strategy with:")
-        print("  python -m shoonya_platform.strategies.delta_neutral \\")
-        print("    --config ./shoonya_platform/strategies/saved_configs/dnss_nifty.json \\")
-        print("    --duration 5 --verbose")
+        print("\nAll checks passed. Start service with:")
+        print("  python main.py")
+        print("Then register/start strategy via dashboard runner endpoints.")
         return 0
-    else:
-        print(f"\n❌ {total - passed} checks failed - resolve above issues before testing")
-        return 1
+    print(f"\n{total - passed} checks failed.")
+    return 1
 
 
 def main():
@@ -160,10 +76,8 @@ def main():
         "Config File": check_config_file(),
         "SQLite Database": check_database(),
         "Environment": check_environment(),
-        "Strategy Module": check_strategy_module(),
-        "Standalone Runner": check_standalone_runner(),
+        "Executor Modules": check_executor_modules(),
     }
-    
     return print_summary(results)
 
 

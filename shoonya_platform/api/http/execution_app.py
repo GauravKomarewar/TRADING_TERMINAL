@@ -91,7 +91,8 @@ class ExecutionApp:
         def positions():
             try:
                 # Returns the broker's current open positions (truth)
-                positions = self.bot.get_positions()
+                self.bot._ensure_login()
+                positions = self.bot.broker_view.get_positions(force_refresh=True)
                 return jsonify({"positions": positions, "status": "ok"}), 200
             except Exception as e:
                 log_exception("positions", e)

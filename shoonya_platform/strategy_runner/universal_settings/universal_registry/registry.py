@@ -76,7 +76,7 @@ def list_strategy_templates() -> List[Dict[str, str]]:
                     "id": f"{entry.name}/{py_file.stem}",
                     "folder": entry.name,
                     "file": py_file.name,
-                    "module": f"shoonya_platform.strategies.{entry.name}.{py_file.stem}",
+                    "module": f"shoonya_platform.strategy_runner.{entry.name}.{py_file.stem}",
                     "label": _label_for(entry.name, py_file.stem),
                     "slug": py_file.stem,
                 }

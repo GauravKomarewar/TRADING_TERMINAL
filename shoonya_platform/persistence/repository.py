@@ -240,7 +240,7 @@ class OrderRepository:
     def get_open_orders_by_strategy(self, strategy_name: str) -> List[OrderRecord]:
         """
         Returns all non-closed orders for a strategy.
-        Strategy name is stored in `user` column.
+        Strategy name is stored in `strategy_name` column.
         """
         conn = get_connection()
         rows = conn.execute(
@@ -248,7 +248,7 @@ class OrderRepository:
             SELECT *
             FROM orders
             WHERE status IN ('CREATED', 'SENT_TO_BROKER')
-              AND user = ?
+              AND strategy_name = ?
               AND client_id = ?
             """,
             (strategy_name, self.client_id),
@@ -289,7 +289,7 @@ class OrderRepository:
             """
             SELECT symbol, source
             FROM orders
-            WHERE user = ?
+            WHERE strategy_name = ?
               AND status IN ('CREATED', 'SENT_TO_BROKER')
               AND client_id = ?
             """,
@@ -307,7 +307,7 @@ class OrderRepository:
             """
             SELECT COUNT(*) AS cnt
             FROM orders
-            WHERE user = ?
+            WHERE strategy_name = ?
               AND status IN ('CREATED', 'SENT_TO_BROKER')
               AND client_id = ?
             """,

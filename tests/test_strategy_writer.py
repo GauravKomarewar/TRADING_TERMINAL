@@ -17,7 +17,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-from shoonya_platform.strategies.universal_settings.writer import StrategyRunWriter
+from shoonya_platform.strategy_runner.universal_settings.writer import StrategyRunWriter
 
 
 @pytest.fixture

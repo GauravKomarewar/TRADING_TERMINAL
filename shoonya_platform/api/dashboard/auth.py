@@ -24,6 +24,7 @@ from typing import Optional, Dict
 import os
 import secrets
 import logging
+import time
 
 from shoonya_platform.core.config import Config
 
@@ -32,6 +33,8 @@ from shoonya_platform.core.config import Config
 # session_id -> session_data
 # --------------------------------------------------
 active_sessions: Dict[str, dict] = {}
+SESSION_TTL_SEC = int(os.getenv("DASHBOARD_SESSION_TTL_SEC", str(60 * 60 * 8)))
+COOKIE_SECURE = os.getenv("DASHBOARD_COOKIE_SECURE", "false").strip().lower() in ("1", "true", "yes")
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +83,7 @@ async def login(
     active_sessions[session_id] = {
         "authenticated": True,
         "username": "dashboard",
+        "created_at": int(time.time()),
 
         # 🔒 Canonical client identity
         "client_id": identity["client_id"],
@@ -91,9 +95,9 @@ async def login(
         key="dashboard_session",
         value=session_id,
         httponly=True,
-        max_age=60 * 60 * 8,   # 8 hours
+        max_age=SESSION_TTL_SEC,
         samesite="lax",
-        secure=False,          # set True when HTTPS
+        secure=COOKIE_SECURE,
         path="/",
     )
 
@@ -134,6 +138,12 @@ async def status(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     if dashboard_session not in active_sessions:
+        raise HTTPException(status_code=401, detail="Session expired")
+
+    session = active_sessions.get(dashboard_session, {})
+    created_at = int(session.get("created_at", 0))
+    if created_at <= 0 or (int(time.time()) - created_at) > SESSION_TTL_SEC:
+        active_sessions.pop(dashboard_session, None)
         raise HTTPException(status_code=401, detail="Session expired")
 
     return {"authenticated": True}

@@ -1,4 +1,4 @@
-[Unit]
+﻿[Unit]
 Description=DNSS (Delta Neutral Short Strangle) Strategy Service
 After=network.target
 
@@ -8,10 +8,10 @@ User=trading
 WorkingDirectory=/opt/shoonya_platform
 Environment="PYTHONUNBUFFERED=1"
 Environment="DASHBOARD_ENV=primary"
-Environment="DNSS_CONFIG=/opt/shoonya_platform/shoonya_platform/strategies/saved_configs/dnss_nifty_weekly.json"
+Environment="DNSS_CONFIG=/opt/shoonya_platform/shoonya_platform/strategy_runner/saved_configs/dnss_nifty_weekly.json"
 EnvironmentFile=/opt/shoonya_platform/config_env/primary.env
 
-ExecStart=/opt/shoonya_platform/venv/bin/python -m shoonya_platform.strategies.delta_neutral --config /opt/shoonya_platform/shoonya_platform/strategies/saved_configs/dnss_nifty_weekly.json
+ExecStart=/opt/shoonya_platform/venv/bin/python main.py
 
 # Restart on failure
 Restart=on-failure
@@ -29,3 +29,4 @@ SyslogIdentifier=dnss
 
 [Install]
 WantedBy=multi-user.target
+

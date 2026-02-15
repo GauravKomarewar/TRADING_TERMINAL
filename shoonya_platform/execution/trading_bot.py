@@ -93,7 +93,7 @@ from shoonya_platform.execution.generic_control_consumer import GenericControlIn
 from shoonya_platform.execution.strategy_control_consumer import StrategyControlConsumer
 
 # ---------------- REPORTING ----------------
-from shoonya_platform.strategies.universal_settings.universal_strategy_reporter import build_strategy_report
+from shoonya_platform.strategy_runner.universal_settings.universal_strategy_reporter import build_strategy_report
 
 #--------------------MODELS--------------
 from shoonya_platform.domain.business_models import TradeRecord, AlertData, LegResult, BotStats, OrderResult, AccountInfo
@@ -115,8 +115,6 @@ from shoonya_platform.market_data.feeds.live_feed import start_live_feed
 from shoonya_platform.market_data.feeds import index_tokens_subscriber
 
 #---------------------- strategies runner  ----------------
-from shoonya_platform.strategies.strategy_runner import StrategyRunner
-from shoonya_platform.strategies.universal_settings.writer import StrategyRunWriter
 
 # NEW: Strategy executor components from strategy_runner folder
 from shoonya_platform.strategy_runner.strategy_executor_service import (
@@ -379,7 +377,8 @@ class ShoonyaBot:
         # allowing duplicate ENTRY orders for strategies that already have live broker positions.
         try:
             self._ensure_login()
-            positions = self.api.get_positions() or []
+            self.broker_view.invalidate_cache("positions")
+            positions = self.broker_view.get_positions(force_refresh=True) or []
             broker_map: Dict[str, Dict[str, int]] = {}
             for p in positions:
                 sym = p.get("tsym")
@@ -417,6 +416,8 @@ class ShoonyaBot:
         # 🔒 Per-strategy locks for process_alert (prevents duplicate webhook races)
         self._alert_locks: Dict[str, threading.Lock] = {}
         self._alert_locks_guard = threading.Lock()
+        self._atomic_locks: Dict[str, threading.Lock] = {}
+        self._atomic_locks_guard = threading.Lock()
         # -------------------------------------------------
         # 🧠 RISK MANAGER (INTENT ONLY – NO DIRECT ORDERS)
         # -------------------------------------------------
@@ -466,18 +467,13 @@ class ShoonyaBot:
         # -------------------------------------------------
         # 📈 STRATEGY RUNNER (CLOCK + DISPATCHER ONLY)
         # -------------------------------------------------
-        self.strategy_runner = StrategyRunner(
-            bot=self,
-            poll_interval=2.0,   # configurable later
-        )
-
-        logger.info("🧭 StrategyRunner initialized (clock-only)")
+        self.strategy_runner = None
+        logger.info("StrategyRunner legacy path disabled; using StrategyExecutorService only")
 
         # -------------------------------------------------
         # 🚀 START STRATEGY RUNNER
         # -------------------------------------------------
-        self.strategy_runner.start()
-        logger.info("🚀 StrategyRunner started")
+        # StrategyRunner disabled (strategy_runner-only architecture)
 
         # -------------------------------------------------
         # 🔓 ORPHAN POSITION MANAGER (MANUAL POSITION CONTROL)
@@ -509,56 +505,122 @@ class ShoonyaBot:
     # ==================================================
     # STRATEGY LIFECYCLE WRAPPERS (called by consumers)
     # ==================================================
-    def _process_strategy_intents(self, strategy_name: str, strategy, market, intents, *, force_exit: bool = False):
+    def _process_strategy_intents(
+        self,
+        strategy_name: str,
+        strategy,
+        market,
+        intents,
+        *,
+        force_exit: bool = False,
+    ):
         """
-        Route strategy UniversalOrderCommand objects through CommandService.
-
-        Strategy._cmd() already creates fully-formed UniversalOrderCommand instances
-        so we route them DIRECTLY — no re-wrapping or attribute translation needed.
-
-        Routing:
-        - BUY commands (position exits)  → command_service.register() (OrderWatcher executes)
-        - SELL commands (position opens)  → command_service.submit(execution_type="ENTRY")
-        - force_exit flag overrides to register() for all
+        Route strategy UniversalOrderCommand objects with guard compliance and atomic batching.
         """
-        for intent in intents or []:
+        if not intents:
+            return
+
+        try:
+            guard_intents = []
+            for intent in intents:
+                symbol = getattr(intent, "symbol", None)
+                side = getattr(intent, "side", None)
+                qty = getattr(intent, "quantity", 0)
+
+                if not symbol or not side:
+                    continue
+
+                guard_intents.append(
+                    LegIntent(
+                        strategy_id=strategy_name,
+                        symbol=symbol,
+                        direction=side,
+                        qty=qty,
+                        tag="ENTRY" if not force_exit else "EXIT",
+                    )
+                )
+
             try:
-                # Strategy returns UOC with .side, .symbol, .comment — use directly
-                comment = getattr(intent, "comment", "") or ""
-                side = getattr(intent, "side", "")
+                guarded = self.execution_guard.validate_and_prepare(
+                    intents=guard_intents,
+                    execution_type="EXIT" if force_exit else "ENTRY",
+                )
+            except RuntimeError as e:
+                logger.warning(f"Guard blocked strategy intents: {e}")
+                return
 
-                # BUY = closing/exiting; force_exit overrides all to EXIT path
-                is_exit_like = force_exit or (side == "BUY")
-
-                if is_exit_like:
-                    try:
-                        self.command_service.register(intent)
-                        logger.info(
-                            "🔁 EXIT intent: %s → %s %s [%s]",
-                            strategy_name, side, intent.symbol, comment,
-                        )
-                    except Exception:
-                        logger.exception("Failed to register strategy EXIT intent")
+            guard_map = {}
+            for g in guarded:
+                if force_exit:
+                    key = (g.symbol, "EXIT")
                 else:
-                    try:
-                        self.command_service.submit(intent, execution_type="ENTRY")
-                        logger.info(
-                            "🚀 ENTRY intent: %s → %s %s [%s]",
-                            strategy_name, side, intent.symbol, comment,
-                        )
-                    except Exception:
-                        logger.exception("Failed to submit strategy ENTRY intent")
+                    key = (g.symbol, g.direction)
+                guard_map[key] = g.qty
 
-            except Exception:
-                logger.exception("Error processing strategy intent")
+            atomic_result = self._atomic_route_intents(
+                strategy_name=strategy_name,
+                execution_type="EXIT" if force_exit else "ENTRY",
+                legs=intents,
+                guard_map=guard_map,
+                source_mode="STRATEGY",
+            )
+            if atomic_result:
+                logger.info(
+                    f"ATOMIC_STRATEGY | {strategy_name} | {atomic_result['status']}"
+                )
+                return
+
+            for intent in intents:
+                symbol = None
+                try:
+                    symbol = getattr(intent, "symbol", None)
+                    side = getattr(intent, "side", None)
+
+                    if not symbol or not side:
+                        continue
+
+                    if force_exit:
+                        key = (symbol, "EXIT")
+                    else:
+                        key = (symbol, side)
+
+                    if key not in guard_map:
+                        logger.warning(f"GUARD_BLOCK | {strategy_name} | {symbol}")
+                        continue
+
+                    approved_qty = guard_map[key]
+                    if approved_qty <= 0:
+                        continue
+
+                    intent.quantity = approved_qty
+                    is_exit_like = force_exit or (side == "BUY")
+
+                    if is_exit_like:
+                        self.command_service.register(intent)
+                        logger.info(f"EXIT intent: {strategy_name} -> {side} {symbol}")
+                    else:
+                        self.command_service.submit(intent, execution_type="ENTRY")
+                        logger.info(f"ENTRY intent: {strategy_name} -> {side} {symbol}")
+
+                except Exception:
+                    logger.exception(
+                        f"Strategy intent routing failed | {strategy_name} | {symbol}"
+                    )
+
+        except Exception:
+            logger.exception("Error in _process_strategy_intents")
 
     def request_entry(self, strategy_name: str):
         with self._live_strategies_lock:
             try:
-                strategy, market = self._live_strategies[strategy_name]
+                value = self._live_strategies[strategy_name]
             except KeyError:
                 logger.error("Request ENTRY failed: strategy not registered: %s", strategy_name)
                 raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
+        if isinstance(value, dict):
+            logger.info("Request ENTRY handled by StrategyExecutorService | %s", strategy_name)
+            return
+        strategy, market = value
 
         try:
             # warm prepare
@@ -579,10 +641,14 @@ class ShoonyaBot:
     def request_adjust(self, strategy_name: str):
         with self._live_strategies_lock:
             try:
-                strategy, market = self._live_strategies[strategy_name]
+                value = self._live_strategies[strategy_name]
             except KeyError:
                 logger.error("Request ADJUST failed: strategy not registered: %s", strategy_name)
                 raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
+        if isinstance(value, dict):
+            logger.info("Request ADJUST handled by StrategyExecutorService | %s", strategy_name)
+            return
+        strategy, market = value
 
         try:
             if hasattr(market, "snapshot"):
@@ -642,7 +708,10 @@ class ShoonyaBot:
             def send_strategy_reports():
                 with self._live_strategies_lock:
                     items = list(self._live_strategies.items())
-                for name, (strategy, market) in items:
+                for name, value in items:
+                    if not isinstance(value, tuple) or len(value) != 2:
+                        continue
+                    strategy, market = value
                     try:
                         report = build_strategy_report(strategy, market)
                         if report:
@@ -849,6 +918,255 @@ class ShoonyaBot:
             )
             raise RuntimeError("Broker session invalid and recovery failed")
 
+    def _extract_symbol(self, leg) -> Optional[str]:
+        """Extract symbol from leg object safely."""
+        return getattr(leg, "tradingsymbol", None) or getattr(leg, "symbol", None)
+
+    def _extract_direction(self, leg) -> Optional[str]:
+        """Extract direction from leg object safely."""
+        direction = getattr(leg, "direction", None) or getattr(leg, "side", None)
+        return direction.upper() if direction else None
+
+    def _extract_quantity(self, leg) -> int:
+        """Extract quantity from leg object safely."""
+        return int(getattr(leg, "qty", 0) or getattr(leg, "quantity", 0))
+
+    def _classify_leg_as_exit_or_entry(
+        self,
+        leg,
+        broker_positions: List[Dict[str, Any]],
+    ) -> str:
+        """Classify leg as EXIT or ENTRY using direction-aware logic."""
+        symbol = self._extract_symbol(leg)
+        direction = self._extract_direction(leg)
+
+        if not symbol or not direction:
+            logger.warning("Cannot classify leg: missing symbol or direction")
+            return "ENTRY"
+
+        net_qty = 0
+        for p in broker_positions:
+            if p.get("tsym") == symbol:
+                net_qty = int(p.get("netqty", 0))
+                break
+
+        if net_qty == 0:
+            return "ENTRY"
+        if net_qty > 0:
+            return "EXIT" if direction == "SELL" else "ENTRY"
+        return "EXIT" if direction == "BUY" else "ENTRY"
+
+    def _wait_until_flat(
+        self,
+        symbols: List[str],
+        strategy_name: str,
+        timeout: float = 30.0,
+    ) -> bool:
+        """Wait until broker positions for given symbols become flat."""
+        deadline = time.time() + timeout
+        check_interval = 0.5
+
+        logger.info(
+            f"ATOMIC_WAIT_START | strategy={strategy_name} | "
+            f"symbols={symbols} | timeout={timeout}s"
+        )
+
+        while time.time() < deadline:
+            try:
+                self.broker_view.invalidate_cache("positions")
+                positions = self.broker_view.get_positions(force_refresh=True) or []
+
+                positions_flat = True
+                for p in positions:
+                    if p.get("tsym") in symbols and int(p.get("netqty", 0)) != 0:
+                        positions_flat = False
+                        break
+
+                orders_pending = False
+                try:
+                    open_orders = self.order_repo.get_open_orders_by_strategy(strategy_name)
+                    for order in open_orders:
+                        if order.symbol in symbols and order.status in ("CREATED", "SENT_TO_BROKER", "OPEN"):
+                            orders_pending = True
+                            break
+                except Exception as e:
+                    logger.warning(f"ATOMIC_WAIT | Order check failed: {e}")
+
+                if positions_flat and not orders_pending:
+                    logger.info(f"ATOMIC_WAIT_SUCCESS | strategy={strategy_name}")
+                    return True
+
+            except Exception as e:
+                logger.warning(f"ATOMIC_WAIT | Check exception: {e}")
+
+            time.sleep(check_interval)
+
+        logger.error(f"ATOMIC_WAIT_TIMEOUT | strategy={strategy_name}")
+        try:
+            positions = self.broker_view.get_positions(force_refresh=True) or []
+            for p in positions:
+                if p.get("tsym") in symbols:
+                    logger.error(f"ATOMIC_FINAL_POS | {p.get('tsym')} | netqty={p.get('netqty')}")
+        except Exception as e:
+            logger.error(f"ATOMIC_FINAL_POS | Failed to log: {e}")
+
+        return False
+
+    def _atomic_route_intents(
+        self,
+        *,
+        strategy_name: str,
+        execution_type: str,
+        legs: List,
+        guard_map: Dict,
+        source_mode: str = "ALERT",
+    ) -> Optional[Dict[str, Any]]:
+        """Atomic coordinator for mixed EXIT+ENTRY batches."""
+        with self._atomic_locks_guard:
+            if strategy_name not in self._atomic_locks:
+                self._atomic_locks[strategy_name] = threading.Lock()
+            atomic_lock = self._atomic_locks[strategy_name]
+
+        if not atomic_lock.acquire(timeout=35.0):
+            logger.error(
+                f"ATOMIC_ABORT | strategy={strategy_name} | "
+                f"reason=atomic_lock_timeout"
+            )
+            return {
+                "status": "FAILED",
+                "reason": "ATOMIC_LOCK_TIMEOUT",
+                "timestamp": datetime.now().isoformat(),
+            }
+
+        try:
+            try:
+                self.broker_view.invalidate_cache("positions")
+                broker_positions = self.broker_view.get_positions(force_refresh=True) or []
+            except Exception as e:
+                logger.warning(f"ATOMIC_BATCH | Failed to get positions: {e}")
+                broker_positions = []
+
+            exit_legs = []
+            entry_legs = []
+            for leg in legs:
+                if self._classify_leg_as_exit_or_entry(leg, broker_positions) == "EXIT":
+                    exit_legs.append(leg)
+                else:
+                    entry_legs.append(leg)
+
+            if not exit_legs or not entry_legs:
+                return None
+
+            exit_symbols = [self._extract_symbol(l) for l in exit_legs]
+
+            exit_success_count = 0
+            for leg in exit_legs:
+                try:
+                    symbol = self._extract_symbol(leg)
+                    direction = self._extract_direction(leg)
+                    key = (symbol, "EXIT")
+                    if key not in guard_map:
+                        continue
+                    approved_qty = guard_map[key]
+                    if approved_qty <= 0:
+                        continue
+
+                    if hasattr(leg, "to_dict"):
+                        cmd = leg
+                        cmd.quantity = approved_qty
+                    else:
+                        cmd = UniversalOrderCommand.from_order_params(
+                            order_params={
+                                "exchange": getattr(leg, "exchange", "NFO"),
+                                "symbol": symbol,
+                                "side": direction,
+                                "quantity": approved_qty,
+                                "product": getattr(leg, "product_type", "NRML"),
+                                "order_type": getattr(leg, "order_type", "MARKET"),
+                                "price": getattr(leg, "price", None),
+                                "strategy_name": strategy_name,
+                            },
+                            source=source_mode,
+                            user=self.client_id,
+                        )
+                        cmd.intent = "EXIT"
+
+                    self.command_service.register(cmd)
+                    exit_success_count += 1
+                except Exception as e:
+                    logger.error(
+                        f"ATOMIC_PHASE_1_ERROR | strategy={strategy_name} | "
+                        f"symbol={self._extract_symbol(leg)} | error={e}"
+                    )
+
+            if exit_success_count == 0:
+                return {
+                    "status": "FAILED",
+                    "reason": "NO_EXITS_ROUTED",
+                    "timestamp": datetime.now().isoformat(),
+                }
+
+            if not self._wait_until_flat(
+                symbols=exit_symbols,
+                strategy_name=strategy_name,
+                timeout=30.0,
+            ):
+                return {
+                    "status": "FAILED",
+                    "reason": "EXIT_NOT_FLAT_TIMEOUT",
+                    "symbols": exit_symbols,
+                    "timestamp": datetime.now().isoformat(),
+                }
+
+            entry_success_count = 0
+            for leg in entry_legs:
+                try:
+                    symbol = self._extract_symbol(leg)
+                    direction = self._extract_direction(leg)
+                    key = (symbol, direction)
+                    if key not in guard_map:
+                        continue
+                    approved_qty = guard_map[key]
+                    if approved_qty <= 0:
+                        continue
+
+                    if hasattr(leg, "to_dict"):
+                        cmd = leg
+                        cmd.quantity = approved_qty
+                    else:
+                        cmd = UniversalOrderCommand.from_order_params(
+                            order_params={
+                                "exchange": getattr(leg, "exchange", "NFO"),
+                                "symbol": symbol,
+                                "side": direction,
+                                "quantity": approved_qty,
+                                "product": getattr(leg, "product_type", "NRML"),
+                                "order_type": getattr(leg, "order_type", "MARKET"),
+                                "price": getattr(leg, "price", None),
+                                "strategy_name": strategy_name,
+                            },
+                            source=source_mode,
+                            user=self.client_id,
+                        )
+
+                    self.command_service.submit(cmd, execution_type="ENTRY")
+                    entry_success_count += 1
+                except Exception as e:
+                    logger.error(
+                        f"ATOMIC_PHASE_3_ERROR | strategy={strategy_name} | "
+                        f"symbol={self._extract_symbol(leg)} | error={e}"
+                    )
+
+            return {
+                "status": "ATOMIC_BATCH_EXECUTED",
+                "exit_legs": exit_success_count,
+                "entry_legs": entry_success_count,
+                "symbols_exited": exit_symbols,
+                "timestamp": datetime.now().isoformat(),
+            }
+        finally:
+            atomic_lock.release()
+
     def validate_webhook_signature(self, payload: str, signature: str) -> bool:
         """Validate webhook signature for security"""
         # Validate webhook_secret is configured
@@ -938,7 +1256,7 @@ class ShoonyaBot:
 
         # Broker position (truth)
         try:
-            positions = self.api.get_positions()
+            positions = self.broker_view.get_positions()
         except Exception:
             positions = []
 
@@ -1192,7 +1510,8 @@ class ShoonyaBot:
                 # -------------------------------------------------
                 if not parsed.test_mode:
                     try:
-                        positions = self.api.get_positions()
+                        self.broker_view.invalidate_cache("positions")
+                        positions = self.broker_view.get_positions(force_refresh=True)
                     except Exception:
                         positions = []
 
@@ -1268,7 +1587,24 @@ class ShoonyaBot:
                         "timestamp": datetime.now().isoformat(),
                     }
 
-                guard_map = {(g.symbol, g.direction): g.qty for g in guarded}
+                guard_map = {}
+                for g in guarded:
+                    if execution_type == "EXIT":
+                        key = (g.symbol, "EXIT")
+                    else:
+                        key = (g.symbol, g.direction)
+                    guard_map[key] = g.qty
+
+                atomic_result = self._atomic_route_intents(
+                    strategy_name=parsed.strategy_name,
+                    execution_type=execution_type,
+                    legs=parsed.legs,
+                    guard_map=guard_map,
+                    source_mode="ALERT",
+                )
+                if atomic_result:
+                    logger.info(f"ATOMIC_HANDLED | {atomic_result['status']}")
+                    return atomic_result
 
                 expected_legs = len(parsed.legs)
                 attempted = 0
@@ -1282,7 +1618,8 @@ class ShoonyaBot:
                 exit_positions_cache = None
                 if execution_type == "EXIT":
                     try:
-                        exit_positions_cache = self.api.get_positions() or []
+                        self.broker_view.invalidate_cache("positions")
+                        exit_positions_cache = self.broker_view.get_positions(force_refresh=True) or []
                     except Exception:
                         exit_positions_cache = []
 
@@ -1434,96 +1771,25 @@ class ShoonyaBot:
         market_cls,
         market_config,
     ):
-        with self._live_strategies_lock:
-            if strategy_name in self._live_strategies:
-                raise RuntimeError(f"Strategy already running: {strategy_name}")
+        """
+        Legacy compatibility bridge.
 
-            # 1️⃣ Create market
-            market = market_cls(**market_config)
-
-        # 2️⃣ Create strategy (CONFIG IS NOW RESOLVED)
-        # Get lot_qty from config or use default
-        lot_qty = getattr(universal_config, 'lot_qty', 1)
-        if hasattr(universal_config, 'to_dict') and isinstance(universal_config.to_dict(), dict):
-            lot_qty = universal_config.to_dict().get('lot_qty', lot_qty)
-        
-        # Adapt UniversalStrategyConfig -> strategy-specific StrategyConfig
-        from shoonya_platform.strategies.delta_neutral.dnss import (
-            DeltaNeutralShortStrangleStrategy,
-            StrategyConfig as DnssStrategyConfig,
+        The old strategies/ runtime has been deprecated.
+        Route all start calls into StrategyExecutorService.
+        """
+        logger.warning(
+            "Legacy start_strategy called; routing to start_strategy_executor | strategy=%s",
+            strategy_name,
         )
-
-        params = getattr(universal_config, "params", {}) or {}
-
-        strategy_config = DnssStrategyConfig(
-            entry_time=universal_config.entry_time,
-            exit_time=universal_config.exit_time,
-
-            target_entry_delta=float(params.get("target_entry_delta", 0.20)),
-            delta_adjust_trigger=float(params.get("delta_adjust_trigger", 0.50)),
-            max_leg_delta=float(params.get("max_leg_delta", 0.65)),
-
-            profit_step=float(params.get("profit_step", 1500)),
-            cooldown_seconds=int(params.get("cooldown_seconds", 0)),
-            lot_qty=int(params.get("lot_qty", lot_qty)),
-
-            # OMS execution parameters
-            order_type=params.get("order_type", getattr(universal_config, "order_type", "LIMIT")),
-            product=params.get("product", getattr(universal_config, "product", "NRML")),
+        resolved = (
+            universal_config.to_dict()
+            if hasattr(universal_config, "to_dict")
+            else (universal_config if isinstance(universal_config, dict) else {})
         )
-
-        strategy = DeltaNeutralShortStrangleStrategy(
-            exchange=universal_config.exchange,
-            symbol=universal_config.symbol,
-            expiry=market.expiry,
-            get_option_func=market.get_nearest_option,
-            config=strategy_config,
+        self.start_strategy_executor(
+            strategy_name=strategy_name,
+            config=resolved,
         )
-
-        # 3️⃣ Create run_id
-        run_id = f"{strategy_name}_{int(time.time())}"
-
-        # 4️⃣ Start DB audit (cross-platform path)
-        _project_root = Path(__file__).resolve().parents[2]
-        strategy_runs_db = str(
-            _project_root
-            / "shoonya_platform"
-            / "persistence"
-            / "data"
-            / "strategy_runs.db"
-        )
-        writer = StrategyRunWriter(db_path=strategy_runs_db)
-
-        writer.start_run(
-            run_id=run_id,
-            resolved_config=universal_config.to_dict(),
-        )
-
-        # 5️⃣ Store metadata on strategy object (FROZEN CONTRACT)
-        strategy.run_id = run_id
-        strategy.run_writer = writer
-        
-        # 5️⃣-B 💾 ATTEMPT TO LOAD PERSISTED STATE FROM PREVIOUS RUN
-        # This handles recovery from crashes mid-strategy
-        try:
-            if strategy._load_persisted_state():
-                logger.info(f"✅ Strategy recovered from persistent state | {strategy_name}")
-            else:
-                logger.info(f"ℹ️ No persisted state found, starting fresh | {strategy_name}")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to load persisted state, continuing fresh: {e}")
-
-        # 6️⃣ Register with runner (CLOCK)
-        self.strategy_runner.register(
-            name=strategy_name,
-            strategy=strategy,
-            market=market,
-        )
-
-        # 7️⃣ Reporting only
-        self.register_live_strategy(strategy_name, strategy, market)
-
-        logger.info(f"🚀 Strategy STARTED | {strategy_name} | run_id={run_id}")
 
     def start_strategy_executor(
         self,
@@ -1533,83 +1799,77 @@ class ShoonyaBot:
     ):
         """
         Register strategy with StrategyExecutorService.
-        
+
         Service is initialized once in __init__,
         this method just registers a new strategy.
         """
         with self._live_strategies_lock:
             if strategy_name in self._live_strategies:
-                logger.warning(f"⚠️ Strategy already running: {strategy_name}")
+                logger.warning(f"Strategy already running: {strategy_name}")
                 return
-        
+
         try:
-            logger.info(f"🚀 REGISTERING STRATEGY: {strategy_name}")
-            
-            # 1️⃣ Save config to file (if not already saved)
+            logger.info(f"REGISTERING STRATEGY: {strategy_name}")
+
             from pathlib import Path
             import json
-            
+            import re
+
+            slug = strategy_name.strip().lower()
+            slug = re.sub(r'[^a-z0-9]+', '_', slug).strip('_') or 'unnamed'
+
             config_dir = (
                 Path(__file__).resolve().parents[2]
                 / "shoonya_platform"
                 / "strategy_runner"
                 / "saved_configs"
-                / f"{slug}.json"
             )
             config_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Slugify name for filename
-            import re
-            slug = strategy_name.strip().lower()
-            slug = re.sub(r'[^a-z0-9]+', '_', slug).strip('_') or 'unnamed'
-            
+
             config_path = config_dir / f"{slug}.json"
-            with open(config_path, 'w') as f:
+            with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2)
-            
-            logger.info(f"💾 Config saved: {config_path}")
-            
-            # 2️⃣ Register with service
+
+            logger.info(f"Config saved: {config_path}")
+
             self.strategy_executor_service.register_strategy(
                 name=strategy_name,
                 config_path=str(config_path),
             )
-            
-            # 3️⃣ Track in live strategies
+
             with self._live_strategies_lock:
                 self._live_strategies[strategy_name] = {
                     "type": "executor_service",
                     "config_path": str(config_path),
                     "started_at": time.time(),
                 }
-            
-            logger.warning(f"✅ STRATEGY REGISTERED: {strategy_name}")
-            
-            # 4️⃣ Telegram notification
+
+            logger.warning(f"STRATEGY REGISTERED: {strategy_name}")
+
             if self.telegram_enabled and self.telegram:
                 try:
                     self.send_telegram(
-                        f"✅ <b>STRATEGY REGISTERED</b>\n"
+                        f"<b>STRATEGY REGISTERED</b>\n"
                         f"Name: {strategy_name}\n"
                         f"Type: ExecutorService (condition-based)\n"
                         f"Time: {datetime.now().strftime('%H:%M:%S')}"
                     )
                 except Exception as e:
                     logger.warning(f"Telegram notification failed: {e}")
-            
+
         except Exception as e:
-            logger.error(f"❌ STRATEGY REGISTRATION FAILED: {strategy_name} | {e}", exc_info=True)
-            
+            logger.error(f"STRATEGY REGISTRATION FAILED: {strategy_name} | {e}", exc_info=True)
+
             if self.telegram_enabled and self.telegram:
                 try:
                     self.send_telegram(
-                        f"❌ <b>STRATEGY REGISTRATION FAILED</b>\n"
+                        f"<b>STRATEGY REGISTRATION FAILED</b>\n"
                         f"Name: {strategy_name}\n"
                         f"Error: {str(e)}"
                     )
                 except Exception:
                     pass
-            
+
             raise
 
     def execute_command(self, command, **kwargs):
@@ -1856,9 +2116,9 @@ class ShoonyaBot:
         """
         try:
             self._ensure_login()
-            limits = self.api.get_limits()
-            positions = self.api.get_positions()
-            orders = self.api.get_order_book()
+            limits = self.broker_view.get_limits()
+            positions = self.broker_view.get_positions()
+            orders = self.broker_view.get_order_book()
 
             if limits is None:
                 return None
@@ -1954,21 +2214,31 @@ class ShoonyaBot:
             
             # 1️⃣ Validate session by fetching limits
             try:
-                limits = self.api.get_limits()
+                limits = self.broker_view.get_limits(force_refresh=True)
                 if not limits or not isinstance(limits, dict):
                     raise RuntimeError("BROKER_SESSION_INVALID")
                 session_status = "✅ Live"
                 cash = float(limits.get('cash', 0))
             except Exception as e:
+                logger.error(f"Heartbeat session check failed: {e}")
                 session_status = "❌ Disconnected"
                 cash = 0.0
-                logger.error(f"Heartbeat session check failed: {e}")
-                # Trigger session recovery
-                raise RuntimeError("SESSION_VALIDATION_FAILED")
+
+                # Heartbeat should not kill service; try one explicit recovery pass.
+                try:
+                    self._ensure_login()
+                    self.broker_view.invalidate_cache("limits")
+                    limits = self.broker_view.get_limits(force_refresh=True)
+                    if limits and isinstance(limits, dict):
+                        session_status = "✅ Recovered"
+                        cash = float(limits.get('cash', 0))
+                        logger.info("Heartbeat session recovered after explicit revalidation")
+                except Exception as recovery_error:
+                    logger.error(f"Heartbeat session recovery failed: {recovery_error}")
             
             # 2️⃣ Get positions count
             try:
-                positions = self.api.get_positions()
+                positions = self.broker_view.get_positions()
                 active_pos = sum(1 for p in positions if int(p.get('netqty', 0)) != 0)
             except:
                 active_pos = 0
@@ -1988,9 +2258,6 @@ class ShoonyaBot:
             self.send_telegram(message)
             logger.debug("Heartbeat sent")
             
-        except RuntimeError:
-            # Re-raise to trigger restart
-            raise
         except Exception as e:
             log_exception("send_telegram_heartbeat", e)
 
@@ -2018,7 +2285,7 @@ class ShoonyaBot:
             # Validate broker connection
             session_valid = False
             try:
-                limits = self.api.get_limits()
+                limits = self.broker_view.get_limits()
                 session_valid = limits is not None and isinstance(limits, dict)
             except:
                 pass
@@ -2249,3 +2516,8 @@ class ShoonyaBot:
         except Exception as e:
             elapsed = time.time() - shutdown_start
             logger.error(f"❌ Shutdown error after {elapsed:.1f}s: {e}")
+
+
+
+
+

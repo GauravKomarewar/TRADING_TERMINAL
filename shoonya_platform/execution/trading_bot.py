@@ -117,8 +117,18 @@ from shoonya_platform.market_data.feeds import index_tokens_subscriber
 #---------------------- strategies runner  ----------------
 from shoonya_platform.strategies.strategy_runner import StrategyRunner
 from shoonya_platform.strategies.universal_settings.writer import StrategyRunWriter
-from shoonya_platform.strategies.standalone_implementations.delta_neutral.dnss import (
-    DeltaNeutralShortStrangleStrategy,
+
+# NEW: Strategy executor components from strategy_runner folder
+from shoonya_platform.strategy_runner.strategy_executor_service import (
+    StrategyExecutorService,
+    StateManager,
+    BrokerReconciler,
+    ExecutionVerifier,
+)
+from shoonya_platform.strategy_runner.market_reader import MarketReader
+from shoonya_platform.strategy_runner.config_schema import (
+    validate_config_file,
+    coerce_config_numerics,
 )
 
 logger = get_component_logger('trading_bot')
@@ -332,6 +342,19 @@ class ShoonyaBot:
         )
         self._option_supervisor_thread.start()
 
+        # Strategy executor service (singleton - manages all strategies)
+        executor_db = str(
+            Path(__file__).resolve().parents[1]
+            / "persistence"
+            / "data"
+            / "strategy_executor_state.db"
+        )
+        self.strategy_executor_service = StrategyExecutorService(
+            bot=self,
+            state_db_path=executor_db,
+        )
+        self.strategy_executor_service.start()  # Start background loop
+        logger.info("✅ StrategyExecutorService initialized and started")
         # -------------------------------------------------
         # 📦 PERSISTENCE (POSITION / ORDER SOURCE OF TRUTH)
         # -------------------------------------------------
@@ -1502,6 +1525,93 @@ class ShoonyaBot:
 
         logger.info(f"🚀 Strategy STARTED | {strategy_name} | run_id={run_id}")
 
+    def start_strategy_executor(
+        self,
+        *,
+        strategy_name: str,
+        config: dict,
+    ):
+        """
+        Register strategy with StrategyExecutorService.
+        
+        Service is initialized once in __init__,
+        this method just registers a new strategy.
+        """
+        with self._live_strategies_lock:
+            if strategy_name in self._live_strategies:
+                logger.warning(f"⚠️ Strategy already running: {strategy_name}")
+                return
+        
+        try:
+            logger.info(f"🚀 REGISTERING STRATEGY: {strategy_name}")
+            
+            # 1️⃣ Save config to file (if not already saved)
+            from pathlib import Path
+            import json
+            
+            config_dir = (
+                Path(__file__).resolve().parents[2]
+                / "shoonya_platform"
+                / "strategy_runner"
+                / "saved_configs"
+                / f"{slug}.json"
+            )
+            config_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Slugify name for filename
+            import re
+            slug = strategy_name.strip().lower()
+            slug = re.sub(r'[^a-z0-9]+', '_', slug).strip('_') or 'unnamed'
+            
+            config_path = config_dir / f"{slug}.json"
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            
+            logger.info(f"💾 Config saved: {config_path}")
+            
+            # 2️⃣ Register with service
+            self.strategy_executor_service.register_strategy(
+                name=strategy_name,
+                config_path=str(config_path),
+            )
+            
+            # 3️⃣ Track in live strategies
+            with self._live_strategies_lock:
+                self._live_strategies[strategy_name] = {
+                    "type": "executor_service",
+                    "config_path": str(config_path),
+                    "started_at": time.time(),
+                }
+            
+            logger.warning(f"✅ STRATEGY REGISTERED: {strategy_name}")
+            
+            # 4️⃣ Telegram notification
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.send_telegram(
+                        f"✅ <b>STRATEGY REGISTERED</b>\n"
+                        f"Name: {strategy_name}\n"
+                        f"Type: ExecutorService (condition-based)\n"
+                        f"Time: {datetime.now().strftime('%H:%M:%S')}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Telegram notification failed: {e}")
+            
+        except Exception as e:
+            logger.error(f"❌ STRATEGY REGISTRATION FAILED: {strategy_name} | {e}", exc_info=True)
+            
+            if self.telegram_enabled and self.telegram:
+                try:
+                    self.send_telegram(
+                        f"❌ <b>STRATEGY REGISTRATION FAILED</b>\n"
+                        f"Name: {strategy_name}\n"
+                        f"Error: {str(e)}"
+                    )
+                except Exception:
+                    pass
+            
+            raise
+
     def execute_command(self, command, **kwargs):
         """
         🔗 DESIRED FLOW: COMPLETE 6-STEP ORDER EXECUTION
@@ -1665,6 +1775,24 @@ class ShoonyaBot:
                             f"DB_UPDATED_SUCCESS | cmd_id={command.command_id} | "
                             f"broker_id={broker_id} | status=SENT_TO_BROKER"
                         )
+                        
+                        # ────────────────────────────────────────────────
+                        # 🔄 INVALIDATE BROKER CACHE (NEW)
+                        # ────────────────────────────────────────────────
+                        # After successful order placement, force fresh data on next poll
+                        # Ensures OrderWatcher and dashboard see new broker state immediately
+                        try:
+                            self.broker_view.invalidate_cache(target="positions")
+                            self.broker_view.invalidate_cache(target="orders")
+                            logger.debug(
+                                f"CACHE_INVALIDATED | cmd_id={command.command_id} | "
+                                f"targets=['positions', 'orders']"
+                            )
+                        except Exception as cache_err:
+                            # Non-critical - cache will expire naturally in 1.5s
+                            logger.debug(f"Cache invalidation warning (non-critical): {cache_err}")
+                        # ────────────────────────────────────────────────
+                        
                     except Exception as db_err:
                         logger.error(f"STEP_5 WARNING: Failed to persist broker_id: {db_err}")
                 else:
@@ -2067,6 +2195,15 @@ class ShoonyaBot:
                         logger.warning("⚠️ StrategyRunner shutdown timeout - skipping")
                 except Exception as e:
                     logger.error(f"❌ StrategyRunner shutdown error: {e}")
+
+            # Stop strategy executor service
+            if hasattr(self, "strategy_executor_service"):
+                try:
+                    logger.info("⏳ Stopping StrategyExecutorService")
+                    self.strategy_executor_service.stop()
+                    logger.info("✅ StrategyExecutorService stopped")
+                except Exception as e:
+                    logger.error(f"StrategyExecutorService shutdown error: {e}")
 
             # 4️⃣ TELEGRAM SHUTDOWN (NON-BLOCKING - fire and forget with short timeout)
             if self.telegram_enabled:

@@ -19,8 +19,9 @@ Dashboard strategy buttons == internal strategy lifecycle calls
 #
 # Component : Strategy ControlIntentConsumer
 # Status    : PRODUCTION FROZEN
-# Version   : v1.1.2-FIXED
-# Date      : 2026-02-15
+#Version    : v1.1.1
+# Date      : 2026-02-06
+
 #
 # Guarantees:
 # - Dashboard intents follow TradingView execution path
@@ -28,12 +29,6 @@ Dashboard strategy buttons == internal strategy lifecycle calls
 # - No execution bypass
 # - Recovery-safe, idempotent
 # - Full risk management support (target, stoploss, trailing)
-#
-# ✅ FIXES APPLIED:
-# - Config path standardized to strategy_runner/saved_configs/
-# - Config schema mismatch resolved (pass dashboard schema directly)
-# - Recovery implementation completed
-# - Removed unused UniversalStrategyConfig transformation
 #
 # DO NOT MODIFY WITHOUT FULL OMS RE-AUDIT
 # ======================================================================
@@ -43,8 +38,50 @@ import time
 import logging
 import sqlite3
 import re
+from datetime import time as dt_time
 from pathlib import Path
 from typing import Optional, Tuple
+# Action: REMOVEED DBBackedMarket import (no longer needed)
+# MarketReader handles it in trading_bot
+from shoonya_platform.strategy_runner.universal_settings.universal_config.universal_strategy_config import (
+    UniversalStrategyConfig
+)
+
+def build_universal_config(payload: dict) -> UniversalStrategyConfig:
+    """Transform dashboard intent payload → UniversalStrategyConfig.
+
+    Uses datetime.time.fromisoformat() for HH:MM:SS parsing.
+    Falls back to manual split if fromisoformat is unavailable (Python <3.7).
+    """
+    def _parse_time(val: str) -> dt_time:
+        """Parse HH:MM or HH:MM:SS string to datetime.time."""
+        try:
+            return dt_time.fromisoformat(val)
+        except (ValueError, AttributeError):
+            parts = val.split(":")
+            return dt_time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+
+    return UniversalStrategyConfig(
+        strategy_name=payload["strategy_name"],
+        strategy_version=payload["strategy_version"],
+
+        exchange=payload["exchange"],
+        symbol=payload["symbol"],
+        instrument_type=payload["instrument_type"],
+        # instrument_type drives market_cls selection (OPTIDX/MCX/etc)
+
+        entry_time=_parse_time(payload["entry_time"]),
+        exit_time=_parse_time(payload["exit_time"]),
+
+        order_type=payload["order_type"],
+        product=payload["product"],
+
+        lot_qty=int(payload["lot_qty"]),
+        params=payload.get("params", {}),
+
+        poll_interval=float(payload.get("poll_interval", 2.0)),
+        cooldown_seconds=int(payload.get("cooldown_seconds", 0)),
+    )
 
 logger = logging.getLogger("EXECUTION.CONTROL")
 
@@ -69,7 +106,6 @@ class StrategyControlConsumer:
     - EXIT
     - ADJUST
     - FORCE_EXIT
-    - RECOVERY/RESUME
 
     Never places orders.
     Never calls process_alert().
@@ -137,37 +173,68 @@ class StrategyControlConsumer:
             # STRATEGY LIFECYCLE DISPATCH
             # ----------------------------------------------
             if action == "ENTRY":
-                # ✅ FIX: Load dashboard schema and pass directly
+                # Load saved strategy config to get symbol, exchange, etc.
                 saved_config = self._load_strategy_config(strategy_name)
                 if not saved_config:
                     logger.error(
-                        "❌ STRATEGY CONFIG NOT FOUND | %s | check /strategy_runner/saved_configs/",
+                        "❌ STRATEGY CONFIG NOT FOUND | %s | check /strategies/saved_configs/",
                         strategy_name,
                     )
                     raise RuntimeError(f"Strategy config not found: {strategy_name}")
                 
                 logger.info(
-                    "📋 Loaded strategy config | %s | basic=%s",
+                    "📋 Loaded strategy config | %s | identity=%s",
                     strategy_name,
-                    saved_config.get("basic", {}),
+                    saved_config.get("identity", {}),
                 )
                 
-                # Override strategy name if provided in intent
-                if "strategy_name" in payload:
-                    saved_config["name"] = payload["strategy_name"]
+                # Merge payload (intent data) with saved config
+                # Intent overrides config if provided
+                merged_payload = {**saved_config, **payload}
+                merged_payload["strategy_name"] = strategy_name  # Ensure correct name
+                
+                # 🔥 VALIDATE REQUIRED FIELDS BEFORE BUILD
+                required_fields = ["exchange", "symbol", "instrument_type", "entry_time", "exit_time", "lot_qty"]
+                missing = [f for f in required_fields if f not in merged_payload]
+                if missing:
+                    logger.error(
+                        "❌ MISSING REQUIRED FIELDS | %s | missing=%s | payload=%s",
+                        strategy_name,
+                        missing,
+                        list(merged_payload.keys()),
+                    )
+                    raise RuntimeError(f"Missing required fields: {missing}")
+                
+                try:
+                    universal_config = build_universal_config(merged_payload)
+                except Exception as e:
+                    logger.error(
+                        "❌ FAILED TO BUILD CONFIG | %s | error=%s | payload=%s",
+                        strategy_name,
+                        str(e),
+                        merged_payload,
+                    )
+                    raise RuntimeError(f"Failed to build universal config: {e}")
+                
+                if strategy_name != universal_config.strategy_name:
+                    raise RuntimeError("Strategy name mismatch in payload")
                 
                 logger.info(
-                    "🚀 STARTING STRATEGY | %s | config_keys=%s",
+                    "🚀 STARTING STRATEGY | %s | %s %s | entry_time=%s | exit_time=%s | lot_qty=%d",
                     strategy_name,
-                    list(saved_config.keys()),
+                    universal_config.exchange,
+                    universal_config.symbol,
+                    universal_config.entry_time,
+                    universal_config.exit_time,
+                    universal_config.lot_qty,
                 )
                 
                 try:
-                    # ✅ Pass dashboard schema directly (nested structure)
-                    # Executor expects: config.get("basic"), config.get("timing"), etc.
+                    # ✅ NEW: Use strategy executor instead of old pattern
+                    # Passes full config dict instead of UniversalStrategyConfig object
                     self.strategy_manager.start_strategy_executor(
                         strategy_name=strategy_name,
-                        config=saved_config,  # Dashboard schema, NOT transformed
+                        config=merged_payload,  # Pass raw dict, not UniversalConfig
                     )
                     logger.warning(
                         "✅ STRATEGY EXECUTOR STARTED SUCCESSFULLY | %s",
@@ -190,7 +257,7 @@ class StrategyControlConsumer:
             elif action == "EXIT":
                 self.strategy_manager.request_exit(
                     scope="STRATEGY",
-                    strategy_name=strategy_name,
+                    strategy_name=strategy_name,  # 🔥 NEW: scope by strategy
                     symbols=None,
                     product_type="ALL",
                     reason="DASHBOARD_EXIT",
@@ -200,7 +267,7 @@ class StrategyControlConsumer:
             elif action == "FORCE_EXIT":
                 self.strategy_manager.request_exit(
                     scope="STRATEGY",
-                    strategy_name=strategy_name,
+                    strategy_name=strategy_name,  # 🔥 NEW: scope by strategy
                     symbols=None,
                     product_type="ALL",
                     reason="FORCE_EXIT",
@@ -239,8 +306,6 @@ class StrategyControlConsumer:
         """
         Handle manual strategy recovery/resume from broker positions.
         
-        COMPLETE IMPLEMENTATION: Creates state + starts strategy.
-        
         User selects:
         - strategy_name: Name to assign for recovery
         - symbol: Broker symbol with open position
@@ -248,10 +313,9 @@ class StrategyControlConsumer:
         
         Process:
         1. Get broker position for symbol
-        2. Create ExecutionState from broker position
-        3. Save state to DB
-        4. Load strategy config
-        5. Start strategy executor (will load saved state)
+        2. Load persisted strategy state if available
+        3. Resume strategy with the loaded state
+        4. Start monitoring (or monitoring + management)
         """
         try:
             strategy_name = payload.get("strategy_name")
@@ -262,10 +326,10 @@ class StrategyControlConsumer:
                 raise RuntimeError("strategy_name and symbol required for recovery")
             
             logger.warning(
-                f"♻️ RECOVERY/RESUME INITIATED | strategy={strategy_name} | symbol={symbol}"
+                f"♻️ RECOVERY/RESUME INITIATED | strategy={strategy_name} | symbol={symbol} | monitoring={resume_monitoring}"
             )
             
-            # 1️⃣ Get broker position
+            # Get broker position
             try:
                 self.strategy_manager._ensure_login()
                 positions = self.strategy_manager.api.get_positions() or []
@@ -284,7 +348,6 @@ class StrategyControlConsumer:
             if netqty == 0:
                 raise RuntimeError(f"Position {symbol} has zero quantity")
             
-            # 2️⃣ Extract position details
             position_info = {
                 "symbol": symbol,
                 "qty": abs(netqty),
@@ -295,75 +358,19 @@ class StrategyControlConsumer:
                 "ltp": float(broker_position.get("ltp", 0) or 0),
             }
             
-            # 3️⃣ Load strategy config
-            config = self._load_strategy_config(strategy_name)
-            if not config:
-                raise RuntimeError(f"No saved config found for {strategy_name}")
-            
-            # 4️⃣ Create ExecutionState from broker position
-            from shoonya_platform.strategy_runner.strategy_executor_service import ExecutionState
-            
-            # Determine if CE or PE based on symbol
-            is_ce = "CE" in symbol
-            is_pe = "PE" in symbol
-            
-            if not (is_ce or is_pe):
-                raise RuntimeError(f"Cannot determine option type from symbol: {symbol}")
-            
-            # Extract strike from symbol (e.g., "NIFTY 25000 CE" -> 25000.0)
-            try:
-                parts = symbol.split()
-                strike = float(parts[1])
-            except (IndexError, ValueError):
-                logger.error(f"Cannot parse strike from {symbol}")
-                strike = 0.0
-            
-            exec_state = ExecutionState(
-                strategy_name=strategy_name,
-                run_id=f"{strategy_name}_recovered_{int(time.time())}",
-                has_position=True,
-                entry_timestamp=time.time(),
-            )
-            
-            # Set CE or PE leg
-            if is_ce:
-                exec_state.ce_symbol = symbol
-                exec_state.ce_strike = strike
-                exec_state.ce_qty = position_info["qty"]
-                exec_state.ce_side = position_info["side"]
-                exec_state.ce_entry_price = position_info["avg_price"]
-            
-            if is_pe:
-                exec_state.pe_symbol = symbol
-                exec_state.pe_strike = strike
-                exec_state.pe_qty = position_info["qty"]
-                exec_state.pe_side = position_info["side"]
-                exec_state.pe_entry_price = position_info["avg_price"]
-            
-            # 5️⃣ Save state to DB
-            state_mgr = self.strategy_manager.strategy_executor_service.state_mgr
-            state_mgr.save(exec_state)
-            
-            logger.info(f"💾 Recovery state saved: {strategy_name}")
-            
-            # 6️⃣ Start strategy executor (will load saved state)
-            self.strategy_manager.start_strategy_executor(
-                strategy_name=strategy_name,
-                config=config,
-            )
-            
-            logger.warning(
-                f"✅ RECOVERY COMPLETE: {strategy_name} | "
-                f"{symbol} ({position_info['side']} {position_info['qty']} @ ₹{position_info['avg_price']:.2f})"
-            )
-            
-            # 7️⃣ Track recovery
+            # Log recovery
             self.recovery_handlers[strategy_name] = {
                 "status": "RESUMED",
                 "symbol": symbol,
                 "position": position_info,
+                "monitoring": resume_monitoring,
                 "timestamp": time.time(),
             }
+            
+            logger.warning(
+                f"✅ RECOVERY COMPLETE: {strategy_name} resumed with {symbol} "
+                f"({position_info['side']} {position_info['qty']} @ {position_info['avg_price']:.2f})"
+            )
             
             self._update_status(intent_id, "ACCEPTED")
             return True
@@ -421,12 +428,11 @@ class StrategyControlConsumer:
         """
         Load strategy config from saved JSON file.
         
-        Path: shoonya_platform/strategy_runner/saved_configs/{slug}.json
-        (saved by dashboard POST /strategy/config/save-all)
+        Path: shoonya_platform/strategies/saved_configs/{slug}.json
+        (saved by api/dashboard/api/router.py POST /strategy/config/save-all)
         
-        Returns: Dashboard schema config (nested structure) or None if not found.
-        
-        ✅ FIX: Returns dashboard schema as-is (executor expects nested structure)
+        Returns: Config dict with symbol, exchange, timing, risk params, etc.
+        Returns: None if config not found.
         """
         try:
             # Slugify strategy name (same as frontend)
@@ -446,14 +452,26 @@ class StrategyControlConsumer:
                 logger.warning(f"⚠️ Config not found: {config_path}")
                 return None
             
-            # ✅ Return dashboard schema as-is (executor expects nested structure)
             config = json.loads(config_path.read_text(encoding="utf-8"))
-            logger.info(
-                f"✅ Loaded strategy config: {strategy_name} | "
-                f"basic={config.get('basic', {})}"
-            )
+            logger.info(f"✅ Loaded strategy config: {strategy_name} | symbol={config.get('identity', {}).get('underlying')}")
             
-            return config
+            # Transform from dashboard schema to execution-compatible schema
+            # Dashboard schema: identity.underlying → execution schema: symbol
+            execution_config = {
+                "strategy_name": config.get("name", strategy_name),
+                "strategy_version": config.get("strategy_version", "1.0.0"),
+                "symbol": config.get("identity", {}).get("underlying", "NIFTY"),  # ← CRITICAL: Extract symbol
+                "exchange": "NFO",  # Options on NSE
+                "instrument_type": "OPTIDX",  # Default to options
+                "entry_time": config.get("timing", {}).get("entry_time", "09:20"),
+                "exit_time": config.get("timing", {}).get("exit_time", "15:15"),
+                "order_type": "LIMIT",
+                "product": "NRML",
+                "lot_qty": 50,  # Default lot size
+                "params": config.get("risk", {}),
+            }
+            
+            return execution_config
             
         except Exception as e:
             logger.exception(f"❌ Failed to load strategy config: {strategy_name}")

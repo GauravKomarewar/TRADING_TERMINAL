@@ -240,16 +240,30 @@ class StrategyState:
 
         # Special aggregate parameters
         if name == "any_leg_delta":
-            # For "> X": if max > X, at least one leg exceeds. Correct.
+            # For "> X": if max > X, at least one leg exceeds threshold
             return max(abs(self.ce_delta), abs(self.pe_delta))
-        if name == "both_legs_delta" or name == "both_legs_delta_below":
-            # For "< X":  return max — if max < X, both are below. Correct.
-            # For "> X":  return min — if min > X, both are above. Correct.
-            # The caller decides which comparator to use.
-            # Return both as a tuple tag so _compare can branch.
-            # SIMPLER: return min for '>' and max for '<' at _compare level.
-            # But we don't know comparator here. Return max (most common usage is < ).
-            # The condition writer should use any_leg_delta for > checks.
+        
+        if name == "both_legs_delta_below":
+            # For "< X": returns max - if max < X, then both are < X
+            # Use with < or <= operators
+            return max(abs(self.ce_delta), abs(self.pe_delta))
+        
+        if name == "both_legs_delta_above":
+            # For "> X": returns min - if min > X, then both are > X
+            # Use with > or >= operators
+            return min(abs(self.ce_delta), abs(self.pe_delta))
+        
+        if name == "min_leg_delta":
+            # Minimum delta value (for general use)
+            return min(abs(self.ce_delta), abs(self.pe_delta))
+        
+        if name == "max_leg_delta":
+            # Maximum delta value (for general use)
+            return max(abs(self.ce_delta), abs(self.pe_delta))
+        
+        # Legacy parameter (deprecated - kept for backward compatibility)
+        if name == "both_legs_delta":
+            logger.warning(f"Parameter 'both_legs_delta' is deprecated. Use 'both_legs_delta_below' or 'both_legs_delta_above'")
             return max(abs(self.ce_delta), abs(self.pe_delta))
 
         logger.warning(f"Unknown parameter: '{name}'")
@@ -275,6 +289,8 @@ def _compare(actual: Any, comparator: str, value: Any, tolerance: float = 0.0) -
             def to_minutes(time_str: str) -> int:
                 """Convert HH:MM to minutes since midnight."""
                 parts = str(time_str).split(":")
+                if len(parts) < 2:
+                    raise ValueError(f"Invalid time format: {time_str}, expected HH:MM")
                 return int(parts[0]) * 60 + int(parts[1])
             
             actual_min = to_minutes(str(actual))
@@ -344,11 +360,6 @@ def _compare(actual: Any, comparator: str, value: Any, tolerance: float = 0.0) -
 
     logger.error(f"Unknown comparator: {comparator}")
     return False
-def _parse_time(time_str: str) -> int:
-    """Convert HH:MM to minutes since midnight for comparison."""
-    parts = str(time_str).split(":")
-    return int(parts[0]) * 60 + int(parts[1])
-
 
 # ─── Condition Evaluation ─────────────────────────────────────────────────────
 

@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategy Manager | Shoonya Platform</title>
+<link rel="stylesheet" href="/dashboard/web/styles/common.css">
+<link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+<script src="/dashboard/web/shared/pages-config.js" defer></script>
+<script src="/dashboard/web/shared/layout.js" defer></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #66e4ff; --primary-dark: #23b6ff;
+  --success: #4ade80; --warning: #fbcb5c; --danger: #fb7185;
+  --panel: rgba(13,18,41,0.8); --panel-2: rgba(6,10,26,0.95);
+  --text: #f8fbff; --muted: rgba(248,251,255,0.65);
+  --border: rgba(255,255,255,0.08);
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:radial-gradient(circle at top,#0f1a3c 0%,#050815 55%,#020308 100%); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto; font-size:13px; overflow-x:hidden; }
+main { padding:20px; max-width:1800px; margin:0 auto; }
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.header h1 { font-size:24px; font-weight:700; }
+.tabs { display:flex; gap:12px; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:12px; }
+.tab-btn { padding:8px 16px; background:none; border:none; color:var(--muted); cursor:pointer; transition:all 0.3s; border-bottom:2px solid transparent; font-weight:600; }
+.tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+.tab-content { display:none; animation:fadeIn 0.3s; }
+.tab-content.active { display:block; }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+.widget { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; backdrop-filter:blur(20px); }
+.widget-title { font-size:14px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.live-indicator { width:8px; height:8px; background:var(--muted); border-radius:50%; }
+.live-indicator.online { background:var(--success); animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.btn { padding:8px 16px; border:none; border-radius:6px; font-weight:600; cursor:pointer; transition:all 0.2s; font-size:12px; }
+.btn-primary { background:linear-gradient(120deg,var(--primary),var(--primary-dark)); color:#04060f; }
+.btn-primary:hover { transform:translateY(-2px); box-shadow:0 12px 24px rgba(35,182,255,0.4); }
+.btn-success { background:var(--success); color:#000; }
+.btn-danger { background:var(--danger); color:#fff; }
+.btn-secondary { background:rgba(255,255,255,0.1); color:var(--text); border:1px solid var(--border); }
+.btn-sm { padding:4px 10px; font-size:11px; }
+.table { width:100%; border-collapse:collapse; font-size:12px; }
+.table thead { background:rgba(0,0,0,0.3); border-bottom:1px solid var(--border); }
+.table th { padding:10px; text-align:left; font-weight:700; color:var(--primary); }
+.table td { padding:10px; border-bottom:1px solid rgba(255,255,255,0.03); }
+.table tbody tr:hover { background:rgba(255,255,255,0.03); }
+.form-group { margin-bottom:10px; }
+.form-group label { display:block; font-size:11px; font-weight:600; margin-bottom:3px; color:var(--muted); }
+.form-control { width:100%; padding:7px 8px; background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:4px; color:var(--text); font-family:var(--font-mono); font-size:12px; }
+.form-control:focus { outline:none; border-color:var(--primary); box-shadow:0 0 12px rgba(102,228,255,0.1); }
+select.form-control { appearance:auto; }
+.badge { display:inline-block; padding:3px 8px; border-radius:3px; font-size:11px; font-weight:600; }
+.badge-idle { background:rgba(255,255,255,0.1); color:var(--muted); }
+.badge-running { background:rgba(74,222,128,0.2); color:var(--success); }
+.badge-stopped { background:rgba(251,113,133,0.2); color:var(--danger); }
+.badge-valid { background:rgba(74,222,128,0.2); color:var(--success); }
+.badge-invalid { background:rgba(251,113,133,0.2); color:var(--danger); }
+.validation-result { margin-top:12px; padding:12px; background:rgba(0,0,0,0.2); border-radius:6px; border-left:3px solid var(--danger); font-size:11px; }
+.validation-result.valid { border-left-color:var(--success); }
+.validation-error { color:var(--danger); margin-bottom:4px; padding-left:8px; }
+.validation-warning { color:var(--warning); margin-bottom:4px; padding-left:8px; }
+.section-toggle { background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:8px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; font-weight:600; font-size:12px; }
+.section-toggle:hover { background:rgba(255,255,255,0.05); }
+.section-body { display:none; padding:12px; background:rgba(0,0,0,0.15); border-radius:0 0 6px 6px; margin-top:-8px; margin-bottom:8px; border:1px solid var(--border); border-top:0; }
+.section-body.open { display:block; }
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+.grid-4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; }
+.toast { position:fixed; top:20px; right:20px; padding:10px 16px; border-radius:8px; font-size:12px; z-index:9999; animation:slideIn 0.3s; }
+.toast-success { background:var(--success); color:#000; }
+.toast-error { background:var(--danger); color:#fff; }
+@keyframes slideIn { from{transform:translateX(100px);opacity:0} to{transform:translateX(0);opacity:1} }
+.logger-container { background:rgba(0,0,0,0.5); border:1px solid var(--border); border-radius:8px; display:flex; flex-direction:column; height:400px; font-family:var(--font-mono); font-size:11px; }
+.logger-header { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:rgba(0,0,0,0.3); border-bottom:1px solid var(--border); }
+.logger-body { flex:1; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:2px; }
+.log-entry { display:flex; gap:8px; padding:3px 4px; border-radius:3px; line-height:1.4; }
+.log-entry.INFO { color:#60a5fa; } .log-entry.WARNING { color:var(--warning); } .log-entry.ERROR { color:var(--danger); }
+.strat-card { border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:10px; background:rgba(0,0,0,0.15); transition:all 0.2s; }
+.strat-card:hover { border-color:rgba(102,228,255,0.3); }
+.strat-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.strat-card-name { font-size:14px; font-weight:700; color:var(--primary); font-family:var(--font-mono); }
+.strat-card-meta { display:flex; gap:16px; font-size:11px; color:var(--muted); }
+.strat-card-actions { display:flex; gap:6px; align-items:center; }
+.search-box { display:flex; gap:8px; margin-bottom:12px; }
+.search-box input { flex:1; padding:8px; background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:4px; color:var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <div class="header">
+    <h1>Strategy Manager</h1>
+    <div id="status-indicator" style="display:flex;align-items:center;gap:8px;font-size:12px;">
+      <span class="live-indicator"></span>
+      <span id="runner-status">Status: Offline</span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('strategies',this)">Strategies</button>
+    <button class="tab-btn" onclick="switchTab('editor',this)">Editor</button>
+    <button class="tab-btn" onclick="switchTab('logs',this)">Logs</button>
+  </div>
+
+  <!-- ====== TAB 1: STRATEGIES LIST ====== -->
+  <div id="strategies" class="tab-content active">
+    <div class="widget">
+      <div class="widget-title">
+        <span>Saved Strategies</span>
+        <button class="btn btn-primary btn-sm" onclick="openCreateForm()">+ New Strategy</button>
+      </div>
+      <div class="search-box">
+        <input type="text" id="search-strategies" placeholder="Search strategies..." oninput="filterStrategies()">
+        <button class="btn btn-secondary btn-sm" onclick="reloadStrategies()">Reload</button>
+      </div>
+      <div id="strategies-list"><p style="color:var(--muted);text-align:center;padding:20px;">Loading...</p></div>
+    </div>
+  </div>
+
+  <!-- ====== TAB 2: STRATEGY EDITOR ====== -->
+  <div id="editor" class="tab-content">
+    <div class="widget">
+      <div class="widget-title" id="editor-title">New Strategy</div>
+
+      <!-- Identity Section -->
+      <div class="section-toggle" onclick="toggleSection('sec-identity')">Identity &amp; Market <span id="sec-identity-arrow">&#9654;</span></div>
+      <div class="section-body" id="sec-identity">
+        <div class="grid-2">
+          <div class="form-group"><label>Strategy Name *</label><input type="text" id="f-name" class="form-control" placeholder="e.g. NIFTY DNSS Weekly"></div>
+          <div class="form-group"><label>Strategy Type *</label>
+            <select id="f-strategy-type" class="form-control"><option value="">Select...</option><option value="dnss">DNSS (Delta Neutral Short Strangle)</option></select>
+          </div>
+        </div>
+        <div class="grid-4">
+          <div class="form-group"><label>Exchange *</label>
+            <select id="f-exchange" class="form-control"><option value="">Select...</option><option value="NFO">NFO</option><option value="MCX">MCX</option><option value="BFO">BFO</option><option value="NSE">NSE</option></select>
+          </div>
+          <div class="form-group"><label>Underlying *</label><input type="text" id="f-underlying" class="form-control" placeholder="NIFTY"></div>
+          <div class="form-group"><label>Instrument Type *</label>
+            <select id="f-instrument-type" class="form-control"><option value="OPTIDX">OPTIDX</option><option value="OPTFUT">OPTFUT</option><option value="OPTSTK">OPTSTK</option><option value="FUTIDX">FUTIDX</option></select>
+          </div>
+          <div class="form-group"><label>Expiry Mode</label>
+            <select id="f-expiry-mode" class="form-control"><option value="weekly_current">Weekly Current</option><option value="monthly_current">Monthly Current</option><option value="weekly_next">Weekly Next</option><option value="monthly_next">Monthly Next</option></select>
+          </div>
+        </div>
+        <div class="grid-4">
+          <div class="form-group"><label>Product</label>
+            <select id="f-product" class="form-control"><option value="NRML">NRML</option><option value="MIS">MIS</option></select>
+          </div>
+          <div class="form-group"><label>Order Type</label>
+            <select id="f-order-type" class="form-control"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option></select>
+          </div>
+          <div class="form-group"><label>Market Type</label>
+            <select id="f-market-type" class="form-control"><option value="live_feed_market">Live Feed</option><option value="database_market">Database</option></select>
+          </div>
+          <div class="form-group"><label>DB Path (if DB market)</label><input type="text" id="f-db-path" class="form-control" placeholder="optional"></div>
+        </div>
+        <div class="form-group"><label>Enabled</label><select id="f-enabled" class="form-control"><option value="true">Yes</option><option value="false">No</option></select></div>
+        <div class="form-group"><label>Description</label><input type="text" id="f-description" class="form-control" placeholder="Short description"></div>
+      </div>
+
+      <!-- Entry Section -->
+      <div class="section-toggle" onclick="toggleSection('sec-entry')">Entry <span id="sec-entry-arrow">&#9654;</span></div>
+      <div class="section-body" id="sec-entry">
+        <div class="grid-4">
+          <div class="form-group"><label>Entry Time (HH:MM) *</label><input type="text" id="f-entry-time" class="form-control" placeholder="09:20"></div>
+          <div class="form-group"><label>Entry End Time</label><input type="text" id="f-entry-end-time" class="form-control" placeholder="14:00"></div>
+          <div class="form-group"><label>Lots *</label><input type="number" id="f-lots" class="form-control" value="1" min="1"></div>
+          <div class="form-group"><label>Max Open Positions</label><input type="number" id="f-max-positions" class="form-control" value="1" min="1"></div>
+        </div>
+        <div class="grid-3">
+          <div class="form-group"><label>Leg Type</label>
+            <select id="f-leg-type" class="form-control"><option value="strangle">Strangle</option><option value="straddle">Straddle</option><option value="spread">Spread</option></select>
+          </div>
+          <div class="form-group"><label>Target Entry Delta *</label><input type="number" id="f-target-delta" class="form-control" value="0.30" min="0" max="1" step="0.01"></div>
+          <div class="form-group"><label>Strike Selection</label>
+            <select id="f-strike-selection" class="form-control"><option value="delta">Delta</option><option value="atm">ATM Offset</option><option value="premium">Premium</option></select>
+          </div>
+        </div>
+        <div class="grid-4">
+          <div class="form-group"><label>Entry Delay (s)</label><input type="number" id="f-entry-delay" class="form-control" value="0" min="0"></div>
+          <div class="form-group"><label>Skip Expiry Day</label><select id="f-skip-expiry" class="form-control"><option value="false">No</option><option value="true">Yes</option></select></div>
+          <div class="form-group"><label>ATM Offset</label><input type="number" id="f-atm-offset" class="form-control" value="0"></div>
+          <div class="form-group"><label>Premium Target</label><input type="number" id="f-premium-target" class="form-control" placeholder="null"></div>
+        </div>
+      </div>
+
+      <!-- Adjustment Section -->
+      <div class="section-toggle" onclick="toggleSection('sec-adjustment')">Adjustment <span id="sec-adjustment-arrow">&#9654;</span></div>
+      <div class="section-body" id="sec-adjustment">
+        <div class="grid-4">
+          <div class="form-group"><label>Enabled</label><select id="f-adj-enabled" class="form-control"><option value="true">Yes</option><option value="false">No</option></select></div>
+          <div class="form-group"><label>Cooldown (s)</label><input type="number" id="f-adj-cooldown" class="form-control" value="60" min="0"></div>
+          <div class="form-group"><label>Max Adj/Day</label><input type="number" id="f-adj-max-day" class="form-control" value="5" min="0"></div>
+          <div class="form-group"><label>Check Interval (min)</label><input type="number" id="f-adj-check-interval" class="form-control" value="5" min="1"></div>
+        </div>
+        <div class="grid-4">
+          <div class="form-group"><label>Delta Trigger</label><input type="number" id="f-delta-trigger" class="form-control" value="0.50" min="0" max="1" step="0.01"></div>
+          <div class="form-group"><label>Delta Target</label><input type="number" id="f-delta-target" class="form-control" value="0.20" min="0" max="1" step="0.01"></div>
+          <div class="form-group"><label>Emergency Trigger</label><input type="number" id="f-delta-emergency" class="form-control" value="0.65" min="0" max="1" step="0.01"></div>
+          <div class="form-group"><label>Delta Mode</label>
+            <select id="f-delta-mode" class="form-control"><option value="shift">Shift</option><option value="roll">Roll</option><option value="close_reenter">Close+Re-enter</option></select>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="form-group"><label>Profit Lock Trigger (Rs)</label><input type="number" id="f-profit-lock" class="form-control" placeholder="e.g. 1500"></div>
+          <div class="form-group"><label>Per-Leg Delta Max</label><input type="number" id="f-per-leg-delta-max" class="form-control" value="0.65" min="0" max="1" step="0.01"></div>
+          <div class="form-group"><label>PnL Action</label>
+            <select id="f-pnl-action" class="form-control"><option value="roll_strike">Roll Strike</option><option value="close">Close</option><option value="none">None</option></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exit Section -->
+      <div class="section-toggle" onclick="toggleSection('sec-exit')">Exit <span id="sec-exit-arrow">&#9654;</span></div>
+      <div class="section-body" id="sec-exit">
+        <div class="grid-4">
+          <div class="form-group"><label>Exit Time (HH:MM) *</label><input type="text" id="f-exit-time" class="form-control" placeholder="15:15"></div>
+          <div class="form-group"><label>Force Exit Before Expiry (min)</label><input type="number" id="f-force-exit-min" class="form-control" value="10" min="0"></div>
+          <div class="form-group"><label>Exit On Expiry Day</label><select id="f-exit-on-expiry" class="form-control"><option value="true">Yes</option><option value="false">No</option></select></div>
+          <div class="form-group"><label>Early Exit If Profitable After</label><input type="text" id="f-early-exit" class="form-control" placeholder="null"></div>
+        </div>
+        <div class="grid-4">
+          <div class="form-group"><label>Profit Target (Rs)</label><input type="number" id="f-profit-target" class="form-control" placeholder="null"></div>
+          <div class="form-group"><label>Profit Target (%)</label><input type="number" id="f-profit-pct" class="form-control" placeholder="null"></div>
+          <div class="form-group"><label>Stop Loss (Rs)</label><input type="number" id="f-sl-rupees" class="form-control" placeholder="null"></div>
+          <div class="form-group"><label>Stop Loss (%)</label><input type="number" id="f-sl-pct" class="form-control" placeholder="null"></div>
+        </div>
+        <div class="grid-3">
+          <div class="form-group"><label>Trailing Type</label>
+            <select id="f-trailing-type" class="form-control"><option value="none">None</option><option value="fixed">Fixed</option><option value="pct">Percentage</option></select>
+          </div>
+          <div class="form-group"><label>Trailing Value</label><input type="number" id="f-trailing-value" class="form-control" placeholder="null"></div>
+          <div class="form-group"><label>Trailing Activate At</label><input type="number" id="f-trailing-activate" class="form-control" placeholder="null"></div>
+        </div>
+      </div>
+
+      <!-- RMS Section -->
+      <div class="section-toggle" onclick="toggleSection('sec-rms')">Risk Management (RMS) <span id="sec-rms-arrow">&#9654;</span></div>
+      <div class="section-body" id="sec-rms">
+        <div class="grid-4">
+          <div class="form-group"><label>Max Lots</label><input type="number" id="f-rms-max-lots" class="form-control" value="10" min="1"></div>
+          <div class="form-group"><label>Max Margin %</label><input type="number" id="f-rms-max-margin" class="form-control" value="70" min="0" max="100"></div>
+          <div class="form-group"><label>Daily Loss Limit (Rs)</label><input type="number" id="f-rms-daily-loss" class="form-control" placeholder="null"></div>
+          <div class="form-group"><label>Daily Profit Target (Rs)</label><input type="number" id="f-rms-daily-profit" class="form-control" placeholder="null"></div>
+        </div>
+        <div class="grid-4">
+          <div class="form-group"><label>Max Trades/Day</label><input type="number" id="f-rms-max-trades" class="form-control" value="10" min="0"></div>
+          <div class="form-group"><label>Circuit Breaker (Rs)</label><input type="number" id="f-rms-circuit" class="form-control" placeholder="null"></div>
+          <div class="form-group"><label>Kill Switch</label><select id="f-rms-kill-switch" class="form-control"><option value="false">Off</option><option value="true">On</option></select></div>
+          <div class="form-group"><label>Margin Buffer %</label><input type="number" id="f-rms-margin-buffer" class="form-control" value="20" min="0"></div>
+        </div>
+        <div class="grid-3">
+          <div class="form-group"><label>Telegram Notify</label><select id="f-rms-telegram" class="form-control"><option value="true">Yes</option><option value="false">No</option></select></div>
+          <div class="form-group"><label>Auto Square-off on Breach</label><select id="f-rms-auto-squareoff" class="form-control"><option value="true">Yes</option><option value="false">No</option></select></div>
+          <div class="form-group"><label>Max Delta Exposure</label><input type="number" id="f-rms-max-delta" class="form-control" placeholder="null" step="0.01"></div>
+        </div>
+      </div>
+
+      <!-- Validation Result -->
+      <div id="validation-result"></div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-secondary" onclick="validateCurrentConfig()">Validate</button>
+        <button class="btn btn-primary" id="save-btn" onclick="saveStrategy()">Save Strategy</button>
+        <button class="btn btn-secondary" onclick="resetForm()">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== TAB 3: LOGS ====== -->
+  <div id="logs" class="tab-content">
+    <div class="widget">
+      <div class="widget-title">Execution Logs</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <select id="log-level-filter" class="form-control" style="flex:1;"><option value="">All Levels</option><option value="DEBUG">DEBUG</option><option value="INFO">INFO</option><option value="WARNING">WARNING</option><option value="ERROR">ERROR</option></select>
+        <button class="btn btn-secondary btn-sm" onclick="loadLogs()">Refresh</button>
+      </div>
+      <div class="logger-container">
+        <div class="logger-header"><span id="log-count">0 entries</span><button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button></div>
+        <div class="logger-body" id="logger-body"><div style="color:var(--muted);text-align:center;padding:40px;">No logs yet...</div></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API = '/dashboard';
+let currentEditSlug = null;
+let runnerActive = false;
+let allStrategies = [];
+
+// ====== UTILITIES ======
+function $(id) { return document.getElementById(id); }
+function slugify(s) { return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'unnamed'; }
+function numOrNull(v) { const n = parseFloat(v); return isNaN(n) ? null : n; }
+function intOrNull(v) { const n = parseInt(v); return isNaN(n) ? null : n; }
+function boolVal(v) { return v === 'true' || v === true; }
+
+function toast(msg, type='success') {
+  const d = document.createElement('div');
+  d.className = 'toast toast-' + type;
+  d.textContent = msg;
+  d.style.maxWidth = '500px';
+  d.style.fontSize = '14px';
+  d.style.padding = '14px 20px';
+  document.body.appendChild(d);
+  // Errors stay longer (8s) so user sees them
+  const duration = type === 'error' ? 8000 : 3000;
+  setTimeout(() => d.remove(), duration);
+  // Always log to console for debugging
+  if (type === 'error') console.error('[Strategy Error]', msg);
+  else console.log('[Strategy]', msg);
+}
+
+function switchTab(tabName, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  $(tabName).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (tabName === 'logs') loadLogs();
+}
+
+function toggleSection(id) {
+  const body = $(id);
+  const arrow = $(id + '-arrow');
+  body.classList.toggle('open');
+  arrow.textContent = body.classList.contains('open') ? '\u25BC' : '\u25B6';
+}
+
+// ====== API ======
+async function api(method, endpoint, data=null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
+  if (data) opts.body = JSON.stringify(data);
+  const r = await fetch(API + endpoint, opts);
+  if (r.status === 401 || r.status === 403) {
+    window.location.href = '/';
+    throw new Error('Session expired — redirecting to login');
+  }
+  let j;
+  try { j = await r.json(); } catch(_) { throw new Error('Server error (' + r.status + '): non-JSON response'); }
+  if (!r.ok) throw new Error(j.detail ? (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)) : 'API error ' + r.status);
+  return j;
+}
+
+// ====== UTILITIES: HTML Escaping ======
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function escAttr(s) { return escHtml(s); }
+
+// ====== STRATEGY LIST ======
+async function reloadStrategies() {
+  try {
+    const r = await api('GET', '/strategy/list');
+    allStrategies = r.strategies || [];
+    displayStrategies(allStrategies);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function displayStrategies(strategies) {
+  const el = $('strategies-list');
+  if (!strategies.length) { el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px;">No strategies. Click + New Strategy to create one.</p>'; return; }
+  el.innerHTML = strategies.map(s => {
+    const c = s.config || {};
+    const ident = c.identity || {};
+    const mc = c.market_config || {};
+    const exchange = ident.exchange || mc.exchange || c.exchange || '-';
+    const symbol = ident.underlying || mc.symbol || c.symbol || '-';
+    const stType = ident.strategy_type || c.strategy_type || '-';
+    const status = c.status || 'IDLE';
+    const enabled = c.enabled !== false;
+    const badgeCls = status === 'RUNNING' ? 'badge-running' : status === 'STOPPED' ? 'badge-stopped' : 'badge-idle';
+    const safeName = escAttr(s.name);
+    return '<div class="strat-card" id="card-' + safeName + '">' +
+      '<div class="strat-card-header">' +
+        '<div><span class="strat-card-name">' + escHtml(c.name || s.name) + '</span></div>' +
+        '<div class="strat-card-actions">' +
+          '<button class="btn btn-success btn-sm" data-slug="' + safeName + '" data-action="start" title="Start">\u25B6 Start</button>' +
+          '<button class="btn btn-danger btn-sm" data-slug="' + safeName + '" data-action="stop" title="Stop">\u23F9 Stop</button>' +
+          '<button class="btn btn-secondary btn-sm" data-slug="' + safeName + '" data-action="edit" title="Edit">\u270F</button>' +
+          '<button class="btn btn-danger btn-sm" data-slug="' + safeName + '" data-action="delete" title="Delete">\uD83D\uDDD1</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="strat-card-meta">' +
+        '<span>Type: <b>' + escHtml(stType) + '</b></span>' +
+        '<span>Exchange: <b>' + escHtml(exchange) + '</b></span>' +
+        '<span>Symbol: <b>' + escHtml(symbol) + '</b></span>' +
+        '<span>Enabled: <b>' + (enabled ? 'Yes' : 'No') + '</b></span>' +
+        '<span>Status: <span class="badge ' + badgeCls + '">' + escHtml(status) + '</span></span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  // Attach event listeners via delegation (avoids onclick/quote issues)
+  el.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slug = btn.dataset.slug;
+      const action = btn.dataset.action;
+      if (action === 'start') startStrategy(slug);
+      else if (action === 'stop') stopStrategy(slug);
+      else if (action === 'edit') editStrategy(slug);
+      else if (action === 'delete') deleteStrategy(slug);
+    });
+  });
+}
+
+function filterStrategies() {
+  const q = $('search-strategies').value.toLowerCase();
+  displayStrategies(allStrategies.filter(s => (s.config?.name || s.name).toLowerCase().includes(q)));
+}
+
+// ====== PER-STRATEGY START / STOP ======
+async function startStrategy(slug) {
+  console.log('[Strategy] Starting:', slug);
+  // Show loading state on the card
+  const card = document.getElementById('card-' + slug);
+  const errorDiv = document.getElementById('error-' + slug);
+  if (errorDiv) errorDiv.remove();
+  if (card) {
+    const btn = card.querySelector('.btn-success');
+    if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
+  }
+  try {
+    const r = await api('POST', '/strategy/' + slug + '/start-execution');
+    console.log('[Strategy] Start response:', JSON.stringify(r));
+    if (r.success) {
+      toast(r.message);
+      reloadStrategies();
+      loadLogs();
+    } else {
+      const msg = r.message || 'Could not start';
+      toast(msg, 'error');
+      showStrategyError(slug, msg);
+    }
+  } catch(e) {
+    console.error('[Strategy] Start failed:', e);
+    const msg = e.message || 'Unknown error';
+    toast('Start failed: ' + msg, 'error');
+    showStrategyError(slug, msg);
+  } finally {
+    // Reset button state
+    if (card) {
+      const btn = card.querySelector('.btn-success');
+      if (btn) { btn.textContent = '\u25B6 Start'; btn.disabled = false; }
+    }
+  }
+}
+
+function showStrategyError(slug, msg) {
+  const card = document.getElementById('card-' + slug);
+  if (!card) return;
+  // Remove previous error if any
+  const prev = document.getElementById('error-' + slug);
+  if (prev) prev.remove();
+  // Add persistent error message below the card
+  const errDiv = document.createElement('div');
+  errDiv.id = 'error-' + slug;
+  errDiv.style.cssText = 'background:rgba(251,113,133,0.15);border:1px solid rgba(251,113,133,0.4);border-radius:6px;padding:10px 12px;margin-top:-6px;margin-bottom:10px;font-size:12px;color:#fb7185;word-break:break-word;';
+  errDiv.innerHTML = '<b>Start Error:</b> ' + escHtml(msg) + '<br><button class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:10px;" onclick="this.parentElement.remove()">Dismiss</button>';
+  card.insertAdjacentElement('afterend', errDiv);
+}
+
+async function stopStrategy(slug) {
+  if (!confirm('Stop strategy "' + slug + '"?')) return;
+  // Show loading state on the card
+  const card = document.getElementById('card-' + slug);
+  if (card) {
+    const btn = card.querySelector('[data-action="stop"]');
+    if (btn) { btn.textContent = '\u23F3 Stopping...'; btn.disabled = true; }
+  }
+  try {
+    const r = await api('POST', '/strategy/' + slug + '/stop-execution');
+    if (r.success) { toast(r.message); reloadStrategies(); loadLogs(); }
+    else toast(r.message || 'Could not stop', 'error');
+  } catch(e) { toast(e.message, 'error'); }
+  finally {
+    if (card) {
+      const btn = card.querySelector('[data-action="stop"]');
+      if (btn) { btn.textContent = '\u23F9 Stop'; btn.disabled = false; }
+    }
+  }
+}
+
+async function deleteStrategy(slug) {
+  if (!confirm('Delete strategy "' + slug + '"?')) return;
+  try { await api('DELETE', '/strategy/' + slug); toast('Deleted'); reloadStrategies(); } catch(e) { toast(e.message, 'error'); }
+}
+
+// ====== EDITOR ======
+function openCreateForm() {
+  currentEditSlug = null;
+  $('editor-title').textContent = 'New Strategy';
+  resetForm();
+  switchTab('editor', document.querySelectorAll('.tab-btn')[1]);
+  // Open identity section by default
+  if (!$('sec-identity').classList.contains('open')) toggleSection('sec-identity');
+}
+
+async function editStrategy(slug) {
+  try {
+    const r = await api('GET', '/strategy/' + slug);
+    currentEditSlug = slug;
+    $('editor-title').textContent = 'Edit: ' + (r.config?.name || slug);
+    populateForm(r.config || {});
+    switchTab('editor', document.querySelectorAll('.tab-btn')[1]);
+    if (!$('sec-identity').classList.contains('open')) toggleSection('sec-identity');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function populateForm(c) {
+  const id = c.identity || {};
+  const mc = c.market_config || {};
+  const en = c.entry || {};
+  const tm = en.timing || {};
+  const lg = en.legs || {};
+  const pos = en.position || {};
+  const adj = c.adjustment || {};
+  const ag = adj.general || {};
+  const ad = adj.delta || {};
+  const ap = adj.pnl || {};
+  const al = adj.leg_level || {};
+  const ex = c.exit || {};
+  const et = ex.time || {};
+  const ep = ex.profit || {};
+  const es = ex.stop_loss || {};
+  const etr = ex.trailing || {};
+  const rms = c.rms || {};
+  const rp = rms.position || {};
+  const rd = rms.daily || {};
+  const rc = rms.circuit || {};
+  const rm = rms.margin || {};
+  const rn = rms.notifications || {};
+  const ra = rms.auto || {};
+  const rg = rms.greeks || {};
+
+  // Identity
+  $('f-name').value = c.name || '';
+  $('f-strategy-type').value = id.strategy_type || c.strategy_type || '';
+  $('f-exchange').value = id.exchange || mc.exchange || c.exchange || '';
+  $('f-underlying').value = id.underlying || mc.symbol || c.symbol || '';
+  $('f-instrument-type').value = id.instrument_type || c.instrument_type || 'OPTIDX';
+  $('f-expiry-mode').value = id.expiry_mode || 'weekly_current';
+  $('f-product').value = id.product_type || c.product || 'NRML';
+  $('f-order-type').value = id.order_type || c.order_type || 'MARKET';
+  $('f-market-type').value = mc.market_type || 'database_market';
+  $('f-db-path').value = mc.db_path || '';
+  $('f-enabled').value = String(c.enabled !== false);
+  $('f-description').value = c.description || '';
+
+  // Entry
+  $('f-entry-time').value = tm.entry_time || c.entry_time || '';
+  $('f-entry-end-time').value = tm.entry_end_time || '';
+  $('f-lots').value = pos.lots ?? c.lot_qty ?? 1;
+  $('f-max-positions').value = pos.max_open_positions ?? 1;
+  $('f-leg-type').value = lg.leg_type || 'strangle';
+  $('f-target-delta').value = lg.target_entry_delta ?? 0.30;
+  $('f-strike-selection').value = lg.strike_selection || 'delta';
+  $('f-entry-delay').value = tm.entry_delay_seconds ?? 0;
+  $('f-skip-expiry').value = String(tm.skip_expiry_day || false);
+  $('f-atm-offset').value = lg.atm_offset ?? 0;
+  $('f-premium-target').value = lg.premium_target != null ? lg.premium_target : '';
+
+  // Adjustment
+  $('f-adj-enabled').value = String(ag.enabled !== false);
+  $('f-adj-cooldown').value = ag.cooldown_seconds ?? 60;
+  $('f-adj-max-day').value = ag.max_adj_per_day ?? 5;
+  $('f-adj-check-interval').value = ag.check_interval_min ?? 5;
+  $('f-delta-trigger').value = ad.trigger ?? 0.50;
+  $('f-delta-target').value = ad.target ?? 0.20;
+  $('f-delta-emergency').value = ad.emergency_trigger ?? 0.65;
+  $('f-delta-mode').value = ad.mode || 'shift';
+  $('f-profit-lock').value = ap.profit_lock_trigger != null ? ap.profit_lock_trigger : '';
+  $('f-per-leg-delta-max').value = al.per_leg_delta_max ?? 0.65;
+  $('f-pnl-action').value = ap.pnl_action || 'roll_strike';
+
+  // Exit
+  $('f-exit-time').value = et.exit_time || c.exit_time || '';
+  $('f-force-exit-min').value = et.force_exit_before_expiry_min ?? 10;
+  $('f-exit-on-expiry').value = String(et.exit_on_expiry_day !== false);
+  $('f-early-exit').value = et.early_exit_if_profitable_after || '';
+  $('f-profit-target').value = ep.target_rupees != null ? ep.target_rupees : '';
+  $('f-profit-pct').value = ep.target_pct != null ? ep.target_pct : '';
+  $('f-sl-rupees').value = es.sl_rupees != null ? es.sl_rupees : '';
+  $('f-sl-pct').value = es.sl_pct != null ? es.sl_pct : '';
+  $('f-trailing-type').value = etr.type || 'none';
+  $('f-trailing-value').value = etr.value != null ? etr.value : '';
+  $('f-trailing-activate').value = etr.activate_at != null ? etr.activate_at : '';
+
+  // RMS
+  $('f-rms-max-lots').value = rp.max_lots ?? 10;
+  $('f-rms-max-margin').value = rp.max_margin_pct ?? 70;
+  $('f-rms-daily-loss').value = rd.loss_limit != null ? rd.loss_limit : '';
+  $('f-rms-daily-profit').value = rd.profit_target != null ? rd.profit_target : '';
+  $('f-rms-max-trades').value = rd.max_trades ?? 10;
+  $('f-rms-circuit').value = rc.amount != null ? rc.amount : '';
+  $('f-rms-kill-switch').value = String(rc.kill_switch || false);
+  $('f-rms-margin-buffer').value = rm.buffer_pct ?? 20;
+  $('f-rms-telegram').value = String(rn.telegram !== false);
+  $('f-rms-auto-squareoff').value = String(ra.square_off_on_breach !== false);
+  $('f-rms-max-delta').value = rg.max_delta != null ? rg.max_delta : '';
+}
+
+function resetForm() {
+  currentEditSlug = null;
+  $('editor-title').textContent = 'New Strategy';
+  document.querySelectorAll('#editor .form-control').forEach(el => {
+    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = el.defaultValue || '';
+  });
+  $('f-enabled').value = 'true';
+  $('f-lots').value = '1';
+  $('f-target-delta').value = '0.30';
+  $('validation-result').innerHTML = '';
+}
+
+// Build v2.0 config from form
+function buildConfig() {
+  return {
+    schema_version: "2.0",
+    name: $('f-name').value.trim(),
+    enabled: boolVal($('f-enabled').value),
+    description: $('f-description').value.trim() || null,
+    tags: [],
+    strategy_type: $('f-strategy-type').value || null,
+    identity: {
+      strategy_type: $('f-strategy-type').value || null,
+      exchange: $('f-exchange').value || null,
+      underlying: $('f-underlying').value.trim() || null,
+      instrument_type: $('f-instrument-type').value || null,
+      expiry_mode: $('f-expiry-mode').value || null,
+      expiry_custom: null,
+      product_type: $('f-product').value || null,
+      order_type: $('f-order-type').value || null,
+    },
+    market_config: {
+      market_type: $('f-market-type').value || 'database_market',
+      exchange: $('f-exchange').value || null,
+      symbol: $('f-underlying').value.trim() || null,
+      db_path: $('f-db-path').value.trim() || null,
+    },
+    entry: {
+      timing: {
+        entry_time: $('f-entry-time').value.trim() || null,
+        entry_end_time: $('f-entry-end-time').value.trim() || null,
+        entry_delay_seconds: intOrNull($('f-entry-delay').value) ?? 0,
+        active_days: ["mon","tue","wed","thu","fri"],
+        skip_expiry_day: boolVal($('f-skip-expiry').value),
+      },
+      condition: { type: "time_based", price_above:null, price_below:null, iv_above:null, iv_below:null, vix_min:null, vix_max:null, oi_min_lakhs:null, pcr_min:null, pcr_max:null, premium_min:null, indicator:null, indicator_period:14, indicator_threshold:null },
+      position: {
+        lots: intOrNull($('f-lots').value) ?? 1,
+        max_open_positions: intOrNull($('f-max-positions').value) ?? 1,
+        lot_size_override: null,
+        scale_in_enabled: false,
+        scale_in_lots: 1,
+        scale_in_trigger_pct: null,
+      },
+      hedging: { hedge_on_entry:false, hedge_type:"far_otm_buy", hedge_offset:500, hedge_lots:1 },
+      execution: { auto_confirm:true, retry_on_reject:true, retry_count:2, slippage_points:2 },
+      legs: {
+        leg_type: $('f-leg-type').value || 'strangle',
+        target_entry_delta: numOrNull($('f-target-delta').value) ?? 0.30,
+        atm_offset: intOrNull($('f-atm-offset').value) ?? 0,
+        ce_offset: 100,
+        pe_offset: 100,
+        strike_selection: $('f-strike-selection').value || 'delta',
+        premium_target: numOrNull($('f-premium-target').value),
+      },
+    },
+    adjustment: {
+      general: {
+        enabled: boolVal($('f-adj-enabled').value),
+        check_interval_min: intOrNull($('f-adj-check-interval').value) ?? 5,
+        max_adj_per_day: intOrNull($('f-adj-max-day').value) ?? 5,
+        max_adj_per_session: 10,
+        cooldown_seconds: intOrNull($('f-adj-cooldown').value) ?? 60,
+      },
+      delta: {
+        trigger: numOrNull($('f-delta-trigger').value) ?? 0.50,
+        target: numOrNull($('f-delta-target').value) ?? 0.20,
+        emergency_trigger: numOrNull($('f-delta-emergency').value) ?? 0.65,
+        mode: $('f-delta-mode').value || 'shift',
+      },
+      gamma_theta: { max_gamma:null, min_theta:null, gamma_hedge_trigger:null, theta_rebalance_time:null },
+      pnl: {
+        profit_lock_trigger: numOrNull($('f-profit-lock').value),
+        loss_repair_trigger: null,
+        trailing_adj_start: null,
+        trailing_adj_step: null,
+        pnl_action: $('f-pnl-action').value || 'roll_strike',
+      },
+      iv: { iv_spike_threshold:null, iv_spike_action:"wait", iv_crush_action:"none" },
+      roll: { roll_when_itm_by:null, roll_to_atm_offset:0, roll_only_after:null, auto_roll_before_expiry:false },
+      leg_level: {
+        per_leg_sl: null,
+        per_leg_target: null,
+        per_leg_delta_max: numOrNull($('f-per-leg-delta-max').value) ?? 0.65,
+        rebalance_individual: false,
+      },
+    },
+    exit: {
+      time: {
+        exit_time: $('f-exit-time').value.trim() || null,
+        force_exit_before_expiry_min: intOrNull($('f-force-exit-min').value) ?? 10,
+        exit_on_expiry_day: boolVal($('f-exit-on-expiry').value),
+        early_exit_if_profitable_after: $('f-early-exit').value.trim() || null,
+      },
+      profit: {
+        target_rupees: numOrNull($('f-profit-target').value),
+        target_pct: numOrNull($('f-profit-pct').value),
+        target_per_lot: null,
+        target_premium_pct: null,
+        min_profit_to_book: null,
+      },
+      stop_loss: {
+        sl_rupees: numOrNull($('f-sl-rupees').value),
+        sl_pct: numOrNull($('f-sl-pct').value),
+        sl_per_lot: null,
+        sl_premium_pct: null,
+      },
+      trailing: {
+        type: $('f-trailing-type').value || 'none',
+        value: numOrNull($('f-trailing-value').value),
+        step: null,
+        activate_at: numOrNull($('f-trailing-activate').value),
+      },
+      per_leg: { leg_sl:null, leg_sl_pct:null, leg_target:null, leg_target_pct:null, exit_all_on_breach:true },
+      combined: { combined_sl:null, combined_target:null },
+      partial: { enabled:false, partial_at_pct:50, exit_pct:50 },
+      re_entry: { enabled:false, cooldown_min:15, max_count:1, profit_only:false },
+      emergency: { vix_above:null, gap_pct:null, mtm_below:null },
+    },
+    rms: {
+      position: {
+        max_value: null,
+        max_lots: intOrNull($('f-rms-max-lots').value) ?? 10,
+        max_margin_pct: intOrNull($('f-rms-max-margin').value) ?? 70,
+        max_notional: null,
+      },
+      daily: {
+        loss_limit: numOrNull($('f-rms-daily-loss').value),
+        profit_target: numOrNull($('f-rms-daily-profit').value),
+        max_trades: intOrNull($('f-rms-max-trades').value) ?? 10,
+        max_adjustments: 5,
+      },
+      weekly: { loss_limit:null, profit_target:null },
+      monthly: { loss_limit:null, max_drawdown_pct:null },
+      greeks: {
+        max_delta: numOrNull($('f-rms-max-delta').value),
+        max_gamma: null,
+        max_vega: null,
+        max_theta: null,
+      },
+      circuit: {
+        amount: numOrNull($('f-rms-circuit').value),
+        pct: null,
+        cooldown_min: 30,
+        kill_switch: boolVal($('f-rms-kill-switch').value),
+      },
+      margin: {
+        buffer_pct: intOrNull($('f-rms-margin-buffer').value) ?? 20,
+        block_above_pct: 85,
+      },
+      combined: { track:true, sl:null, target:null },
+      auto: {
+        square_off_on_breach: boolVal($('f-rms-auto-squareoff').value),
+        auto_reduce: false,
+        reduce_to_lots: 0,
+      },
+      notifications: {
+        telegram: boolVal($('f-rms-telegram').value),
+        email: false,
+        webhook: null,
+        on_entry: true,
+        on_exit: true,
+        on_adjustment: true,
+        on_risk_breach: true,
+      },
+    },
+  };
+}
+
+async function validateCurrentConfig() {
+  const config = buildConfig();
+  if (!config.name) { toast('Strategy name required', 'error'); return; }
+  try {
+    const r = await api('POST', '/strategy/validate', config);
+    showValidation(r);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function showValidation(v) {
+  const el = $('validation-result');
+  if (v.valid) {
+    el.innerHTML = '<div class="validation-result valid">Configuration is valid!</div>';
+    return;
+  }
+  let h = '<div class="validation-result">';
+  (v.errors || []).forEach(e => h += '<div class="validation-error">\u274C ' + escHtml(e.field) + ': ' + escHtml(e.message) + '</div>');
+  (v.warnings || []).forEach(w => h += '<div class="validation-warning">\u26A0 ' + escHtml(w.field) + ': ' + escHtml(w.message) + '</div>');
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+async function saveStrategy() {
+  const config = buildConfig();
+  if (!config.name) { toast('Strategy name required', 'error'); return; }
+  try {
+    if (currentEditSlug) {
+      await api('PUT', '/strategy/' + currentEditSlug, config);
+      toast('Strategy updated');
+    } else {
+      await api('POST', '/strategy/create', config);
+      toast('Strategy created');
+    }
+    reloadStrategies();
+    switchTab('strategies', document.querySelectorAll('.tab-btn')[0]);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ====== LOGS ======
+async function loadLogs() {
+  try {
+    const r = await api('GET', '/runner/logs');
+    displayLogs(r.logs || []);
+    $('log-count').textContent = (r.logs?.length || 0) + ' entries';
+  } catch(e) { console.warn('Logs:', e.message); }
+}
+
+function displayLogs(logs) {
+  const el = $('logger-body');
+  if (!logs.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">No logs available</div>'; return; }
+  el.innerHTML = logs.map(l =>
+    '<div class="log-entry ' + escAttr(l.level) + '">' +
+    '<span style="color:var(--muted);min-width:140px;font-size:10px;">' + escHtml(l.timestamp||'') + '</span>' +
+    '<span style="font-weight:600;min-width:60px;">[' + escHtml(l.level) + ']</span>' +
+    '<span style="margin-left:4px;">' + escHtml(l.message||'') + '</span>' +
+    '</div>'
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLogs() { $('logger-body').innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;">Cleared</div>'; $('log-count').textContent = '0 entries'; }
+
+// ====== RUNNER STATUS ======
+async function updateRunnerStatus() {
+  try {
+    const r = await api('GET', '/runner/status');
+    runnerActive = r.runner_active && (r.is_running || r.strategies_active > 0);
+    const stratCount = r.strategies_active || 0;
+    const indicator = document.querySelector('.live-indicator');
+    if (runnerActive) {
+      indicator.classList.add('online');
+      $('runner-status').textContent = 'Status: Online (' + stratCount + ' strategies)';
+    } else {
+      indicator.classList.remove('online');
+      $('runner-status').textContent = 'Status: Ready (' + (r.total_strategies_available||0) + ' available)';
+    }
+  } catch(e) { /* silent */ }
+}
+
+// ====== INIT ======
+window.addEventListener('load', () => {
+  reloadStrategies();
+  updateRunnerStatus();
+  setInterval(updateRunnerStatus, 5000);
+  setInterval(() => { if (runnerActive) loadLogs(); }, 3000);
+});
+</script>
+</body>
+</html>

@@ -52,7 +52,8 @@ VALID_PARAMETERS = {
     "ce_pnl", "pe_pnl", "ce_pnl_pct", "pe_pnl_pct",
     # Combined / calculated
     "net_delta", "combined_pnl", "combined_pnl_pct", "delta_diff",
-    "any_leg_delta", "both_legs_delta", "both_legs_delta_below",
+    "any_leg_delta", "both_legs_delta_below", "both_legs_delta_above",
+    "min_leg_delta", "max_leg_delta",
     "higher_delta_leg", "lower_delta_leg",
     "most_profitable_leg", "least_profitable_leg",
     # Spot / market
@@ -65,6 +66,8 @@ VALID_PARAMETERS = {
     # Premium
     "ce_premium_decay_pct", "pe_premium_decay_pct",
     "total_premium", "total_premium_decay_pct",
+    # Legacy (deprecated)
+    "both_legs_delta",  # Deprecated: use both_legs_delta_below or both_legs_delta_above
 }
 
 VALID_ENTRY_ACTIONS = {
@@ -215,11 +218,15 @@ def coerce_config_numerics(config: Any) -> Any:
         
         # Numbers
         if isinstance(obj, (int, float)):
-            # Force int for specific keys
-            if key in _INT_KEYS or "priority" in key.lower():
-                return int(obj)
-            # Everything else becomes float for precision
-            return float(obj)
+            try:
+                # Force int for specific keys
+                if key in _INT_KEYS or "priority" in key.lower():
+                    return int(obj)
+                # Everything else becomes float for precision
+                return float(obj)
+            except (ValueError, OverflowError) as e:
+                logger.error(f"Type coercion failed for {key}={obj}: {e}")
+                return obj  # Return original value
         
         return obj
     
@@ -358,6 +365,17 @@ def _validate_condition(cond: Dict, path: str, errors: List[ValidationError]):
         if not isinstance(val, (list, tuple)) or len(val) != 2:
             errors.append(ValidationError(f"{path}.value",
                 f"Comparator '{comp}' requires value to be [min, max]"))
+    
+    # Deprecation warning: both_legs_delta with > operator
+    if param == "both_legs_delta":
+        if comp in (">", ">="):
+            errors.append(ValidationError(f"{path}",
+                "Parameter 'both_legs_delta' is deprecated with '>' or '>='. Use 'both_legs_delta_above' instead.",
+                "warning"))
+        else:
+            errors.append(ValidationError(f"{path}",
+                "Parameter 'both_legs_delta' is deprecated. Use 'both_legs_delta_below' for '<' or 'both_legs_delta_above' for '>'.",
+                "warning"))
 
 
 def _validate_conditions_block(block: Dict, path: str, errors: List[ValidationError]):

@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategy Builder - Advanced Logic</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: #0a0e14;
+  color: #e6edf3;
+  padding: 20px;
+  font-size: 13px;
+}
+
+.container {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.header {
+  background: #1a2332;
+  border: 1px solid #30363d;
+  padding: 20px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header h1 {
+  font-size: 20px;
+  color: #00ff41;
+  font-weight: 600;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid #30363d;
+  background: #1a2332;
+  color: #e6edf3;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  background: #30363d;
+  border-color: #00ff41;
+}
+
+.btn-primary {
+  background: #00ff41;
+  color: #0a0e14;
+  border-color: #00ff41;
+}
+
+.btn-danger {
+  border-color: #ff0051;
+  color: #ff0051;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 550px;
+  gap: 20px;
+}
+
+.section {
+  background: #1a2332;
+  border: 1px solid #30363d;
+  margin-bottom: 15px;
+}
+
+.section-header {
+  background: #12171f;
+  border-bottom: 1px solid #30363d;
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #00ff41;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-body {
+  padding: 16px;
+}
+
+.section.collapsed .section-body {
+  display: none;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-label {
+  font-size: 11px;
+  color: #8b949e;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.form-control {
+  background: #0f1419;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #00ff41;
+}
+
+select.form-control {
+  cursor: pointer;
+}
+
+.help-text {
+  font-size: 11px;
+  color: #6e7681;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Rule Card */
+.rule-card {
+  background: #12171f;
+  border: 1px solid #30363d;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-left: 3px solid #00ff41;
+}
+
+.rule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #30363d;
+}
+
+.rule-title {
+  font-weight: 600;
+  color: #00ff41;
+  font-size: 14px;
+}
+
+.rule-priority {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #30363d;
+  border-radius: 3px;
+}
+
+.condition-group {
+  background: #0f1419;
+  border: 1px solid #30363d;
+  padding: 12px;
+  margin: 8px 0;
+  border-left: 2px solid #00d4ff;
+}
+
+.condition-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 100px 120px 60px;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.condition-label {
+  font-size: 11px;
+  color: #00d4ff;
+  font-weight: 600;
+}
+
+.action-block {
+  background: rgba(255, 176, 0, 0.1);
+  border: 1px solid #ffb000;
+  padding: 12px;
+  margin: 8px 0;
+  border-left: 2px solid #ffb000;
+}
+
+.action-label {
+  font-size: 11px;
+  color: #ffb000;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.else-block {
+  background: rgba(255, 0, 81, 0.05);
+  border: 1px solid #ff0051;
+  padding: 12px;
+  margin: 8px 0;
+  border-left: 2px solid #ff0051;
+}
+
+.else-label {
+  font-size: 11px;
+  color: #ff0051;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.mini-select {
+  background: #0f1419;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.mini-input {
+  background: #0f1419;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.add-rule-btn {
+  width: 100%;
+  padding: 10px;
+  background: #12171f;
+  border: 1px dashed #30363d;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.add-rule-btn:hover {
+  border-color: #00ff41;
+  color: #00ff41;
+  background: rgba(0, 255, 65, 0.05);
+}
+
+.json-preview {
+  background: #0f1419;
+  border: 1px solid #30363d;
+  padding: 16px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  position: sticky;
+  top: 20px;
+}
+
+.json-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.json-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #30363d;
+}
+
+.json-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #00d4ff;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #1a2332;
+  border: 1px solid #00ff41;
+  padding: 12px 16px;
+  min-width: 250px;
+  z-index: 9999;
+  font-size: 13px;
+  animation: slideIn 0.3s ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.toast.error {
+  border-color: #ff0051;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(400px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.calculated-param {
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid #00d4ff;
+  padding: 8px 10px;
+  margin: 8px 0;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  color: #00d4ff;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  display: inline-block;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #30363d;
+  transition: 0.3s;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: #8b949e;
+  transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: rgba(0, 255, 65, 0.2);
+  border: 1px solid #00ff41;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(20px);
+  background: #00ff41;
+}
+
+.inline-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 1400px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>⚡ Strategy Builder - Advanced Logic</h1>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn" onclick="loadExample()">📝 Load Example</button>
+      <button class="btn btn-danger" onclick="resetAll()">🔄 Reset</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- LEFT: CONFIGURATION -->
+    <div class="left">
+      
+      <!-- BASIC INFO -->
+      <div class="section">
+        <div class="section-header" onclick="toggleSection(this)">
+          <span>📋 Basic Configuration</span>
+          <span>▼</span>
+        </div>
+        <div class="section-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Strategy Name *</label>
+              <input type="text" class="form-control" id="strategy-name" placeholder="e.g., NIFTY_DeltaNeutral_Strangle">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Exchange</label>
+              <select class="form-control" id="exchange">
+                <option value="NFO">NFO</option>
+                <option value="BFO">BFO</option>
+                <option value="MCX">MCX</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Underlying</label>
+              <input type="text" class="form-control" id="underlying" placeholder="NIFTY" value="NIFTY">
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Entry Time</label>
+              <input type="time" class="form-control" id="entry-time" value="09:20">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Exit Time</label>
+              <input type="time" class="form-control" id="exit-time" value="15:15">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Lots</label>
+              <input type="number" class="form-control" id="lots" value="1" min="1">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Database Path</label>
+            <input type="text" class="form-control" id="db-path" placeholder="/path/to/NFO_NIFTY_17-FEB-2026.sqlite">
+            <div class="help-text">Path to option chain SQLite database</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ENTRY RULE -->
+      <div class="section">
+        <div class="section-header" onclick="toggleSection(this)">
+          <span>🎯 Entry Rule</span>
+          <span>▼</span>
+        </div>
+        <div class="section-body">
+          <div class="rule-card">
+            <div class="rule-header">
+              <span class="rule-title">Entry Conditions</span>
+            </div>
+
+            <div class="condition-group">
+              <div class="condition-label">IF (All conditions must match)</div>
+              
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;">CE Delta</span>
+                <select class="mini-select">
+                  <option value="ce_delta">CE Delta (abs)</option>
+                </select>
+                <select class="mini-select">
+                  <option value="~=">≈ (approx)</option>
+                  <option value=">=">≥</option>
+                  <option value="<=">≤</option>
+                  <option value="==">=</option>
+                </select>
+                <input type="text" class="mini-input" id="entry-ce-delta" placeholder="0.30" value="0.30">
+                <span></span>
+              </div>
+
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;">AND</span>
+                <select class="mini-select">
+                  <option value="pe_delta">PE Delta (abs)</option>
+                </select>
+                <select class="mini-select">
+                  <option value="~=">≈ (approx)</option>
+                  <option value=">=">≥</option>
+                  <option value="<=">≤</option>
+                  <option value="==">=</option>
+                </select>
+                <input type="text" class="mini-input" id="entry-pe-delta" placeholder="0.30" value="0.30">
+                <span></span>
+              </div>
+            </div>
+
+            <div class="action-block">
+              <div class="action-label">THEN (Action)</div>
+              <select class="form-control" id="entry-action">
+                <option value="short_both">Short Both CE & PE</option>
+                <option value="short_ce">Short CE Only</option>
+                <option value="short_pe">Short PE Only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CALCULATED PARAMETERS -->
+      <div class="section">
+        <div class="section-header" onclick="toggleSection(this)">
+          <span>🧮 Calculated Parameters</span>
+          <span>▼</span>
+        </div>
+        <div class="section-body">
+          <div class="help-text" style="margin-bottom: 12px;">
+            Define calculated parameters that can be used in adjustment rules
+          </div>
+
+          <div class="calculated-param">
+            <strong>net_delta</strong> = abs(ce_delta) + abs(pe_delta)
+          </div>
+
+          <div class="calculated-param">
+            <strong>combined_pnl</strong> = ce_pnl + pe_pnl
+          </div>
+
+          <div class="calculated-param">
+            <strong>delta_diff</strong> = abs(abs(ce_delta) - abs(pe_delta))
+          </div>
+
+          <div class="calculated-param">
+            <strong>higher_delta_leg</strong> = leg with max(abs(ce_delta), abs(pe_delta))
+          </div>
+
+          <div class="calculated-param">
+            <strong>lower_delta_leg</strong> = leg with min(abs(ce_delta), abs(pe_delta))
+          </div>
+        </div>
+      </div>
+
+      <!-- ADJUSTMENT RULES -->
+      <div class="section">
+        <div class="section-header" onclick="toggleSection(this)">
+          <span>🔧 Adjustment Rules (Priority Order)</span>
+          <span>▼</span>
+        </div>
+        <div class="section-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Check Interval (min)</label>
+              <input type="number" class="form-control" id="adj-interval" value="5" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Adjustments/Day</label>
+              <input type="number" class="form-control" id="adj-max-day" value="10" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Cooldown (sec)</label>
+              <input type="number" class="form-control" id="adj-cooldown" value="60" min="0">
+            </div>
+          </div>
+
+          <!-- RULE 1: High Delta -->
+          <div class="rule-card">
+            <div class="rule-header">
+              <span class="rule-title">Rule 1: High Delta Adjustment</span>
+              <span class="rule-priority">Priority: HIGH</span>
+            </div>
+
+            <div class="condition-group">
+              <div class="condition-label">IF</div>
+              
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;"></span>
+                <select class="mini-select" id="adj1-param1">
+                  <option value="net_delta">net_delta</option>
+                </select>
+                <select class="mini-select" id="adj1-comp1">
+                  <option value=">">&gt;</option>
+                </select>
+                <input type="text" class="mini-input" id="adj1-val1" placeholder="0.20" value="0.20">
+                <span></span>
+              </div>
+
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;">AND</span>
+                <select class="mini-select" id="adj1-param2">
+                  <option value="any_leg_delta">Any Leg Delta (abs)</option>
+                </select>
+                <select class="mini-select" id="adj1-comp2">
+                  <option value=">">&gt;</option>
+                </select>
+                <input type="text" class="mini-input" id="adj1-val2" placeholder="0.65" value="0.65">
+                <span></span>
+              </div>
+            </div>
+
+            <div class="action-block">
+              <div class="action-label">THEN</div>
+              <select class="form-control" id="adj1-action">
+                <option value="close_higher_delta">Close Higher Delta Leg</option>
+              </select>
+              <div class="help-text">
+                Find new leg matching other leg's delta (abs)
+              </div>
+            </div>
+          </div>
+
+          <!-- RULE 2: Normal Delta -->
+          <div class="rule-card">
+            <div class="rule-header">
+              <span class="rule-title">Rule 2: Normal Delta Adjustment</span>
+              <span class="rule-priority">Priority: MEDIUM</span>
+            </div>
+
+            <div class="condition-group">
+              <div class="condition-label">IF</div>
+              
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;"></span>
+                <select class="mini-select" id="adj2-param1">
+                  <option value="net_delta">net_delta</option>
+                </select>
+                <select class="mini-select" id="adj2-comp1">
+                  <option value=">">&gt;</option>
+                </select>
+                <input type="text" class="mini-input" id="adj2-val1" placeholder="0.20" value="0.20">
+                <span></span>
+              </div>
+
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;">AND</span>
+                <select class="mini-select" id="adj2-param2">
+                  <option value="both_legs_delta">Both Legs Delta (abs)</option>
+                </select>
+                <select class="mini-select" id="adj2-comp2">
+                  <option value="<">&lt;</option>
+                </select>
+                <input type="text" class="mini-input" id="adj2-val2" placeholder="0.65" value="0.65">
+                <span></span>
+              </div>
+            </div>
+
+            <div class="action-block">
+              <div class="action-label">THEN</div>
+              <select class="form-control" id="adj2-action">
+                <option value="close_lower_delta">Close Lower Delta Leg</option>
+              </select>
+              <div class="help-text">
+                Find new leg matching other leg's delta (abs). New leg must have lower delta than other live leg.
+              </div>
+            </div>
+          </div>
+
+          <!-- RULE 3: Profit Lock -->
+          <div class="rule-card">
+            <div class="rule-header">
+              <span class="rule-title">Rule 3: Profit Lock Adjustment</span>
+              <span class="rule-priority">Priority: MEDIUM</span>
+            </div>
+
+            <div class="condition-group">
+              <div class="condition-label">IF</div>
+              
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;"></span>
+                <select class="mini-select" id="adj3-param1">
+                  <option value="combined_pnl">combined_pnl</option>
+                </select>
+                <select class="mini-select" id="adj3-comp1">
+                  <option value=">=">&gt;=</option>
+                </select>
+                <input type="text" class="mini-input" id="adj3-val1" placeholder="1000" value="1000">
+                <span></span>
+              </div>
+            </div>
+
+            <div class="action-block">
+              <div class="action-label">THEN</div>
+              <select class="form-control" id="adj3-action">
+                <option value="lock_profit">Lock Profit (Trail SL)</option>
+                <option value="partial_exit">Partial Exit (50%)</option>
+                <option value="widen_strikes">Widen Strikes</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EXIT RULES -->
+      <div class="section">
+        <div class="section-header" onclick="toggleSection(this)">
+          <span>🚪 Exit Rules</span>
+          <span>▼</span>
+        </div>
+        <div class="section-body">
+          <div class="rule-card">
+            <div class="rule-header">
+              <span class="rule-title">Exit Conditions (Any match exits)</span>
+            </div>
+
+            <div class="condition-group">
+              <div class="condition-label">Exit IF (OR logic)</div>
+              
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;">1.</span>
+                <select class="mini-select">
+                  <option value="combined_pnl">combined_pnl</option>
+                </select>
+                <select class="mini-select">
+                  <option value=">=">&gt;=</option>
+                </select>
+                <input type="text" class="mini-input" id="exit-profit" placeholder="2000" value="2000">
+                <span style="font-size: 10px; color: #8b949e;">₹</span>
+              </div>
+
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;">2.</span>
+                <select class="mini-select">
+                  <option value="combined_pnl">combined_pnl</option>
+                </select>
+                <select class="mini-select">
+                  <option value="<=">&lt;=</option>
+                </select>
+                <input type="text" class="mini-input" id="exit-loss" placeholder="-1000" value="-1000">
+                <span style="font-size: 10px; color: #8b949e;">₹</span>
+              </div>
+
+              <div class="condition-row">
+                <span style="font-size: 11px; color: #8b949e;">3.</span>
+                <select class="mini-select">
+                  <option value="time_current">time_current</option>
+                </select>
+                <select class="mini-select">
+                  <option value=">=">&gt;=</option>
+                </select>
+                <input type="text" class="mini-input" id="exit-time-val" placeholder="15:15" value="15:15">
+                <span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="actions">
+        <button class="btn btn-primary" onclick="generateJSON()" style="flex: 1;">⚡ Generate JSON</button>
+        <button class="btn" onclick="downloadJSON()">💾 Download</button>
+        <button class="btn" onclick="copyJSON()">📋 Copy</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: JSON PREVIEW -->
+    <div class="right">
+      <div class="json-preview">
+        <div class="json-header">
+          <div class="json-title">📄 Generated JSON</div>
+        </div>
+        <pre id="json-output" style="color: #8b949e;">// Configure your strategy and click "Generate JSON"...
+
+// This builder supports:
+// ✓ IF/THEN/ELSE logic
+// ✓ Calculated parameters (net_delta, combined_pnl, etc.)
+// ✓ Priority-based adjustment rules
+// ✓ Complex nested conditions
+// ✓ Leg-specific actions</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========================================
+// STATE
+// ========================================
+let currentConfig = null;
+
+// ========================================
+// UTILITIES
+// ========================================
+function $(id) {
+  return document.getElementById(id);
+}
+
+function getVal(id) {
+  const el = $(id);
+  if (!el) return null;
+  if (el.type === 'checkbox') return el.checked;
+  if (el.type === 'number') {
+    const val = parseFloat(el.value);
+    return isNaN(val) || el.value === '' ? null : val;
+  }
+  return el.value || null;
+}
+
+function showToast(message, type = 'success') {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+function toggleSection(header) {
+  header.parentElement.classList.toggle('collapsed');
+  const arrow = header.querySelector('span:last-child');
+  arrow.textContent = header.parentElement.classList.contains('collapsed') ? '▶' : '▼';
+}
+
+// ========================================
+// JSON GENERATION
+// ========================================
+function generateJSON() {
+  try {
+    const config = {
+      schema_version: "3.0",
+      name: getVal('strategy-name') || 'DeltaNeutral_Strangle',
+      description: "Delta neutral strangle with intelligent adjustment based on net delta and leg delta thresholds",
+      
+      basic: {
+        exchange: getVal('exchange') || 'NFO',
+        underlying: getVal('underlying') || 'NIFTY',
+        expiry_mode: 'weekly_current',
+        lots: getVal('lots') || 1,
+        enabled: true
+      },
+      
+      timing: {
+        entry_time: getVal('entry-time') || '09:20',
+        exit_time: getVal('exit-time') || '15:15'
+      },
+      
+      market_data: {
+        source: 'database',
+        db_path: getVal('db-path') || '/home/ec2-user/shoonya_platform/shoonya_platform/market_data/option_chain/data/NFO_NIFTY_17-FEB-2026.sqlite'
+      },
+      
+      // Calculated parameters
+      calculated_params: {
+        net_delta: {
+          formula: "abs(ce_delta) + abs(pe_delta)",
+          description: "Combined absolute delta of both legs"
+        },
+        combined_pnl: {
+          formula: "ce_pnl + pe_pnl",
+          description: "Total P&L of both legs"
+        },
+        delta_diff: {
+          formula: "abs(abs(ce_delta) - abs(pe_delta))",
+          description: "Difference between CE and PE deltas"
+        },
+        higher_delta_leg: {
+          formula: "leg_with_max(abs(ce_delta), abs(pe_delta))",
+          description: "Leg with higher absolute delta"
+        },
+        lower_delta_leg: {
+          formula: "leg_with_min(abs(ce_delta), abs(pe_delta))",
+          description: "Leg with lower absolute delta"
+        }
+      },
+      
+      // Entry rule
+      entry: {
+        rule_type: "if_then",
+        conditions: {
+          operator: "AND",
+          rules: [
+            {
+              parameter: "ce_delta",
+              comparator: "~=",
+              value: parseFloat(getVal('entry-ce-delta')) || 0.30,
+              tolerance: 0.05,
+              description: "CE delta approximately 0.30 (±0.05)"
+            },
+            {
+              parameter: "pe_delta",
+              comparator: "~=",
+              value: parseFloat(getVal('entry-pe-delta')) || 0.30,
+              tolerance: 0.05,
+              description: "PE delta approximately 0.30 (±0.05)"
+            }
+          ]
+        },
+        action: {
+          type: getVal('entry-action') || 'short_both',
+          description: "Short both CE and PE options at specified delta"
+        }
+      },
+      
+      // Adjustment rules (priority order)
+      adjustment: {
+        enabled: true,
+        check_interval_min: getVal('adj-interval') || 5,
+        max_adjustments_per_day: getVal('adj-max-day') || 10,
+        cooldown_seconds: getVal('adj-cooldown') || 60,
+        
+        rules: [
+          // Rule 1: High Delta (Priority HIGH)
+          {
+            priority: 1,
+            name: "High Delta Adjustment",
+            rule_type: "if_then",
+            conditions: {
+              operator: "AND",
+              rules: [
+                {
+                  parameter: "net_delta",
+                  comparator: ">",
+                  value: parseFloat(getVal('adj1-val1')) || 0.20,
+                  description: "Net delta exceeds threshold"
+                },
+                {
+                  parameter: "any_leg_delta",
+                  comparator: ">",
+                  value: parseFloat(getVal('adj1-val2')) || 0.65,
+                  description: "Any single leg delta exceeds 0.65"
+                }
+              ]
+            },
+            action: {
+              type: getVal('adj1-action') || 'close_higher_delta',
+              details: {
+                close_leg: "higher_delta_leg",
+                enter_new: true,
+                match_other_leg_delta: true,
+                same_type: true,
+                same_direction: true,
+                description: "Close the leg with higher delta and enter new leg matching the other leg's delta"
+              }
+            }
+          },
+          
+          // Rule 2: Normal Delta (Priority MEDIUM)
+          {
+            priority: 2,
+            name: "Normal Delta Adjustment",
+            rule_type: "if_then",
+            conditions: {
+              operator: "AND",
+              rules: [
+                {
+                  parameter: "net_delta",
+                  comparator: ">",
+                  value: parseFloat(getVal('adj2-val1')) || 0.20,
+                  description: "Net delta exceeds threshold"
+                },
+                {
+                  parameter: "both_legs_delta",
+                  comparator: "<",
+                  value: parseFloat(getVal('adj2-val2')) || 0.65,
+                  description: "Both legs delta below 0.65"
+                }
+              ]
+            },
+            action: {
+              type: getVal('adj2-action') || 'close_lower_delta',
+              details: {
+                close_leg: "lower_delta_leg",
+                enter_new: true,
+                match_other_leg_delta: true,
+                same_type: true,
+                same_direction: true,
+                new_leg_delta_requirement: "lower_than_other_leg",
+                description: "Close the leg with lower delta and enter new leg with delta matching other leg but ensuring new leg has lower current delta"
+              }
+            }
+          },
+          
+          // Rule 3: Profit Lock (Priority MEDIUM)
+          {
+            priority: 3,
+            name: "Profit Lock Adjustment",
+            rule_type: "if_then",
+            conditions: {
+              operator: "AND",
+              rules: [
+                {
+                  parameter: "combined_pnl",
+                  comparator: ">=",
+                  value: parseFloat(getVal('adj3-val1')) || 1000,
+                  description: "Combined profit reaches ₹1000"
+                }
+              ]
+            },
+            action: {
+              type: getVal('adj3-action') || 'lock_profit',
+              details: {
+                method: "trailing_stop_loss",
+                trail_by: 200,
+                description: "Lock profit by setting trailing stop loss at ₹200 below current P&L"
+              }
+            }
+          }
+        ]
+      },
+      
+      // Exit rules
+      exit: {
+        rule_type: "if_any",
+        conditions: [
+          {
+            parameter: "combined_pnl",
+            comparator: ">=",
+            value: parseFloat(getVal('exit-profit')) || 2000,
+            description: "Profit target reached"
+          },
+          {
+            parameter: "combined_pnl",
+            comparator: "<=",
+            value: parseFloat(getVal('exit-loss')) || -1000,
+            description: "Stop loss hit"
+          },
+          {
+            parameter: "time_current",
+            comparator: ">=",
+            value: getVal('exit-time-val') || '15:15',
+            description: "Exit time reached"
+          }
+        ],
+        action: {
+          type: "close_all_positions",
+          description: "Close all legs and exit completely"
+        }
+      },
+      
+      // Risk management
+      risk_management: {
+        max_loss_per_day: 5000,
+        max_trades_per_day: 10,
+        position_sizing: {
+          max_lots: 10,
+          scale_enabled: false
+        }
+      }
+    };
+    
+    currentConfig = config;
+    displayJSON(config);
+    showToast('JSON generated successfully!', 'success');
+    
+  } catch (error) {
+    showToast('Error: ' + error.message, 'error');
+    console.error(error);
+  }
+}
+
+function displayJSON(config) {
+  const output = $('json-output');
+  const formatted = JSON.stringify(config, null, 2);
+  output.textContent = formatted;
+  output.style.color = '#e6edf3';
+}
+
+function copyJSON() {
+  if (!currentConfig) {
+    showToast('Generate JSON first', 'error');
+    return;
+  }
+  
+  const text = JSON.stringify(currentConfig, null, 2);
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Copied to clipboard!', 'success');
+  }).catch(err => {
+    showToast('Failed to copy', 'error');
+  });
+}
+
+function downloadJSON() {
+  if (!currentConfig) {
+    showToast('Generate JSON first', 'error');
+    return;
+  }
+  
+  const text = JSON.stringify(currentConfig, null, 2);
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (currentConfig.name || 'strategy') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showToast('Downloaded!', 'success');
+}
+
+// ========================================
+// LOAD EXAMPLE
+// ========================================
+function loadExample() {
+  $('strategy-name').value = 'NIFTY_DeltaNeutral_Strangle';
+  $('exchange').value = 'NFO';
+  $('underlying').value = 'NIFTY';
+  $('entry-time').value = '09:20';
+  $('exit-time').value = '15:15';
+  $('lots').value = '1';
+  $('db-path').value = '/home/ec2-user/shoonya_platform/shoonya_platform/market_data/option_chain/data/NFO_NIFTY_17-FEB-2026.sqlite';
+  
+  $('entry-ce-delta').value = '0.30';
+  $('entry-pe-delta').value = '0.30';
+  
+  $('adj1-val1').value = '0.20';
+  $('adj1-val2').value = '0.65';
+  $('adj2-val1').value = '0.20';
+  $('adj2-val2').value = '0.65';
+  $('adj3-val1').value = '1000';
+  
+  $('exit-profit').value = '2000';
+  $('exit-loss').value = '-1000';
+  $('exit-time-val').value = '15:15';
+  
+  showToast('Example loaded! Click Generate JSON', 'success');
+}
+
+function resetAll() {
+  if (confirm('Reset all data?')) {
+    location.reload();
+  }
+}
+
+// ========================================
+// INIT
+// ========================================
+window.addEventListener('load', () => {
+  console.log('Advanced Strategy Builder loaded');
+  loadExample(); // Auto-load example
+});
+</script>
+</body>
+</html>

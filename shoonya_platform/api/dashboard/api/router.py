@@ -189,7 +189,6 @@ def cancel_system_order(
 # ==================================================
 # 🔄 STRATEGY RECOVERY & RESUME CONTROLS
 # ==================================================
-
 @router.get("/strategy/list-recoverable")
 def list_recoverable_strategies(
     ctx=Depends(require_dashboard_auth),
@@ -212,7 +211,12 @@ def list_recoverable_strategies(
             
             if netqty == 0 or not symbol:
                 continue
-                
+            
+            # ✅ FIX: Define suggested_strategy_name with safe fallback
+            parts = symbol.split() if symbol else ["UNKNOWN"]
+            underlying = parts[0] if parts else "UNKNOWN"
+            suggested_strategy_name = f"{underlying}_Recovery_{int(time.time())}"
+            
             if symbol not in recoverable:
                 recoverable[symbol] = {
                     "symbol": symbol,
@@ -223,6 +227,7 @@ def list_recoverable_strategies(
                     "avg_price": float(pos.get("avgprc", 0) or 0),
                     "ltp": float(pos.get("ltp", 0) or 0),
                     "unrealised_pnl": float(pos.get("upnl", 0) or 0),
+                    "suggested_name": suggested_strategy_name,  # ✅ Using the safe variable
                 }
         
         logger.info(f"Found {len(recoverable)} recoverable positions")
@@ -1054,7 +1059,12 @@ def stop_strategy_execution(
 # ==================================================
 # STRATEGY CONFIG — Save / Load / List
 # ==================================================
-_STRATEGY_CONFIGS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "strategies" / "saved_configs"
+_STRATEGY_CONFIGS_DIR = (
+    Path(__file__).resolve().parent.parent.parent.parent 
+    / "shoonya_platform" 
+    / "strategy_runner" 
+    / "saved_configs"
+)
 _STRATEGY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
 
 _VALID_SECTIONS = {"identity", "entry", "adjustment", "exit", "rms"}
@@ -2436,7 +2446,6 @@ def get_strategy_by_name(strategy_name: str, ctx=Depends(require_dashboard_auth)
 # ======================================================================
 # ✅ VALIDATE STRATEGY CONFIG
 # ======================================================================
-
 @router.post("/strategy/validate")
 def validate_strategy_config(
     payload: dict = Body(...),
@@ -2447,6 +2456,7 @@ def validate_strategy_config(
     Accepts the full strategy config as request body.
     Extracts name from payload['name'].
     """
+    strategy_name = "UNKNOWN"  # ✅ Initialize before try block
     try:
         strategy_name = payload.get("name", "UNKNOWN")
         # Normalize config so validator sees all fields including market_config
@@ -2460,7 +2470,6 @@ def validate_strategy_config(
     except Exception as e:
         logger.error(f"Error validating strategy {strategy_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 # ======================================================================
 # ➕ CREATE STRATEGY
 # ======================================================================

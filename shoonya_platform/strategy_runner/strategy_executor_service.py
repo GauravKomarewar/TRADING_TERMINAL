@@ -832,6 +832,30 @@ class StrategyExecutorService:
         
         # CRITICAL: Reconcile all persisted strategies at startup
         self._reconcile_all_strategies_at_startup()
+
+    def _resolve_webhook_secret(self) -> str:
+        """
+        Resolve webhook secret used for internal process_alert() calls.
+
+        Priority:
+        1) Runtime bot config (single source of truth)
+        2) WEBHOOK_SECRET_KEY env (current env contract)
+        3) WEBHOOK_SECRET env (legacy fallback)
+        """
+        bot_cfg = getattr(self.bot, "config", None)
+        bot_secret = getattr(bot_cfg, "webhook_secret", None)
+        if bot_secret:
+            return str(bot_secret)
+
+        env_secret = os.getenv("WEBHOOK_SECRET_KEY") or os.getenv("WEBHOOK_SECRET")
+        if env_secret:
+            return env_secret
+
+        logger.error(
+            "Webhook secret not configured for StrategyExecutorService; "
+            "internal alerts may fail with Invalid secret key"
+        )
+        return ""
     
     def _reconcile_all_strategies_at_startup(self):
         """
@@ -1574,7 +1598,7 @@ class StrategyExecutorService:
             
             # Send adjustment alert
             alert = {
-                "secret_key": os.environ.get("WEBHOOK_SECRET", ""),
+                "secret_key": self._resolve_webhook_secret(),
                 "execution_type": "ADJUSTMENT",
                 "strategy_name": name,
                 "exchange": exchange,
@@ -1678,7 +1702,7 @@ class StrategyExecutorService:
             
             # Send roll alert
             alert = {
-                "secret_key": os.environ.get("WEBHOOK_SECRET", ""),
+                "secret_key": self._resolve_webhook_secret(),
                 "execution_type": "ADJUSTMENT",
                 "strategy_name": name,
                 "exchange": exchange,
@@ -1830,7 +1854,7 @@ class StrategyExecutorService:
             
             # Send hedge alert
             alert = {
-                "secret_key": os.environ.get("WEBHOOK_SECRET", ""),
+                "secret_key": self._resolve_webhook_secret(),
                 "execution_type": "ADJUSTMENT",
                 "strategy_name": name,
                 "exchange": exchange,
@@ -1901,7 +1925,7 @@ class StrategyExecutorService:
         basic = config.get("basic", {})
         
         alert = {
-            "secret_key": os.environ.get("WEBHOOK_SECRET", ""),
+            "secret_key": self._resolve_webhook_secret(),
             "execution_type": "ENTRY",
             "strategy_name": name,
             "exchange": basic.get("exchange", "NFO"),

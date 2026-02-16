@@ -81,6 +81,7 @@ COMPONENT_NAMES = {
     # ---- Strategies ----
     'strategy':          'STRATEGY_RUNNER',
     'strategy_db':       'STRATEGY_RUNNER_DB',
+    'strategy_executor': 'STRATEGY_EXECUTOR',
 
     # ---- Broker / Engine ----
     'broker':            'shoonya_platform.brokers',       # catches shoonya client logs

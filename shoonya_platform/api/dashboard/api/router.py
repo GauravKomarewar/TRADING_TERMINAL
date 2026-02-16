@@ -18,7 +18,7 @@
 # ======================================================================
 from functools import lru_cache
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status
-from typing import List, Optional
+from typing import List, Optional, Any
 import logging
 from uuid import uuid4
 from pathlib import Path
@@ -1009,6 +1009,21 @@ def _slugify(name: str) -> str:
     return s.strip('_') or 'unnamed'
 
 
+def _get_runtime_running_slugs(ctx: dict) -> set[str]:
+    """
+    Read currently running strategy keys from StrategyExecutorService.
+    Keys are stored as slug-like names.
+    """
+    try:
+        bot = ctx.get("bot")
+        svc = getattr(bot, "strategy_executor_service", None)
+        if svc is None:
+            return set()
+        return set(list(getattr(svc, "_strategies", {}).keys()))
+    except Exception:
+        return set()
+
+
 @router.post("/strategy/config/save")
 def save_strategy_config(
     payload: dict = Body(...),
@@ -1075,6 +1090,7 @@ def load_strategy_config(
 def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
     """List all saved strategy configs with full data."""
     cfg_dir = _get_strategy_configs_dir()
+    runtime_running = _get_runtime_running_slugs(ctx)
     configs = []
     parse_errors = []
     for f in sorted(cfg_dir.glob("*.json")):
@@ -1082,6 +1098,11 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
             continue
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
+            slug = f.stem
+            file_status = str(data.get("status", "IDLE") or "IDLE").upper()
+            # Runtime truth is authoritative for active execution.
+            # If file says RUNNING but runtime is flat (e.g. run_once finished), surface IDLE.
+            effective_status = "RUNNING" if slug in runtime_running else ("IDLE" if file_status == "RUNNING" else file_status)
             configs.append({
                 "schema_version": data.get("schema_version", "1.0"),
                 "name": data.get("name", f.stem),
@@ -1091,7 +1112,9 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
                 "file": f.name,
                 "updated_at": data.get("updated_at", ""),
                 "created_at": data.get("created_at", ""),
-                "status": data.get("status", "IDLE"),
+                "status": effective_status,
+                "status_file": file_status,
+                "status_runtime_running": slug in runtime_running,
                 "sections": [s for s in _VALID_SECTIONS if s in data and data[s]],
                 "identity": data.get("identity", {}),
                 "entry": data.get("entry", {}),
@@ -1134,14 +1157,20 @@ def get_all_strategies_execution_status(
     """
     try:
         cfg_dir = _get_strategy_configs_dir()
+        runtime_running = _get_runtime_running_slugs(ctx)
         # 1. Load all saved strategies
         all_configs = []
         for f in sorted(cfg_dir.glob("*.json")):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
+                slug = f.stem
+                file_status = str(data.get("status", "IDLE") or "IDLE").upper()
+                effective_status = "RUNNING" if slug in runtime_running else ("IDLE" if file_status == "RUNNING" else file_status)
                 all_configs.append({
                     "name": data.get("name", f.stem),
-                    "status": data.get("status", "IDLE"),
+                    "status": effective_status,
+                    "status_file": file_status,
+                    "runtime_running": slug in runtime_running,
                     "status_updated_at": data.get("status_updated_at"),
                     "created_at": data.get("created_at", ""),
                     "updated_at": data.get("updated_at", ""),
@@ -2109,6 +2138,382 @@ def get_leg_greeks(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/monitoring/live-positions-overview")
+def get_live_positions_overview(
+    ctx=Depends(require_dashboard_auth),
+    broker=Depends(get_broker),
+    system=Depends(get_system),
+):
+    """
+    Live monitoring view for strategy page.
+
+    Classifies each open broker position into:
+    - strategy_active: linked to a strategy currently running in executor
+    - strategy_inactive: linked to strategy orders, but strategy not running now
+    - orphan: no strategy linkage (manual/external/orphan rule flow)
+    """
+    try:
+        bot = ctx["bot"]
+        positions = broker.get_positions() or []
+        orders = system.get_orders(2000) or []
+
+        # Active strategy names in-memory (executor/live registry).
+        with bot._live_strategies_lock:
+            active_strategies = set(bot._live_strategies.keys())
+
+        def _order_ts(order_obj: Any) -> float:
+            for attr in ("updated_at", "created_at"):
+                value = getattr(order_obj, attr, None)
+                if value is None:
+                    continue
+                if isinstance(value, datetime):
+                    return value.timestamp()
+                if isinstance(value, (int, float)):
+                    return float(value)
+                try:
+                    return datetime.fromisoformat(str(value)).timestamp()
+                except Exception:
+                    continue
+            return 0.0
+
+        def _is_strategy_name(name: str) -> bool:
+            if not name:
+                return False
+            clean = str(name).strip()
+            if not clean:
+                return False
+            upper = clean.upper()
+            if upper in {"UNKNOWN", "N/A", "NONE"}:
+                return False
+            if upper.startswith("ORPHAN_RULE_"):
+                return False
+            return True
+
+        def _as_float(value: Any, default: float = 0.0) -> float:
+            try:
+                return float(value or 0)
+            except Exception:
+                return default
+
+        # Keep latest known order metadata by symbol.
+        latest_by_symbol: dict[str, tuple[float, str, Any]] = {}
+        for order in orders:
+            symbol = str(getattr(order, "symbol", "") or "").strip()
+            if not symbol:
+                continue
+            strategy_name = str(getattr(order, "strategy_name", "") or "").strip()
+            ts = _order_ts(order)
+            prev = latest_by_symbol.get(symbol)
+            if prev is None or ts >= prev[0]:
+                latest_by_symbol[symbol] = (ts, strategy_name, order)
+
+        classified: list[dict[str, Any]] = []
+        seen_symbol_owner: set[tuple[str, str]] = set()
+        for pos in positions:
+            netqty = int(pos.get("netqty", 0) or 0)
+            if netqty == 0:
+                continue
+
+            symbol = str(pos.get("tsym", "") or "").strip()
+            if not symbol:
+                continue
+
+            mapped_strategy = ""
+            order_detail = None
+            if symbol in latest_by_symbol:
+                mapped_strategy = latest_by_symbol[symbol][1]
+                order_detail = latest_by_symbol[symbol][2]
+
+            strategy_generated = _is_strategy_name(mapped_strategy)
+            is_active = strategy_generated and mapped_strategy in active_strategies
+            if is_active:
+                owner_type = "strategy_active"
+            elif strategy_generated:
+                owner_type = "strategy_inactive"
+            else:
+                owner_type = "orphan"
+
+            qty = abs(netqty)
+            side = "BUY" if netqty > 0 else "SELL"
+            ltp = float(pos.get("ltp", 0) or 0)
+            avg = float(pos.get("avgprc", 0) or 0)
+            rpnl = float(pos.get("rpnl", 0) or 0)
+            upnl = float(pos.get("upnl", 0) or 0)
+            total_pnl = rpnl + upnl
+
+            item = {
+                "symbol": symbol,
+                "exchange": pos.get("exch"),
+                "qty": qty,
+                "side": side,
+                "netqty": netqty,
+                "position_source": "BROKER",
+                "avg_price": avg,
+                "ltp": ltp,
+                "realized_pnl": rpnl,
+                "unrealized_pnl": upnl,
+                "total_pnl": total_pnl,
+                "delta": _as_float(getattr(order_detail, "delta", 0) if order_detail else 0),
+                "gamma": _as_float(getattr(order_detail, "gamma", 0) if order_detail else 0),
+                "theta": _as_float(getattr(order_detail, "theta", 0) if order_detail else 0),
+                "vega": _as_float(getattr(order_detail, "vega", 0) if order_detail else 0),
+                "strategy_name": mapped_strategy if strategy_generated else None,
+                "owner_type": owner_type,
+                "updated_at": pos.get("upl_time") or "",
+            }
+            classified.append(item)
+            seen_symbol_owner.add((symbol, owner_type))
+
+        # Add virtual paper-mode positions from strategy executor state.
+        # These are not present in broker positions but should be visible in monitor.
+        svc = getattr(bot, "strategy_executor_service", None)
+        if svc is not None:
+            exec_states = dict(getattr(svc, "_exec_states", {}) or {})
+            engine_states = dict(getattr(svc, "_engine_states", {}) or {})
+            strategy_cfgs = dict(getattr(svc, "_strategies", {}) or {})
+
+            for strat_name, state in exec_states.items():
+                try:
+                    if not getattr(state, "has_position", False):
+                        continue
+                    cfg = strategy_cfgs.get(strat_name, {})
+                    is_paper = False
+                    try:
+                        is_paper = bool(getattr(svc, "_is_paper_mode")(cfg))
+                    except Exception:
+                        is_paper = bool(cfg.get("paper_mode"))
+                    if not is_paper:
+                        continue
+
+                    eng = engine_states.get(strat_name)
+                    owner_type = "strategy_active" if strat_name in active_strategies else "strategy_inactive"
+                    now_iso = datetime.now().isoformat()
+
+                    def _add_leg(
+                        symbol: str,
+                        qty: int,
+                        side: str,
+                        entry_price: float,
+                        ltp: float,
+                        pnl: float,
+                        delta: float,
+                        gamma: float,
+                        theta: float,
+                        vega: float,
+                    ) -> None:
+                        symbol = str(symbol or "").strip()
+                        if not symbol or int(qty or 0) <= 0:
+                            return
+                        key = (symbol, owner_type)
+                        if key in seen_symbol_owner:
+                            return
+                        seen_symbol_owner.add(key)
+
+                        classified.append({
+                            "symbol": symbol,
+                            "exchange": cfg.get("basic", {}).get("exchange", ""),
+                            "qty": int(qty),
+                            "side": str(side or "").upper(),
+                            "netqty": int(qty if str(side or "").upper() == "BUY" else -qty),
+                            "position_source": "PAPER",
+                            "avg_price": float(entry_price or 0),
+                            "ltp": float(ltp or 0),
+                            "realized_pnl": 0.0,
+                            "unrealized_pnl": float(pnl or 0),
+                            "total_pnl": float(pnl or 0),
+                            "delta": float(delta or 0),
+                            "gamma": float(gamma or 0),
+                            "theta": float(theta or 0),
+                            "vega": float(vega or 0),
+                            "strategy_name": strat_name,
+                            "owner_type": owner_type,
+                            "updated_at": now_iso,
+                        })
+
+                    _add_leg(
+                        symbol=getattr(state, "ce_symbol", ""),
+                        qty=int(getattr(state, "ce_qty", 0) or 0),
+                        side=str(getattr(state, "ce_side", "") or ""),
+                        entry_price=float(getattr(state, "ce_entry_price", 0) or 0),
+                        ltp=float(getattr(eng, "ce_ltp", 0) if eng else 0),
+                        pnl=float(getattr(eng, "ce_pnl", 0) if eng else 0),
+                        delta=float(getattr(eng, "ce_delta", 0) if eng else 0),
+                        gamma=float(getattr(eng, "ce_gamma", 0) if eng else 0),
+                        theta=float(getattr(eng, "ce_theta", 0) if eng else 0),
+                        vega=float(getattr(eng, "ce_vega", 0) if eng else 0),
+                    )
+                    _add_leg(
+                        symbol=getattr(state, "pe_symbol", ""),
+                        qty=int(getattr(state, "pe_qty", 0) or 0),
+                        side=str(getattr(state, "pe_side", "") or ""),
+                        entry_price=float(getattr(state, "pe_entry_price", 0) or 0),
+                        ltp=float(getattr(eng, "pe_ltp", 0) if eng else 0),
+                        pnl=float(getattr(eng, "pe_pnl", 0) if eng else 0),
+                        delta=float(getattr(eng, "pe_delta", 0) if eng else 0),
+                        gamma=float(getattr(eng, "pe_gamma", 0) if eng else 0),
+                        theta=float(getattr(eng, "pe_theta", 0) if eng else 0),
+                        vega=float(getattr(eng, "pe_vega", 0) if eng else 0),
+                    )
+                except Exception as leg_err:
+                    logger.debug("Skipping paper leg mapping for %s: %s", strat_name, leg_err)
+
+        strategy_positions = [p for p in classified if p["owner_type"] != "orphan"]
+        orphan_positions = [p for p in classified if p["owner_type"] == "orphan"]
+        leg_snapshot: dict[str, Any] = {}
+        if svc is not None:
+            try:
+                getter = getattr(svc, "get_strategy_leg_monitor_snapshot", None)
+                if callable(getter):
+                    leg_snapshot = getter() or {}
+            except Exception as snap_err:
+                logger.debug("Could not fetch strategy leg monitor snapshot: %s", snap_err)
+
+        by_strategy: dict[str, dict[str, Any]] = {}
+        for p in strategy_positions:
+            strat = p.get("strategy_name") or "UNKNOWN"
+            if strat not in by_strategy:
+                by_strategy[strat] = {
+                    "strategy_name": strat,
+                    "active": strat in active_strategies,
+                    "leg_count": 0,
+                    "total_qty": 0,
+                    "total_pnl": 0.0,
+                    "realized_pnl": 0.0,
+                    "unrealized_pnl": 0.0,
+                    "combined_delta": 0.0,
+                    "combined_gamma": 0.0,
+                    "combined_theta": 0.0,
+                    "combined_vega": 0.0,
+                    "active_legs": 0,
+                    "closed_legs": 0,
+                    "positions": [],
+                    "all_legs": [],
+                }
+            by_strategy[strat]["leg_count"] += 1
+            by_strategy[strat]["total_qty"] += int(p.get("qty", 0) or 0)
+            by_strategy[strat]["total_pnl"] += float(p.get("total_pnl", 0) or 0)
+            by_strategy[strat]["realized_pnl"] += float(p.get("realized_pnl", 0) or 0)
+            by_strategy[strat]["unrealized_pnl"] += float(p.get("unrealized_pnl", 0) or 0)
+            by_strategy[strat]["combined_delta"] += float(p.get("delta", 0) or 0)
+            by_strategy[strat]["combined_gamma"] += float(p.get("gamma", 0) or 0)
+            by_strategy[strat]["combined_theta"] += float(p.get("theta", 0) or 0)
+            by_strategy[strat]["combined_vega"] += float(p.get("vega", 0) or 0)
+            by_strategy[strat]["active_legs"] += 1
+            by_strategy[strat]["positions"].append(p)
+
+        # Merge full strategy leg history (active + closed) from executor snapshot.
+        for strat, snap in (leg_snapshot or {}).items():
+            if strat not in by_strategy:
+                by_strategy[strat] = {
+                    "strategy_name": strat,
+                    "active": strat in active_strategies,
+                    "leg_count": 0,
+                    "total_qty": 0,
+                    "total_pnl": 0.0,
+                    "realized_pnl": 0.0,
+                    "unrealized_pnl": 0.0,
+                    "combined_delta": 0.0,
+                    "combined_gamma": 0.0,
+                    "combined_theta": 0.0,
+                    "combined_vega": 0.0,
+                    "active_legs": 0,
+                    "closed_legs": 0,
+                    "positions": [],
+                    "all_legs": [],
+                }
+            group = by_strategy[strat]
+            legs = list((snap or {}).get("legs") or [])
+            # Keep latest first for UI readability.
+            legs.sort(key=lambda x: str(x.get("updated_at") or x.get("opened_at") or ""), reverse=True)
+            group["all_legs"] = legs
+            group["active_legs"] = int((snap or {}).get("active_legs", group.get("active_legs", 0)) or 0)
+            group["closed_legs"] = int((snap or {}).get("closed_legs", 0) or 0)
+            group["realized_pnl"] = float((snap or {}).get("realized_pnl", group.get("realized_pnl", 0.0)) or 0.0)
+            group["unrealized_pnl"] = float((snap or {}).get("unrealized_pnl", group.get("unrealized_pnl", 0.0)) or 0.0)
+            group["total_pnl"] = float(group["realized_pnl"] + group["unrealized_pnl"])
+            active_legs = [l for l in legs if str(l.get("status", "")).upper() == "ACTIVE"]
+            if active_legs:
+                group["combined_delta"] = sum(float(l.get("delta", 0) or 0) for l in active_legs)
+                group["combined_gamma"] = sum(float(l.get("gamma", 0) or 0) for l in active_legs)
+                group["combined_theta"] = sum(float(l.get("theta", 0) or 0) for l in active_legs)
+                group["combined_vega"] = sum(float(l.get("vega", 0) or 0) for l in active_legs)
+
+        # Fallback for strategies without explicit leg snapshot.
+        for group in by_strategy.values():
+            if group.get("all_legs"):
+                continue
+            fallback_legs = []
+            for p in group.get("positions", []):
+                fallback_legs.append({
+                    "strategy_name": group.get("strategy_name"),
+                    "exchange": p.get("exchange"),
+                    "symbol": p.get("symbol"),
+                    "side": p.get("side"),
+                    "qty": int(p.get("qty", 0) or 0),
+                    "entry_price": float(p.get("avg_price", 0) or 0),
+                    "exit_price": None,
+                    "status": "ACTIVE",
+                    "source": p.get("position_source") or "BROKER",
+                    "realized_pnl": float(p.get("realized_pnl", 0) or 0),
+                    "unrealized_pnl": float(p.get("unrealized_pnl", 0) or 0),
+                    "total_pnl": float(p.get("total_pnl", 0) or 0),
+                    "delta": float(p.get("delta", 0) or 0),
+                    "gamma": float(p.get("gamma", 0) or 0),
+                    "theta": float(p.get("theta", 0) or 0),
+                    "vega": float(p.get("vega", 0) or 0),
+                    "opened_at": p.get("updated_at") or "",
+                    "closed_at": None,
+                    "updated_at": p.get("updated_at") or "",
+                })
+            group["all_legs"] = fallback_legs
+
+        orphan_aggregate = {
+            "leg_count": len(orphan_positions),
+            "total_pnl": sum(float(p.get("total_pnl", 0) or 0) for p in orphan_positions),
+            "realized_pnl": sum(float(p.get("realized_pnl", 0) or 0) for p in orphan_positions),
+            "unrealized_pnl": sum(float(p.get("unrealized_pnl", 0) or 0) for p in orphan_positions),
+            "combined_delta": sum(float(p.get("delta", 0) or 0) for p in orphan_positions),
+            "combined_gamma": sum(float(p.get("gamma", 0) or 0) for p in orphan_positions),
+            "combined_theta": sum(float(p.get("theta", 0) or 0) for p in orphan_positions),
+            "combined_vega": sum(float(p.get("vega", 0) or 0) for p in orphan_positions),
+        }
+
+        strategy_realized = sum(float(g.get("realized_pnl", 0) or 0) for g in by_strategy.values())
+        strategy_unrealized = sum(float(g.get("unrealized_pnl", 0) or 0) for g in by_strategy.values())
+        portfolio_realized = strategy_realized + float(orphan_aggregate.get("realized_pnl", 0) or 0)
+        portfolio_unrealized = strategy_unrealized + float(orphan_aggregate.get("unrealized_pnl", 0) or 0)
+
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "active_strategy_names": sorted(active_strategies),
+            "summary": {
+                "total_open_positions": len(classified),
+                "strategy_linked_positions": len(strategy_positions),
+                "orphan_positions": len(orphan_positions),
+                "strategy_active_positions": len([p for p in classified if p["owner_type"] == "strategy_active"]),
+                "strategy_inactive_positions": len([p for p in classified if p["owner_type"] == "strategy_inactive"]),
+                "portfolio_total_pnl": float(portfolio_realized + portfolio_unrealized),
+                "portfolio_realized_pnl": float(portfolio_realized),
+                "portfolio_unrealized_pnl": float(portfolio_unrealized),
+                "strategy_realized_pnl": float(strategy_realized),
+                "strategy_unrealized_pnl": float(strategy_unrealized),
+                "total_strategy_legs_tracked": sum(len(g.get("all_legs") or []) for g in by_strategy.values()),
+                "total_closed_strategy_legs": sum(int(g.get("closed_legs", 0) or 0) for g in by_strategy.values()),
+                "portfolio_combined_delta": sum(float(p.get("delta", 0) or 0) for p in classified),
+                "portfolio_combined_gamma": sum(float(p.get("gamma", 0) or 0) for p in classified),
+                "portfolio_combined_theta": sum(float(p.get("theta", 0) or 0) for p in classified),
+                "portfolio_combined_vega": sum(float(p.get("vega", 0) or 0) for p in classified),
+            },
+            "strategy_groups": list(by_strategy.values()),
+            "orphan_aggregate": orphan_aggregate,
+            "orphan_positions": orphan_positions,
+            "all_positions": classified,
+        }
+    except Exception as e:
+        logger.exception("Failed to build live positions overview")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ======================================================================
 # 🔥 INDEX TOKENS API
 # ======================================================================
@@ -2904,23 +3309,33 @@ async def websocket_log_stream(websocket):
 # FILE-BASED LOG VIEW (REAL RUNTIME LOGS)
 # ======================================================================
 
-def _resolve_client_application_log(ctx: dict) -> Path:
+def _resolve_client_log_file(ctx: dict, component: str = "application") -> Path:
     """
-    Resolve client-scoped application log path.
+    Resolve client-scoped log path by component.
     Priority:
-    1) logs/<client_short_id>/application.log
-    2) logs/application.log
+    1) logs/<client_short_id>/<file>
+    2) logs/<file>
     """
     client_id = str(ctx.get("client_id", "") or "")
     short_id = client_id.split(":")[-1].strip() if client_id else ""
     log_root = _PROJECT_ROOT / "logs"
+    comp = str(component or "application").strip().lower()
+
+    filename_map = {
+        "application": "application.log",
+        "app": "application.log",
+        "strategy_executor": "strategy_executor.log",
+        "strategy": "strategy_executor.log",
+        "runner": "strategy_executor.log",
+    }
+    filename = filename_map.get(comp, "application.log")
 
     if short_id:
-        candidate = log_root / short_id / "application.log"
+        candidate = log_root / short_id / filename
         if candidate.exists():
             return candidate
 
-    fallback = log_root / "application.log"
+    fallback = log_root / filename
     return fallback
 
 
@@ -2929,6 +3344,7 @@ def get_runner_file_logs(
     strategy: Optional[str] = Query(None, description="Filter by strategy name"),
     lines: int = Query(300, ge=1, le=5000),
     level: Optional[str] = Query(None, description="DEBUG/INFO/WARNING/ERROR/CRITICAL"),
+    component: str = Query("application", description="application | strategy_executor"),
     ctx=Depends(require_dashboard_auth),
 ):
     """
@@ -2936,12 +3352,13 @@ def get_runner_file_logs(
     Returns plain text lines after optional strategy + level filtering.
     """
     try:
-        log_path = _resolve_client_application_log(ctx)
+        log_path = _resolve_client_log_file(ctx, component=component)
         if not log_path.exists():
             return {
                 "path": str(log_path),
                 "strategy": strategy,
                 "level": level,
+                "component": component,
                 "lines_returned": 0,
                 "lines": [],
                 "timestamp": datetime.now().isoformat(),
@@ -2970,6 +3387,7 @@ def get_runner_file_logs(
             "path": str(log_path),
             "strategy": strategy,
             "level": level_q or None,
+            "component": component,
             "lines_returned": len(filtered),
             "lines": filtered,
             "timestamp": datetime.now().isoformat(),

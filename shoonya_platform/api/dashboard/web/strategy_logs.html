@@ -177,6 +177,7 @@ const els = {
 let autoOn = true;
 let timer = null;
 let baseLines = [];
+const LOG_COMPONENT = 'strategy_executor';
 
 function esc(s) {
   return String(s || '').replace(/[&<>"']/g, (m) => ({
@@ -248,13 +249,15 @@ async function fetchLogs() {
 
   try {
     const qp = new URLSearchParams({ lines: String(lines) });
+    qp.set('component', LOG_COMPONENT);
     if (strategy !== '__all__') qp.set('strategy', strategy);
     if (level) qp.set('level', level);
     const r = await fetch(`/dashboard/runner/file-logs?${qp.toString()}`, { credentials: 'include' });
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
     const rawLines = Array.isArray(data.lines) ? data.lines : [];
-    els.source.textContent = `Source: ${data.path || '/dashboard/runner/file-logs'}`;
+    const srcComp = data.component || LOG_COMPONENT;
+    els.source.textContent = `Source: ${srcComp} (${data.path || '/dashboard/runner/file-logs'})`;
 
     baseLines = rawLines;
     render(baseLines);

@@ -299,6 +299,22 @@ input:checked + .toggle-slider:before {
 .status-dot.running { background:var(--success); animation:pulse 2s infinite; }
 .status-dot.stopped { background:var(--danger); }
 .status-dot.paused { background:var(--warning); }
+.monitor-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:10px;
+  margin-bottom:12px;
+}
+.monitor-card {
+  background:rgba(0,0,0,0.22);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px;
+}
+.monitor-label { font-size:11px; color:var(--muted); }
+.monitor-value { font-size:18px; font-weight:700; margin-top:4px; }
+.monitor-section { margin-top:14px; }
+.monitor-subtitle { font-size:12px; color:var(--primary); margin-bottom:8px; font-weight:700; }
 </style>
 </head>
 <body>
@@ -315,6 +331,7 @@ input:checked + .toggle-slider:before {
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>
     <button class="tab-btn" onclick="switchTab('running', this)">▶️ Running</button>
+    <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>
     <button class="tab-btn" onclick="switchTab('builder', this)">🔧 Builder</button>
   </div>
 
@@ -363,7 +380,28 @@ input:checked + .toggle-slider:before {
     </div>
   </div>
 
-  <!-- ====== TAB 3: STRATEGY BUILDER ====== -->
+  <!-- ====== TAB 3: LIVE MONITOR ====== -->
+  <div id="monitor-tab" class="tab-content">
+    <div class="widget">
+      <div class="widget-title">
+        <span>Live Position Monitor</span>
+        <button class="btn btn-secondary btn-sm" onclick="loadLiveMonitor()">⟳ Refresh</button>
+      </div>
+      <div id="monitor-summary" class="monitor-grid"></div>
+
+      <div class="monitor-section">
+        <div class="monitor-subtitle">Strategy-Linked Positions</div>
+        <div id="monitor-strategy-groups"></div>
+      </div>
+
+      <div class="monitor-section">
+        <div class="monitor-subtitle">Orphan Positions (not strategy-generated)</div>
+        <div id="monitor-orphans"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== TAB 4: STRATEGY BUILDER ====== -->
   <div id="builder-tab" class="tab-content">
     <div class="widget">
       <div class="widget-title">
@@ -498,6 +536,7 @@ function switchTab(name, btnEl=null) {
   const tabMap = {
     'list': 'list-tab',
     'running': 'running-tab',
+    'monitor': 'monitor-tab',
     'builder': 'builder-tab'
   };
   
@@ -507,6 +546,7 @@ function switchTab(name, btnEl=null) {
   
   if (name === 'list') loadStrategies();
   if (name === 'running') loadRunningStrategies();
+  if (name === 'monitor') loadLiveMonitor();
 }
 
 // ====== LOAD STRATEGIES ======
@@ -865,6 +905,132 @@ async function loadRunningStrategies() {
   `).join('');
 }
 
+function fmt2(n) {
+  const v = Number(n || 0);
+  return Number.isFinite(v) ? v.toFixed(2) : '0.00';
+}
+
+function renderMonitorTable(positions, isOrphan=false) {
+  if (!positions || !positions.length) {
+    return `<div style="color:var(--muted);font-size:12px;">No ${isOrphan ? 'orphan' : 'strategy-linked'} legs.</div>`;
+  }
+  return `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Owner</th>
+          <th>Source</th>
+          <th>Status</th>
+          <th>Side</th>
+          <th>Qty</th>
+          <th>Entry</th>
+          <th>Exit</th>
+          <th>LTP</th>
+          <th>Delta</th>
+          <th>Gamma</th>
+          <th>Theta</th>
+          <th>Vega</th>
+          <th>Realized</th>
+          <th>Unrealized</th>
+          <th>Total PnL</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${positions.map(p => `
+          <tr>
+            <td>${escHtml(p.symbol || '')}</td>
+            <td>${escHtml(p.strategy_name || 'ORPHAN')}</td>
+            <td>${escHtml(p.source || p.position_source || 'BROKER')}</td>
+            <td>${escHtml(p.status || 'ACTIVE')}</td>
+            <td>${escHtml(p.side || '')}</td>
+            <td>${Number(p.qty || 0)}</td>
+            <td>${fmt2(p.entry_price ?? p.avg_price)}</td>
+            <td>${p.exit_price == null ? '-' : fmt2(p.exit_price)}</td>
+            <td>${fmt2(p.ltp)}</td>
+            <td>${fmt2(p.delta)}</td>
+            <td>${fmt2(p.gamma)}</td>
+            <td>${fmt2(p.theta)}</td>
+            <td>${fmt2(p.vega)}</td>
+            <td style="color:${Number(p.realized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(p.realized_pnl)}</td>
+            <td style="color:${Number(p.unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(p.unrealized_pnl)}</td>
+            <td style="color:${Number(p.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(p.total_pnl)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadLiveMonitor() {
+  try {
+    const r = await api('GET', '/monitoring/live-positions-overview');
+    const s = r.summary || {};
+
+    $('monitor-summary').innerHTML = `
+      <div class="monitor-card"><div class="monitor-label">Open Positions</div><div class="monitor-value">${Number(s.total_open_positions||0)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Strategy Linked</div><div class="monitor-value">${Number(s.strategy_linked_positions||0)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Orphan</div><div class="monitor-value">${Number(s.orphan_positions||0)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Tracked Legs</div><div class="monitor-value">${Number(s.total_strategy_legs_tracked||0)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Closed Legs</div><div class="monitor-value">${Number(s.total_closed_strategy_legs||0)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Realized</div><div class="monitor-value" style="color:${Number(s.portfolio_realized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_realized_pnl)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Unrealized</div><div class="monitor-value" style="color:${Number(s.portfolio_unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_unrealized_pnl)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio PnL</div><div class="monitor-value" style="color:${Number(s.portfolio_total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_total_pnl)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Delta</div><div class="monitor-value">${fmt2(s.portfolio_combined_delta)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Gamma</div><div class="monitor-value">${fmt2(s.portfolio_combined_gamma)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Theta</div><div class="monitor-value">${fmt2(s.portfolio_combined_theta)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Vega</div><div class="monitor-value">${fmt2(s.portfolio_combined_vega)}</div></div>
+    `;
+
+    const groups = r.strategy_groups || [];
+    if (!groups.length) {
+      $('monitor-strategy-groups').innerHTML = '<div style="color:var(--muted);font-size:12px;">No strategy-linked positions.</div>';
+    } else {
+      $('monitor-strategy-groups').innerHTML = groups.map(g => `
+        <div class="strat-card">
+          <div class="strat-card-header">
+            <div class="strat-card-name">
+              ${escHtml(g.strategy_name)}
+              ${g.active ? '<span class="badge badge-running">ACTIVE</span>' : '<span class="badge badge-stopped">INACTIVE</span>'}
+            </div>
+            <div style="font-size:12px;color:${Number(g.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'};">PnL ${fmt2(g.total_pnl)}</div>
+          </div>
+          <div class="strat-card-meta">
+            <span><strong>Realized:</strong> ${fmt2(g.realized_pnl)}</span>
+            <span><strong>Unrealized:</strong> ${fmt2(g.unrealized_pnl)}</span>
+            <span><strong>Active Legs:</strong> ${Number(g.active_legs || 0)}</span>
+            <span><strong>Closed Legs:</strong> ${Number(g.closed_legs || 0)}</span>
+            <span><strong>Delta:</strong> ${fmt2(g.combined_delta)}</span>
+            <span><strong>Gamma:</strong> ${fmt2(g.combined_gamma)}</span>
+            <span><strong>Theta:</strong> ${fmt2(g.combined_theta)}</span>
+            <span><strong>Vega:</strong> ${fmt2(g.combined_vega)}</span>
+          </div>
+          ${renderMonitorTable(g.all_legs || g.positions || [])}
+        </div>
+      `).join('');
+    }
+
+    const oa = r.orphan_aggregate || {};
+    $('monitor-orphans').innerHTML = `
+      <div class="strat-card-meta" style="margin-bottom:8px;">
+        <span><strong>Legs:</strong> ${Number(oa.leg_count || 0)}</span>
+        <span><strong>Delta:</strong> ${fmt2(oa.combined_delta)}</span>
+        <span><strong>Gamma:</strong> ${fmt2(oa.combined_gamma)}</span>
+        <span><strong>Theta:</strong> ${fmt2(oa.combined_theta)}</span>
+        <span><strong>Vega:</strong> ${fmt2(oa.combined_vega)}</span>
+        <span><strong>Realized:</strong> <span style="color:${Number(oa.realized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.realized_pnl)}</span></span>
+        <span><strong>Unrealized:</strong> <span style="color:${Number(oa.unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.unrealized_pnl)}</span></span>
+        <span><strong>PnL:</strong> <span style="color:${Number(oa.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.total_pnl)}</span></span>
+      </div>
+      ${renderMonitorTable(r.orphan_positions || [], true)}
+    `;
+  } catch(e) {
+    $('monitor-summary').innerHTML = '';
+    $('monitor-strategy-groups').innerHTML = '';
+    $('monitor-orphans').innerHTML = `<div style="color:var(--danger);font-size:12px;">Failed to load live monitor: ${escHtml(e.message)}</div>`;
+  }
+}
+
 async function forceExit(name) {
   if (!confirm(`Force EXIT all positions for ${name}?`)) return;
   try {
@@ -922,6 +1088,9 @@ window.addEventListener('load', () => {
   setInterval(() => {
     if (document.querySelector('.tab-btn.active').textContent.includes('Running')) {
       loadRunningStrategies();
+    }
+    if (document.querySelector('.tab-btn.active').textContent.includes('Monitor')) {
+      loadLiveMonitor();
     }
   }, 3000);
 });

@@ -832,6 +832,9 @@ class StrategyExecutorService:
         self._readers: Dict[str, MarketReader] = {}
         self._exec_states: Dict[str, ExecutionState] = {}
         self._engine_states: Dict[str, StrategyState] = {}
+        self._leg_monitor: Dict[str, List[Dict[str, Any]]] = {}
+        self._leg_monitor_seq: int = 0
+        self._leg_monitor_lock = threading.RLock()
         
         # Staleness tracking
         self._stale_alerted: Set[str] = set()
@@ -986,6 +989,124 @@ class StrategyExecutorService:
             return "LIMIT", float(resolved_price or 0.0)
 
         return "MARKET", 0.0
+
+    def _open_monitored_leg(
+        self,
+        *,
+        strategy_name: str,
+        exchange: str,
+        symbol: str,
+        side: str,
+        qty: int,
+        entry_price: float,
+        source: str,
+    ) -> None:
+        symbol = str(symbol or "").strip()
+        if not symbol:
+            return
+        side_u = str(side or "").upper()
+        if side_u not in {"BUY", "SELL"}:
+            return
+        now_iso = datetime.now().isoformat()
+        with self._leg_monitor_lock:
+            rows = self._leg_monitor.setdefault(strategy_name, [])
+            for row in reversed(rows):
+                if row.get("symbol") == symbol and row.get("status") == "ACTIVE":
+                    return
+            self._leg_monitor_seq += 1
+            rows.append({
+                "leg_id": f"{strategy_name}:{self._leg_monitor_seq}",
+                "strategy_name": strategy_name,
+                "exchange": str(exchange or ""),
+                "symbol": symbol,
+                "side": side_u,
+                "qty": int(max(0, qty or 0)),
+                "entry_price": float(entry_price or 0.0),
+                "exit_price": None,
+                "status": "ACTIVE",
+                "source": str(source or "ENTRY"),
+                "realized_pnl": 0.0,
+                "unrealized_pnl": 0.0,
+                "total_pnl": 0.0,
+                "delta": 0.0,
+                "gamma": 0.0,
+                "theta": 0.0,
+                "vega": 0.0,
+                "opened_at": now_iso,
+                "closed_at": None,
+                "updated_at": now_iso,
+            })
+
+    def _update_monitored_leg_metrics(
+        self,
+        *,
+        strategy_name: str,
+        symbol: str,
+        unrealized_pnl: float,
+        delta: float,
+        gamma: float,
+        theta: float,
+        vega: float,
+        ltp: Optional[float] = None,
+    ) -> None:
+        symbol = str(symbol or "").strip()
+        if not symbol:
+            return
+        now_iso = datetime.now().isoformat()
+        with self._leg_monitor_lock:
+            rows = self._leg_monitor.get(strategy_name, [])
+            for row in reversed(rows):
+                if row.get("symbol") == symbol and row.get("status") == "ACTIVE":
+                    row["unrealized_pnl"] = float(unrealized_pnl or 0.0)
+                    row["delta"] = float(delta or 0.0)
+                    row["gamma"] = float(gamma or 0.0)
+                    row["theta"] = float(theta or 0.0)
+                    row["vega"] = float(vega or 0.0)
+                    row["total_pnl"] = float(row.get("realized_pnl", 0.0) or 0.0) + float(row.get("unrealized_pnl", 0.0) or 0.0)
+                    if ltp is not None:
+                        row["ltp"] = float(ltp or 0.0)
+                    row["updated_at"] = now_iso
+                    return
+
+    def _close_monitored_leg(
+        self,
+        *,
+        strategy_name: str,
+        symbol: str,
+        realized_pnl: float,
+        exit_price: Optional[float] = None,
+    ) -> None:
+        symbol = str(symbol or "").strip()
+        if not symbol:
+            return
+        now_iso = datetime.now().isoformat()
+        with self._leg_monitor_lock:
+            rows = self._leg_monitor.get(strategy_name, [])
+            for row in reversed(rows):
+                if row.get("symbol") == symbol and row.get("status") == "ACTIVE":
+                    row["status"] = "CLOSED"
+                    row["realized_pnl"] = float(realized_pnl or 0.0)
+                    row["unrealized_pnl"] = 0.0
+                    row["total_pnl"] = float(row["realized_pnl"])
+                    if exit_price is not None:
+                        row["exit_price"] = float(exit_price or 0.0)
+                    row["closed_at"] = now_iso
+                    row["updated_at"] = now_iso
+                    return
+
+    def get_strategy_leg_monitor_snapshot(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        with self._leg_monitor_lock:
+            for strategy_name, rows in self._leg_monitor.items():
+                copied = [dict(r) for r in rows]
+                out[strategy_name] = {
+                    "legs": copied,
+                    "active_legs": len([r for r in copied if r.get("status") == "ACTIVE"]),
+                    "closed_legs": len([r for r in copied if r.get("status") == "CLOSED"]),
+                    "realized_pnl": sum(float(r.get("realized_pnl", 0.0) or 0.0) for r in copied),
+                    "unrealized_pnl": sum(float(r.get("unrealized_pnl", 0.0) or 0.0) for r in copied if r.get("status") == "ACTIVE"),
+                }
+        return out
     
     def _reconcile_all_strategies_at_startup(self):
         """
@@ -1417,6 +1538,27 @@ class StrategyExecutorService:
                         
                         if exec_state.ce_entry_price > 0:
                             engine_state.ce_pnl_pct = (engine_state.ce_pnl / (exec_state.ce_entry_price * exec_state.ce_qty)) * 100.0
+                        self._update_monitored_leg_metrics(
+                            strategy_name=name,
+                            symbol=exec_state.ce_symbol,
+                            unrealized_pnl=float(engine_state.ce_pnl or 0.0),
+                            delta=float(engine_state.ce_delta or 0.0),
+                            gamma=float(engine_state.ce_gamma or 0.0),
+                            theta=float(engine_state.ce_theta or 0.0),
+                            vega=float(engine_state.ce_vega or 0.0),
+                            ltp=float(engine_state.ce_ltp or 0.0),
+                        )
+                    elif exec_state.ce_symbol:
+                        # Recovered/restarted state fallback: ensure active leg appears in monitor.
+                        self._open_monitored_leg(
+                            strategy_name=name,
+                            exchange=str(config.get("basic", {}).get("exchange", "NFO")),
+                            symbol=exec_state.ce_symbol,
+                            side=str(exec_state.ce_side or ""),
+                            qty=int(exec_state.ce_qty or 0),
+                            entry_price=float(exec_state.ce_entry_price or 0.0),
+                            source="RECOVERED",
+                        )
                 
                 # PE leg
                 if exec_state.pe_symbol:
@@ -1440,6 +1582,27 @@ class StrategyExecutorService:
                         
                         if exec_state.pe_entry_price > 0:
                             engine_state.pe_pnl_pct = (engine_state.pe_pnl / (exec_state.pe_entry_price * exec_state.pe_qty)) * 100.0
+                        self._update_monitored_leg_metrics(
+                            strategy_name=name,
+                            symbol=exec_state.pe_symbol,
+                            unrealized_pnl=float(engine_state.pe_pnl or 0.0),
+                            delta=float(engine_state.pe_delta or 0.0),
+                            gamma=float(engine_state.pe_gamma or 0.0),
+                            theta=float(engine_state.pe_theta or 0.0),
+                            vega=float(engine_state.pe_vega or 0.0),
+                            ltp=float(engine_state.pe_ltp or 0.0),
+                        )
+                    elif exec_state.pe_symbol:
+                        # Recovered/restarted state fallback: ensure active leg appears in monitor.
+                        self._open_monitored_leg(
+                            strategy_name=name,
+                            exchange=str(config.get("basic", {}).get("exchange", "NFO")),
+                            symbol=exec_state.pe_symbol,
+                            side=str(exec_state.pe_side or ""),
+                            qty=int(exec_state.pe_qty or 0),
+                            entry_price=float(exec_state.pe_entry_price or 0.0),
+                            source="RECOVERED",
+                        )
                 
                 engine_state.has_position = True
                 engine_state.ce_strike = exec_state.ce_strike
@@ -1778,6 +1941,27 @@ class StrategyExecutorService:
         
         exec_state.entry_timestamp = time.time()
         exec_state.total_trades_today += len(legs)
+
+        if ce_option and ce_symbol:
+            self._open_monitored_leg(
+                strategy_name=name,
+                exchange=exchange,
+                symbol=ce_symbol,
+                side=ce_direction,
+                qty=ce_qty,
+                entry_price=float(ce_option.get("ltp", 0) or 0.0),
+                source="ENTRY",
+            )
+        if pe_option and pe_symbol:
+            self._open_monitored_leg(
+                strategy_name=name,
+                exchange=exchange,
+                symbol=pe_symbol,
+                side=pe_direction,
+                qty=pe_qty,
+                entry_price=float(pe_option.get("ltp", 0) or 0.0),
+                source="ENTRY",
+            )
         
         self.state_mgr.save(exec_state)
         
@@ -1863,25 +2047,25 @@ class StrategyExecutorService:
             
             # Execute based on action type
             if action_type == "close_ce":
-                return self._adjustment_close_leg(name, exec_state, "CE", exchange, qty, config)
+                return self._adjustment_close_leg(name, exec_state, engine_state, "CE", exchange, qty, config)
             
             elif action_type == "close_pe":
-                return self._adjustment_close_leg(name, exec_state, "PE", exchange, qty, config)
+                return self._adjustment_close_leg(name, exec_state, engine_state, "PE", exchange, qty, config)
             
             elif action_type == "close_higher_delta":
                 leg = "CE" if abs(engine_state.ce_delta) >= abs(engine_state.pe_delta) else "PE"
                 logger.info(f"   Closing higher delta leg: {leg}")
-                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
+                return self._adjustment_close_leg(name, exec_state, engine_state, leg, exchange, qty, config)
             
             elif action_type == "close_lower_delta":
                 leg = "PE" if abs(engine_state.ce_delta) >= abs(engine_state.pe_delta) else "CE"
                 logger.info(f"   Closing lower delta leg: {leg}")
-                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
+                return self._adjustment_close_leg(name, exec_state, engine_state, leg, exchange, qty, config)
             
             elif action_type == "close_most_profitable" or action_type == "close_higher_pnl_leg":
                 leg = "CE" if engine_state.ce_pnl >= engine_state.pe_pnl else "PE"
                 logger.info(f"   Closing most profitable leg: {leg} (P&L: â‚¹{max(engine_state.ce_pnl, engine_state.pe_pnl):.2f})")
-                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
+                return self._adjustment_close_leg(name, exec_state, engine_state, leg, exchange, qty, config)
             
             elif action_type == "roll_ce":
                 return self._adjustment_roll_leg(name, exec_state, engine_state, "CE", config, reader, qty)
@@ -1939,6 +2123,7 @@ class StrategyExecutorService:
         self,
         name: str,
         exec_state: ExecutionState,
+        engine_state: StrategyState,
         leg: str,
         exchange: str,
         qty: int,
@@ -2003,6 +2188,15 @@ class StrategyExecutorService:
             logger.info(f"   â†’ Closing {leg} leg: {symbol}")
             result = self.bot.process_alert(alert)
             logger.info(f"   â† Close result: {result}")
+
+            realized = float(engine_state.ce_pnl if leg == "CE" else engine_state.pe_pnl)
+            exit_px = float(engine_state.ce_ltp if leg == "CE" else engine_state.pe_ltp)
+            self._close_monitored_leg(
+                strategy_name=name,
+                symbol=symbol,
+                realized_pnl=realized,
+                exit_price=exit_px,
+            )
             
             # Update state - remove the closed leg
             if leg == "CE":
@@ -2136,6 +2330,24 @@ class StrategyExecutorService:
             logger.info(f"   â†’ Rolling {leg}: {old_symbol} â†’ {new_symbol}")
             result = self.bot.process_alert(alert)
             logger.info(f"   â† Roll result: {result}")
+
+            realized = float(engine_state.ce_pnl if leg == "CE" else engine_state.pe_pnl)
+            exit_px = float(engine_state.ce_ltp if leg == "CE" else engine_state.pe_ltp)
+            self._close_monitored_leg(
+                strategy_name=name,
+                symbol=old_symbol,
+                realized_pnl=realized,
+                exit_price=exit_px,
+            )
+            self._open_monitored_leg(
+                strategy_name=name,
+                exchange=exchange,
+                symbol=new_symbol,
+                side=old_side,
+                qty=int(leg_qty),
+                entry_price=float(new_ltp or 0.0),
+                source="ADJUSTMENT_ROLL",
+            )
             
             # Update state with new position
             if leg == "CE":
@@ -2174,7 +2386,7 @@ class StrategyExecutorService:
                 pnl = engine_state.pe_pnl
             
             logger.info(f"   Locking profit by closing {leg} (P&L: â‚¹{pnl:.2f})")
-            return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
+            return self._adjustment_close_leg(name, exec_state, engine_state, leg, exchange, qty, config)
             
         except Exception as e:
             logger.error(f"   Lock profit failed: {e}", exc_info=True)
@@ -2447,6 +2659,35 @@ class StrategyExecutorService:
                     f"Position P&L: INR {engine_state.combined_pnl:.2f} | "
                     f"Cumulative Daily: INR {exec_state.cumulative_daily_pnl:.2f}"
                 )
+                if exec_state.ce_symbol:
+                    self._close_monitored_leg(
+                        strategy_name=name,
+                        symbol=exec_state.ce_symbol,
+                        realized_pnl=float(engine_state.ce_pnl or 0.0),
+                        exit_price=float(engine_state.ce_ltp or 0.0),
+                    )
+                if exec_state.pe_symbol:
+                    self._close_monitored_leg(
+                        strategy_name=name,
+                        symbol=exec_state.pe_symbol,
+                        realized_pnl=float(engine_state.pe_pnl or 0.0),
+                        exit_price=float(engine_state.pe_ltp or 0.0),
+                    )
+            else:
+                if exec_state.ce_symbol:
+                    self._close_monitored_leg(
+                        strategy_name=name,
+                        symbol=exec_state.ce_symbol,
+                        realized_pnl=0.0,
+                        exit_price=None,
+                    )
+                if exec_state.pe_symbol:
+                    self._close_monitored_leg(
+                        strategy_name=name,
+                        symbol=exec_state.pe_symbol,
+                        realized_pnl=0.0,
+                        exit_price=None,
+                    )
             
             # Clear position state
             exec_state.has_position = False

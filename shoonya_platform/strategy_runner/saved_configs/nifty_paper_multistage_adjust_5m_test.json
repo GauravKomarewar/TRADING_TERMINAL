@@ -1,20 +1,20 @@
 {
   "schema_version": "3.0",
-  "name": "CRUDEOILM_PAPER_PROFIT_ROLL_1M_TEST",
-  "description": "Paper test: short strangle near 0.40 delta, after 60s roll the most profitable leg, after 120s exit all",
+  "name": "NIFTY_PAPER_MULTISTAGE_ADJUST_5M_TEST",
+  "description": "Paper test: 5m lifecycle with 1m staged adjustments (profit, delta, greek/price, both-leg) then exit all",
   "paper_mode": true,
   "run_once": true,
   "poll_interval_sec": 2,
   "basic": {
-    "exchange": "MCX",
-    "underlying": "CRUDEOILM",
-    "expiry_mode": "monthly_current",
+    "exchange": "NFO",
+    "underlying": "NIFTY",
+    "expiry_mode": "weekly_current",
     "lots": 1,
     "enabled": true
   },
   "timing": {
     "entry_time": "09:00",
-    "exit_time": "23:20"
+    "exit_time": "15:20"
   },
   "market_data": {
     "source": "database"
@@ -45,12 +45,12 @@
   "adjustment": {
     "enabled": true,
     "check_interval_min": 0,
-    "max_adjustments_per_day": 1,
+    "max_adjustments_per_day": 4,
     "cooldown_seconds": 10,
     "rules": [
       {
         "priority": 1,
-        "name": "Roll CE if CE is most profitable after 60s",
+        "name": "Minute1 profit based: roll CE if CE most profitable",
         "rule_type": "if_then",
         "conditions": {
           "operator": "AND",
@@ -78,7 +78,7 @@
       },
       {
         "priority": 2,
-        "name": "Roll PE if PE is most profitable after 60s",
+        "name": "Minute1 profit based: roll PE if PE most profitable",
         "rule_type": "if_then",
         "conditions": {
           "operator": "AND",
@@ -103,6 +103,85 @@
         "action": {
           "type": "roll_pe"
         }
+      },
+      {
+        "priority": 3,
+        "name": "Minute2 delta based adjustment",
+        "rule_type": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "time_in_position_sec",
+              "comparator": ">=",
+              "value": 120
+            },
+            {
+              "parameter": "adjustments_today",
+              "comparator": "==",
+              "value": 1
+            },
+            {
+              "parameter": "delta_diff",
+              "comparator": ">=",
+              "value": 0.0
+            }
+          ]
+        },
+        "action": {
+          "type": "shift_strikes"
+        }
+      },
+      {
+        "priority": 4,
+        "name": "Minute3 greek/price based adjustment",
+        "rule_type": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "time_in_position_sec",
+              "comparator": ">=",
+              "value": 180
+            },
+            {
+              "parameter": "adjustments_today",
+              "comparator": "==",
+              "value": 2
+            },
+            {
+              "parameter": "any_leg_delta",
+              "comparator": ">=",
+              "value": 0.0
+            }
+          ]
+        },
+        "action": {
+          "type": "shift_strikes"
+        }
+      },
+      {
+        "priority": 5,
+        "name": "Minute4 both leg adjustment",
+        "rule_type": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "time_in_position_sec",
+              "comparator": ">=",
+              "value": 240
+            },
+            {
+              "parameter": "adjustments_today",
+              "comparator": "==",
+              "value": 3
+            }
+          ]
+        },
+        "action": {
+          "type": "roll_both"
+        }
       }
     ]
   },
@@ -112,12 +191,12 @@
       {
         "parameter": "time_in_position_sec",
         "comparator": ">=",
-        "value": 120
+        "value": 300
       },
       {
         "parameter": "time_current",
         "comparator": ">=",
-        "value": "23:20"
+        "value": "15:20"
       }
     ],
     "action": {
@@ -126,12 +205,12 @@
   },
   "risk_management": {
     "max_loss_per_day": 20000,
-    "max_trades_per_day": 20,
+    "max_trades_per_day": 50,
     "position_sizing": {
       "max_lots": 1,
       "scale_enabled": false
     }
   },
   "status": "STOPPED",
-  "status_updated_at": "2026-02-16T15:00:17.665913"
+  "status_updated_at": "2026-02-16T15:10:07.785927"
 }

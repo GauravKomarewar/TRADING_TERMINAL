@@ -2453,13 +2453,14 @@ class ShoonyaBot:
                     logger.error(f"Option supervisor signal error: {e}")
 
             # 3️⃣ STOP STRATEGY RUNNER (WITH TIMEOUT)
-            if hasattr(self, "strategy_runner"):
+            runner = getattr(self, "strategy_runner", None)
+            if runner is not None and hasattr(runner, "stop"):
                 try:
                     elapsed = time.time() - shutdown_start
                     remaining = shutdown_timeout - elapsed
                     if remaining > 5:
                         logger.info(f"⏳ Stopping StrategyRunner (timeout={remaining:.1f}s)")
-                        self.strategy_runner.stop(timeout=int(remaining))
+                        runner.stop(timeout=int(remaining))
                     else:
                         logger.warning("⚠️ StrategyRunner shutdown timeout - skipping")
                 except Exception as e:

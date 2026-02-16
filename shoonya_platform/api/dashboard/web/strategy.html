@@ -182,6 +182,25 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   padding-bottom:12px; 
   border-bottom:1px solid var(--border);
 }
+.modal-header-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.icon-close {
+  width:30px;
+  height:30px;
+  border:1px solid var(--border);
+  border-radius:6px;
+  background:rgba(255,255,255,0.06);
+  color:var(--text);
+  cursor:pointer;
+  font-size:18px;
+  line-height:1;
+}
+.icon-close:hover {
+  background:rgba(255,255,255,0.12);
+}
 .modal-footer { 
   display:flex; 
   gap:8px; 
@@ -315,6 +334,17 @@ input:checked + .toggle-slider:before {
 .monitor-value { font-size:18px; font-weight:700; margin-top:4px; }
 .monitor-section { margin-top:14px; }
 .monitor-subtitle { font-size:12px; color:var(--primary); margin-bottom:8px; font-weight:700; }
+.table-wrap { width:100%; overflow-x:auto; overflow-y:hidden; margin:0; padding:0; }
+.table-wrap .table { min-width:1450px; }
+.table td, .table th { white-space:nowrap; }
+.delta-pos { color: var(--success); font-weight: 700; }
+.delta-neg { color: var(--danger); font-weight: 700; }
+.delta-neutral { color: var(--muted); font-weight: 700; }
+.combined-delta-pill {
+  display:inline-block; padding:2px 8px; border-radius:10px; border:1px solid var(--border);
+  background:rgba(255,255,255,0.04); font-weight:700;
+}
+.monitor-tables-stack { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -329,11 +359,7 @@ input:checked + .toggle-slider:before {
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>
-    <button class="tab-btn" onclick="switchTab('running', this)">▶️ Running</button>
-    <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>
-    <button class="tab-btn" onclick="switchTab('builder', this)">🔧 Builder</button>
-  </div>
+    <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>    <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>  </div>
 
   <!-- ====== TAB 1: ALL STRATEGIES ====== -->
   <div id="list-tab" class="tab-content active">
@@ -341,7 +367,7 @@ input:checked + .toggle-slider:before {
       <div class="widget-title">
         <span>Saved Strategies</span>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary btn-sm" onclick="openBuilder()">+ New Strategy</button>
+          <button class="btn btn-primary btn-sm" onclick="openBuilderPage()">+ New Strategy</button>
           <button class="btn btn-secondary btn-sm" onclick="importStrategy()">Import</button>
         </div>
       </div>
@@ -369,18 +395,7 @@ input:checked + .toggle-slider:before {
     </div>
   </div>
 
-  <!-- ====== TAB 2: RUNNING STRATEGIES ====== -->
-  <div id="running-tab" class="tab-content">
-    <div class="widget">
-      <div class="widget-title">
-        <span>Active Strategies</span>
-        <button class="btn btn-danger btn-sm" onclick="stopAllStrategies()">⏹ Stop All</button>
-      </div>
-      <div id="running-list"></div>
-    </div>
-  </div>
-
-  <!-- ====== TAB 3: LIVE MONITOR ====== -->
+  <!-- ====== TAB 2: LIVE MONITOR ====== -->
   <div id="monitor-tab" class="tab-content">
     <div class="widget">
       <div class="widget-title">
@@ -397,59 +412,6 @@ input:checked + .toggle-slider:before {
       <div class="monitor-section">
         <div class="monitor-subtitle">Orphan Positions (not strategy-generated)</div>
         <div id="monitor-orphans"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ====== TAB 4: STRATEGY BUILDER ====== -->
-  <div id="builder-tab" class="tab-content">
-    <div class="widget">
-      <div class="widget-title">
-        <span id="builder-title">Create New Strategy</span>
-        <button class="btn btn-secondary btn-sm" onclick="openBuilderPage()">Advanced Builder →</button>
-      </div>
-      <p style="color:var(--muted);margin-bottom:16px;font-size:12px;">
-        Use the Advanced Builder for full rule-based configuration. This form is for quick basic setup.
-      </p>
-      
-      <div class="form-group">
-        <label>Strategy Name *</label>
-        <input type="text" id="new-name" class="form-control" placeholder="e.g., NIFTY DNSS Weekly">
-      </div>
-      
-      <div class="form-group">
-        <label>Strategy Type *</label>
-        <select id="new-type" class="form-control">
-          <option value="">Select...</option>
-          <option value="dnss">DNSS (Delta Neutral Short Strangle)</option>
-          <option value="iron_condor">Iron Condor</option>
-          <option value="strangle">Short Strangle</option>
-        </select>
-      </div>
-      
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <div class="form-group">
-          <label>Underlying *</label>
-          <input type="text" id="new-symbol" class="form-control" placeholder="NIFTY" value="NIFTY">
-        </div>
-        <div class="form-group">
-          <label>Exchange *</label>
-          <select id="new-exchange" class="form-control">
-            <option value="NFO">NFO</option>
-            <option value="MCX">MCX</option>
-            <option value="BFO">BFO</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Description</label>
-        <textarea id="new-description" class="form-control" placeholder="Strategy description..."></textarea>
-      </div>
-
-      <div class="modal-footer" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
-        <button class="btn btn-secondary" onclick="resetBuilder()">Reset</button>
-        <button class="btn btn-primary" onclick="createQuickStrategy()">Create Strategy</button>
       </div>
     </div>
   </div>
@@ -486,7 +448,7 @@ input:checked + .toggle-slider:before {
 <!-- View Details Modal -->
 <div id="details-modal" class="modal">
   <div class="modal-content" style="max-width:600px;">
-    <div class="modal-header">Strategy Details</div>
+    <div class="modal-header modal-header-row"><span>Strategy Details</span><button class="icon-close" type="button" onclick="closeModal('details-modal')" aria-label="Close details">&times;</button></div>
     <div id="details-content" style="font-size:12px;font-family:var(--font-mono);"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('details-modal')">Close</button>
@@ -503,6 +465,11 @@ let currentFilter = 'all';
 let currentToggleStrategy = null;
 let currentDeleteStrategy = null;
 let currentDetailsStrategy = null;
+const monitorRenderCache = {
+  summary: '',
+  groups: '',
+  orphans: ''
+};
 
 // ====== UTILS ======
 const $ = id => document.getElementById(id);
@@ -528,6 +495,13 @@ const api = async (method, path, body=null) => {
 
 const escHtml = str => String(str||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
+function setHtmlIfChanged(id, key, html) {
+  if (monitorRenderCache[key] !== html) {
+    monitorRenderCache[key] = html;
+    $(id).innerHTML = html;
+  }
+}
+
 // ====== TAB SWITCHING ======
 function switchTab(name, btnEl=null) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -535,17 +509,14 @@ function switchTab(name, btnEl=null) {
   
   const tabMap = {
     'list': 'list-tab',
-    'running': 'running-tab',
-    'monitor': 'monitor-tab',
-    'builder': 'builder-tab'
+    'monitor': 'monitor-tab'
   };
   
   const activeBtn = btnEl || document.querySelector(`.tab-btn[onclick*="switchTab('${name}'"]`);
   if (activeBtn) activeBtn.classList.add('active');
   $(tabMap[name]).classList.add('active');
   
-  if (name === 'list') loadStrategies();
-  if (name === 'running') loadRunningStrategies();
+  if (name === 'list') loadStrategies();
   if (name === 'monitor') loadLiveMonitor();
 }
 
@@ -590,7 +561,7 @@ function renderStrategies() {
       <div class="empty-state">
         <div class="empty-state-icon">📋</div>
         <div class="empty-state-text">No strategies found</div>
-        <button class="btn btn-primary btn-sm" onclick="openBuilder()">Create First Strategy</button>
+        <button class="btn btn-primary btn-sm" onclick="openBuilderPage()">Create First Strategy</button>
       </div>
     `;
     return;
@@ -611,13 +582,14 @@ function renderStrategies() {
             ${status !== 'IDLE' ? `<span class="badge badge-${status.toLowerCase()}">${status}</span>` : ''}
           </div>
           <div class="strat-card-actions">
-            ${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name)}')">▶ Start</button>` : ''}
-            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name)}')">⏹ Stop</button>` : ''}
-            <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name)}')">📋 Logs</button>
-            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${escHtml(s.name)}')">👁</button>
-            <button class="btn btn-secondary btn-sm" onclick="toggleEnabled('${escHtml(s.name)}', ${enabled})">${enabled ? '🔴' : '🟢'}</button>
-            <button class="btn btn-warning btn-sm" onclick="cloneStrategy('${escHtml(s.name)}')">📋</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteStrategy('${escHtml(s.name)}')">🗑</button>
+            ${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name)}')">Start</button>` : ''}
+            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name)}')">Stop</button>` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name)}')">Logs</button>
+            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${escHtml(s.name)}')">View</button>
+            <button class="btn btn-primary btn-sm" onclick="editStrategy('${escHtml(s.name)}')">Edit</button>
+            <button class="btn btn-secondary btn-sm" onclick="toggleEnabled('${escHtml(s.name)}', ${enabled})">${enabled ? 'Disable' : 'Enable'}</button>
+            <button class="btn btn-warning btn-sm" onclick="cloneStrategy('${escHtml(s.name)}')">Clone</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteStrategy('${escHtml(s.name)}')">Delete</button>
           </div>
         </div>
         <div class="strat-card-meta">
@@ -671,95 +643,9 @@ async function stopStrategy(name) {
   }
 }
 
-async function stopAllStrategies() {
-  if (!confirm('Stop all running strategies?')) return;
-  const running = allStrategies.filter(s => s.status === 'RUNNING');
-  for (const s of running) {
-    try {
-      await stopStrategy(s.name);
-    } catch(e) {
-      console.error('Failed to stop ' + s.name, e);
-    }
-  }
-}
 
-// ====== ENABLE/DISABLE ======
-function toggleEnabled(name, currentlyEnabled) {
-  currentToggleStrategy = { name, currentlyEnabled };
-  const modal = $('toggle-modal');
-  const title = $('toggle-modal-title');
-  const message = $('toggle-modal-message');
-  
-  if (currentlyEnabled) {
-    title.textContent = 'Disable Strategy';
-    message.innerHTML = `Disable strategy <strong>${escHtml(name)}</strong>? It will not auto-start on bot restart.`;
-  } else {
-    title.textContent = 'Enable Strategy';
-    message.innerHTML = `Enable strategy <strong>${escHtml(name)}</strong>?`;
-  }
-  
-  modal.classList.add('show');
-}
-
-async function confirmToggle() {
-  if (!currentToggleStrategy) return;
-  
-  try {
-    const newEnabled = !currentToggleStrategy.currentlyEnabled;
-    const current = await api('GET', `/strategy/config/${encodeURIComponent(currentToggleStrategy.name)}`);
-    const updated = { ...current, enabled: newEnabled };
-    await api('POST', '/strategy/config/save-all', updated);
-    toast(`Strategy ${newEnabled ? 'enabled' : 'disabled'}`);
-    closeModal('toggle-modal');
-    loadStrategies();
-  } catch(e) {
-    toast('Failed to toggle: ' + e.message, 'error');
-  }
-}
-
-// ====== DELETE ======
-function deleteStrategy(name) {
-  currentDeleteStrategy = name;
-  $('delete-strategy-name').textContent = name;
-  $('delete-modal').classList.add('show');
-}
-
-async function confirmDelete() {
-  if (!currentDeleteStrategy) return;
-  
-  try {
-    await api('DELETE', `/strategy/config/${encodeURIComponent(currentDeleteStrategy)}`);
-    toast('Strategy deleted');
-    closeModal('delete-modal');
-    loadStrategies();
-  } catch(e) {
-    toast('Failed to delete: ' + e.message, 'error');
-  }
-}
-
-// ====== VIEW DETAILS ======
-async function viewDetails(name) {
-  try {
-    const r = await api('GET', `/strategy/config/${encodeURIComponent(name)}`);
-    currentDetailsStrategy = r;
-    
-    const content = $('details-content');
-    content.innerHTML = `
-      <div style="background:rgba(0,0,0,0.3);padding:12px;border-radius:6px;overflow-x:auto;">
-        <pre style="margin:0;white-space:pre-wrap;word-wrap:break-word;">${JSON.stringify(r, null, 2)}</pre>
-      </div>
-    `;
-    
-    $('details-modal').classList.add('show');
-  } catch(e) {
-    toast('Failed to load details: ' + e.message, 'error');
-  }
-}
-
-function editCurrentStrategy() {
-  if (!currentDetailsStrategy) return;
-  closeModal('details-modal');
-  openBuilderPage(); // Opens advanced builder in new tab
+function editStrategy(name) {
+  openBuilderPage();
 }
 
 // ====== CLONE ======
@@ -773,79 +659,6 @@ async function cloneStrategy(name) {
   } catch(e) {
     toast('Failed to clone: ' + e.message, 'error');
   }
-}
-
-// ====== QUICK CREATE ======
-async function createQuickStrategy() {
-  const name = $('new-name').value.trim();
-  const type = $('new-type').value;
-  const symbol = $('new-symbol').value.trim();
-  const exchange = $('new-exchange').value;
-  const description = $('new-description').value.trim();
-  
-  if (!name) { toast('Name required', 'error'); return; }
-  if (!type) { toast('Type required', 'error'); return; }
-  if (!symbol) { toast('Symbol required', 'error'); return; }
-  
-  const config = {
-    name,
-    strategy_type: type,
-    description,
-    enabled: true,
-    basic: {
-      exchange,
-      underlying: symbol,
-      lots: 1,
-      instrument_type: 'OPTIDX'
-    },
-    timing: {
-      entry_time: '09:20',
-      exit_time: '15:20'
-    },
-    entry: {
-      conditions: {},
-      action: { type: 'short_both' }
-    },
-    adjustment: {
-      enabled: false,
-      conditions: []
-    },
-    exit: {
-      conditions: [
-        {
-          type: 'time',
-          operator: '>=',
-          value: '15:20'
-        }
-      ]
-    },
-    risk: {
-      target: { pct: 50 },
-      stoploss: { pct: 100 }
-    },
-    rms: {
-      position: { max_lots: 10 },
-      daily: { loss_limit: null },
-      circuit: { amount: null }
-    }
-  };
-  
-  try {
-    await api('POST', '/strategy/config/save-all', config);
-    toast('Strategy created');
-    resetBuilder();
-    switchTab('list');
-  } catch(e) {
-    toast('Failed to create: ' + e.message, 'error');
-  }
-}
-
-function resetBuilder() {
-  $('new-name').value = '';
-  $('new-type').value = '';
-  $('new-symbol').value = 'NIFTY';
-  $('new-exchange').value = 'NFO';
-  $('new-description').value = '';
 }
 
 // ====== RUNNER STATUS ======
@@ -867,47 +680,80 @@ async function refreshStatus() {
   }
 }
 
-// ====== RUNNING STRATEGIES ======
-async function loadRunningStrategies() {
-  const list = $('running-list');
-  const running = allStrategies.filter(s => s.status === 'RUNNING');
-  
-  if (!running.length) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">⏸️</div>
-        <div class="empty-state-text">No strategies currently running</div>
-      </div>
-    `;
-    return;
-  }
-  
-  list.innerHTML = running.map(s => `
-    <div class="strat-card">
-      <div class="strat-card-header">
-        <div class="strat-card-name">
-          <span class="status-dot running"></span>
-          ${escHtml(s.name)}
-          <span class="badge badge-running">RUNNING</span>
-        </div>
-        <div class="strat-card-actions">
-          <button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name)}')">⏹ Stop</button>
-          <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name)}')">📋 Logs</button>
-          <button class="btn btn-warning btn-sm" onclick="forceExit('${escHtml(s.name)}')">⚠️ Force Exit</button>
-        </div>
-      </div>
-      <div class="strat-card-meta">
-        <span><strong>Type:</strong> ${escHtml(s.strategy_type||'N/A')}</span>
-        <span><strong>Symbol:</strong> ${escHtml(s.identity?.underlying||s.basic?.underlying||'N/A')}</span>
-        <span><strong>Exchange:</strong> ${escHtml(s.identity?.exchange||s.basic?.exchange||'N/A')}</span>
-      </div>
-    </div>
-  `).join('');
-}
-
 function fmt2(n) {
   const v = Number(n || 0);
   return Number.isFinite(v) ? v.toFixed(2) : '0.00';
+}
+
+function fmtRuntime(sec) {
+  const s = Number(sec || 0);
+  if (!Number.isFinite(s) || s <= 0) return '0m';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = Math.floor(s % 60);
+  if (h > 0) return `${h}h ${m}m ${ss}s`;
+  return `${m}m ${ss}s`;
+}
+
+function deltaClass(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n)) return 'delta-neutral';
+  if (n > 0.05) return 'delta-pos';
+  if (n < -0.05) return 'delta-neg';
+  return 'delta-neutral';
+}
+
+function collapseBySymbol(rows) {
+  const items = Array.isArray(rows) ? rows : [];
+  const map = new Map();
+
+  for (const p of items) {
+    const key = String(p.symbol || '').trim() || 'UNKNOWN';
+    if (!map.has(key)) {
+      map.set(key, {
+        ...p,
+        symbol: key
+      });
+      continue;
+    }
+    const x = map.get(key);
+    x.qty = Number(x.qty || 0) + Number(p.qty || 0);
+    x.realized_pnl = Number(x.realized_pnl || 0) + Number(p.realized_pnl || 0);
+    x.unrealized_pnl = Number(x.unrealized_pnl || 0) + Number(p.unrealized_pnl || 0);
+    x.total_pnl = Number(x.total_pnl || 0) + Number(p.total_pnl || 0);
+    x.delta = Number(x.delta || 0) + Number(p.delta || 0);
+    x.gamma = Number(x.gamma || 0) + Number(p.gamma || 0);
+    x.theta = Number(x.theta || 0) + Number(p.theta || 0);
+    x.vega = Number(x.vega || 0) + Number(p.vega || 0);
+
+    if (x.side && p.side && x.side !== p.side) x.side = 'MIXED';
+    if (!x.side && p.side) x.side = p.side;
+    if (!x.owner && p.owner) x.owner = p.owner;
+    if (!x.source && (p.source || p.position_source)) x.source = p.source || p.position_source;
+    if (x.exit_price == null && p.exit_price != null) x.exit_price = p.exit_price;
+    if ((x.entry_price ?? x.avg_price) == null && (p.entry_price ?? p.avg_price) != null) {
+      x.entry_price = p.entry_price;
+      x.avg_price = p.avg_price;
+    }
+    if (x.ltp == null && p.ltp != null) x.ltp = p.ltp;
+    if (!x.status && p.status) x.status = p.status;
+  }
+
+  const sideRank = (side) => {
+    const s = String(side || '').toUpperCase();
+    if (s === 'SELL') return 0;
+    if (s === 'BUY') return 1;
+    if (s === 'MIXED') return 2;
+    return 3;
+  };
+
+  return [...map.values()].sort((a, b) => {
+    const sym = String(a.symbol || '').localeCompare(String(b.symbol || ''));
+    if (sym !== 0) return sym;
+    const side = sideRank(a.side) - sideRank(b.side);
+    if (side !== 0) return side;
+    return String(a.status || '').localeCompare(String(b.status || ''));
+  });
 }
 
 function renderMonitorTable(positions, isOrphan=false) {
@@ -915,50 +761,52 @@ function renderMonitorTable(positions, isOrphan=false) {
     return `<div style="color:var(--muted);font-size:12px;">No ${isOrphan ? 'orphan' : 'strategy-linked'} legs.</div>`;
   }
   return `
+    <div class="table-wrap">
     <table class="table">
       <thead>
         <tr>
           <th>Symbol</th>
-          <th>Owner</th>
-          <th>Source</th>
-          <th>Status</th>
           <th>Side</th>
           <th>Qty</th>
           <th>Entry</th>
           <th>Exit</th>
           <th>LTP</th>
+          <th>Realized</th>
+          <th>Unrealized</th>
+          <th>Total PnL</th>
           <th>Delta</th>
           <th>Gamma</th>
           <th>Theta</th>
           <th>Vega</th>
-          <th>Realized</th>
-          <th>Unrealized</th>
-          <th>Total PnL</th>
+          <th>Status</th>
+          <th>Source</th>
+          <th>Owner</th>
         </tr>
       </thead>
       <tbody>
         ${positions.map(p => `
           <tr>
             <td>${escHtml(p.symbol || '')}</td>
-            <td>${escHtml(p.strategy_name || 'ORPHAN')}</td>
-            <td>${escHtml(p.source || p.position_source || 'BROKER')}</td>
-            <td>${escHtml(p.status || 'ACTIVE')}</td>
             <td>${escHtml(p.side || '')}</td>
             <td>${Number(p.qty || 0)}</td>
             <td>${fmt2(p.entry_price ?? p.avg_price)}</td>
             <td>${p.exit_price == null ? '-' : fmt2(p.exit_price)}</td>
             <td>${fmt2(p.ltp)}</td>
-            <td>${fmt2(p.delta)}</td>
-            <td>${fmt2(p.gamma)}</td>
-            <td>${fmt2(p.theta)}</td>
-            <td>${fmt2(p.vega)}</td>
             <td style="color:${Number(p.realized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(p.realized_pnl)}</td>
             <td style="color:${Number(p.unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(p.unrealized_pnl)}</td>
             <td style="color:${Number(p.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(p.total_pnl)}</td>
+            <td class="${deltaClass(p.delta)}">${fmt2(p.delta)}</td>
+            <td>${fmt2(p.gamma)}</td>
+            <td>${fmt2(p.theta)}</td>
+            <td>${fmt2(p.vega)}</td>
+            <td>${escHtml(p.status || 'ACTIVE')}</td>
+            <td>${escHtml(p.source || p.position_source || 'BROKER')}</td>
+            <td>${escHtml(p.owner || p.strategy_name || 'ORPHAN')}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
+    </div>
   `;
 }
 
@@ -967,7 +815,7 @@ async function loadLiveMonitor() {
     const r = await api('GET', '/monitoring/live-positions-overview');
     const s = r.summary || {};
 
-    $('monitor-summary').innerHTML = `
+    const summaryHtml = `
       <div class="monitor-card"><div class="monitor-label">Open Positions</div><div class="monitor-value">${Number(s.total_open_positions||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Strategy Linked</div><div class="monitor-value">${Number(s.strategy_linked_positions||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Orphan</div><div class="monitor-value">${Number(s.orphan_positions||0)}</div></div>
@@ -981,37 +829,58 @@ async function loadLiveMonitor() {
       <div class="monitor-card"><div class="monitor-label">Portfolio Theta</div><div class="monitor-value">${fmt2(s.portfolio_combined_theta)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio Vega</div><div class="monitor-value">${fmt2(s.portfolio_combined_vega)}</div></div>
     `;
+    setHtmlIfChanged('monitor-summary', 'summary', summaryHtml);
 
     const groups = r.strategy_groups || [];
+    const sortedGroups = [...groups].sort((a, b) =>
+      String(a.strategy_name || '').localeCompare(String(b.strategy_name || ''))
+    );
     if (!groups.length) {
-      $('monitor-strategy-groups').innerHTML = '<div style="color:var(--muted);font-size:12px;">No strategy-linked positions.</div>';
+      setHtmlIfChanged('monitor-strategy-groups', 'groups', '<div style="color:var(--muted);font-size:12px;">No strategy-linked positions.</div>');
     } else {
-      $('monitor-strategy-groups').innerHTML = groups.map(g => `
-        <div class="strat-card">
-          <div class="strat-card-header">
-            <div class="strat-card-name">
-              ${escHtml(g.strategy_name)}
-              ${g.active ? '<span class="badge badge-running">ACTIVE</span>' : '<span class="badge badge-stopped">INACTIVE</span>'}
+      const groupsHtml = sortedGroups.map(g => {
+        const allRows = g.all_legs || g.positions || [];
+        const activeRowsRaw = (g.active_leg_rows && g.active_leg_rows.length)
+          ? g.active_leg_rows
+          : allRows.filter(x => String(x.status || 'ACTIVE').toUpperCase() !== 'CLOSED');
+        const closedRowsRaw = (g.closed_leg_rows && g.closed_leg_rows.length)
+          ? g.closed_leg_rows
+          : allRows.filter(x => String(x.status || '').toUpperCase() === 'CLOSED');
+
+        return `
+          <div class="strat-card">
+            <div class="strat-card-header">
+              <div class="strat-card-name">
+                ${escHtml(g.strategy_name)}
+                ${g.active ? '<span class="badge badge-running">ACTIVE</span>' : '<span class="badge badge-stopped">INACTIVE</span>'}
+              </div>
+              <div style="font-size:12px;color:${Number(g.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'};">PnL ${fmt2(g.total_pnl)}</div>
             </div>
-            <div style="font-size:12px;color:${Number(g.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'};">PnL ${fmt2(g.total_pnl)}</div>
+            <div class="strat-card-meta">
+              <span><strong>Runtime:</strong> ${fmtRuntime(g.runtime_seconds)} ${g.runtime_state === 'RUNNING' ? '(Live)' : (g.runtime_state === 'COMPLETED' ? '(Completed)' : '')}</span>
+              <span><strong>Realized:</strong> ${fmt2(g.realized_pnl)}</span>
+              <span><strong>Unrealized:</strong> ${fmt2(g.unrealized_pnl)}</span>
+              <span><strong>Active Legs:</strong> ${Number(g.active_legs || activeRowsRaw.length || 0)}</span>
+              <span><strong>Closed Legs:</strong> ${Number(g.closed_legs || closedRowsRaw.length || 0)}</span>
+              <span><strong>Delta:</strong> <span class="combined-delta-pill ${deltaClass(g.combined_delta)}">${fmt2(g.combined_delta)}</span></span>
+              <span><strong>Gamma:</strong> ${fmt2(g.combined_gamma)}</span>
+              <span><strong>Theta:</strong> ${fmt2(g.combined_theta)}</span>
+              <span><strong>Vega:</strong> ${fmt2(g.combined_vega)}</span>
+            </div>
+            <div class="monitor-tables-stack">
+              <div class="monitor-subtitle" style="margin-top:10px;">Active Legs</div>
+              ${renderMonitorTable(collapseBySymbol(activeRowsRaw))}
+              <div class="monitor-subtitle" style="margin-top:12px;">Closed Legs</div>
+              ${renderMonitorTable(collapseBySymbol(closedRowsRaw))}
+            </div>
           </div>
-          <div class="strat-card-meta">
-            <span><strong>Realized:</strong> ${fmt2(g.realized_pnl)}</span>
-            <span><strong>Unrealized:</strong> ${fmt2(g.unrealized_pnl)}</span>
-            <span><strong>Active Legs:</strong> ${Number(g.active_legs || 0)}</span>
-            <span><strong>Closed Legs:</strong> ${Number(g.closed_legs || 0)}</span>
-            <span><strong>Delta:</strong> ${fmt2(g.combined_delta)}</span>
-            <span><strong>Gamma:</strong> ${fmt2(g.combined_gamma)}</span>
-            <span><strong>Theta:</strong> ${fmt2(g.combined_theta)}</span>
-            <span><strong>Vega:</strong> ${fmt2(g.combined_vega)}</span>
-          </div>
-          ${renderMonitorTable(g.all_legs || g.positions || [])}
-        </div>
-      `).join('');
+        `;
+      }).join('');
+      setHtmlIfChanged('monitor-strategy-groups', 'groups', groupsHtml);
     }
 
     const oa = r.orphan_aggregate || {};
-    $('monitor-orphans').innerHTML = `
+    const orphansHtml = `
       <div class="strat-card-meta" style="margin-bottom:8px;">
         <span><strong>Legs:</strong> ${Number(oa.leg_count || 0)}</span>
         <span><strong>Delta:</strong> ${fmt2(oa.combined_delta)}</span>
@@ -1022,9 +891,13 @@ async function loadLiveMonitor() {
         <span><strong>Unrealized:</strong> <span style="color:${Number(oa.unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.unrealized_pnl)}</span></span>
         <span><strong>PnL:</strong> <span style="color:${Number(oa.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.total_pnl)}</span></span>
       </div>
-      ${renderMonitorTable(r.orphan_positions || [], true)}
+      ${renderMonitorTable(collapseBySymbol(r.orphan_positions || []), true)}
     `;
+    setHtmlIfChanged('monitor-orphans', 'orphans', orphansHtml);
   } catch(e) {
+    monitorRenderCache.summary = '';
+    monitorRenderCache.groups = '';
+    monitorRenderCache.orphans = '';
     $('monitor-summary').innerHTML = '';
     $('monitor-strategy-groups').innerHTML = '';
     $('monitor-orphans').innerHTML = `<div style="color:var(--danger);font-size:12px;">Failed to load live monitor: ${escHtml(e.message)}</div>`;
@@ -1046,12 +919,8 @@ function closeModal(id) {
   $(id).classList.remove('show');
 }
 
-function openBuilder() {
-  switchTab('builder');
-}
-
 function openBuilderPage() {
-  window.open('/dashboard/web/strategy_builder.html', '_blank');
+  window.location.href = '/dashboard/web/strategy_builder.html';
 }
 
 function openLogs(name) {
@@ -1086,13 +955,22 @@ window.addEventListener('load', () => {
   refreshStatus();
   setInterval(refreshStatus, 5000);
   setInterval(() => {
-    if (document.querySelector('.tab-btn.active').textContent.includes('Running')) {
-      loadRunningStrategies();
-    }
     if (document.querySelector('.tab-btn.active').textContent.includes('Monitor')) {
       loadLiveMonitor();
     }
   }, 3000);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
+  }
+});
+
+document.querySelectorAll('.modal').forEach((modalEl) => {
+  modalEl.addEventListener('click', (e) => {
+    if (e.target === modalEl) modalEl.classList.remove('show');
+  });
 });
 </script>
 </body>

@@ -2426,17 +2426,65 @@ def get_live_positions_overview(
             # Keep latest first for UI readability.
             legs.sort(key=lambda x: str(x.get("updated_at") or x.get("opened_at") or ""), reverse=True)
             group["all_legs"] = legs
+            group["active_leg_rows"] = [l for l in legs if str(l.get("status", "")).upper() == "ACTIVE"]
+            group["closed_leg_rows"] = [l for l in legs if str(l.get("status", "")).upper() == "CLOSED"]
             group["active_legs"] = int((snap or {}).get("active_legs", group.get("active_legs", 0)) or 0)
             group["closed_legs"] = int((snap or {}).get("closed_legs", 0) or 0)
             group["realized_pnl"] = float((snap or {}).get("realized_pnl", group.get("realized_pnl", 0.0)) or 0.0)
             group["unrealized_pnl"] = float((snap or {}).get("unrealized_pnl", group.get("unrealized_pnl", 0.0)) or 0.0)
             group["total_pnl"] = float(group["realized_pnl"] + group["unrealized_pnl"])
-            active_legs = [l for l in legs if str(l.get("status", "")).upper() == "ACTIVE"]
+            active_legs = list(group["active_leg_rows"])
             if active_legs:
                 group["combined_delta"] = sum(float(l.get("delta", 0) or 0) for l in active_legs)
                 group["combined_gamma"] = sum(float(l.get("gamma", 0) or 0) for l in active_legs)
                 group["combined_theta"] = sum(float(l.get("theta", 0) or 0) for l in active_legs)
                 group["combined_vega"] = sum(float(l.get("vega", 0) or 0) for l in active_legs)
+
+            opened_ts_all = []
+            closed_ts_all = []
+            opened_ts_active = []
+            for l in legs:
+                raw_opened = l.get("opened_at")
+                raw_closed = l.get("closed_at")
+                status_u = str(l.get("status", "")).upper()
+                try:
+                    if raw_opened:
+                        ts_open = datetime.fromisoformat(str(raw_opened)).timestamp()
+                        opened_ts_all.append(ts_open)
+                        if status_u == "ACTIVE":
+                            opened_ts_active.append(ts_open)
+                except Exception:
+                    pass
+                try:
+                    if raw_closed:
+                        closed_ts_all.append(datetime.fromisoformat(str(raw_closed)).timestamp())
+                except Exception:
+                    pass
+
+            if group["active_legs"] > 0 and opened_ts_active:
+                # Running runtime: live elapsed from oldest active leg open.
+                runtime_seconds = int(max(0, time.time() - min(opened_ts_active)))
+                runtime_state = "RUNNING"
+            elif opened_ts_all and closed_ts_all:
+                # Completed runtime: fixed elapsed from first open to last close.
+                runtime_seconds = int(max(0, max(closed_ts_all) - min(opened_ts_all)))
+                runtime_state = "COMPLETED"
+            else:
+                runtime_seconds = 0
+                runtime_state = "IDLE"
+
+            group["runtime_seconds"] = runtime_seconds
+            group["runtime_state"] = runtime_state
+            group["analytics"] = {
+                "win_legs": len([l for l in group["closed_leg_rows"] if float(l.get("realized_pnl", 0) or 0) > 0]),
+                "loss_legs": len([l for l in group["closed_leg_rows"] if float(l.get("realized_pnl", 0) or 0) < 0]),
+                "flat_legs": len([l for l in group["closed_leg_rows"] if float(l.get("realized_pnl", 0) or 0) == 0]),
+                "avg_realized_per_closed_leg": (
+                    float(group["realized_pnl"]) / float(group["closed_legs"])
+                    if float(group["closed_legs"] or 0) > 0
+                    else 0.0
+                ),
+            }
 
         # Fallback for strategies without explicit leg snapshot.
         for group in by_strategy.values():
@@ -2466,6 +2514,16 @@ def get_live_positions_overview(
                     "updated_at": p.get("updated_at") or "",
                 })
             group["all_legs"] = fallback_legs
+            group["active_leg_rows"] = [l for l in fallback_legs if str(l.get("status", "")).upper() == "ACTIVE"]
+            group["closed_leg_rows"] = [l for l in fallback_legs if str(l.get("status", "")).upper() == "CLOSED"]
+            group["runtime_seconds"] = 0
+            group["runtime_state"] = "IDLE"
+            group["analytics"] = {
+                "win_legs": 0,
+                "loss_legs": 0,
+                "flat_legs": 0,
+                "avg_realized_per_closed_leg": 0.0,
+            }
 
         orphan_aggregate = {
             "leg_count": len(orphan_positions),

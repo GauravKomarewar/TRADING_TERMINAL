@@ -2271,6 +2271,11 @@ class StrategyExecutorService:
             new_symbol = new_option.get("trading_symbol", "")
             new_strike = float(new_option.get("strike", 0))
             new_ltp = float(new_option.get("ltp", 0))
+
+            # No-op guard: avoid generating close+open intents when strike resolver returns same contract.
+            if str(new_symbol).strip() == str(old_symbol).strip():
+                logger.info(f"   Roll skipped ({leg}): target resolved to same symbol {old_symbol}")
+                return True
             
             # Exit old position
             exit_direction = "BUY" if old_side == "SELL" else "SELL"

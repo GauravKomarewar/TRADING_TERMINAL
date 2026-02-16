@@ -9,9 +9,9 @@
 <script src="/dashboard/web/shared/layout.js" defer></script>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════════════════════════
-   SHOONYA STRATEGY — ADVANCED MANAGEMENT INTERFACE
-   ═══════════════════════════════════════════════════════ */
+/* 
+   SHOONYA STRATEGY  ADVANCED MANAGEMENT INTERFACE
+    */
 :root {
   --bg:        #080c11;
   --panel:     #0d1420;
@@ -33,8 +33,8 @@
   --warning-d: #d97706;
   --accent:    #8b5cf6;
   --cyan:      #06b6d4;
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-head: 'Syne', sans-serif;
+  --font-mono: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-head: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -42,9 +42,16 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   font-size: 13px;
   overflow-x: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 main {
@@ -53,7 +60,7 @@ main {
   margin: 0 auto;
 }
 
-/* ───── TOP BAR ───── */
+/*  TOP BAR  */
 .top-bar {
   display: flex;
   align-items: center;
@@ -107,14 +114,14 @@ main {
   font-size: 16px; font-weight: 300; line-height: 1;
 }
 
-/* ───── LAYOUT GRID ───── */
+/*  LAYOUT GRID  */
 .main-grid {
   display: grid;
   grid-template-rows: auto auto;
   gap: 16px;
 }
 
-/* ═══════════════ MONITOR WIDGET ═══════════════ */
+/*  MONITOR WIDGET  */
 .monitor-widget {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -329,7 +336,7 @@ main {
   font-weight: 700;
 }
 
-/* ═══════════════ CONTROL WIDGET ═══════════════ */
+/*  CONTROL WIDGET  */
 .control-widget {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -530,21 +537,23 @@ main {
 .empty-control p { font-size: 12px; }
 
 
-/* ═══════════════ MODAL OVERLAY ═══════════════ */
+/*  MODAL OVERLAY  */
 #modalOverlay {
   position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 20px;
-  overflow-y: auto;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s;
+  top: 88px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9980;
+  background: var(--bg);
+  display: block;
+  width: 100%;
+  height: calc(100vh - 88px);
+  padding: 0;
+  overflow: hidden;
+  opacity: 1;
+  pointer-events: all;
+  transition: none;
 }
 
 #modalOverlay.open {
@@ -552,21 +561,22 @@ main {
   pointer-events: all;
 }
 
-/* ───── BUILDER MODAL ───── */
+/*  BUILDER MODAL  */
 .builder-modal {
   width: 100%;
-  max-width: 1100px;
+  max-width: none;
+  height: 100%;
   background: var(--panel);
-  border: 1px solid var(--border-2);
-  border-radius: 16px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
-  transform: translateY(-24px);
-  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
-  box-shadow: 0 32px 80px rgba(0,0,0,0.6);
-  margin: auto;
+  transform: none;
+  transition: none;
+  box-shadow: none;
+  margin: 0;
 }
 
-#modalOverlay.open .builder-modal { transform: translateY(0); }
+#modalOverlay.open .builder-modal { transform: none; }
 
 /* Builder Header */
 .builder-modal-header {
@@ -579,7 +589,7 @@ main {
 }
 
 .builder-modal-title {
-  font-family: var(--font-head);
+  font-family: inherit;
   font-size: 18px;
   font-weight: 800;
   background: linear-gradient(135deg, #e8edf5 0%, var(--primary) 100%);
@@ -727,7 +737,7 @@ main {
   background: linear-gradient(90deg, var(--border-2) 0%, transparent 100%);
 }
 
-/* ───── LEG BUILDER ───── */
+/*  LEG BUILDER  */
 .legs-container { display: flex; flex-direction: column; gap: 10px; }
 
 .leg-card {
@@ -1027,7 +1037,7 @@ main {
   .form-row.cols-4, .form-row.cols-3, .form-row.cols-2 { grid-template-columns: 1fr 1fr; }
 }
 
-/* ── tiny toggle checkbox ── */
+/*  tiny toggle checkbox  */
 .tog-wrap { display: flex; align-items: center; gap: 8px; }
 .tog { display:none; }
 .tog-lbl {
@@ -1053,39 +1063,39 @@ main {
 
 </style>
 </head>
-<body data-page="strategy">
+<body data-page="strategy" class="dashboard-shell">
 <div id="app-header"></div>
 
 <main></main>
 
 
-<!-- ═══════════════════════════════════════════
+<!-- 
      STRATEGY CONSTRUCTOR MODAL
-     ═══════════════════════════════════════════ -->
+      -->
 <div id="modalOverlay" onclick="handleOverlayClick(event)">
   <div class="builder-modal" id="builderModal">
 
     <div class="builder-modal-header">
       <div>
-        <div class="builder-modal-title">⚙ Strategy Constructor</div>
+        <div class="builder-modal-title">Strategy Builder</div>
         <div class="builder-modal-sub" id="modalSubtitle">Define every parameter of your trading strategy</div>
       </div>
-      <button class="modal-close" onclick="closeBuilder()">✕</button>
+      <button class="modal-close" onclick="closeBuilder()">X</button>
     </div>
 
     <div class="builder-nav">
-      <button class="bnav-tab active" data-sec="identity" onclick="switchBSec('identity',this)">① Identity</button>
-      <button class="bnav-tab" data-sec="entry" onclick="switchBSec('entry',this)">② Entry <span class="tab-badge" id="badgeEntry">0</span></button>
-      <button class="bnav-tab" data-sec="adjustment" onclick="switchBSec('adjustment',this)">③ Adjustment <span class="tab-badge" id="badgeAdj">0</span></button>
-      <button class="bnav-tab" data-sec="exit" onclick="switchBSec('exit',this)">④ Exit <span class="tab-badge" id="badgeExit">0</span></button>
-      <button class="bnav-tab" data-sec="risk" onclick="switchBSec('risk',this)">⑤ Risk Management</button>
-      <button class="bnav-tab" data-sec="schedule" onclick="switchBSec('schedule',this)">⑥ Schedule</button>
+      <button class="bnav-tab active" data-sec="identity" onclick="switchBSec('identity',this)">1. Identity</button>
+      <button class="bnav-tab" data-sec="entry" onclick="switchBSec('entry',this)">2. Entry <span class="tab-badge" id="badgeEntry">0</span></button>
+      <button class="bnav-tab" data-sec="adjustment" onclick="switchBSec('adjustment',this)">3. Adjustment <span class="tab-badge" id="badgeAdj">0</span></button>
+      <button class="bnav-tab" data-sec="exit" onclick="switchBSec('exit',this)">4. Exit <span class="tab-badge" id="badgeExit">0</span></button>
+      <button class="bnav-tab" data-sec="risk" onclick="switchBSec('risk',this)">5. Risk Management</button>
+      <button class="bnav-tab" data-sec="schedule" onclick="switchBSec('schedule',this)">6. Schedule</button>
     </div>
 
     <div class="builder-body">
       <div id="alertBox" class="builder-alert"></div>
 
-      <!-- ─── SECTION 1: IDENTITY ─── -->
+      <!--  SECTION 1: IDENTITY  -->
       <div class="bsec active" id="sec-identity">
         <div class="sec-divider">Strategy Identity</div>
         <div class="form-row cols-3">
@@ -1154,67 +1164,67 @@ main {
         </div>
       </div>
 
-      <!-- ─── SECTION 2: ENTRY ─── -->
+      <!--  SECTION 2: ENTRY  -->
       <div class="bsec" id="sec-entry">
         <div class="adj-ref-note">
-          ℹ Entry supports OPTIONS legs only (CE/PE) from the selected DB symbol+expiry. Conditions can use DB metrics, time, other-leg metrics, and ticker/index state.
+           Entry supports OPTIONS legs only (CE/PE) from the selected DB symbol+expiry. Conditions can use DB metrics, time, other-leg metrics, and ticker/index state.
         </div>
 
         <div class="sec-divider">Entry Legs</div>
         <div class="legs-container" id="entryLegs"></div>
         <button class="add-leg-btn" onclick="addLeg('entry')" style="margin-top:10px;">
-          ＋ Add Entry Leg
+           Add Entry Leg
         </button>
 
         <div class="sec-divider" style="margin-top:20px;">Combined Entry Conditions</div>
         <div class="combined-section">
-          <div class="combined-title">⚡ Trigger when combined leg metrics satisfy:</div>
+          <div class="combined-title"> Trigger when combined leg metrics satisfy:</div>
           <div class="conditions-list" id="entryCombined"></div>
-          <button class="add-cond-btn" onclick="addCombinedCond('entryCombined')">＋ Add Combined Condition</button>
+          <button class="add-cond-btn" onclick="addCombinedCond('entryCombined')"> Add Combined Condition</button>
         </div>
       </div>
 
-      <!-- ─── SECTION 3: ADJUSTMENT ─── -->
+      <!--  SECTION 3: ADJUSTMENT  -->
       <div class="bsec" id="sec-adjustment">
         <div class="adj-ref-note">
-          ↩ Adjustment rules apply to the option legs from selected DB. Decision conditions support DB/time/other-leg/index parameters only.
+           Adjustment rules apply to the option legs from selected DB. Decision conditions support DB/time/other-leg/index parameters only.
         </div>
 
         <div class="sec-divider">Adjustment Triggers & Actions</div>
         <div class="legs-container" id="adjLegs"></div>
         <button class="add-leg-btn" onclick="addAdjLeg()" style="margin-top:10px;">
-          ＋ Add Adjustment Rule
+           Add Adjustment Rule
         </button>
 
         <div class="sec-divider" style="margin-top:20px;">Combined Adjustment Conditions</div>
         <div class="combined-section">
-          <div class="combined-title">⚡ Trigger adjustment when combined metrics satisfy:</div>
+          <div class="combined-title"> Trigger adjustment when combined metrics satisfy:</div>
           <div class="conditions-list" id="adjCombined"></div>
-          <button class="add-cond-btn" onclick="addCombinedCond('adjCombined')">＋ Add Combined Condition</button>
+          <button class="add-cond-btn" onclick="addCombinedCond('adjCombined')"> Add Combined Condition</button>
         </div>
       </div>
 
-      <!-- ─── SECTION 4: EXIT ─── -->
+      <!--  SECTION 4: EXIT  -->
       <div class="bsec" id="sec-exit">
         <div class="adj-ref-note">
-          🚪 Exit decisions can use DB, time, leg, and ticker/index parameters. Execution remains options-leg specific.
+           Exit decisions can use DB, time, leg, and ticker/index parameters. Execution remains options-leg specific.
         </div>
 
         <div class="sec-divider">Exit Conditions per Leg</div>
         <div class="legs-container" id="exitLegs"></div>
         <button class="add-leg-btn" onclick="addExitLeg()" style="margin-top:10px;">
-          ＋ Add Exit Condition
+           Add Exit Condition
         </button>
 
         <div class="sec-divider" style="margin-top:20px;">Combined Exit Conditions</div>
         <div class="combined-section">
-          <div class="combined-title">⚡ Exit strategy when combined metrics satisfy:</div>
+          <div class="combined-title"> Exit strategy when combined metrics satisfy:</div>
           <div class="conditions-list" id="exitCombined"></div>
-          <button class="add-cond-btn" onclick="addCombinedCond('exitCombined')">＋ Add Combined Condition</button>
+          <button class="add-cond-btn" onclick="addCombinedCond('exitCombined')"> Add Combined Condition</button>
         </div>
       </div>
 
-      <!-- ─── SECTION 5: RISK MANAGEMENT ─── -->
+      <!--  SECTION 5: RISK MANAGEMENT  -->
       <div class="bsec" id="sec-risk">
         <div class="sec-divider">P&L Limits</div>
         <div class="risk-grid">
@@ -1222,7 +1232,7 @@ main {
             <div class="risk-card-title">Target Profit</div>
             <div class="form-row cols-2" style="margin-bottom:8px;">
               <div class="f-group">
-                <label class="f-label">Amount (₹)</label>
+                <label class="f-label">Amount (INR)</label>
                 <input class="f-input" id="rTargetAmt" type="number" placeholder="e.g. 5000">
               </div>
               <div class="f-group">
@@ -1244,7 +1254,7 @@ main {
             <div class="risk-card-title">Stop Loss</div>
             <div class="form-row cols-2" style="margin-bottom:8px;">
               <div class="f-group">
-                <label class="f-label">Amount (₹)</label>
+                <label class="f-label">Amount (INR)</label>
                 <input class="f-input" id="rSlAmt" type="number" placeholder="e.g. 3000">
               </div>
               <div class="f-group">
@@ -1266,16 +1276,16 @@ main {
             <div class="risk-card-title">Trailing Stop Loss</div>
             <div class="form-row cols-2" style="margin-bottom:8px;">
               <div class="f-group">
-                <label class="f-label">Trail Amount (₹)</label>
+                <label class="f-label">Trail Amount (INR)</label>
                 <input class="f-input" id="rTrailAmt" type="number" placeholder="e.g. 1000">
               </div>
               <div class="f-group">
-                <label class="f-label">Lock-in Profit (₹)</label>
+                <label class="f-label">Lock-in Profit (INR)</label>
                 <input class="f-input" id="rLockIn" type="number" placeholder="e.g. 2000">
               </div>
             </div>
             <div class="f-group">
-              <label class="f-label">Trail Step (₹)</label>
+                <label class="f-label">Trail Step (INR)</label>
               <input class="f-input" id="rTrailStep" type="number" placeholder="e.g. 500">
             </div>
           </div>
@@ -1317,7 +1327,7 @@ main {
             <div class="risk-card-title">Position Limits</div>
             <div class="form-row cols-2">
               <div class="f-group">
-                <label class="f-label">Max Capital (₹)</label>
+                <label class="f-label">Max Capital (INR)</label>
                 <input class="f-input" id="rMaxCap" type="number" placeholder="e.g. 200000">
               </div>
               <div class="f-group">
@@ -1329,7 +1339,7 @@ main {
         </div>
       </div>
 
-      <!-- ─── SECTION 6: SCHEDULE ─── -->
+      <!--  SECTION 6: SCHEDULE  -->
       <div class="bsec" id="sec-schedule">
         <div class="sec-divider">Trading Schedule</div>
         <div class="form-row cols-3">
@@ -1401,9 +1411,9 @@ main {
         <!-- Status messages here -->
       </div>
       <div class="footer-actions">
-        <button class="btn-cancel" onclick="closeBuilder()">Cancel</button>
+        <button class="btn-cancel" onclick="resetBuilderForm()">Reset</button>
         <button class="btn-save" id="btnSave" onclick="saveStrategy()">
-          💾 Save Strategy
+           Save Strategy
         </button>
       </div>
     </div>
@@ -1412,9 +1422,9 @@ main {
 
 
 <script>
-/* ═════════════════════════════════════════════════
+/* 
    CONSTANTS & HELPERS
-   ═════════════════════════════════════════════════ */
+    */
 
 // Supported condition parameters (strictly mapped to runner/DB-supported values)
 const OC_PARAMS = [
@@ -1453,6 +1463,7 @@ const OC_PARAMS = [
   { v:'spot_price', l:'Underlying Spot (e.g. NIFTY)', cat:'Index/Ticker Based' },
   { v:'spot_change', l:'Spot Change', cat:'Index/Ticker Based' },
   { v:'spot_change_pct', l:'Spot Change %', cat:'Index/Ticker Based' },
+  { v:'india_vix', l:'India VIX (LTP)', cat:'Index/Ticker Based' },
   { v:'atm_strike', l:'ATM Strike', cat:'Index/Ticker Based' },
   { v:'fut_ltp', l:'Futures LTP', cat:'Index/Ticker Based' },
 ];
@@ -1467,6 +1478,7 @@ const COMBINED_PARAMS = [
   { v:'both_legs_delta_above', l:'Both Legs Delta Above' },
   { v:'time_current', l:'Current Time' },
   { v:'spot_price', l:'Underlying Spot' },
+  { v:'india_vix', l:'India VIX (LTP)' },
 ];
 
 const OPERATORS = ['>', '>=', '<', '<=', '==', '!=', '~=', 'between', 'not_between'];
@@ -1484,6 +1496,12 @@ let state = {
 let strategies = [];
 let activeDbSymbols = [];
 let dbSymbolExchangeMap = {};
+let indexParamLoaded = false;
+
+function pushParamUnique(list, entry) {
+  if (!Array.isArray(list) || !entry || !entry.v) return;
+  if (!list.some(p => p.v === entry.v)) list.push(entry);
+}
 
 function selectedDbSymbol() {
   return (document.getElementById('sDbSymbol')?.value || '').trim();
@@ -1582,6 +1600,52 @@ async function loadDbSymbolsFromActiveChains() {
   }
 }
 
+async function loadTickerConditionParams() {
+  if (indexParamLoaded) return;
+  try {
+    const res = await fetch('/dashboard/index-tokens/list', { credentials: 'include' });
+    if (!res.ok) throw new Error('Failed to fetch index list');
+    const data = await res.json();
+    const all = (data && typeof data.all === 'object' && data.all) ? data.all : {};
+    const major = Array.isArray(data?.major) ? data.major : [];
+
+    const orderedSymbols = [];
+    const seen = new Set();
+    major.forEach((sym) => {
+      const s = String(sym || '').trim().toUpperCase();
+      if (s && !seen.has(s)) {
+        seen.add(s);
+        orderedSymbols.push(s);
+      }
+    });
+    Object.keys(all).sort().forEach((sym) => {
+      const s = String(sym || '').trim().toUpperCase();
+      if (s && !seen.has(s)) {
+        seen.add(s);
+        orderedSymbols.push(s);
+      }
+    });
+
+    orderedSymbols.forEach((sym) => {
+      const friendly = all[sym]?.name || sym;
+      const labelPrefix = `${friendly} (${sym})`;
+      pushParamUnique(OC_PARAMS, { v: `index_${sym}_ltp`, l: `${labelPrefix} LTP`, cat: 'Index/Ticker Based' });
+      pushParamUnique(OC_PARAMS, { v: `index_${sym}_change_pct`, l: `${labelPrefix} Change %`, cat: 'Index/Ticker Based' });
+      pushParamUnique(OC_PARAMS, { v: `index_${sym}_change`, l: `${labelPrefix} Change`, cat: 'Index/Ticker Based' });
+      pushParamUnique(COMBINED_PARAMS, { v: `index_${sym}_ltp`, l: `${sym} LTP` });
+      pushParamUnique(COMBINED_PARAMS, { v: `index_${sym}_change_pct`, l: `${sym} Change %` });
+      pushParamUnique(COMBINED_PARAMS, { v: `index_${sym}_change`, l: `${sym} Change` });
+    });
+
+    pushParamUnique(OC_PARAMS, { v: 'india_vix', l: 'India VIX (LTP)', cat: 'Index/Ticker Based' });
+    pushParamUnique(COMBINED_PARAMS, { v: 'india_vix', l: 'India VIX (LTP)' });
+    indexParamLoaded = true;
+  } catch (e) {
+    pushParamUnique(OC_PARAMS, { v: 'india_vix', l: 'India VIX (LTP)', cat: 'Index/Ticker Based' });
+    pushParamUnique(COMBINED_PARAMS, { v: 'india_vix', l: 'India VIX (LTP)' });
+  }
+}
+
 /* Build <select> for OC params grouped by category */
 function buildParamSelect(val = '') {
   let cats = {};
@@ -1617,21 +1681,22 @@ function buildCombinedParamSelect(val = '') {
   return html;
 }
 
-/* ──────────────────────────────────
+/* 
    ADD / REMOVE CONDITION ROW
-────────────────────────────────── */
+ */
 function addConditionRow(listId) {
   const list = document.getElementById(listId);
   if(!list) return;
   const rows = list.querySelectorAll('.condition-row').length;
-  const joinHtml = rows > 0 ? `<div class="cond-join">AND</div>` : '';
+  const mode = getConditionModeForList(listId);
+  const joinHtml = rows > 0 ? `<div class="cond-join">${joinLabelFromMode(mode)}</div>` : '';
 
   const row = document.createElement('div');
   row.innerHTML = joinHtml + `<div class="condition-row">
     ${buildParamSelect()}
     ${buildOpSelect()}
     <input class="f-input" data-role="value" placeholder="Value" style="font-size:11px; padding:6px 8px;">
-    <button class="cond-remove" onclick="this.closest('.condition-row').previousElementSibling?.classList.contains('cond-join')&&this.closest('.condition-row').previousElementSibling.remove(); this.closest('.condition-row').remove();">✕</button>
+    <button class="cond-remove" onclick="this.closest('.condition-row').previousElementSibling?.classList.contains('cond-join')&&this.closest('.condition-row').previousElementSibling.remove(); this.closest('.condition-row').remove();"></button>
   </div>`;
   list.appendChild(row);
   const condRow = row.querySelector('.condition-row');
@@ -1645,6 +1710,56 @@ function addConditionRow(listId) {
 
 window.addCondition = addConditionRow; // alias
 
+function getConditionModeForList(listId) {
+  const m = String(listId || '').match(/^cond_(entry|adj|exit)_(\d+)$/);
+  if (!m) return 'and';
+  const section = m[1];
+  const id = m[2];
+  const sel = document.getElementById(`cond_mode_${section}_${id}`);
+  return String(sel?.value || 'and').toLowerCase();
+}
+
+function joinLabelFromMode(mode) {
+  return String(mode || '').toLowerCase() === 'or' ? 'OR' : 'AND';
+}
+
+function ruleTypeFromMode(mode) {
+  const m = String(mode || '').toLowerCase();
+  if (m === 'instant') return 'always';
+  if (m === 'if_then_else') return 'if_then_else';
+  return 'if_then';
+}
+
+function operatorFromMode(mode) {
+  return String(mode || '').toLowerCase() === 'or' ? 'OR' : 'AND';
+}
+
+function inferModeFromRule(ruleType, conditionsBlock, fallback = 'and') {
+  const rt = String(ruleType || '').toLowerCase();
+  const op = String(conditionsBlock?.operator || '').toUpperCase();
+  if (rt === 'always') return 'instant';
+  if (rt === 'if_then_else') return 'if_then_else';
+  if (op === 'OR') return 'or';
+  if (rt === 'if_then') return 'if_then';
+  return fallback;
+}
+
+function onConditionModeChange(section, id) {
+  const modeEl = document.getElementById(`cond_mode_${section}_${id}`);
+  const listId = `cond_${section}_${id}`;
+  const list = document.getElementById(listId);
+  const addBtn = document.getElementById(`cond_add_${section}_${id}`);
+  if (!modeEl || !list) return;
+  const mode = String(modeEl.value || 'and').toLowerCase();
+  if (mode === 'instant') {
+    list.innerHTML = '';
+    if (addBtn) addBtn.disabled = true;
+    return;
+  }
+  if (addBtn) addBtn.disabled = false;
+  list.querySelectorAll('.cond-join').forEach((el) => { el.textContent = joinLabelFromMode(mode); });
+}
+
 function addCombinedCond(listId) {
   const list = document.getElementById(listId);
   if(!list) return;
@@ -1657,7 +1772,7 @@ function addCombinedCond(listId) {
     <input class="f-input" data-role="value" placeholder="Value" style="font-size:11px; padding:6px 8px;">
     ${buildJoinSelect()}
     <input class="f-input" data-role="compare_to" placeholder="Compare to" style="font-size:11px; padding:6px 8px;">
-    <button class="cond-remove" onclick="this.closest('.combined-cond-row').previousElementSibling?.classList.contains('cond-join')&&this.closest('.combined-cond-row').previousElementSibling.remove();this.closest('.combined-cond-row').remove();">✕</button>
+    <button class="cond-remove" onclick="this.closest('.combined-cond-row').previousElementSibling?.classList.contains('cond-join')&&this.closest('.combined-cond-row').previousElementSibling.remove();this.closest('.combined-cond-row').remove();"></button>
   </div>`;
   list.appendChild(wrap);
   const combinedRow = wrap.querySelector('.combined-cond-row');
@@ -1669,9 +1784,9 @@ function addCombinedCond(listId) {
   }
 }
 
-/* ──────────────────────────────────
+/* 
    LEG BUILDER
-────────────────────────────────── */
+ */
 let legCounter = 0;
 
 function buildLegCard(id, section, legLabel) {
@@ -1684,11 +1799,11 @@ function buildLegCard(id, section, legLabel) {
   <div class="leg-card" id="legcard_${section}_${id}">
     <div class="leg-header" onclick="toggleLeg('${section}_${id}')">
       <div class="leg-title">
-        <span class="expand-icon" id="expIcon_${section}_${id}">▶</span>
+        <span class="expand-icon" id="expIcon_${section}_${id}"></span>
         <span id="legTitleLabel_${section}_${id}">${legLabel || 'Leg ' + id}</span>
         <span class="badge-buy" id="legBadge_${section}_${id}">BUY</span>
       </div>
-      <button class="leg-remove" onclick="event.stopPropagation();removeLeg('${section}','${id}')">✕</button>
+      <button class="leg-remove" onclick="event.stopPropagation();removeLeg('${section}','${id}')"></button>
     </div>
     <div class="leg-body" id="legbody_${section}_${id}" style="display:none;">
 
@@ -1724,6 +1839,30 @@ function buildLegCard(id, section, legLabel) {
         </div>
       </div>
       ` : ''}
+
+      <!-- Leg-level Conditions -->
+      <div class="conditions-section">
+        <div class="conditions-label">Execution Condition (Required)</div>
+        <div class="form-row cols-2" style="margin-bottom:8px;">
+          <div class="f-group">
+            <label class="f-label">Condition Type</label>
+            <select class="f-select" id="cond_mode_${section}_${id}" data-role="condition-mode" onchange="onConditionModeChange('${section}','${id}')">
+              <option value="instant">Instant</option>
+              <option value="and">AND</option>
+              <option value="or">OR</option>
+              <option value="if_then">IF THEN</option>
+              <option value="if_then_else">IF THEN ELSE</option>
+            </select>
+          </div>
+          <div class="f-group">
+            <label class="f-label">Note</label>
+            <input class="f-input" value="Select a condition type first, then define leg behavior." readonly style="font-size:11px; color: var(--muted);">
+          </div>
+        </div>
+        <div class="conditions-label">Conditions for this Option Leg (DB/Time/Leg/Index)</div>
+        <div class="conditions-list" id="${condListId}"></div>
+        <button class="add-cond-btn" id="cond_add_${section}_${id}" onclick="addConditionRow('${condListId}')"> Add Condition</button>
+      </div>
 
       ${!isAdj && !isExit ? `
       <!-- Basic Leg Definition -->
@@ -1763,16 +1902,9 @@ function buildLegCard(id, section, legLabel) {
       </div>
       ` : ''}
 
-      <!-- Leg-level Conditions -->
-      <div class="conditions-section">
-        <div class="conditions-label">📋 Conditions for this Option Leg (DB/Time/Leg/Index)</div>
-        <div class="conditions-list" id="${condListId}"></div>
-        <button class="add-cond-btn" onclick="addConditionRow('${condListId}')">＋ Add Condition</button>
-      </div>
-
       <!-- Leg-parameter Conditions -->
       <div class="conditions-section" style="margin-top:14px;">
-        <div class="conditions-label" style="color:var(--warning);">⚙ Leg Parameter Triggers (live monitoring)</div>
+        <div class="conditions-label" style="color:var(--warning);"> Leg Parameter Triggers (live monitoring)</div>
         <div class="f-group" style="margin-bottom:8px;">
           <label class="f-label">When this leg's parameter...</label>
         </div>
@@ -1811,6 +1943,7 @@ function addLeg(section) {
   container.appendChild(div.firstElementChild || div);
   // auto-open
   toggleLeg(`${section}_${id}`);
+  onConditionModeChange(section, id);
   updateBadge(section);
 }
 
@@ -1855,9 +1988,9 @@ function updateBadge(section) {
   badge.textContent = container ? container.querySelectorAll('.leg-card').length : 0;
 }
 
-/* ═════════════════════════════════════════════════
+/* 
    BUILDER MODAL CONTROLS
-   ═════════════════════════════════════════════════ */
+    */
 
 function openBuilder(editData = null) {
   if(editData) {
@@ -1882,11 +2015,20 @@ function openBuilder(editData = null) {
 }
 
 function closeBuilder() {
-  return;
+  window.location.href = '/dashboard/web/strategy.html';
 }
 
 function handleOverlayClick(e) {
-  return;
+  if(e.target === document.getElementById('modalOverlay')) closeBuilder();
+}
+
+function resetBuilderForm() {
+  openBuilder(null);
+  const status = document.getElementById('saveStatus');
+  if (status) {
+    status.textContent = 'Form reset';
+    status.style.color = 'var(--muted)';
+  }
 }
 
 function switchBSec(sec, btn) {
@@ -1898,6 +2040,195 @@ function switchBSec(sec, btn) {
   else {
     const target = document.querySelector(`.bnav-tab[data-sec="${sec}"]`);
     if(target) target.classList.add('active');
+  }
+}
+
+function setSelectValue(el, value) {
+  if (!el || value === undefined || value === null) return;
+  const str = String(value);
+  const hasOption = Array.from(el.options || []).some(o => String(o.value) === str);
+  if (!hasOption) {
+    const opt = document.createElement('option');
+    opt.value = str;
+    opt.textContent = str;
+    el.appendChild(opt);
+  }
+  el.value = str;
+}
+
+function setInputValue(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = value === undefined || value === null ? '' : value;
+}
+
+function flattenConditions(block) {
+  if (!block) return [];
+  if (Array.isArray(block)) return block.filter(x => x && typeof x === 'object' && x.parameter);
+  if (block && Array.isArray(block.rules)) {
+    return block.rules.filter(x => x && typeof x === 'object' && x.parameter);
+  }
+  if (block && typeof block === 'object' && block.parameter) return [block];
+  return [];
+}
+
+function fillConditionRows(listId, conditions) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  list.innerHTML = '';
+  (conditions || []).forEach((c) => {
+    addConditionRow(listId);
+    const rows = list.querySelectorAll('.condition-row');
+    const row = rows[rows.length - 1];
+    if (!row) return;
+    const p = row.querySelector('select[data-role="parameter"]');
+    const cmp = row.querySelector('select[data-role="comparator"]');
+    const v = row.querySelector('input[data-role="value"]');
+    if (p) setSelectValue(p, c.parameter || '');
+    if (cmp) setSelectValue(cmp, c.comparator || '>');
+    if (v) v.value = Array.isArray(c.value) ? c.value.join(',') : (c.value ?? '');
+  });
+}
+
+function setLegConditionMode(section, id, mode) {
+  const sel = document.getElementById(`cond_mode_${section}_${id}`);
+  if (!sel) return;
+  const allowed = ['instant', 'and', 'or', 'if_then', 'if_then_else'];
+  const m = allowed.includes(String(mode || '').toLowerCase()) ? String(mode).toLowerCase() : 'and';
+  sel.value = m;
+  onConditionModeChange(section, id);
+}
+
+function fillCombinedRows(listId, conditions) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  list.innerHTML = '';
+  (conditions || []).forEach((c) => {
+    addCombinedCond(listId);
+    const rows = list.querySelectorAll('.combined-cond-row');
+    const row = rows[rows.length - 1];
+    if (!row) return;
+    const p = row.querySelector('select[data-role="parameter"]');
+    const cmp = row.querySelector('select[data-role="comparator"]');
+    const v = row.querySelector('input[data-role="value"]');
+    if (p) setSelectValue(p, c.parameter || '');
+    if (cmp) setSelectValue(cmp, c.comparator || '>');
+    if (v) v.value = Array.isArray(c.value) ? c.value.join(',') : (c.value ?? '');
+  });
+}
+
+function fillEntryLegs(legs) {
+  document.getElementById('entryLegs').innerHTML = '';
+  legIds.entry = 0;
+  (legs || []).forEach((leg, idx) => {
+    addLeg('entry');
+    const cards = document.querySelectorAll('#entryLegs .leg-card');
+    const card = cards[cards.length - 1];
+    if (!card) return;
+    setSelectValue(card.querySelector('[data-role="side"]'), leg.side || 'SELL');
+    setSelectValue(card.querySelector('[data-role="option-type"]'), leg.option_type || 'CE');
+    setSelectValue(card.querySelector('[data-role="strike-selection"]'), leg.strike_selection || 'atm');
+    const strike = card.querySelector('[data-role="strike-value"]');
+    if (strike) strike.value = leg.strike_value ?? '';
+    const lots = card.querySelector('[data-role="lots"]');
+    if (lots) lots.value = leg.lots ?? 1;
+    setLegConditionMode('entry', idx + 1, leg.condition_mode || inferModeFromRule(leg.rule_type, leg.conditions, 'and'));
+    fillConditionRows(`cond_entry_${idx + 1}`, flattenConditions(leg.conditions));
+    onConditionModeChange('entry', idx + 1);
+    updateLegBadge('entry', idx + 1, String(leg.side || 'SELL').toUpperCase());
+    updateLegTitle('entry', idx + 1, `${leg.option_type || 'CE'}_${leg.strike_selection || 'atm'}`);
+  });
+  updateBadge('entry');
+}
+
+function fillAdjustmentRules(rules) {
+  document.getElementById('adjLegs').innerHTML = '';
+  document.getElementById('adjCombined').innerHTML = '';
+  legIds.adj = 0;
+  let legIndex = 0;
+  (rules || []).forEach((rule, idx) => {
+    const source = rule?.action?.details?.source || '';
+    if (source === 'combined_adjustment') {
+      fillCombinedRows('adjCombined', flattenConditions(rule.conditions));
+      return;
+    }
+    legIndex += 1;
+    addAdjLeg();
+    const cards = document.querySelectorAll('#adjLegs .leg-card');
+    const card = cards[cards.length - 1];
+    if (!card) return;
+    setSelectValue(card.querySelector('[data-role="adj-action"]'), rule?.action?.type || 'custom');
+    setLegConditionMode('adj', legIndex, inferModeFromRule(rule?.rule_type, rule?.conditions, 'and'));
+    fillConditionRows(`cond_adj_${legIndex}`, flattenConditions(rule.conditions));
+    onConditionModeChange('adj', legIndex);
+  });
+  updateBadge('adj');
+}
+
+function fillExitRules(exitCfg) {
+  const legRules = Array.isArray(exitCfg?.leg_rules) ? exitCfg.leg_rules : [];
+  document.getElementById('exitLegs').innerHTML = '';
+  document.getElementById('exitCombined').innerHTML = '';
+  legIds.exit = 0;
+  legRules.forEach((rule, idx) => {
+    addExitLeg();
+    const cards = document.querySelectorAll('#exitLegs .leg-card');
+    const card = cards[cards.length - 1];
+    if (!card) return;
+    setSelectValue(card.querySelector('[data-role="exit-ref"]'), rule.exit_leg_ref || 'all');
+    setSelectValue(card.querySelector('[data-role="exit-order-type"]'), rule.order_type || 'MARKET');
+    setLegConditionMode('exit', idx + 1, rule.condition_mode || inferModeFromRule(rule.rule_type, rule.conditions, 'and'));
+    fillConditionRows(`cond_exit_${idx + 1}`, flattenConditions(rule.conditions));
+    onConditionModeChange('exit', idx + 1);
+  });
+
+  const combined = flattenConditions(exitCfg?.conditions).filter(c => c.parameter !== 'time_current');
+  fillCombinedRows('exitCombined', combined);
+  updateBadge('exit');
+}
+
+async function loadStrategyFromQuery() {
+  const params = new URLSearchParams(window.location.search || '');
+  const name = (params.get('edit') || '').trim();
+  if (!name) return;
+  try {
+    const res = await fetch(`/dashboard/strategy/${encodeURIComponent(name)}`, { credentials: 'include' });
+    if (!res.ok) throw new Error(`Failed to load strategy: ${name}`);
+    const body = await res.json();
+    const s = body?.config || {};
+    openBuilder({ id: s.id || name, name: s.name || name });
+
+    setInputValue('sName', s.name || name);
+    setInputValue('sId', s.id || String(name).toUpperCase().replace(/\s+/g, '_'));
+    setInputValue('sDesc', s.description || '');
+    setInputValue('sLots', s.identity?.lots ?? s.basic?.lots ?? 1);
+
+    setSelectValue(document.getElementById('sProductType'), s.identity?.product_type || 'NRML');
+    setSelectValue(document.getElementById('sOrderType'), s.identity?.order_type || 'MARKET');
+
+    const dbSymbol = s.identity?.db_symbol || s.identity?.underlying || s.basic?.underlying || '';
+    const dbExpiry = s.identity?.db_expiry || s.identity?.expiry_custom || '';
+    if (dbSymbol) {
+      setSelectValue(document.getElementById('sDbSymbol'), dbSymbol);
+      populateDbExpiries(dbSymbol);
+    }
+    if (dbExpiry) setSelectValue(document.getElementById('sDbExpiry'), dbExpiry);
+    updateSelectedDbPath();
+
+    fillEntryLegs(Array.isArray(s.entry?.action?.legs) ? s.entry.action.legs : []);
+    fillCombinedRows('entryCombined', flattenConditions(s.entry?.conditions));
+    fillAdjustmentRules(Array.isArray(s.adjustment?.rules) ? s.adjustment.rules : []);
+    fillExitRules(s.exit || {});
+
+    setInputValue('schEntry', s.timing?.entry_time || s.schedule?.entry_time || '09:20');
+    setInputValue('schExit', s.timing?.exit_time || s.schedule?.exit_time || '15:15');
+    setInputValue('rTargetAmt', s.rms?.daily?.profit_target ?? '');
+    setInputValue('rSlAmt', s.rms?.daily?.loss_limit ?? '');
+    setInputValue('rMaxDelta', s.rms?.greeks?.max_delta ?? '');
+    setInputValue('rMaxLegs', s.rms?.position?.max_lots ?? 4);
+    setInputValue('rMaxCap', s.rms?.position?.max_value ?? '');
+  } catch (e) {
+    showAlert(`Could not load strategy "${name}" for edit`, 'error');
   }
 }
 
@@ -1931,12 +2262,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   loadDbSymbolsFromActiveChains();
+  loadTickerConditionParams();
   openBuilder();
+  loadStrategyFromQuery();
 });
 
-/* ═════════════════════════════════════════════════
+/* 
    SAVE STRATEGY
-   ═════════════════════════════════════════════════ */
+    */
 function maybeNumber(value) {
   if (value === null || value === undefined) return null;
   const str = String(value).trim();
@@ -2029,7 +2362,33 @@ function readCombinedRows(containerId) {
   return out;
 }
 
+function getLegIdFromCard(card, section, fallback) {
+  const idText = String(card?.id || '');
+  const m = idText.match(new RegExp(`^legcard_${section}_(\\d+)$`));
+  return m ? Number(m[1]) : fallback;
+}
+
+function readLegConditionConfig(section, id, legMeta = null, fallbackParam = 'time_in_position_sec') {
+  const mode = String(document.getElementById(`cond_mode_${section}_${id}`)?.value || 'and').toLowerCase();
+  const rules = readConditionRows(`cond_${section}_${id}`, legMeta);
+  if (mode === 'instant') {
+    return {
+      mode,
+      rule_type: 'always',
+      operator: 'AND',
+      rules: [{ parameter: fallbackParam, comparator: '>=', value: 0 }],
+    };
+  }
+  return {
+    mode,
+    rule_type: ruleTypeFromMode(mode),
+    operator: operatorFromMode(mode),
+    rules: rules.length ? rules : [{ parameter: fallbackParam, comparator: '>=', value: 0 }],
+  };
+}
+
 function parseEntryLeg(card, idx) {
+  const legId = getLegIdFromCard(card, 'entry', idx + 1);
   const side = card.querySelector('[data-role="side"]')?.value || 'SELL';
   const instrument = 'OPTION';
   const optionType = card.querySelector('[data-role="option-type"]')?.value || 'CE';
@@ -2038,6 +2397,7 @@ function parseEntryLeg(card, idx) {
   const lots = maybeNumber(card.querySelector('[data-role="lots"]')?.value) || 1;
   const expiry = selectedDbExpiry() || 'current';
   const legMeta = { option_type: optionType };
+  const condCfg = readLegConditionConfig('entry', legId, legMeta, 'time_in_position_sec');
   return {
     leg_id: idx + 1,
     side,
@@ -2047,7 +2407,9 @@ function parseEntryLeg(card, idx) {
     strike_value: strikeValue,
     lots,
     expiry,
-    conditions: readConditionRows(`cond_entry_${idx + 1}`, legMeta),
+    condition_mode: condCfg.mode,
+    rule_type: condCfg.rule_type,
+    conditions: condCfg.rules,
   };
 }
 
@@ -2108,13 +2470,14 @@ async function saveStrategy() {
   const sqoffMins = maybeNumber(document.getElementById('schSqoffMins').value);
 
   const adjustmentRules = adjCards.map((card, idx) => {
+    const legId = getLegIdFromCard(card, 'adj', idx + 1);
     const actionType = card.querySelector('[data-role="adj-action"]')?.value || 'custom';
-    const legConds = readConditionRows(`cond_adj_${idx + 1}`);
+    const condCfg = readLegConditionConfig('adj', legId, null, 'time_in_position_sec');
     return {
       priority: idx + 1,
       name: `Adjustment Rule ${idx + 1}`,
-      rule_type: 'if_then',
-      conditions: legConds.length ? { operator: 'AND', rules: legConds } : { operator: 'AND', rules: [{ parameter: 'time_in_position_sec', comparator: '>=', value: 0 }] },
+      rule_type: condCfg.rule_type,
+      conditions: { operator: condCfg.operator, rules: condCfg.rules },
       action: { type: actionType, details: { source: `adj_leg_${idx + 1}` } },
     };
   });
@@ -2178,12 +2541,18 @@ async function saveStrategy() {
       rule_type: 'if_any',
       conditions: exitConditions,
       action: { type: 'close_all_positions' },
-      leg_rules: exitCards.map((card, idx) => ({
-        name: `Exit Leg Rule ${idx + 1}`,
-        exit_leg_ref: card.querySelector('[data-role="exit-ref"]')?.value || 'all',
-        order_type: card.querySelector('[data-role="exit-order-type"]')?.value || 'MARKET',
-        conditions: readConditionRows(`cond_exit_${idx + 1}`),
-      })),
+      leg_rules: exitCards.map((card, idx) => {
+        const legId = getLegIdFromCard(card, 'exit', idx + 1);
+        const condCfg = readLegConditionConfig('exit', legId, null, 'time_in_position_sec');
+        return {
+          name: `Exit Leg Rule ${idx + 1}`,
+          exit_leg_ref: card.querySelector('[data-role="exit-ref"]')?.value || 'all',
+          order_type: card.querySelector('[data-role="exit-order-type"]')?.value || 'MARKET',
+          condition_mode: condCfg.mode,
+          rule_type: condCfg.rule_type,
+          conditions: condCfg.rules,
+        };
+      }),
     },
     risk_management: {
       max_loss_per_day: maybeNumber(document.getElementById('rSlAmt')?.value),
@@ -2287,277 +2656,14 @@ async function saveStrategy() {
 function showAlert(msg, type) {
   const box = document.getElementById('alertBox');
   box.className = `builder-alert show ${type}`;
-  box.innerHTML = `<span>${type==='success'?'✓':'✕'}</span> ${msg}`;
+  box.innerHTML = `<span>${type==='success'?'':''}</span> ${msg}`;
   setTimeout(() => box.classList.remove('show'), 4000);
 }
 
-/* ═════════════════════════════════════════════════
+/* 
    LOAD + RENDER STRATEGIES
-   ═════════════════════════════════════════════════ */
-async function loadStrategies() {
-  try {
-    const res = await fetch('/dashboard/strategy/configs', { credentials:'include' });
-    if(res.ok) {
-      const data = await res.json();
-      strategies = data.configs || [];
-      renderStrategies(strategies);
-    } else if(res.status === 401) {
-      window.location.href = '/';
-    }
-  } catch(e) {
-    renderStrategies(strategies); // show cached
-  }
-}
+    */
 
-function renderStrategies(list) {
-  const container = document.getElementById('strategyCards');
-  const statR = document.getElementById('statRunning');
-  const statP = document.getElementById('statPaused');
-  const statI = document.getElementById('statIdle');
-  const statT = document.getElementById('statTotal');
-
-  const running = list.filter(s=>s.status==='RUNNING').length;
-  const paused  = list.filter(s=>s.status==='PAUSED').length;
-  const idle    = list.filter(s=>!['RUNNING','PAUSED'].includes(s.status)).length;
-  if(statR) statR.textContent = running;
-  if(statP) statP.textContent = paused;
-  if(statI) statI.textContent = idle;
-  if(statT) statT.textContent = list.length;
-
-  if(!list.length) {
-    container.innerHTML = `<div class="empty-control">
-      <div class="empty-ico">📭</div>
-      <p>No strategies saved yet.<br>Click <strong>+ Create Strategy</strong> to build one.</p>
-    </div>`;
-    return;
-  }
-
-  container.innerHTML = list.map(s => {
-    const status   = (s.status || 'IDLE').toUpperCase();
-    const statusCls = status.toLowerCase();
-    const isRunning = status === 'RUNNING';
-    const isPaused  = status === 'PAUSED';
-    const isIdle    = !isRunning && !isPaused;
-
-    const targetVal = s.rms?.daily?.profit_target ?? null;
-    const slVal = s.rms?.daily?.loss_limit ?? s.risk_management?.max_loss_per_day ?? null;
-    const target = targetVal ? `₹${Number(targetVal).toLocaleString('en-IN')}` : '--';
-    const sl     = slVal ? `₹${Number(slVal).toLocaleString('en-IN')}` : '--';
-    const freq   = s.schedule?.frequency || 'manual';
-    const und    = s.basic?.underlying || s.identity?.underlying || 'NIFTY';
-    const legs   = Array.isArray(s.entry?.action?.legs) ? s.entry.action.legs.length : (s.entry?.legs?.count || 0);
-    const entryT = s.timing?.entry_time || s.schedule?.entry_time || s.identity?.entry_time || '--:--';
-
-    return `
-    <div class="s-card ${statusCls}" id="scard_${s.id || s.name}">
-      <div class="s-card-top">
-        <div>
-          <div class="s-card-name">${s.name}</div>
-          <div class="s-card-sub">${s.strategy_type||s.identity?.strategy_type||'custom'} • ${und} • ${freq} • ${legs} leg${legs!==1?'s':''}</div>
-        </div>
-        <div class="status-pill ${statusCls}">
-          <div class="status-dot"></div>
-          ${status}
-        </div>
-      </div>
-
-      <div class="s-card-metrics">
-        <div class="s-metric">
-          <div class="s-metric-val val-accent">${entryT}</div>
-          <div class="s-metric-lbl">Entry</div>
-        </div>
-        <div class="s-metric">
-          <div class="s-metric-val val-pos">${target}</div>
-          <div class="s-metric-lbl">Target</div>
-        </div>
-        <div class="s-metric">
-          <div class="s-metric-val val-neg">${sl}</div>
-          <div class="s-metric-lbl">SL</div>
-        </div>
-        <div class="s-metric">
-          <div class="s-metric-val val-neu">${s.basic?.lots||s.identity?.lots||1}</div>
-          <div class="s-metric-lbl">Lots</div>
-        </div>
-      </div>
-
-      <div class="s-card-actions">
-        ${isRunning ? `
-          <div class="running-lock">🔒 Running — locked</div>
-          <button class="s-btn s-btn-pause" onclick="sendIntent('${s.name}','PAUSE')">⏸ Pause</button>
-          <button class="s-btn s-btn-stop" onclick="sendIntent('${s.name}','EXIT')">⏹ Stop</button>
-        ` : isPaused ? `
-          <button class="s-btn s-btn-start" onclick="sendIntent('${s.name}','ENTRY')">▶ Resume</button>
-          <button class="s-btn s-btn-edit" onclick="openBuilder(${JSON.stringify(s).replace(/"/g,'&quot;')})">✏ Edit</button>
-          <button class="s-btn s-btn-stop" onclick="sendIntent('${s.name}','EXIT')">⏹ Stop</button>
-        ` : `
-          <button class="s-btn s-btn-start" onclick="sendIntent('${s.name}','ENTRY')">▶ Start</button>
-          <button class="s-btn s-btn-edit" onclick="openBuilder(${JSON.stringify(s).replace(/"/g,'&quot;')})">✏ Edit</button>
-          <button class="s-btn s-btn-stop" onclick="sendIntent('${s.name}','EXIT')" ${isIdle?'disabled':''}>⏹ Stop</button>
-        `}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-/* ═════════════════════════════════════════════════
-   INTENT / ACTION
-   ═════════════════════════════════════════════════ */
-async function sendIntent(stratName, action) {
-  try {
-    const res = await fetch('/dashboard/intent/strategy', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ strategy_name: stratName, action }),
-      credentials: 'include',
-    });
-    if(res.ok) {
-      // Optimistically update status
-      const idx = strategies.findIndex(s=>s.name===stratName);
-      if(idx>=0) {
-        if(action==='ENTRY') strategies[idx].status='RUNNING';
-        else if(action==='PAUSE') strategies[idx].status='PAUSED';
-        else if(action==='EXIT') strategies[idx].status='IDLE';
-        renderStrategies(strategies);
-      }
-      setTimeout(loadStrategies, 800);
-    } else {
-      const err = await res.json().catch(()=>({}));
-      alert(`Failed: ${err.detail || res.statusText}`);
-    }
-  } catch(e) {
-    // Optimistic fallback
-    const idx = strategies.findIndex(s=>s.name===stratName);
-    if(idx>=0) {
-      if(action==='ENTRY') strategies[idx].status='RUNNING';
-      else if(action==='PAUSE') strategies[idx].status='PAUSED';
-      else if(action==='EXIT') strategies[idx].status='IDLE';
-      renderStrategies(strategies);
-    }
-  }
-}
-
-/* ═════════════════════════════════════════════════
-   MONITOR TAB SWITCH
-   ═════════════════════════════════════════════════ */
-function switchMTab(tab, btn) {
-  document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-}
-
-/* ═════════════════════════════════════════════════
-   MOCK MONITOR DATA (replace with real API)
-   ═════════════════════════════════════════════════ */
-function refreshMonitorMock() {
-  const orphanBody = document.getElementById('orphanBody');
-  const monitorBody = document.getElementById('monitorBody');
-
-  // Only show mock if running strategies exist
-  const running = strategies.filter(s => s.status === 'RUNNING');
-  if(!running.length) return;
-
-  // Mock orphan (1 leg)
-  orphanBody.innerHTML = `
-    <tr>
-      <td><span class="badge-ce">CE</span> NIFTY 24200 CE 27JUN</td>
-      <td><span class="badge-buy">BUY</span></td>
-      <td>50</td>
-      <td class="val-muted">142.50</td>
-      <td class="val-neg">134.20</td>
-      <td class="val-neg">-₹415</td>
-      <td class="val-muted">12.4%</td>
-      <td class="val-pos">+0.42</td>
-      <td class="val-muted">0.003</td>
-      <td class="val-neg">-1.82</td>
-      <td class="val-warn">+0.95</td>
-      <td class="val-muted">1.2M</td>
-      <td><button class="s-btn s-btn-stop" style="padding:3px 8px;font-size:9px;">Close</button></td>
-    </tr>`;
-
-  // Mock running strategy rows
-  let html = '';
-  running.forEach((s, si) => {
-    const pnl = (Math.random()-0.4) * 3000;
-    const pnlCls = pnl>=0 ? 'val-pos' : 'val-neg';
-    const pnlStr = `${pnl>=0?'+':''  }₹${Math.abs(pnl).toFixed(0)}`;
-    const delta = ((Math.random()-0.5)*0.3).toFixed(2);
-    html += `
-    <tr class="strategy-group-row" onclick="toggleMonitorGroup('${si}')">
-      <td><span class="expand-icon" id="mg_${si}">▶</span> <strong style="font-family:var(--font-head)">${s.name}</strong></td>
-      <td>—</td>
-      <td>—</td>
-      <td>—</td>
-      <td>—</td>
-      <td class="${pnlCls}"><strong>${pnlStr}</strong></td>
-      <td>—</td>
-      <td class="${parseFloat(delta)>=0?'val-pos':'val-neg'}">${delta}</td>
-      <td>—</td>
-      <td class="val-neg">${(-Math.random()*5).toFixed(2)}</td>
-      <td class="val-warn">${(Math.random()*2).toFixed(2)}</td>
-      <td class="${parseFloat(delta)>=0?'val-pos':'val-neg'}">${delta}</td>
-      <td>—</td>
-      <td><span class="status-pill running" style="font-size:9px;padding:2px 6px;">RUNNING</span></td>
-    </tr>
-    <tr class="sub-row" id="mg_rows_${si}" style="display:none;">
-      <td>└ <span class="badge-sell">SELL</span> NIFTY ATM CE</td>
-      <td><span class="badge-sell">SELL</span></td>
-      <td>50</td>
-      <td class="val-muted">210.00</td>
-      <td class="val-muted">${(195+Math.random()*30).toFixed(1)}</td>
-      <td class="val-pos">+₹${(Math.random()*1500).toFixed(0)}</td>
-      <td class="val-muted">${(11+Math.random()*5).toFixed(1)}%</td>
-      <td class="val-neg">-0.50</td>
-      <td class="val-muted">0.004</td>
-      <td class="val-pos">+1.95</td>
-      <td class="val-neg">-1.10</td>
-      <td>—</td>
-      <td class="val-muted">3.4M</td>
-      <td>—</td>
-    </tr>
-    <tr class="sub-row" id="mg_rows2_${si}" style="display:none;">
-      <td>└ <span class="badge-sell">SELL</span> NIFTY ATM PE</td>
-      <td><span class="badge-sell">SELL</span></td>
-      <td>50</td>
-      <td class="val-muted">205.00</td>
-      <td class="val-muted">${(190+Math.random()*30).toFixed(1)}</td>
-      <td class="val-pos">+₹${(Math.random()*1500).toFixed(0)}</td>
-      <td class="val-muted">${(11+Math.random()*5).toFixed(1)}%</td>
-      <td class="val-pos">+0.50</td>
-      <td class="val-muted">0.004</td>
-      <td class="val-pos">+1.90</td>
-      <td class="val-neg">-1.05</td>
-      <td>—</td>
-      <td class="val-muted">2.9M</td>
-      <td>—</td>
-    </tr>
-    <tr class="combined-row" id="mg_combined_${si}" style="display:none;">
-      <td>⚡ Combined Greeks</td>
-      <td>—</td><td>—</td><td>—</td><td>—</td>
-      <td>${pnlStr}</td>
-      <td>${(12+Math.random()*4).toFixed(1)}%</td>
-      <td>${delta}</td>
-      <td>${(0.008+Math.random()*0.002).toFixed(4)}</td>
-      <td>${(3.8+Math.random()*0.5).toFixed(2)}</td>
-      <td>${(-2.1-Math.random()*0.3).toFixed(2)}</td>
-      <td>${delta}</td>
-      <td>—</td>
-      <td>—</td>
-    </tr>`;
-  });
-
-  monitorBody.innerHTML = html || `<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:20px;font-size:11px;">No active strategy positions</td></tr>`;
-}
-
-function toggleMonitorGroup(idx) {
-  const rows = [
-    document.getElementById(`mg_rows_${idx}`),
-    document.getElementById(`mg_rows2_${idx}`),
-    document.getElementById(`mg_combined_${idx}`),
-  ];
-  const icon = document.getElementById(`mg_${idx}`);
-  const visible = rows[0] && rows[0].style.display !== 'none';
-  rows.forEach(r => { if(r) r.style.display = visible ? 'none' : 'table-row'; });
-  if(icon) icon.style.transform = visible ? '' : 'rotate(90deg)';
-}
 
 // Keyboard close
 document.addEventListener('keydown', e => {

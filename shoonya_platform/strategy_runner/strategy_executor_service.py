@@ -240,6 +240,7 @@ class ExecutionState:
     
     # Execution tracking
     entry_timestamp: float = 0.0
+    last_entry_attempt_timestamp: float = 0.0
     last_adjustment_timestamp: float = 0.0
     adjustments_today: int = 0
     total_trades_today: int = 0
@@ -1139,7 +1140,9 @@ class StrategyExecutorService:
         
         # 3️⃣ Reconcile with broker (periodic)
         seconds_since_reconcile = time.time() - exec_state.last_reconcile_timestamp
-        if seconds_since_reconcile > 60:  # Every 60 seconds
+        # When flat, reconcile more frequently so orphan positions are recovered quickly.
+        reconcile_interval_sec = 5 if not exec_state.has_position else 60
+        if seconds_since_reconcile > reconcile_interval_sec:
             basic = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
             identity = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
             exchange = basic.get("exchange") or identity.get("exchange") or "NFO"
@@ -1309,6 +1312,20 @@ class StrategyExecutorService:
         entry_cfg = config.get("entry", {})
         action = entry_cfg.get("action", {})
         action_type = action.get("type", "short_both")
+
+        # Guard: prevent rapid re-fire if prior entry attempt is still settling.
+        execution_cfg = entry_cfg.get("execution", {}) if isinstance(entry_cfg.get("execution"), dict) else {}
+        retry_cooldown_sec = int(execution_cfg.get("retry_cooldown_seconds", 45) or 45)
+        now_ts = time.time()
+        if exec_state.last_entry_attempt_timestamp > 0:
+            elapsed = now_ts - exec_state.last_entry_attempt_timestamp
+            if elapsed < retry_cooldown_sec:
+                logger.info(
+                    f"⏳ ENTRY COOLING DOWN: {name} | elapsed={elapsed:.1f}s < {retry_cooldown_sec}s"
+                )
+                return
+        exec_state.last_entry_attempt_timestamp = now_ts
+        self.state_mgr.save(exec_state)
         
         basic = config.get("basic", {})
         lots = basic.get("lots", 1)
@@ -1374,6 +1391,22 @@ class StrategyExecutorService:
         
         if not is_verified:
             logger.error(f"❌ ENTRY VERIFICATION FAILED: {name} | {reason}")
+
+            # Fast recovery: if broker already has positions, reconstruct state now
+            # instead of waiting for the periodic reconciler.
+            basic_cfg = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
+            identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+            exchange = basic_cfg.get("exchange") or identity_cfg.get("exchange") or "NFO"
+            underlying = basic_cfg.get("underlying") or identity_cfg.get("underlying") or "NIFTY"
+
+            _, reconcile_reason = self.reconciler.reconcile(exec_state, exchange, underlying)
+            if reconcile_reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
+                self.state_mgr.save(exec_state)
+            if exec_state.has_position:
+                logger.warning(
+                    f"⚠️ ENTRY RECOVERED VIA RECONCILE: {name} | reason={reconcile_reason}"
+                )
+                return
             
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(

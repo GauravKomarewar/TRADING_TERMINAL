@@ -58,6 +58,7 @@ from shoonya_platform.strategy_runner.config_schema import (
     coerce_config_numerics,
     LOT_SIZES,
 )
+from shoonya_platform.market_data.feeds import index_tokens_subscriber
 from scripts.scriptmaster import requires_limit_order
 
 logger = logging.getLogger("STRATEGY_EXECUTOR")
@@ -1507,6 +1508,13 @@ class StrategyExecutorService:
             engine_state.spot_price = reader.get_spot_price()
             engine_state.atm_strike = reader.get_atm_strike()
             engine_state.fut_ltp = reader.get_fut_ltp()
+            # Update ticker-ribbon index snapshot for dynamic condition params.
+            try:
+                engine_state.set_index_ticks(
+                    index_tokens_subscriber.get_index_prices(include_missing=False)
+                )
+            except Exception as idx_err:
+                logger.debug("Index metric update skipped for %s: %s", name, idx_err)
             
             # Update position data if we have positions
             if exec_state.has_position:

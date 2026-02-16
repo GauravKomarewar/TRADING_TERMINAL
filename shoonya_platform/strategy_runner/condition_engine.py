@@ -15,6 +15,7 @@ Capabilities:
 """
 
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -91,6 +92,41 @@ class StrategyState:
 
         # ─── Cumulative daily P&L (survives position resets) ────────────
         self.cumulative_daily_pnl: float = 0.0
+        # Live index/ticker ribbon snapshot (NIFTY, INDIAVIX, etc.)
+        self.index_data: Dict[str, Dict[str, float]] = {}
+
+    def set_index_ticks(self, ticks: Dict[str, Optional[Dict[str, Any]]]) -> None:
+        """Store normalized index/ticker values for dynamic condition params."""
+        normalized: Dict[str, Dict[str, float]] = {}
+        for raw_symbol, raw_tick in (ticks or {}).items():
+            if not isinstance(raw_tick, dict):
+                continue
+            symbol = str(raw_symbol or "").upper().strip()
+            if not symbol:
+                continue
+            try:
+                ltp = float(raw_tick.get("ltp", 0) or 0)
+            except (TypeError, ValueError):
+                ltp = 0.0
+            try:
+                close = float(raw_tick.get("c", 0) or 0)
+            except (TypeError, ValueError):
+                close = 0.0
+            try:
+                pc = float(raw_tick.get("pc", 0) or 0)
+            except (TypeError, ValueError):
+                pc = 0.0
+            normalized[symbol] = {
+                "ltp": ltp,
+                "pc": pc,
+                "change_pct": pc,
+                "change": ltp - close if close else 0.0,
+                "open": float(raw_tick.get("o", 0) or 0),
+                "high": float(raw_tick.get("h", 0) or 0),
+                "low": float(raw_tick.get("l", 0) or 0),
+                "close": close,
+            }
+        self.index_data = normalized
 
     # ─── Derived calculations ──────────────────────────────────────────
 
@@ -237,6 +273,27 @@ class StrategyState:
         resolver = param_map.get(name)
         if resolver is not None:
             return resolver()
+
+        # Dynamic index parameters:
+        #   index_NIFTY_ltp, index_INDIAVIX_change_pct, index_BANKNIFTY_pc, etc.
+        m = re.match(
+            r"^index_([A-Za-z0-9]+)_(ltp|pc|change|change_pct|open|high|low|close)$",
+            str(name or ""),
+        )
+        if m:
+            symbol = m.group(1).upper()
+            metric = m.group(2).lower()
+            idx = self.index_data.get(symbol)
+            if not idx:
+                return None
+            return idx.get(metric)
+
+        # Friendly alias for India VIX level.
+        if str(name or "").lower() in ("india_vix", "indiavix"):
+            idx = self.index_data.get("INDIAVIX")
+            if not idx:
+                return None
+            return idx.get("ltp")
 
         # Special aggregate parameters
         if name == "any_leg_delta":

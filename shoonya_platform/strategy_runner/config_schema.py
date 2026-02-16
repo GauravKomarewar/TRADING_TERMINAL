@@ -12,6 +12,7 @@ All validation errors are collected (not fail-fast) so the user sees every probl
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,6 +33,9 @@ VALID_MARKET_SOURCES = {"database", "sqlite"}
 VALID_COMPARATORS = {">", ">=", "<", "<=", "==", "!=", "~=", "between", "not_between"}
 VALID_OPERATORS = {"AND", "OR"}
 VALID_RULE_TYPES = {"if_then", "if_then_else", "if_any", "always"}
+INDEX_PARAM_PATTERN = re.compile(
+    r"^index_[A-Za-z0-9]+_(ltp|pc|change|change_pct|open|high|low|close)$"
+)
 
 LOT_SIZES = {
     "NIFTY": 65, "BANKNIFTY": 30, "FINNIFTY": 60,
@@ -59,6 +63,8 @@ VALID_PARAMETERS = {
     # Spot / market
     "spot_price", "spot_change", "spot_change_pct",
     "atm_strike", "fut_ltp",
+    # Ticker aliases
+    "india_vix",
     # Time
     "time_current", "time_in_position_sec", "time_since_last_adjustment_sec",
     # Position
@@ -340,7 +346,7 @@ def _validate_condition(cond: Dict, path: str, errors: List[ValidationError]):
     param = cond.get("parameter")
     if not param:
         errors.append(ValidationError(f"{path}.parameter", "Missing parameter"))
-    elif param not in VALID_PARAMETERS:
+    elif param not in VALID_PARAMETERS and not INDEX_PARAM_PATTERN.match(str(param)):
         errors.append(ValidationError(f"{path}.parameter",
             f"Unknown parameter '{param}'. Valid: {sorted(VALID_PARAMETERS)}", "warning"))
 

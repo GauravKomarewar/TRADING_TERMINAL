@@ -1056,138 +1056,7 @@ main {
 <body data-page="strategy">
 <div id="app-header"></div>
 
-<main>
-  <!-- TOP BAR -->
-  <div class="top-bar">
-    <div>
-      <h1>⚡ Strategy Management</h1>
-      <p>Build, monitor and control advanced options strategies in real-time</p>
-    </div>
-    <button class="btn-create" onclick="openBuilder()">
-      <span class="plus-icon">+</span>
-      Create Strategy
-    </button>
-  </div>
-
-  <div class="main-grid">
-
-    <!-- ══════ ADVANCED MONITOR WIDGET ══════ -->
-    <div class="monitor-widget">
-      <div class="widget-header">
-        <div class="widget-title">
-          <div class="live-dot"></div>
-          Live Position Monitor
-        </div>
-        <div class="monitor-tabs">
-          <button class="mtab active" onclick="switchMTab('all',this)">All Positions</button>
-          <button class="mtab" onclick="switchMTab('greeks',this)">Greeks View</button>
-          <button class="mtab" onclick="switchMTab('pnl',this)">P&L View</button>
-        </div>
-      </div>
-
-      <div class="monitor-body">
-        <!-- Orphan Legs -->
-        <div class="orphan-section">
-          <div class="section-label">⚠ Orphan Legs (Unassigned Positions)</div>
-          <div class="monitor-table-wrap" style="overflow-x:auto;">
-          <table class="orphan-table">
-            <thead>
-              <tr>
-                <th>Instrument</th>
-                <th>B/S</th>
-                <th>Qty</th>
-                <th>Avg</th>
-                <th>LTP</th>
-                <th>P&L</th>
-                <th>IV</th>
-                <th>Delta</th>
-                <th>Gamma</th>
-                <th>Theta</th>
-                <th>Vega</th>
-                <th>OI</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="orphanBody">
-              <tr>
-                <td colspan="13" style="text-align:center; color:var(--muted); padding:16px; font-size:11px;">
-                  No orphan positions detected
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-        </div>
-
-        <!-- Strategy Positions -->
-        <div class="strategy-section">
-          <div class="section-label">📊 Strategy Positions</div>
-          <div style="overflow-x:auto;">
-          <table class="monitor-table">
-            <thead>
-              <tr>
-                <th>Strategy / Leg</th>
-                <th>B/S</th>
-                <th>Qty</th>
-                <th>Avg</th>
-                <th>LTP</th>
-                <th>P&L</th>
-                <th>IV</th>
-                <th>Delta</th>
-                <th>Gamma</th>
-                <th>Theta</th>
-                <th>Vega</th>
-                <th>Net Δ</th>
-                <th>OI</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="monitorBody">
-              <tr>
-                <td colspan="14" style="text-align:center; color:var(--muted); padding:20px; font-size:11px;">
-                  No active strategy positions — start a strategy to see live data here
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-        </div>
-      </div>
-    </div><!-- /monitor-widget -->
-
-    <!-- ══════ STRATEGY CONTROL WIDGET ══════ -->
-    <div class="control-widget">
-      <div class="control-header-bar">
-        <div class="widget-title">🎛️ Strategy Control</div>
-        <div class="control-stats">
-          <div class="c-stat">
-            <div class="c-stat-val" id="statRunning" style="color:var(--success)">0</div>
-            <div class="c-stat-lbl">Running</div>
-          </div>
-          <div class="c-stat">
-            <div class="c-stat-val" id="statPaused" style="color:var(--warning)">0</div>
-            <div class="c-stat-lbl">Paused</div>
-          </div>
-          <div class="c-stat">
-            <div class="c-stat-val" id="statIdle" style="color:var(--muted)">0</div>
-            <div class="c-stat-lbl">Idle</div>
-          </div>
-          <div class="c-stat">
-            <div class="c-stat-val" id="statTotal">0</div>
-            <div class="c-stat-lbl">Total</div>
-          </div>
-        </div>
-      </div>
-      <div class="strategy-cards" id="strategyCards">
-        <div class="empty-control">
-          <div class="empty-ico">📭</div>
-          <p>No strategies saved yet.<br>Click <strong>+ Create Strategy</strong> to build one.</p>
-        </div>
-      </div>
-    </div><!-- /control-widget -->
-
-  </div><!-- /main-grid -->
-</main>
+<main></main>
 
 
 <!-- ═══════════════════════════════════════════
@@ -2013,11 +1882,11 @@ function openBuilder(editData = null) {
 }
 
 function closeBuilder() {
-  document.getElementById('modalOverlay').classList.remove('open');
+  return;
 }
 
 function handleOverlayClick(e) {
-  if(e.target === document.getElementById('modalOverlay')) closeBuilder();
+  return;
 }
 
 function switchBSec(sec, btn) {
@@ -2062,9 +1931,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   loadDbSymbolsFromActiveChains();
-  loadStrategies();
-  setInterval(loadStrategies, 6000);
-  setInterval(refreshMonitorMock, 4000);
+  openBuilder();
 });
 
 /* ═════════════════════════════════════════════════
@@ -2398,7 +2265,7 @@ async function saveStrategy() {
       statusEl.textContent = 'Saved successfully';
       statusEl.style.color = 'var(--success)';
       showAlert('Strategy saved with full config.', 'success');
-      setTimeout(() => { closeBuilder(); loadStrategies(); }, 1000);
+      setTimeout(() => { closeBuilder(); }, 1000);
       return;
     }
 
@@ -2410,8 +2277,6 @@ async function saveStrategy() {
   } catch(e) {
     statusEl.textContent = 'API offline';
     statusEl.style.color = 'var(--warning)';
-    strategies.push(payload);
-    renderStrategies(strategies);
     showAlert('Saved locally (API unavailable).', 'success');
     setTimeout(() => closeBuilder(), 1200);
   } finally {

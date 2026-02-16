@@ -34,10 +34,29 @@ import logging.handlers
 import sys
 from pathlib import Path
 from typing import Optional, Dict
+from shoonya_platform.utils.text_sanitize import sanitize_text
 
 # Standard format: [TIMESTAMP] [LEVEL] [COMPONENT] [MESSAGE]
 LOG_FORMAT = '%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s'
 LOG_DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+
+class SanitizingFormatter(logging.Formatter):
+    """Formatter that normalizes mojibake/ansi and emits ASCII-safe text."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        original_msg = record.msg
+        original_args = record.args
+        try:
+            # Resolve lazy formatting first, then sanitize once.
+            resolved = record.getMessage()
+            record.msg = sanitize_text(resolved, ascii_only=True)
+            record.args = ()
+            formatted = super().format(record)
+            return sanitize_text(formatted, ascii_only=True)
+        finally:
+            record.msg = original_msg
+            record.args = original_args
 
 # Component names - use these consistently
 # Key → (logger_name, log_filename)
@@ -124,7 +143,7 @@ def setup_application_logging(
         root_logger.removeHandler(handler)
     
     # Create formatter
-    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATETIME_FORMAT)
+    formatter = SanitizingFormatter(LOG_FORMAT, datefmt=LOG_DATETIME_FORMAT)
     
     # Add console handler (shared by all loggers)
     _console_handler = logging.StreamHandler(sys.stdout)
@@ -359,7 +378,7 @@ def setup_logging(log_file: str = 'webhook_bot.log', log_level: str = 'INFO') ->
     for h in list(root_logger.handlers):
         root_logger.removeHandler(h)
     
-    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATETIME_FORMAT)
+    formatter = SanitizingFormatter(LOG_FORMAT, datefmt=LOG_DATETIME_FORMAT)
     
     file_handler = RotatingFileHandler(
         log_path,

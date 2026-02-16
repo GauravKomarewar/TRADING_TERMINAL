@@ -313,9 +313,9 @@ input:checked + .toggle-slider:before {
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('list')">📋 All Strategies</button>
-    <button class="tab-btn" onclick="switchTab('running')">▶️ Running</button>
-    <button class="tab-btn" onclick="switchTab('builder')">🔧 Builder</button>
+    <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>
+    <button class="tab-btn" onclick="switchTab('running', this)">▶️ Running</button>
+    <button class="tab-btn" onclick="switchTab('builder', this)">🔧 Builder</button>
   </div>
 
   <!-- ====== TAB 1: ALL STRATEGIES ====== -->
@@ -491,7 +491,7 @@ const api = async (method, path, body=null) => {
 const escHtml = str => String(str||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
 // ====== TAB SWITCHING ======
-function switchTab(name) {
+function switchTab(name, btnEl=null) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   
@@ -501,7 +501,8 @@ function switchTab(name) {
     'builder': 'builder-tab'
   };
   
-  event.target.classList.add('active');
+  const activeBtn = btnEl || document.querySelector(`.tab-btn[onclick*="switchTab('${name}'"]`);
+  if (activeBtn) activeBtn.classList.add('active');
   $(tabMap[name]).classList.add('active');
   
   if (name === 'list') loadStrategies();
@@ -572,6 +573,7 @@ function renderStrategies() {
           <div class="strat-card-actions">
             ${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name)}')">▶ Start</button>` : ''}
             ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name)}')">⏹ Stop</button>` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name)}')">📋 Logs</button>
             <button class="btn btn-secondary btn-sm" onclick="viewDetails('${escHtml(s.name)}')">👁</button>
             <button class="btn btn-secondary btn-sm" onclick="toggleEnabled('${escHtml(s.name)}', ${enabled})">${enabled ? '🔴' : '🟢'}</button>
             <button class="btn btn-warning btn-sm" onclick="cloneStrategy('${escHtml(s.name)}')">📋</button>
@@ -764,6 +766,19 @@ async function createQuickStrategy() {
       conditions: {},
       action: { type: 'short_both' }
     },
+    adjustment: {
+      enabled: false,
+      conditions: []
+    },
+    exit: {
+      conditions: [
+        {
+          type: 'time',
+          operator: '>=',
+          value: '15:20'
+        }
+      ]
+    },
     risk: {
       target: { pct: 50 },
       stoploss: { pct: 100 }
@@ -837,6 +852,7 @@ async function loadRunningStrategies() {
         </div>
         <div class="strat-card-actions">
           <button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name)}')">⏹ Stop</button>
+          <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name)}')">📋 Logs</button>
           <button class="btn btn-warning btn-sm" onclick="forceExit('${escHtml(s.name)}')">⚠️ Force Exit</button>
         </div>
       </div>
@@ -870,6 +886,11 @@ function openBuilder() {
 
 function openBuilderPage() {
   window.open('/dashboard/web/strategy_builder.html', '_blank');
+}
+
+function openLogs(name) {
+  const qs = name ? `?strategy=${encodeURIComponent(name)}` : '';
+  window.open(`/dashboard/web/strategy_logs.html${qs}`, '_blank');
 }
 
 function importStrategy() {

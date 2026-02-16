@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategy Logs | Shoonya Platform</title>
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/pages-config.js" defer></script>
+    <script src="/dashboard/web/shared/layout.js" defer></script>
+    <style>
+        :root {
+            --bg: #0a0e13;
+            --panel: #151b26;
+            --panel-2: #1c2333;
+            --border: #2d3548;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warn: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 72px 20px 20px;
+        }
+        main { max-width: 1500px; margin: 0 auto; }
+        .page-title {
+            font-size: 26px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--primary);
+        }
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 14px;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 2fr auto auto;
+            gap: 10px;
+            align-items: center;
+        }
+        .ctrl {
+            width: 100%;
+            height: 38px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            padding: 0 10px;
+            font-size: 13px;
+        }
+        .btn {
+            height: 38px;
+            padding: 0 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn.primary { background: #1d4ed8; border-color: #1d4ed8; }
+        .btn:hover { filter: brightness(1.08); }
+        .status-row {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 12px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background: var(--muted);
+        }
+        .dot.live { background: var(--success); }
+        .logs-wrap {
+            background: #0a0f1b;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            height: calc(100vh - 250px);
+            min-height: 420px;
+            overflow: auto;
+            padding: 10px;
+        }
+        .logs {
+            margin: 0;
+            font-family: Consolas, 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: #dbe6ff;
+        }
+        .empty {
+            color: var(--muted);
+            font-size: 13px;
+        }
+        @media (max-width: 1100px) {
+            .controls {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body data-page="strategy-logs">
+<div id="app-header"></div>
+<main>
+    <h1 class="page-title">Strategy Logs</h1>
+
+    <section class="panel">
+        <div class="controls">
+            <select id="strategySel" class="ctrl" title="Strategy">
+                <option value="__all__">All Strategies</option>
+            </select>
+            <select id="levelSel" class="ctrl" title="Level">
+                <option value="">All Levels</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+                <option value="CRITICAL">CRITICAL</option>
+            </select>
+            <select id="linesSel" class="ctrl" title="Lines">
+                <option value="100">100 lines</option>
+                <option value="200" selected>200 lines</option>
+                <option value="500">500 lines</option>
+                <option value="1000">1000 lines</option>
+            </select>
+            <input id="searchInput" class="ctrl" placeholder="Search text in logs..." />
+            <button id="refreshBtn" class="btn primary" type="button">Refresh</button>
+            <button id="autoBtn" class="btn" type="button">Auto: ON</button>
+        </div>
+        <div class="status-row">
+            <span><span id="liveDot" class="dot live"></span><span id="liveText">Live polling every 2s</span></span>
+            <span id="countText">Lines: 0</span>
+            <span id="sourceText">Source: --</span>
+            <span id="updatedText">Updated: --</span>
+        </div>
+    </section>
+
+    <section class="logs-wrap">
+        <pre id="logOutput" class="logs"><span class="empty">Loading logs...</span></pre>
+    </section>
+</main>
+
+<script>
+const els = {
+  strategy: document.getElementById('strategySel'),
+  level: document.getElementById('levelSel'),
+  lines: document.getElementById('linesSel'),
+  search: document.getElementById('searchInput'),
+  refresh: document.getElementById('refreshBtn'),
+  auto: document.getElementById('autoBtn'),
+  out: document.getElementById('logOutput'),
+  liveDot: document.getElementById('liveDot'),
+  liveText: document.getElementById('liveText'),
+  count: document.getElementById('countText'),
+  source: document.getElementById('sourceText'),
+  updated: document.getElementById('updatedText')
+};
+
+let autoOn = true;
+let timer = null;
+let baseLines = [];
+
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
+}
+
+function nowStr() {
+  return new Date().toLocaleTimeString();
+}
+
+function render(lines) {
+  const q = els.search.value.trim().toLowerCase();
+  const filtered = q ? lines.filter(l => l.toLowerCase().includes(q)) : lines;
+  els.count.textContent = `Lines: ${filtered.length}`;
+  if (!filtered.length) {
+    els.out.innerHTML = '<span class="empty">No logs match current filters.</span>';
+    return;
+  }
+  els.out.innerHTML = esc(filtered.join('\n'));
+  const wrap = els.out.parentElement;
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+async function loadStrategies() {
+  try {
+    const r = await fetch('/dashboard/strategy/configs', { credentials: 'include' });
+    if (!r.ok) return;
+    const data = await r.json();
+    const current = els.strategy.value;
+    const names = (data.configs || []).map(c => c.name).filter(Boolean).sort();
+    els.strategy.innerHTML = '<option value="__all__">All Strategies</option>' +
+      names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const qStrategy = urlParams.get('strategy');
+    if (qStrategy && names.includes(qStrategy)) {
+      els.strategy.value = qStrategy;
+    } else if (names.includes(current)) {
+      els.strategy.value = current;
+    }
+  } catch (_) {}
+}
+
+function normalizeRunnerLogs(rows) {
+  return (rows || []).map(row => {
+    const ts = row.timestamp || '';
+    const level = (row.level || 'INFO').toUpperCase();
+    const strategy = row.strategy || 'UNKNOWN';
+    const msg = row.message || '';
+    return `[${ts}] [${level}] [${strategy}] ${msg}`;
+  });
+}
+
+function normalizeStrategyLogs(rows, strategyName) {
+  return (rows || []).map(row => {
+    const ts = row.timestamp || '';
+    const level = (row.level || 'INFO').toUpperCase();
+    const logger = row.logger || strategyName;
+    const msg = row.message || '';
+    return `[${ts}] [${level}] [${logger}] ${msg}`;
+  });
+}
+
+async function fetchLogs() {
+  const strategy = els.strategy.value;
+  const level = els.level.value;
+  const lines = parseInt(els.lines.value, 10) || 200;
+
+  try {
+    const qp = new URLSearchParams({ lines: String(lines) });
+    if (strategy !== '__all__') qp.set('strategy', strategy);
+    if (level) qp.set('level', level);
+    const r = await fetch(`/dashboard/runner/file-logs?${qp.toString()}`, { credentials: 'include' });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    const rawLines = Array.isArray(data.lines) ? data.lines : [];
+    els.source.textContent = `Source: ${data.path || '/dashboard/runner/file-logs'}`;
+
+    baseLines = rawLines;
+    render(baseLines);
+    els.updated.textContent = `Updated: ${nowStr()}`;
+  } catch (e) {
+    els.out.textContent = `Failed to fetch logs: ${e.message || e}`;
+    els.updated.textContent = `Updated: ${nowStr()}`;
+  }
+}
+
+function setAuto(on) {
+  autoOn = on;
+  els.auto.textContent = `Auto: ${on ? 'ON' : 'OFF'}`;
+  els.liveDot.classList.toggle('live', on);
+  els.liveText.textContent = on ? 'Live polling every 2s' : 'Auto polling paused';
+  if (timer) clearInterval(timer);
+  if (on) timer = setInterval(fetchLogs, 2000);
+}
+
+els.refresh.addEventListener('click', fetchLogs);
+els.auto.addEventListener('click', () => setAuto(!autoOn));
+els.strategy.addEventListener('change', fetchLogs);
+els.level.addEventListener('change', fetchLogs);
+els.lines.addEventListener('change', fetchLogs);
+els.search.addEventListener('input', () => render(baseLines));
+
+window.addEventListener('load', async () => {
+  await loadStrategies();
+  await fetchLogs();
+  setAuto(true);
+  setInterval(loadStrategies, 15000);
+});
+</script>
+</body>
+</html>

@@ -106,6 +106,7 @@ from shoonya_platform.utils.utils import (
     calculate_success_rate,
     log_exception,get_date_filter
 )
+from shoonya_platform.utils.text_sanitize import sanitize_text
 #---------------------- dashboard session ----------------
 from shoonya_platform.api.dashboard.services.broker_service import BrokerView
 
@@ -696,7 +697,8 @@ class ShoonyaBot:
         """Safe wrapper for sending Telegram messages"""
         if self.telegram_enabled and self.telegram:
             try:
-                return self.telegram.send_message(message)
+                normalized = sanitize_text(message, ascii_only=True)
+                return self.telegram.send_message(normalized)
             except Exception as e:
                 logger.error(f"Telegram send error: {e}")
                 return False

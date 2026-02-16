@@ -19,12 +19,23 @@
         { id: 'orders',       label: 'Orders',        href: '/dashboard/web/orderbook.html' },
         { id: 'place-order',  label: 'Place Order',   href: '/dashboard/web/place_order.html' },
         { id: 'strategy',     label: 'Strategy',      href: '/dashboard/web/strategy.html' },
+        { id: 'strategy-logs',label: 'Strategy Logs', href: '/dashboard/web/strategy_logs.html' },
         { id: 'diagnostics',  label: 'Diagnostics',   href: '/dashboard/web/diagnostics.html' },
     ];
 
     // Check if pages-config.js is loaded and use it
     if (typeof getNavItems === 'function') {
         NAV_ITEMS = getNavItems();
+    }
+
+    // Hard guarantee: keep Strategy Logs visible even if cached/older pages-config omits it.
+    if (!Array.isArray(NAV_ITEMS)) NAV_ITEMS = [];
+    if (!NAV_ITEMS.some(item => item && item.id === 'strategy-logs')) {
+        NAV_ITEMS.push({
+            id: 'strategy-logs',
+            label: 'Strategy Logs',
+            href: '/dashboard/web/strategy_logs.html',
+        });
     }
 
     /* Ticker — all symbols scroll continuously like stock exchange ticker */

@@ -3,6 +3,7 @@
   "name": "CRUDEOILM_PAPER_PROFIT_ROLL_1M_TEST",
   "description": "Paper test: short strangle near 0.40 delta, after 60s roll the most profitable leg, after 120s exit all",
   "paper_mode": true,
+  "run_once": true,
   "poll_interval_sec": 2,
   "basic": {
     "exchange": "MCX",
@@ -26,14 +27,14 @@
         {
           "parameter": "ce_delta",
           "comparator": "~=",
-          "value": 0.40,
-          "tolerance": 0.10
+          "value": 0.4,
+          "tolerance": 0.1
         },
         {
           "parameter": "pe_delta",
           "comparator": "~=",
-          "value": 0.40,
-          "tolerance": 0.10
+          "value": 0.4,
+          "tolerance": 0.1
         }
       ]
     },
@@ -130,5 +131,7 @@
       "max_lots": 1,
       "scale_enabled": false
     }
-  }
+  },
+  "status": "RUNNING",
+  "status_updated_at": "2026-02-16T14:35:26.311157"
 }

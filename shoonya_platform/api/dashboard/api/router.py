@@ -28,6 +28,7 @@ import time
 import json
 import re
 import threading
+from collections import deque
 
 from shoonya_platform.api.dashboard.deps import require_dashboard_auth
 from shoonya_platform.api.dashboard.services.broker_service import BrokerService
@@ -927,35 +928,47 @@ def stop_strategy_execution(
         strategy_key = _slugify(strategy_name)
         bot = ctx["bot"]
         service = bot.strategy_executor_service
+        logger.info(f"Stop requested for strategy: {strategy_key}")
 
-        if strategy_key not in service._strategies:
-            return {
-                "success": False,
-                "strategy_name": strategy_key,
-                "message": "Strategy not running",
-                "timestamp": datetime.now().isoformat()
-            }
+        was_running_in_memory = strategy_key in service._strategies
 
-        service.unregister_strategy(strategy_key)
-        with bot._live_strategies_lock:
-            bot._live_strategies.pop(strategy_key, None)
-        logger.info(f"Strategy {strategy_key} stopped")
+        # 1) Stop active in-memory execution (if present)
+        if was_running_in_memory:
+            service.unregister_strategy(strategy_key)
+            with bot._live_strategies_lock:
+                bot._live_strategies.pop(strategy_key, None)
 
+        # 2) Always clear persisted executor state so stale RUNNING state cannot survive restart
+        try:
+            service.state_mgr.delete(strategy_key)
+        except Exception as se:
+            logger.warning(f"Could not clear persisted state for {strategy_key}: {se}")
+
+        # 3) Always mark config STOPPED so UI reflects latest action
         try:
             strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_key}.json"
             if strategy_file.exists():
                 cfg = json.loads(strategy_file.read_text(encoding="utf-8"))
                 cfg["status"] = "STOPPED"
                 cfg["status_updated_at"] = datetime.now().isoformat()
-                strategy_file.write_text(json.dumps(cfg, indent=2, default=str), encoding="utf-8")
+                strategy_file.write_text(
+                    json.dumps(cfg, indent=2, default=str),
+                    encoding="utf-8",
+                )
         except Exception as se:
             logger.warning(f"Could not update status for {strategy_key}: {se}")
 
+        logger.info(
+            "Strategy stop completed: %s (in_memory=%s)",
+            strategy_key,
+            was_running_in_memory,
+        )
         return {
             "success": True,
             "strategy_name": strategy_key,
             "message": f"Strategy {strategy_key} stopped",
-            "timestamp": datetime.now().isoformat()
+            "in_memory_running": was_running_in_memory,
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         logger.error(f"Error stopping strategy execution: {e}", exc_info=True)
@@ -2885,7 +2898,82 @@ async def websocket_log_stream(websocket):
     
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        try:
-            await websocket.close()
-        except Exception:
-            pass
+
+
+# ======================================================================
+# FILE-BASED LOG VIEW (REAL RUNTIME LOGS)
+# ======================================================================
+
+def _resolve_client_application_log(ctx: dict) -> Path:
+    """
+    Resolve client-scoped application log path.
+    Priority:
+    1) logs/<client_short_id>/application.log
+    2) logs/application.log
+    """
+    client_id = str(ctx.get("client_id", "") or "")
+    short_id = client_id.split(":")[-1].strip() if client_id else ""
+    log_root = _PROJECT_ROOT / "logs"
+
+    if short_id:
+        candidate = log_root / short_id / "application.log"
+        if candidate.exists():
+            return candidate
+
+    fallback = log_root / "application.log"
+    return fallback
+
+
+@router.get("/runner/file-logs")
+def get_runner_file_logs(
+    strategy: Optional[str] = Query(None, description="Filter by strategy name"),
+    lines: int = Query(300, ge=1, le=5000),
+    level: Optional[str] = Query(None, description="DEBUG/INFO/WARNING/ERROR/CRITICAL"),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Read real runtime logs from application.log (client-scoped).
+    Returns plain text lines after optional strategy + level filtering.
+    """
+    try:
+        log_path = _resolve_client_application_log(ctx)
+        if not log_path.exists():
+            return {
+                "path": str(log_path),
+                "strategy": strategy,
+                "level": level,
+                "lines_returned": 0,
+                "lines": [],
+                "timestamp": datetime.now().isoformat(),
+            }
+
+        strategy_q = (strategy or "").strip().lower()
+        level_q = (level or "").strip().upper()
+
+        # Tail efficiently
+        with log_path.open("r", encoding="utf-8", errors="replace") as f:
+            tail = deque(f, maxlen=max(lines * 10, lines))
+
+        filtered = []
+        for raw in tail:
+            line = raw.rstrip("\n")
+            if strategy_q and strategy_q not in line.lower():
+                continue
+            if level_q and f"| {level_q} " not in line:
+                continue
+            filtered.append(line)
+
+        if len(filtered) > lines:
+            filtered = filtered[-lines:]
+
+        return {
+            "path": str(log_path),
+            "strategy": strategy,
+            "level": level_q or None,
+            "lines_returned": len(filtered),
+            "lines": filtered,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error reading file logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

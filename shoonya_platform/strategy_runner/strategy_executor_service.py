@@ -1016,6 +1016,11 @@ class StrategyExecutorService:
                 
                 with open(config_path) as f:
                     config = json.load(f)
+                if self._is_paper_mode(config):
+                    logger.info(f"PAPER MODE STARTUP: skip broker reconcile for {strategy_name}")
+                    exec_state.last_reconcile_timestamp = time.time()
+                    self.state_mgr.save(exec_state)
+                    continue
                 
                 basic = config.get("basic", {})
                 exchange = basic.get("exchange", "NFO")
@@ -1132,6 +1137,7 @@ class StrategyExecutorService:
         
         # 7ï¸âƒ£ Load or create execution state
         exec_state = self.state_mgr.load(name)
+        paper_mode = self._is_paper_mode(config)
         if not exec_state:
             exec_state = ExecutionState(
                 strategy_name=name,
@@ -1141,11 +1147,16 @@ class StrategyExecutorService:
         else:
             logger.info(f"ðŸ“– Loaded existing execution state: {name}")
             
-            # Reconcile loaded state with broker
-            is_ok, reason = self.reconciler.reconcile(exec_state, exchange, underlying)
-            if not is_ok or reason != "in_sync":
-                logger.warning(f"âš ï¸ State reconciled: {name} | {reason}")
+            # Reconcile loaded state with broker (live only).
+            if not paper_mode:
+                is_ok, reason = self.reconciler.reconcile(exec_state, exchange, underlying)
+                if not is_ok or reason != "in_sync":
+                    logger.warning(f"âš ï¸ State reconciled: {name} | {reason}")
+                    self.state_mgr.save(exec_state)
+            else:
+                exec_state.last_reconcile_timestamp = time.time()
                 self.state_mgr.save(exec_state)
+                logger.info(f"PAPER MODE REGISTER: skip broker reconcile for {name}")
         
         # 8ï¸âƒ£ Register in executor
         self._strategies[name] = config
@@ -1280,25 +1291,35 @@ class StrategyExecutorService:
         # When flat, reconcile more frequently so orphan positions are recovered quickly.
         reconcile_interval_sec = 5 if not exec_state.has_position else 60
         if seconds_since_reconcile > reconcile_interval_sec:
-            basic = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
-            identity = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
-            exchange = basic.get("exchange") or identity.get("exchange") or "NFO"
-            underlying = basic.get("underlying") or identity.get("underlying") or "NIFTY"
-            
-            is_ok, reason = self.reconciler.reconcile(exec_state, exchange, underlying)
-            if reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
-                self.state_mgr.save(exec_state)
+            if self._is_paper_mode(config):
+                exec_state.last_reconcile_timestamp = time.time()
+            else:
+                basic = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
+                identity = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+                exchange = basic.get("exchange") or identity.get("exchange") or "NFO"
+                underlying = basic.get("underlying") or identity.get("underlying") or "NIFTY"
+                
+                is_ok, reason = self.reconciler.reconcile(exec_state, exchange, underlying)
+                if reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
+                    self.state_mgr.save(exec_state)
         
         # 4ï¸âƒ£ Check risk management (always first priority)
         risk_result = evaluate_risk_management(config, engine_state)
         if risk_result and risk_result.triggered:
-            logger.warning(f"ðŸ›‘ RISK LIMIT: {name} | {risk_result.rule_name}")
+            logger.warning(f"RISK LIMIT: {name} | {risk_result.rule_name}")
             
             if "max_loss" in risk_result.rule_name:
                 if exec_state.has_position:
                     self._execute_exit(name, exec_state, config, risk_result.rule_name)
-            
-            return  # Block further action
+                return
+
+            # Max trades should block NEW entries only.
+            # If a position is already open, allow adjustment/exit flow to continue.
+            if "max_trades" in risk_result.rule_name:
+                if not exec_state.has_position:
+                    return
+            else:
+                return  # Block further action for other risk triggers
         
         # 5ï¸âƒ£ Entry / Adjustment / Exit logic
         if not exec_state.has_position:
@@ -1647,7 +1668,7 @@ class StrategyExecutorService:
                 fallback_price=ce_option.get("ltp", 0),
             )
             if ce_order_type == "LIMIT" and ce_price <= 0:
-                logger.error("Ã¢ÂÅ’ CE leg requires LIMIT price but no valid price is available")
+                logger.error("CE leg requires LIMIT price but no valid price is available")
                 return
             legs.append({
                 "tradingsymbol": ce_option.get("trading_symbol", ""),
@@ -1668,7 +1689,7 @@ class StrategyExecutorService:
                 fallback_price=pe_option.get("ltp", 0),
             )
             if pe_order_type == "LIMIT" and pe_price <= 0:
-                logger.error("Ã¢ÂÅ’ PE leg requires LIMIT price but no valid price is available")
+                logger.error("PE leg requires LIMIT price but no valid price is available")
                 return
             legs.append({
                 "tradingsymbol": pe_option.get("trading_symbol", ""),
@@ -1760,7 +1781,9 @@ class StrategyExecutorService:
         
         self.state_mgr.save(exec_state)
         
-        logger.info(f"{'🧪 PAPER ENTRY COMPLETE' if paper_mode else '✅ ENTRY COMPLETE'}: {name}")
+        logger.info(
+            f"{'PAPER ENTRY COMPLETE' if paper_mode else 'ENTRY COMPLETE'}: {name}"
+        )
     
     def _check_adjustment(
         self,
@@ -1789,7 +1812,7 @@ class StrategyExecutorService:
         
         for result in results:
             if result.triggered:
-                logger.info(f"ðŸ”§ ADJUSTMENT TRIGGERED: {name} | {result.rule_name}")
+                logger.info(f"ADJUSTMENT TRIGGERED: {name} | {result.rule_name}")
                 logger.info(f"   Action: {result.action.get('type', '?')}")
                 
                 # EXECUTE THE ADJUSTMENT
@@ -1803,9 +1826,9 @@ class StrategyExecutorService:
                     exec_state.adjustments_today += 1
                     self.state_mgr.save(exec_state)
                     
-                    logger.info(f"âœ… ADJUSTMENT EXECUTED: {name}")
+                    logger.info(f"ADJUSTMENT EXECUTED: {name}")
                 else:
-                    logger.error(f"âŒ ADJUSTMENT FAILED: {name}")
+                    logger.error(f"ADJUSTMENT FAILED: {name}")
                 
                 # Only process first triggered rule
                 break
@@ -2360,14 +2383,14 @@ class StrategyExecutorService:
         if test_mode:
             alert["test_mode"] = test_mode
         
-        logger.info(f"â†’ ENTRY ALERT: {name} | {len(legs)} legs")
+        logger.info(f"ENTRY ALERT: {name} | {len(legs)} legs")
         
         try:
             result = self.bot.process_alert(alert)
-            logger.info(f"â† ENTRY RESULT: {result}")
+            logger.info(f"ENTRY RESULT: {result}")
             return result if isinstance(result, dict) else {"status": "UNKNOWN", "raw_result": result}
         except Exception as e:
-            logger.error(f"âŒ Entry alert failed: {e}", exc_info=True)
+            logger.error(f"Entry alert failed: {e}", exc_info=True)
             return {"status": "FAILED", "reason": str(e)}
     
     def _execute_exit(
@@ -2378,7 +2401,7 @@ class StrategyExecutorService:
         reason: str,
     ):
         """Execute exit via broker (live) or virtual close (paper mode)."""
-        logger.info(f"ðŸšª EXECUTING EXIT: {name} | reason={reason}")
+        logger.info(f"EXECUTING EXIT: {name} | reason={reason}")
         
         try:
             paper_mode = self._is_paper_mode(config)
@@ -2400,7 +2423,7 @@ class StrategyExecutorService:
                 )
                 
                 if not is_verified:
-                    logger.error(f"âŒ EXIT VERIFICATION FAILED: {name} | {verify_reason}")
+                    logger.error(f"EXIT VERIFICATION FAILED: {name} | {verify_reason}")
                     
                     if self.bot.telegram_enabled:
                         self.bot.send_telegram(
@@ -2412,7 +2435,7 @@ class StrategyExecutorService:
                     
                     return
             else:
-                logger.info(f"ðŸ§ª PAPER MODE EXIT: {name} | broker exit skipped")
+                logger.info(f"PAPER MODE EXIT: {name} | broker exit skipped")
             
             # FIXED: Get engine_state from registry to access combined_pnl
             engine_state = self._engine_states.get(name)
@@ -2420,9 +2443,9 @@ class StrategyExecutorService:
                 # Add current position P&L to cumulative daily P&L
                 exec_state.cumulative_daily_pnl += engine_state.combined_pnl
                 logger.info(
-                    f"ðŸ’° P&L Update: {name} | "
-                    f"Position P&L: â‚¹{engine_state.combined_pnl:.2f} | "
-                    f"Cumulative Daily: â‚¹{exec_state.cumulative_daily_pnl:.2f}"
+                    f"P&L Update: {name} | "
+                    f"Position P&L: INR {engine_state.combined_pnl:.2f} | "
+                    f"Cumulative Daily: INR {exec_state.cumulative_daily_pnl:.2f}"
                 )
             
             # Clear position state
@@ -2440,10 +2463,28 @@ class StrategyExecutorService:
             
             self.state_mgr.save(exec_state)
             
-            logger.info(f"âœ… EXIT COMPLETE: {name}")
+            logger.info(f"EXIT COMPLETE: {name}")
+
+            # Optional one-shot mode: auto-stop strategy after first full exit.
+            basic_cfg = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
+            run_once = bool(
+                config.get("run_once")
+                or config.get("single_cycle")
+                or basic_cfg.get("run_once")
+                or basic_cfg.get("single_cycle")
+            )
+            if run_once:
+                logger.info(f"RUN_ONCE enabled - stopping strategy after exit: {name}")
+                try:
+                    self.unregister_strategy(name)
+                    with self.bot._live_strategies_lock:
+                        self.bot._live_strategies.pop(name, None)
+                    self.state_mgr.delete(name)
+                except Exception as stop_err:
+                    logger.warning(f"Could not auto-stop run_once strategy {name}: {stop_err}")
             
         except Exception as e:
-            logger.error(f"âŒ Exit execution failed: {e}", exc_info=True)
+            logger.error(f"Exit execution failed: {e}", exc_info=True)
             
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(

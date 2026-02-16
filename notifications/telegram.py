@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 import requests
 from typing import Optional, Literal
+from shoonya_platform.utils.text_sanitize import sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,11 @@ class TelegramNotifier:
                 return False
         
         try:
+            safe_message = sanitize_text(message, ascii_only=True)
             url = f"{self.base_url}/sendMessage"
             data = {
                 'chat_id': self.chat_id,
-                'text': message,
+                'text': safe_message,
                 'parse_mode': parse_mode
             }
             
@@ -80,7 +82,7 @@ class TelegramNotifier:
                 response_data = response.json()
                 if response_data.get('ok'):
                     logger.debug("Telegram message sent successfully")
-                    self._append_message_log(message)
+                    self._append_message_log(safe_message)
                     return True
                 else:
                     logger.error(f"Telegram API error: {response_data}")
@@ -110,10 +112,10 @@ class TelegramNotifier:
         try:
             payload = {
                 "ts": time.time(),
-                "message": message,
+                "message": sanitize_text(message, ascii_only=True),
             }
             with open(self._log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                f.write(json.dumps(payload, ensure_ascii=True) + "\n")
         except Exception as e:
             logger.warning(f"Failed to log telegram message: {e}")
     

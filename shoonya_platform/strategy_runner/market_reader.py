@@ -422,5 +422,5 @@ class MarketReader:
         except Exception:
             pass
         # Fallback lookup
-        from shoonya_platform.fresh_strategy.config_schema import LOT_SIZES
+        from shoonya_platform.strategy_runner.config_schema import LOT_SIZES
         return LOT_SIZES.get(self.symbol, 1)

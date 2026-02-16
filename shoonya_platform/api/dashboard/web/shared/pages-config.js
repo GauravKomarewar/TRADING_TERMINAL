@@ -1,5 +1,5 @@
-/* ================================================================
-   PAGES CONFIGURATION — Central registry for all dashboard pages
+﻿/* ================================================================
+   PAGES CONFIGURATION â€” Central registry for all dashboard pages
    ================================================================
    
    HOW TO ADD A NEW PAGE:
@@ -21,37 +21,43 @@ const PAGES = [
         id: 'dashboard',
         label: 'Dashboard',
         href: '/dashboard/web/dashboard.html',
-        icon: '📊'
+        icon: 'ðŸ“Š'
     },
     {
         id: 'option-chain',
         label: 'Option Chain',
         href: '/dashboard/web/option_chain_dashboard.html',
-        icon: '📈'
+        icon: 'ðŸ“ˆ'
     },
     {
         id: 'orders',
         label: 'Orders',
         href: '/dashboard/web/orderbook.html',
-        icon: '⚡'
+        icon: 'âš¡'
     },
     {
         id: 'place-order',
         label: 'Place Order',
         href: '/dashboard/web/place_order.html',
-        icon: '✍️'
+        icon: 'âœï¸'
     },
     {
         id: 'strategy',
         label: 'Strategy',
         href: '/dashboard/web/strategy.html',
-        icon: '⚙️'
+        icon: 'âš™ï¸'
+    },
+    {
+        id: 'strategy-logs',
+        label: 'Strategy Logs',
+        href: '/dashboard/web/strategy_logs.html',
+        icon: 'LOG'
     },
     {
         id: 'diagnostics',
         label: 'Diagnostics',
         href: '/dashboard/web/diagnostics.html',
-        icon: '🔍'
+        icon: 'ðŸ”'
     }
     // Add more pages here as needed!
 ];
@@ -81,3 +87,4 @@ function getNavItems() {
    PAGE TEMPLATE - See ./README.md for complete HTML template structure
    (Template stored separately to avoid syntax errors in JavaScript file)
 */
+

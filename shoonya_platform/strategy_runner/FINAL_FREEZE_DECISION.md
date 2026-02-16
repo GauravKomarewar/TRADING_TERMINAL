@@ -229,7 +229,7 @@ Variable properly defined before use
 | `condition_engine.py` | ✅ Ready | 2 fixed | ✅ Pass |
 | `market_reader.py` | ✅ Ready | 0 | ✅ Pass |
 | `strategy_executor_service.py` | ✅ Ready | 5 fixed | ✅ Pass |
-| `strategy_builder_advanced.html` | ⚠️ Minor gap | 0 | N/A |
+| `api/dashboard/web/strategy_builder.html` | ⚠️ Minor gap | 0 | N/A |
 | `saved_configs/test_strategy.json` | ✅ Ready | 0 | ✅ Pass |
 
 **Total Files**: 7  

@@ -4,7 +4,7 @@ config_schema.py — JSON Strategy Config Validator
 ===================================================
 
 Validates every possible field and combination in the v3.0 strategy JSON schema.
-Ensures configs built by strategy_builder_advanced.html or edited by hand are correct
+Ensures configs built by dashboard strategy_builder.html (or edited by hand) are correct
 before the runner processes them.
 
 All validation errors are collected (not fail-fast) so the user sees every problem at once.

@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 STRATEGY EXECUTOR SERVICE - PRODUCTION GRADE v2.0
 ==================================================
 
-✅ ALL CRITICAL BUGS FIXED
-✅ PRODUCTION HARDENING APPLIED
-✅ COPY-TRADING READY
-✅ REAL MONEY SAFE
+âœ… ALL CRITICAL BUGS FIXED
+âœ… PRODUCTION HARDENING APPLIED
+âœ… COPY-TRADING READY
+âœ… REAL MONEY SAFE
 
 Integrates:
 - condition_engine.py (rule evaluation)
@@ -58,6 +58,7 @@ from shoonya_platform.strategy_runner.config_schema import (
     coerce_config_numerics,
     LOT_SIZES,
 )
+from scripts.scriptmaster import requires_limit_order
 
 logger = logging.getLogger("STRATEGY_EXECUTOR")
 
@@ -88,6 +89,14 @@ def _convert_dashboard_v2_to_runner_v3(config: Dict[str, Any], strategy_name: st
     exit_v2 = config.get("exit", {}) or {}
     rms_v2 = config.get("rms", {}) or {}
     market_cfg = config.get("market_config", {}) or {}
+    if not market_cfg and isinstance(identity, dict):
+        # Compatibility: some dashboard save paths keep market metadata under identity.
+        market_cfg = {
+            "market_type": identity.get("market_type"),
+            "exchange": identity.get("exchange"),
+            "symbol": identity.get("underlying"),
+            "db_path": identity.get("db_path"),
+        }
 
     timing_v2 = entry_v2.get("timing", {}) or {}
     position_v2 = entry_v2.get("position", {}) or {}
@@ -154,7 +163,7 @@ def _convert_dashboard_v2_to_runner_v3(config: Dict[str, Any], strategy_name: st
         },
         "market_data": {
             "source": "database",
-            "db_path": market_cfg.get("db_path"),
+            "db_path": market_cfg.get("db_path") or identity.get("db_path"),
         },
         "entry": {
             "rule_type": "always",
@@ -269,7 +278,7 @@ class StateManager:
     
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self._lock = threading.RLock()  # ✅ Thread-safe
+        self._lock = threading.RLock()  # âœ… Thread-safe
         self._ensure_schema()
     
     def _ensure_schema(self):
@@ -304,7 +313,7 @@ class StateManager:
                 """, (state.strategy_name, state.run_id, state_json, time.time()))
                 
                 conn.commit()
-                logger.debug(f"💾 State saved: {state.strategy_name}")
+                logger.debug(f"ðŸ’¾ State saved: {state.strategy_name}")
             finally:
                 conn.close()
     
@@ -320,7 +329,7 @@ class StateManager:
                 
                 if row:
                     data = json.loads(row[0])
-                    logger.debug(f"📖 State loaded: {strategy_name}")
+                    logger.debug(f"ðŸ“– State loaded: {strategy_name}")
                     return ExecutionState(**data)
                 return None
             finally:
@@ -336,7 +345,7 @@ class StateManager:
                     (strategy_name,)
                 )
                 conn.commit()
-                logger.info(f"🗑️ State deleted: {strategy_name}")
+                logger.info(f"ðŸ—‘ï¸ State deleted: {strategy_name}")
             finally:
                 conn.close()
     
@@ -403,7 +412,7 @@ class BrokerReconciler:
             return matching
             
         except Exception as e:
-            logger.error(f"❌ Broker position fetch failed: {e}")
+            logger.error(f"âŒ Broker position fetch failed: {e}")
             return []
     
     def reconcile(
@@ -416,9 +425,9 @@ class BrokerReconciler:
         CRITICAL FIX: Force state sync with broker truth.
         
         Handles 3 cases:
-        1. State has position, broker has NONE → Clear state (phantom position)
-        2. State has NO position, broker HAS positions → Reconstruct state
-        3. Both have positions → Verify quantities match
+        1. State has position, broker has NONE â†’ Clear state (phantom position)
+        2. State has NO position, broker HAS positions â†’ Reconstruct state
+        3. Both have positions â†’ Verify quantities match
         
         Returns:
             (success, reason_code)
@@ -428,10 +437,10 @@ class BrokerReconciler:
         # CASE 1: Phantom position (state thinks has, broker shows none)
         if state.has_position and not broker_positions:
             logger.critical(
-                f"🚨 FORCE SYNC: {state.strategy_name} - clearing phantom position\n"
+                f"ðŸš¨ FORCE SYNC: {state.strategy_name} - clearing phantom position\n"
                 f"   Strategy state: HAS POSITION\n"
-                f"   CE: {state.ce_symbol} ({state.ce_qty} @ ₹{state.ce_entry_price})\n"
-                f"   PE: {state.pe_symbol} ({state.pe_qty} @ ₹{state.pe_entry_price})\n"
+                f"   CE: {state.ce_symbol} ({state.ce_qty} @ â‚¹{state.ce_entry_price})\n"
+                f"   PE: {state.pe_symbol} ({state.pe_qty} @ â‚¹{state.pe_entry_price})\n"
                 f"   Broker truth: NO POSITIONS\n"
                 f"   Action: FORCE CLEAR STATE"
             )
@@ -453,14 +462,14 @@ class BrokerReconciler:
             # Alert user
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(
-                    f"⚠️ POSITION MISMATCH FIXED\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"âš ï¸ POSITION MISMATCH FIXED\n"
+                    f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
                     f"Strategy: {state.strategy_name}\n"
                     f"Issue: Phantom position in state\n"
                     f"Action: Cleared state\n"
                     f"Broker truth: NO POSITIONS\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"✅ State synced with broker"
+                    f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                    f"âœ… State synced with broker"
                 )
             
             return True, "forced_state_clear"
@@ -468,7 +477,7 @@ class BrokerReconciler:
         # CASE 2: Orphan positions (state thinks none, broker has positions)
         if not state.has_position and broker_positions:
             logger.critical(
-                f"🚨 ORPHAN POSITIONS DETECTED: {state.strategy_name}\n"
+                f"ðŸš¨ ORPHAN POSITIONS DETECTED: {state.strategy_name}\n"
                 f"   Strategy state: NO POSITION\n"
                 f"   Broker truth: {len(broker_positions)} positions\n"
                 f"   Symbols: {[p['symbol'] for p in broker_positions]}\n"
@@ -512,21 +521,21 @@ class BrokerReconciler:
                 state.entry_timestamp = time.time()
                 state.last_reconcile_timestamp = time.time()
                 
-                logger.info(f"✅ STATE RECONSTRUCTED from broker positions")
+                logger.info(f"âœ… STATE RECONSTRUCTED from broker positions")
             
             # Alert user
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(
-                    f"⚠️ ORPHAN POSITIONS RECOVERED\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"âš ï¸ ORPHAN POSITIONS RECOVERED\n"
+                    f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
                     f"Strategy: {state.strategy_name}\n"
                     f"Issue: Broker positions without state\n"
                     f"Action: Reconstructed state\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
                     f"CE: {state.ce_symbol} ({state.ce_qty})\n"
                     f"PE: {state.pe_symbol} ({state.pe_qty})\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"✅ State synced with broker"
+                    f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                    f"âœ… State synced with broker"
                 )
             
             return True, "reconstructed_from_broker"
@@ -543,12 +552,12 @@ class BrokerReconciler:
             if state.ce_symbol and ce_broker:
                 if state.ce_qty != ce_broker['qty']:
                     logger.warning(
-                        f"⚠️ CE QTY MISMATCH: {state.strategy_name}\n"
+                        f"âš ï¸ CE QTY MISMATCH: {state.strategy_name}\n"
                         f"   State: {state.ce_qty}\n"
                         f"   Broker: {ce_broker['qty']}\n"
                         f"   Syncing to broker truth"
                     )
-                    changes.append(f"CE qty: {state.ce_qty} → {ce_broker['qty']}")
+                    changes.append(f"CE qty: {state.ce_qty} â†’ {ce_broker['qty']}")
                     state.ce_qty = ce_broker['qty']  # Broker is truth
                     qty_mismatch = True
             
@@ -556,12 +565,12 @@ class BrokerReconciler:
             if state.pe_symbol and pe_broker:
                 if state.pe_qty != pe_broker['qty']:
                     logger.warning(
-                        f"⚠️ PE QTY MISMATCH: {state.strategy_name}\n"
+                        f"âš ï¸ PE QTY MISMATCH: {state.strategy_name}\n"
                         f"   State: {state.pe_qty}\n"
                         f"   Broker: {pe_broker['qty']}\n"
                         f"   Syncing to broker truth"
                     )
-                    changes.append(f"PE qty: {state.pe_qty} → {pe_broker['qty']}")
+                    changes.append(f"PE qty: {state.pe_qty} â†’ {pe_broker['qty']}")
                     state.pe_qty = pe_broker['qty']  # Broker is truth
                     qty_mismatch = True
             
@@ -570,10 +579,10 @@ class BrokerReconciler:
                 
                 if self.bot.telegram_enabled:
                     self.bot.send_telegram(
-                        f"ℹ️ QUANTITY SYNC\n"
+                        f"â„¹ï¸ QUANTITY SYNC\n"
                         f"Strategy: {state.strategy_name}\n"
-                        f"Changes:\n" + "\n".join(f"• {c}" for c in changes) +
-                        f"\n✅ Synced with broker"
+                        f"Changes:\n" + "\n".join(f"â€¢ {c}" for c in changes) +
+                        f"\nâœ… Synced with broker"
                     )
                 
                 return True, "qty_sync_forced"
@@ -613,8 +622,11 @@ class ExecutionVerifier:
         repo = self.bot.order_repo
         start_time = time.time()
         
+        require_ce = bool(ce_symbol)
+        require_pe = bool(pe_symbol)
+
         logger.info(
-            f"🔍 VERIFYING ENTRY: {strategy_name}\n"
+            f"ðŸ” VERIFYING ENTRY: {strategy_name}\n"
             f"   CE: {ce_symbol}\n"
             f"   PE: {pe_symbol}\n"
             f"   Timeout: {timeout_sec}s"
@@ -625,15 +637,15 @@ class ExecutionVerifier:
         pe_found = False
         
         while (time.time() - start_time) < timeout_sec:
-            ce_orders = repo.get_orders_by_symbol(ce_symbol)
-            pe_orders = repo.get_orders_by_symbol(pe_symbol)
+            ce_orders = repo.get_orders_by_symbol(ce_symbol) if require_ce else []
+            pe_orders = repo.get_orders_by_symbol(pe_symbol) if require_pe else []
             
             # Check if orders exist AND are executed
-            ce_found = any(
+            ce_found = (not require_ce) or any(
                 o.status == "EXECUTED" and o.strategy_name == strategy_name
                 for o in ce_orders
             )
-            pe_found = any(
+            pe_found = (not require_pe) or any(
                 o.status == "EXECUTED" and o.strategy_name == strategy_name
                 for o in pe_orders
             )
@@ -649,8 +661,8 @@ class ExecutionVerifier:
         
         logger.info(
             f"OMS CHECK: {strategy_name}\n"
-            f"   CE: {'✅' if ce_found else '❌'}\n"
-            f"   PE: {'✅' if pe_found else '❌'}\n"
+            f"   CE: {'âœ…' if ce_found else 'âŒ'}\n"
+            f"   PE: {'âœ…' if pe_found else 'âŒ'}\n"
             f"   Time: {elapsed:.1f}s"
         )
         
@@ -663,33 +675,33 @@ class ExecutionVerifier:
                 if int(p.get("netqty", 0)) != 0
             }
             
-            broker_ce = ce_symbol in broker_symbols
-            broker_pe = pe_symbol in broker_symbols
+            broker_ce = (not require_ce) or (ce_symbol in broker_symbols)
+            broker_pe = (not require_pe) or (pe_symbol in broker_symbols)
             broker_ok = broker_ce and broker_pe
             
             logger.info(
                 f"BROKER CHECK: {strategy_name}\n"
-                f"   CE: {'✅' if broker_ce else '❌'}\n"
-                f"   PE: {'✅' if broker_pe else '❌'}"
+                f"   CE: {'âœ…' if broker_ce else 'âŒ'}\n"
+                f"   PE: {'âœ…' if broker_pe else 'âŒ'}"
             )
             
         except Exception as e:
-            logger.error(f"❌ Broker verification failed: {e}")
+            logger.error(f"âŒ Broker verification failed: {e}")
             broker_ok = False
             broker_ce = False
             broker_pe = False
         
         # BOTH must match for complete verification
         if oms_ok and broker_ok:
-            logger.info(f"✅ ENTRY VERIFIED: {strategy_name} | OMS + Broker match")
+            logger.info(f"âœ… ENTRY VERIFIED: {strategy_name} | OMS + Broker match")
             return True, "verified"
         
         # CRITICAL: Mismatch detected
         if oms_ok and not broker_ok:
             logger.critical(
-                f"🚨 OMS-BROKER MISMATCH: {strategy_name}\n"
-                f"   OMS: EXECUTED ✅\n"
-                f"   Broker: NO POSITIONS ❌\n"
+                f"ðŸš¨ OMS-BROKER MISMATCH: {strategy_name}\n"
+                f"   OMS: EXECUTED âœ…\n"
+                f"   Broker: NO POSITIONS âŒ\n"
                 f"   This should NEVER happen!\n"
                 f"   Possible causes:\n"
                 f"   1. Broker order rejected but OMS not updated\n"
@@ -699,28 +711,28 @@ class ExecutionVerifier:
             
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(
-                    f"🚨 CRITICAL: ENTRY MISMATCH\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"ðŸš¨ CRITICAL: ENTRY MISMATCH\n"
+                    f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
                     f"Strategy: {strategy_name}\n"
-                    f"OMS: Executed ✅\n"
-                    f"Broker: No positions ❌\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"⚠️ MANUAL CHECK REQUIRED"
+                    f"OMS: Executed âœ…\n"
+                    f"Broker: No positions âŒ\n"
+                    f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                    f"âš ï¸ MANUAL CHECK REQUIRED"
                 )
             
             return False, "oms_broker_mismatch"
         
         if not oms_ok and broker_ok:
             logger.critical(
-                f"🚨 ORPHAN ENTRY: {strategy_name}\n"
-                f"   OMS: NO RECORDS ❌\n"
-                f"   Broker: POSITIONS EXIST ✅\n"
+                f"ðŸš¨ ORPHAN ENTRY: {strategy_name}\n"
+                f"   OMS: NO RECORDS âŒ\n"
+                f"   Broker: POSITIONS EXIST âœ…\n"
                 f"   Possible OMS database corruption!"
             )
             
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(
-                    f"🚨 ORPHAN ENTRY DETECTED\n"
+                    f"ðŸš¨ ORPHAN ENTRY DETECTED\n"
                     f"Strategy: {strategy_name}\n"
                     f"Broker has positions but OMS has no records\n"
                     f"This may indicate OMS database issues"
@@ -730,7 +742,7 @@ class ExecutionVerifier:
         
         # Complete failure
         logger.error(
-            f"❌ ENTRY VERIFICATION FAILED: {strategy_name}\n"
+            f"âŒ ENTRY VERIFICATION FAILED: {strategy_name}\n"
             f"   OMS: CE={ce_found}, PE={pe_found}\n"
             f"   Broker: CE={broker_ce}, PE={broker_pe}\n"
             f"   Timeout: {timeout_sec}s | Elapsed: {elapsed:.1f}s"
@@ -747,7 +759,7 @@ class ExecutionVerifier:
         """Verify exit completed (all positions closed)."""
         start_time = time.time()
         
-        logger.info(f"🔍 VERIFYING EXIT: {strategy_name} | timeout={timeout_sec}s")
+        logger.info(f"ðŸ” VERIFYING EXIT: {strategy_name} | timeout={timeout_sec}s")
         
         # Wait for broker positions to clear
         while (time.time() - start_time) < timeout_sec:
@@ -769,7 +781,7 @@ class ExecutionVerifier:
                 
                 if not has_positions:
                     elapsed = time.time() - start_time
-                    logger.info(f"✅ EXIT VERIFIED: {strategy_name} | {elapsed:.1f}s")
+                    logger.info(f"âœ… EXIT VERIFIED: {strategy_name} | {elapsed:.1f}s")
                     return True, "verified"
                 
             except Exception as e:
@@ -779,7 +791,7 @@ class ExecutionVerifier:
         
         # Timeout - positions still exist
         logger.error(
-            f"❌ EXIT TIMEOUT: {strategy_name}\n"
+            f"âŒ EXIT TIMEOUT: {strategy_name}\n"
             f"   Positions still exist after {timeout_sec}s"
         )
         
@@ -829,7 +841,7 @@ class StrategyExecutorService:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         
-        logger.info(f"✅ StrategyExecutorService initialized | client={self.client_id}")
+        logger.info(f"âœ… StrategyExecutorService initialized | client={self.client_id}")
         
         # CRITICAL: Reconcile all persisted strategies at startup
         self._reconcile_all_strategies_at_startup()
@@ -857,6 +869,123 @@ class StrategyExecutorService:
             "internal alerts may fail with Invalid secret key"
         )
         return ""
+
+    def _resolve_test_mode(self, config: Dict[str, Any]) -> Optional[str]:
+        """
+        Resolve OMS test_mode from strategy config.
+        Supported values: SUCCESS / FAILURE / None (live mode).
+        """
+        identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+        entry_cfg = config.get("entry", {}) if isinstance(config.get("entry"), dict) else {}
+        execution_cfg = entry_cfg.get("execution", {}) if isinstance(entry_cfg.get("execution"), dict) else {}
+
+        if config.get("test_mode") is not None:
+            raw = config.get("test_mode")
+        elif identity_cfg.get("test_mode") is not None:
+            raw = identity_cfg.get("test_mode")
+        else:
+            raw = execution_cfg.get("test_mode")
+
+        if raw is None:
+            return None
+
+        if isinstance(raw, bool):
+            return "SUCCESS" if raw else None
+
+        value = str(raw).strip().upper()
+        if value in {"SUCCESS", "FAILURE"}:
+            return value
+        if value in {"TRUE", "1", "YES", "TEST", "ON"}:
+            return "SUCCESS"
+        if value in {"FALSE", "0", "NO", "LIVE", "OFF", "NONE", ""}:
+            return None
+
+        logger.warning(f"Unknown test_mode '{raw}' - using live mode")
+        return None
+
+    def _has_paper_mode_flag(self, config: Dict[str, Any]) -> bool:
+        """
+        Check explicit paper mode flags in strategy config.
+        """
+        identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+        entry_cfg = config.get("entry", {}) if isinstance(config.get("entry"), dict) else {}
+        execution_cfg = entry_cfg.get("execution", {}) if isinstance(entry_cfg.get("execution"), dict) else {}
+
+        candidates = (
+            config.get("paper_mode"),
+            identity_cfg.get("paper_mode"),
+            execution_cfg.get("paper_mode"),
+            config.get("is_paper"),
+            identity_cfg.get("is_paper"),
+            execution_cfg.get("is_paper"),
+        )
+        return any(bool(v) for v in candidates if v is not None)
+
+    def _is_paper_mode(self, config: Dict[str, Any]) -> bool:
+        """
+        Paper mode is ON if:
+        - explicit paper_mode/is_paper flag is true, OR
+        - test_mode is configured (SUCCESS/FAILURE).
+        """
+        return self._has_paper_mode_flag(config) or (self._resolve_test_mode(config) is not None)
+
+    def _resolve_intent_test_mode(self, config: Dict[str, Any]) -> Optional[str]:
+        """
+        Resolve test_mode sent to OMS intents.
+        If paper mode is explicitly enabled but test_mode is absent, default to SUCCESS.
+        """
+        explicit = self._resolve_test_mode(config)
+        if explicit:
+            return explicit
+        if self._has_paper_mode_flag(config):
+            return "SUCCESS"
+        return None
+
+    def _resolve_order_contract(
+        self,
+        *,
+        exchange: str,
+        tradingsymbol: str,
+        preferred_order_type: Optional[str],
+        preferred_price: Optional[Any] = None,
+        fallback_price: Optional[Any] = None,
+    ) -> Tuple[str, float]:
+        """
+        Resolve order_type + price for OMS alert legs.
+        If order_type is missing/invalid, derive default from ScriptMaster rule.
+        """
+        resolved_order_type = str(preferred_order_type or "").strip().upper()
+        if resolved_order_type not in {"LIMIT", "MARKET"}:
+            resolved_order_type = ""
+
+        must_limit = False
+        try:
+            must_limit = requires_limit_order(
+                exchange=str(exchange or "NFO").upper(),
+                tradingsymbol=str(tradingsymbol or ""),
+            )
+        except Exception as e:
+            logger.warning(f"Order contract lookup failed for {tradingsymbol}: {e}")
+
+        if resolved_order_type == "MARKET" and must_limit:
+            logger.warning(f"Overriding MARKET to LIMIT for {tradingsymbol} (instrument requires LIMIT)")
+            resolved_order_type = "LIMIT"
+
+        if not resolved_order_type:
+            resolved_order_type = "LIMIT" if must_limit else "MARKET"
+
+        def _as_price(value: Any) -> Optional[float]:
+            try:
+                px = float(value)
+                return px if px > 0 else None
+            except Exception:
+                return None
+
+        if resolved_order_type == "LIMIT":
+            resolved_price = _as_price(preferred_price) or _as_price(fallback_price)
+            return "LIMIT", float(resolved_price or 0.0)
+
+        return "MARKET", 0.0
     
     def _reconcile_all_strategies_at_startup(self):
         """
@@ -864,12 +993,12 @@ class StrategyExecutorService:
         
         Runs once at service startup to catch any state corruption from crashes.
         """
-        logger.info("🔍 STARTUP: Reconciling all strategies with broker...")
+        logger.info("ðŸ” STARTUP: Reconciling all strategies with broker...")
         
         all_strategy_names = self.state_mgr.list_all()
         
         if not all_strategy_names:
-            logger.info("ℹ️ No persisted strategies found")
+            logger.info("â„¹ï¸ No persisted strategies found")
             return
         
         for strategy_name in all_strategy_names:
@@ -882,7 +1011,7 @@ class StrategyExecutorService:
                 # Get config to know exchange/underlying
                 config_path = Path(__file__).parent / "saved_configs" / f"{strategy_name}.json"
                 if not config_path.exists():
-                    logger.warning(f"⚠️ No config found for persisted strategy: {strategy_name}")
+                    logger.warning(f"âš ï¸ No config found for persisted strategy: {strategy_name}")
                     continue
                 
                 with open(config_path) as f:
@@ -896,19 +1025,19 @@ class StrategyExecutorService:
                 is_ok, reason = self.reconciler.reconcile(exec_state, exchange, underlying)
                 
                 if not is_ok:
-                    logger.warning(f"⚠️ STARTUP RECONCILE: {strategy_name} | {reason}")
+                    logger.warning(f"âš ï¸ STARTUP RECONCILE: {strategy_name} | {reason}")
                 else:
-                    logger.info(f"✅ STARTUP RECONCILE: {strategy_name} | {reason}")
+                    logger.info(f"âœ… STARTUP RECONCILE: {strategy_name} | {reason}")
                 
                 # Save synced state
                 if reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
                     self.state_mgr.save(exec_state)
-                    logger.info(f"💾 Synced state saved: {strategy_name}")
+                    logger.info(f"ðŸ’¾ Synced state saved: {strategy_name}")
             
             except Exception as e:
-                logger.error(f"❌ Startup reconcile failed for {strategy_name}: {e}")
+                logger.error(f"âŒ Startup reconcile failed for {strategy_name}: {e}")
         
-        logger.info("✅ STARTUP RECONCILIATION COMPLETE")
+        logger.info("âœ… STARTUP RECONCILIATION COMPLETE")
     
     def register_strategy(self, name: str, config_path: str):
         """
@@ -916,26 +1045,26 @@ class StrategyExecutorService:
         
         CRITICAL ENHANCEMENT: Validates config before accepting strategy.
         """
-        logger.info(f"📝 Registering strategy: {name}")
+        logger.info(f"ðŸ“ Registering strategy: {name}")
         
-        # 1️⃣ Load JSON and normalize schema for runner
+        # 1ï¸âƒ£ Load JSON and normalize schema for runner
         with open(config_path, "r", encoding="utf-8") as f:
             raw_config = json.load(f)
 
         config, was_converted = _normalize_config_for_runner(raw_config, name)
         if was_converted:
             logger.warning(
-                "⚠️ Schema adapter applied for strategy '%s': dashboard v2 -> runner v3",
+                "âš ï¸ Schema adapter applied for strategy '%s': dashboard v2 -> runner v3",
                 name,
             )
 
-        # 2️⃣ Validate normalized config
+        # 2ï¸âƒ£ Validate normalized config
         is_valid, errors = validate_config(config)
         if not is_valid:
-            error_msg = f"❌ VALIDATION FAILED: {name}\n"
+            error_msg = f"âŒ VALIDATION FAILED: {name}\n"
             for err in errors:
                 if err.severity == "error":
-                    error_msg += f"  • {err.path}: {err.message}\n"
+                    error_msg += f"  â€¢ {err.path}: {err.message}\n"
             
             logger.error(error_msg)
             raise ValueError(error_msg)
@@ -943,34 +1072,42 @@ class StrategyExecutorService:
         # Show warnings (non-blocking)
         warnings = [e for e in errors if e.severity == "warning"]
         if warnings:
-            logger.warning(f"⚠️ Config warnings for {name}:")
+            logger.warning(f"âš ï¸ Config warnings for {name}:")
             for w in warnings:
-                logger.warning(f"  • {w.path}: {w.message}")
+                logger.warning(f"  â€¢ {w.path}: {w.message}")
         
-        # 3️⃣ Coerce numerics
+        # 3ï¸âƒ£ Coerce numerics
         config = coerce_config_numerics(config)
         
-        # 4️⃣ Validate market data source exists
+        # 4ï¸âƒ£ Validate market data source exists
         basic = config.get("basic", {})
+        identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+        market_data_cfg = config.get("market_data", {}) if isinstance(config.get("market_data"), dict) else {}
+        market_cfg = config.get("market_config", {}) if isinstance(config.get("market_config"), dict) else {}
         exchange = basic.get("exchange", "NFO")
         underlying = basic.get("underlying", "NIFTY")
+        db_path = (
+            market_data_cfg.get("db_path")
+            or identity_cfg.get("db_path")
+            or market_cfg.get("db_path")
+        )
         
-        reader = MarketReader(exchange, underlying)
+        reader = MarketReader(exchange, underlying, db_path=db_path)
         if not reader.db_path:
             raise RuntimeError(
-                f"❌ No market data DB found for {exchange}:{underlying}\n"
+                f"âŒ No market data DB found for {exchange}:{underlying}\n"
                 f"Run OptionChainSupervisor first to generate data"
             )
         
         if not reader.connect():
             raise RuntimeError(
-                f"❌ Cannot connect to market data: {reader.db_path}\n"
+                f"âŒ Cannot connect to market data: {reader.db_path}\n"
                 f"Check if OptionChainSupervisor is running"
             )
         
         reader.close()
         
-        # 5️⃣ Check timing window (warning only)
+        # 5ï¸âƒ£ Check timing window (warning only)
         timing = config.get("timing", {})
         entry_time = timing.get("entry_time", "09:15")
         exit_time = timing.get("exit_time", "15:20")
@@ -984,39 +1121,39 @@ class StrategyExecutorService:
         
         if not (to_min(entry_time) <= to_min(current_time) <= to_min(exit_time)):
             logger.warning(
-                f"⚠️ OUTSIDE TRADING WINDOW: {name}\n"
+                f"âš ï¸ OUTSIDE TRADING WINDOW: {name}\n"
                 f"   Current: {current_time}\n"
                 f"   Window: {entry_time} - {exit_time}\n"
                 f"   Strategy will wait until entry time"
             )
         
-        # 6️⃣ Create run_id for this session
+        # 6ï¸âƒ£ Create run_id for this session
         run_id = f"{name}_{int(time.time())}"
         
-        # 7️⃣ Load or create execution state
+        # 7ï¸âƒ£ Load or create execution state
         exec_state = self.state_mgr.load(name)
         if not exec_state:
             exec_state = ExecutionState(
                 strategy_name=name,
                 run_id=run_id,
             )
-            logger.info(f"📝 Created new execution state: {name}")
+            logger.info(f"ðŸ“ Created new execution state: {name}")
         else:
-            logger.info(f"📖 Loaded existing execution state: {name}")
+            logger.info(f"ðŸ“– Loaded existing execution state: {name}")
             
             # Reconcile loaded state with broker
             is_ok, reason = self.reconciler.reconcile(exec_state, exchange, underlying)
             if not is_ok or reason != "in_sync":
-                logger.warning(f"⚠️ State reconciled: {name} | {reason}")
+                logger.warning(f"âš ï¸ State reconciled: {name} | {reason}")
                 self.state_mgr.save(exec_state)
         
-        # 8️⃣ Register in executor
+        # 8ï¸âƒ£ Register in executor
         self._strategies[name] = config
         self._exec_states[name] = exec_state
         self._engine_states[name] = StrategyState()
-        self._readers[name] = MarketReader(exchange, underlying)
+        self._readers[name] = MarketReader(exchange, underlying, db_path=db_path)
         
-        logger.info(f"✅ Strategy registered: {name} | run_id={run_id}")
+        logger.info(f"âœ… Strategy registered: {name} | run_id={run_id}")
     
     def unregister_strategy(self, name: str):
         """Unregister and cleanup strategy."""
@@ -1030,12 +1167,12 @@ class StrategyExecutorService:
         if name in self._engine_states:
             del self._engine_states[name]
         
-        logger.info(f"🗑️ Strategy unregistered: {name}")
+        logger.info(f"ðŸ—‘ï¸ Strategy unregistered: {name}")
     
     def start(self):
         """Start execution loop in background thread."""
         if self._running:
-            logger.warning("⚠️ Already running")
+            logger.warning("âš ï¸ Already running")
             return
         
         self._running = True
@@ -1048,14 +1185,14 @@ class StrategyExecutorService:
         )
         self._thread.start()
         
-        logger.info("🚀 Strategy executor started")
+        logger.info("ðŸš€ Strategy executor started")
     
     def stop(self):
         """Stop execution loop."""
         if not self._running:
             return
         
-        logger.info("🛑 Stopping strategy executor...")
+        logger.info("ðŸ›‘ Stopping strategy executor...")
         
         self._running = False
         self._stop_event.set()
@@ -1067,7 +1204,7 @@ class StrategyExecutorService:
         for reader in self._readers.values():
             reader.close()
         
-        logger.info("✅ Strategy executor stopped")
+        logger.info("âœ… Strategy executor stopped")
     
     def _run_loop(self):
         """Main execution loop."""
@@ -1077,13 +1214,13 @@ class StrategyExecutorService:
                     try:
                         self._process_strategy(name)
                     except Exception as e:
-                        logger.error(f"❌ Strategy processing error: {name} | {e}", exc_info=True)
+                        logger.error(f"âŒ Strategy processing error: {name} | {e}", exc_info=True)
                 
                 # Poll interval (configurable per strategy later)
                 time.sleep(2)
                 
             except Exception as e:
-                logger.error(f"❌ Execution loop error: {e}", exc_info=True)
+                logger.error(f"âŒ Execution loop error: {e}", exc_info=True)
                 time.sleep(5)
     
     def _process_strategy(self, name: str):
@@ -1096,7 +1233,7 @@ class StrategyExecutorService:
         
         # CRITICAL: Type guard - verify all components exist
         if not all([config, exec_state, engine_state, reader]):
-            logger.error(f"❌ Missing components for {name}")
+            logger.error(f"âŒ Missing components for {name}")
             return
         
         # FIXED: After the all() check, we KNOW these are not None
@@ -1108,7 +1245,7 @@ class StrategyExecutorService:
         
         # Now all type checkers know these are NOT None
         
-        # 1️⃣ Check timing window
+        # 1ï¸âƒ£ Check timing window
         timing = config.get("timing", {})
         entry_time = timing.get("entry_time", "09:15")
         exit_time = timing.get("exit_time", "15:20")
@@ -1130,15 +1267,15 @@ class StrategyExecutorService:
         if current_min >= exit_min:
             # Force exit at end of day
             if exec_state.has_position:
-                logger.info(f"⏰ END OF DAY EXIT: {name}")
+                logger.info(f"â° END OF DAY EXIT: {name}")
                 self._execute_exit(name, exec_state, config, "end_of_day")
             return
         
-        # 2️⃣ Update market data (with staleness check)
+        # 2ï¸âƒ£ Update market data (with staleness check)
         if not self._update_market_data(name, exec_state, engine_state, reader):
             return  # Stale data, skip this tick
         
-        # 3️⃣ Reconcile with broker (periodic)
+        # 3ï¸âƒ£ Reconcile with broker (periodic)
         seconds_since_reconcile = time.time() - exec_state.last_reconcile_timestamp
         # When flat, reconcile more frequently so orphan positions are recovered quickly.
         reconcile_interval_sec = 5 if not exec_state.has_position else 60
@@ -1152,10 +1289,10 @@ class StrategyExecutorService:
             if reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
                 self.state_mgr.save(exec_state)
         
-        # 4️⃣ Check risk management (always first priority)
+        # 4ï¸âƒ£ Check risk management (always first priority)
         risk_result = evaluate_risk_management(config, engine_state)
         if risk_result and risk_result.triggered:
-            logger.warning(f"🛑 RISK LIMIT: {name} | {risk_result.rule_name}")
+            logger.warning(f"ðŸ›‘ RISK LIMIT: {name} | {risk_result.rule_name}")
             
             if "max_loss" in risk_result.rule_name:
                 if exec_state.has_position:
@@ -1163,7 +1300,7 @@ class StrategyExecutorService:
             
             return  # Block further action
         
-        # 5️⃣ Entry / Adjustment / Exit logic
+        # 5ï¸âƒ£ Entry / Adjustment / Exit logic
         if not exec_state.has_position:
             self._check_entry(name, exec_state, engine_state, config, reader)
         else:
@@ -1190,7 +1327,7 @@ class StrategyExecutorService:
             
             if age_sec > MAX_AGE:
                 logger.error(
-                    f"🚨 STALE DATA: {name} | age={age_sec:.0f}s (max={MAX_AGE}s)\n"
+                    f"ðŸš¨ STALE DATA: {name} | age={age_sec:.0f}s (max={MAX_AGE}s)\n"
                     f"   DB: {reader.db_path}\n"
                     f"   Skipping this tick - waiting for fresh data"
                 )
@@ -1201,12 +1338,12 @@ class StrategyExecutorService:
                     
                     if self.bot.telegram_enabled:
                         self.bot.send_telegram(
-                            f"⚠️ STALE MARKET DATA\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"âš ï¸ STALE MARKET DATA\n"
+                            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
                             f"Strategy: {name}\n"
                             f"Data age: {age_sec:.0f}s (max {MAX_AGE}s)\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"⏸️ Strategy paused\n"
+                            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                            f"â¸ï¸ Strategy paused\n"
                             f"Waiting for fresh data..."
                         )
                 
@@ -1215,13 +1352,13 @@ class StrategyExecutorService:
             # Clear stale flag if data is fresh again
             if name in self._stale_alerted:
                 self._stale_alerted.remove(name)
-                logger.info(f"✅ Fresh data resumed: {name}")
+                logger.info(f"âœ… Fresh data resumed: {name}")
                 
                 if self.bot.telegram_enabled:
                     self.bot.send_telegram(
-                        f"✅ MARKET DATA FRESH\n"
+                        f"âœ… MARKET DATA FRESH\n"
                         f"Strategy: {name}\n"
-                        f"▶️ Strategy resumed"
+                        f"â–¶ï¸ Strategy resumed"
                     )
             
             # Update spot / market data
@@ -1290,7 +1427,7 @@ class StrategyExecutorService:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Market data update error: {name} | {e}")
+            logger.error(f"âŒ Market data update error: {name} | {e}")
             return False
     
     def _check_entry(
@@ -1307,11 +1444,12 @@ class StrategyExecutorService:
         if not result or not isinstance(result, RuleResult) or not result.triggered:
             return
         
-        logger.info(f"🎯 ENTRY TRIGGERED: {name} | {result.rule_name}")
+        logger.info(f"ðŸŽ¯ ENTRY TRIGGERED: {name} | {result.rule_name}")
         
         entry_cfg = config.get("entry", {})
         action = entry_cfg.get("action", {})
         action_type = action.get("type", "short_both")
+        action_legs = action.get("legs", []) if isinstance(action.get("legs"), list) else []
 
         # Guard: prevent rapid re-fire if prior entry attempt is still settling.
         execution_cfg = entry_cfg.get("execution", {}) if isinstance(entry_cfg.get("execution"), dict) else {}
@@ -1321,17 +1459,23 @@ class StrategyExecutorService:
             elapsed = now_ts - exec_state.last_entry_attempt_timestamp
             if elapsed < retry_cooldown_sec:
                 logger.info(
-                    f"⏳ ENTRY COOLING DOWN: {name} | elapsed={elapsed:.1f}s < {retry_cooldown_sec}s"
+                    f"â³ ENTRY COOLING DOWN: {name} | elapsed={elapsed:.1f}s < {retry_cooldown_sec}s"
                 )
                 return
         exec_state.last_entry_attempt_timestamp = now_ts
         self.state_mgr.save(exec_state)
         
         basic = config.get("basic", {})
+        identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+        exchange = str(basic.get("exchange") or identity_cfg.get("exchange") or "NFO").upper()
         lots = basic.get("lots", 1)
         underlying = basic.get("underlying", "NIFTY")
         lot_size = LOT_SIZES.get(underlying, 1)
         qty = lots * lot_size
+        ce_qty = qty
+        pe_qty = qty
+        default_order_type = str(identity_cfg.get("order_type") or "").upper()
+        product_type = str(identity_cfg.get("product_type") or "NRML").upper()
         
         # Extract delta targets from conditions
         conditions = entry_cfg.get("conditions", {})
@@ -1345,99 +1489,278 @@ class StrategyExecutorService:
                 ce_delta_target = float(rule.get("value", 0.30))
             elif rule.get("parameter") == "pe_delta":
                 pe_delta_target = float(rule.get("value", 0.30))
-        
-        # Find options
-        ce_option = reader.find_option_by_delta("CE", ce_delta_target, tolerance=0.1)
-        if not ce_option:
-            logger.error(f"❌ No CE option found with delta ≈ {ce_delta_target}")
+
+        # Infer directional intent and included legs.
+        include_ce = False
+        include_pe = False
+        ce_direction = "SELL"
+        pe_direction = "SELL"
+        normalized_action = str(action_type or "").lower()
+
+        if normalized_action in ("short_both", "short_straddle", "short_strangle"):
+            include_ce, include_pe = True, True
+            ce_direction, pe_direction = "SELL", "SELL"
+        elif normalized_action == "short_ce":
+            include_ce, include_pe = True, False
+            ce_direction = "SELL"
+        elif normalized_action == "short_pe":
+            include_ce, include_pe = False, True
+            pe_direction = "SELL"
+        elif normalized_action in ("long_both", "long_straddle", "long_strangle"):
+            include_ce, include_pe = True, True
+            ce_direction, pe_direction = "BUY", "BUY"
+        elif normalized_action == "long_ce":
+            include_ce, include_pe = True, False
+            ce_direction = "BUY"
+        elif normalized_action == "long_pe":
+            include_ce, include_pe = False, True
+            pe_direction = "BUY"
+        elif action_legs:
+            # Custom payload from strategy builder: derive CE/PE presence and direction.
+            for leg in action_legs:
+                if not isinstance(leg, dict):
+                    continue
+                option_type = str(leg.get("option_type", "")).upper()
+                side = str(leg.get("side", "SELL")).upper()
+                leg_lots = int(leg.get("lots") or lots)
+                if option_type == "CE":
+                    include_ce = True
+                    ce_direction = "BUY" if side == "BUY" else "SELL"
+                    ce_qty = max(1, leg_lots) * lot_size
+                elif option_type == "PE":
+                    include_pe = True
+                    pe_direction = "BUY" if side == "BUY" else "SELL"
+                    pe_qty = max(1, leg_lots) * lot_size
+        else:
+            # Backward-compatible default.
+            include_ce, include_pe = True, True
+            ce_direction, pe_direction = "SELL", "SELL"
+
+        def _safe_float(v, default=0.0):
+            try:
+                return float(v)
+            except Exception:
+                return float(default)
+
+        def _infer_strike_step() -> float:
+            try:
+                chain = reader.get_full_chain() or []
+                strikes = sorted({
+                    _safe_float(r.get("strike", 0))
+                    for r in chain
+                    if _safe_float(r.get("strike", 0)) > 0
+                })
+                if len(strikes) < 2:
+                    return 50.0
+                diffs = [strikes[i + 1] - strikes[i] for i in range(len(strikes) - 1)]
+                diffs = [d for d in diffs if d > 0]
+                return min(diffs) if diffs else 50.0
+            except Exception:
+                return 50.0
+
+        strike_step = _infer_strike_step()
+
+        def _find_nearest_by_strike(option_type: str, target_strike: float):
+            chain = reader.get_full_chain() or []
+            filtered = [r for r in chain if str(r.get("option_type", "")).upper() == option_type.upper()]
+            if not filtered:
+                return None
+            return min(filtered, key=lambda r: abs(_safe_float(r.get("strike", 0)) - target_strike))
+
+        def _get_leg_cfg(option_type: str):
+            for leg in action_legs:
+                if not isinstance(leg, dict):
+                    continue
+                if str(leg.get("option_type", "")).upper() == option_type.upper():
+                    return leg
+            return {}
+
+        def _select_option(option_type: str, default_delta: float):
+            leg_cfg = _get_leg_cfg(option_type)
+            sel = str(leg_cfg.get("strike_selection", "delta") or "delta").lower()
+            val = leg_cfg.get("strike_value")
+            num_val = _safe_float(val, default_delta)
+
+            # Explicit strike selection.
+            if sel == "strike" and val is not None:
+                exact = reader.get_option_at_strike(num_val, option_type)
+                return exact or _find_nearest_by_strike(option_type, num_val)
+
+            # Premium-based leg selection.
+            if sel == "premium" and val is not None:
+                return reader.find_option_by_premium(option_type, num_val, tolerance=max(5.0, num_val * 0.3))
+
+            # ATM offset steps.
+            if sel.startswith("atm"):
+                atm = reader.get_atm_strike()
+                if atm <= 0:
+                    atm = reader.get_spot_price()
+                sign = 1.0
+                steps = 0.0
+                if "+" in sel:
+                    steps = _safe_float(sel.split("+", 1)[1], 0.0)
+                    sign = 1.0
+                elif "-" in sel:
+                    steps = _safe_float(sel.split("-", 1)[1], 0.0)
+                    sign = -1.0
+                target = atm + (sign * steps * strike_step)
+                exact = reader.get_option_at_strike(target, option_type)
+                return exact or _find_nearest_by_strike(option_type, target)
+
+            # OTM by percentage from spot.
+            if sel == "otm_pct" and val is not None:
+                spot = reader.get_spot_price()
+                if spot > 0:
+                    if option_type.upper() == "CE":
+                        target = spot * (1.0 + (num_val / 100.0))
+                    else:
+                        target = spot * (1.0 - (num_val / 100.0))
+                    exact = reader.get_option_at_strike(target, option_type)
+                    return exact or _find_nearest_by_strike(option_type, target)
+
+            # Default: delta-based (including explicit sel == "delta").
+            target_delta = num_val if sel == "delta" and val is not None else default_delta
+            return reader.find_option_by_delta(option_type, target_delta, tolerance=0.1)
+
+        # Find options from builder leg intent.
+        ce_option = _select_option("CE", ce_delta_target) if include_ce else None
+        pe_option = _select_option("PE", pe_delta_target) if include_pe else None
+        if include_ce and not ce_option:
+            logger.error(f"âŒ No CE option found for configured CE leg selection")
             return
-        
-        pe_option = reader.find_option_by_delta("PE", pe_delta_target, tolerance=0.1)
-        if not pe_option:
-            logger.error(f"❌ No PE option found with delta ≈ {pe_delta_target}")
+        if include_pe and not pe_option:
+            logger.error(f"âŒ No PE option found for configured PE leg selection")
             return
         
         # Build legs
         legs = []
-        
-        if action_type in ("short_both", "short_ce", "short_straddle", "short_strangle"):
+        test_mode = self._resolve_intent_test_mode(config)
+        paper_mode = self._is_paper_mode(config)
+
+        if include_ce and ce_option:
+            ce_leg_cfg = _get_leg_cfg("CE")
+            ce_order_type, ce_price = self._resolve_order_contract(
+                exchange=exchange,
+                tradingsymbol=str(ce_option.get("trading_symbol", "")),
+                preferred_order_type=ce_leg_cfg.get("order_type", default_order_type),
+                preferred_price=ce_leg_cfg.get("price") or ce_leg_cfg.get("limit_price"),
+                fallback_price=ce_option.get("ltp", 0),
+            )
+            if ce_order_type == "LIMIT" and ce_price <= 0:
+                logger.error("Ã¢ÂÅ’ CE leg requires LIMIT price but no valid price is available")
+                return
             legs.append({
                 "tradingsymbol": ce_option.get("trading_symbol", ""),
-                "direction": "SELL",
-                "qty": qty,
-                "order_type": "LIMIT",
-                "price": float(ce_option.get("ltp", 0)),
-                "product_type": "NRML",
+                "direction": ce_direction,
+                "qty": ce_qty,
+                "order_type": ce_order_type,
+                "price": ce_price,
+                "product_type": str(ce_leg_cfg.get("product_type") or product_type).upper(),
             })
-        
-        if action_type in ("short_both", "short_pe", "short_straddle", "short_strangle"):
+
+        if include_pe and pe_option:
+            pe_leg_cfg = _get_leg_cfg("PE")
+            pe_order_type, pe_price = self._resolve_order_contract(
+                exchange=exchange,
+                tradingsymbol=str(pe_option.get("trading_symbol", "")),
+                preferred_order_type=pe_leg_cfg.get("order_type", default_order_type),
+                preferred_price=pe_leg_cfg.get("price") or pe_leg_cfg.get("limit_price"),
+                fallback_price=pe_option.get("ltp", 0),
+            )
+            if pe_order_type == "LIMIT" and pe_price <= 0:
+                logger.error("Ã¢ÂÅ’ PE leg requires LIMIT price but no valid price is available")
+                return
             legs.append({
                 "tradingsymbol": pe_option.get("trading_symbol", ""),
-                "direction": "SELL",
-                "qty": qty,
-                "order_type": "LIMIT",
-                "price": float(pe_option.get("ltp", 0)),
-                "product_type": "NRML",
+                "direction": pe_direction,
+                "qty": pe_qty,
+                "order_type": pe_order_type,
+                "price": pe_price,
+                "product_type": str(pe_leg_cfg.get("product_type") or product_type).upper(),
             })
-        
-        # Send entry alert to OMS
-        self._send_entry_alert(name, config, legs)
-        
-        # CRITICAL: Verify execution
-        ce_symbol = ce_option.get("trading_symbol", "")
-        pe_symbol = pe_option.get("trading_symbol", "")
-        
-        is_verified, reason = self.verifier.verify_entry(name, ce_symbol, pe_symbol, timeout_sec=30)
-        
-        if not is_verified:
-            logger.error(f"❌ ENTRY VERIFICATION FAILED: {name} | {reason}")
 
-            # Fast recovery: if broker already has positions, reconstruct state now
-            # instead of waiting for the periodic reconciler.
-            basic_cfg = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
-            identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
-            exchange = basic_cfg.get("exchange") or identity_cfg.get("exchange") or "NFO"
-            underlying = basic_cfg.get("underlying") or identity_cfg.get("underlying") or "NIFTY"
-
-            _, reconcile_reason = self.reconciler.reconcile(exec_state, exchange, underlying)
-            if reconcile_reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
-                self.state_mgr.save(exec_state)
-            if exec_state.has_position:
-                logger.warning(
-                    f"⚠️ ENTRY RECOVERED VIA RECONCILE: {name} | reason={reconcile_reason}"
-                )
-                return
-            
-            if self.bot.telegram_enabled:
-                self.bot.send_telegram(
-                    f"❌ ENTRY FAILED\n"
-                    f"Strategy: {name}\n"
-                    f"Reason: {reason}\n"
-                    f"Check OMS logs"
-                )
-            
+        if not legs:
+            logger.error(f"âŒ ENTRY ABORTED: {name} | no executable legs for action={action_type}")
             return
         
+        # Send entry alert to OMS
+        alert_result = self._send_entry_alert(name, config, legs, test_mode=test_mode)
+        alert_status = str((alert_result or {}).get("status", "")).upper()
+        if alert_status == "FAILED":
+            logger.error(f"ENTRY ALERT FAILED: {name} | result={alert_result}")
+            return
+        
+        # CRITICAL: Verify execution
+        ce_symbol = ce_option.get("trading_symbol", "") if ce_option else ""
+        pe_symbol = pe_option.get("trading_symbol", "") if pe_option else ""
+        
+        if not paper_mode:
+            is_verified, reason = self.verifier.verify_entry(name, ce_symbol, pe_symbol, timeout_sec=30)
+
+            if not is_verified:
+                logger.error(f"❌ ENTRY VERIFICATION FAILED: {name} | {reason}")
+
+                # Fast recovery: if broker already has positions, reconstruct state now
+                # instead of waiting for the periodic reconciler.
+                basic_cfg = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
+                identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+                exchange = basic_cfg.get("exchange") or identity_cfg.get("exchange") or "NFO"
+                underlying = basic_cfg.get("underlying") or identity_cfg.get("underlying") or "NIFTY"
+
+                _, reconcile_reason = self.reconciler.reconcile(exec_state, exchange, underlying)
+                if reconcile_reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
+                    self.state_mgr.save(exec_state)
+                if exec_state.has_position:
+                    logger.warning(
+                        f"⚠️ ENTRY RECOVERED VIA RECONCILE: {name} | reason={reconcile_reason}"
+                    )
+                    return
+
+                if self.bot.telegram_enabled:
+                    self.bot.send_telegram(
+                        f"❌ ENTRY FAILED\n"
+                        f"Strategy: {name}\n"
+                        f"Reason: {reason}\n"
+                        f"Check OMS logs"
+                    )
+
+                return
+        else:
+            logger.info(f"🧪 PAPER MODE ENTRY: {name} | verification skipped")
         # Update execution state
         exec_state.has_position = True
-        exec_state.ce_symbol = ce_symbol
-        exec_state.ce_strike = float(ce_option.get("strike", 0))
-        exec_state.ce_qty = qty
-        exec_state.ce_side = "SELL"
-        exec_state.ce_entry_price = float(ce_option.get("ltp", 0))
+        if ce_option:
+            exec_state.ce_symbol = ce_symbol
+            exec_state.ce_strike = float(ce_option.get("strike", 0))
+            exec_state.ce_qty = ce_qty
+            exec_state.ce_side = ce_direction
+            exec_state.ce_entry_price = float(ce_option.get("ltp", 0))
+        else:
+            exec_state.ce_symbol = ""
+            exec_state.ce_strike = 0.0
+            exec_state.ce_qty = 0
+            exec_state.ce_side = ""
+            exec_state.ce_entry_price = 0.0
         
-        exec_state.pe_symbol = pe_symbol
-        exec_state.pe_strike = float(pe_option.get("strike", 0))
-        exec_state.pe_qty = qty
-        exec_state.pe_side = "SELL"
-        exec_state.pe_entry_price = float(pe_option.get("ltp", 0))
+        if pe_option:
+            exec_state.pe_symbol = pe_symbol
+            exec_state.pe_strike = float(pe_option.get("strike", 0))
+            exec_state.pe_qty = pe_qty
+            exec_state.pe_side = pe_direction
+            exec_state.pe_entry_price = float(pe_option.get("ltp", 0))
+        else:
+            exec_state.pe_symbol = ""
+            exec_state.pe_strike = 0.0
+            exec_state.pe_qty = 0
+            exec_state.pe_side = ""
+            exec_state.pe_entry_price = 0.0
         
         exec_state.entry_timestamp = time.time()
         exec_state.total_trades_today += len(legs)
         
         self.state_mgr.save(exec_state)
         
-        logger.info(f"✅ ENTRY COMPLETE: {name}")
+        logger.info(f"{'🧪 PAPER ENTRY COMPLETE' if paper_mode else '✅ ENTRY COMPLETE'}: {name}")
     
     def _check_adjustment(
         self,
@@ -1466,7 +1789,7 @@ class StrategyExecutorService:
         
         for result in results:
             if result.triggered:
-                logger.info(f"🔧 ADJUSTMENT TRIGGERED: {name} | {result.rule_name}")
+                logger.info(f"ðŸ”§ ADJUSTMENT TRIGGERED: {name} | {result.rule_name}")
                 logger.info(f"   Action: {result.action.get('type', '?')}")
                 
                 # EXECUTE THE ADJUSTMENT
@@ -1480,9 +1803,9 @@ class StrategyExecutorService:
                     exec_state.adjustments_today += 1
                     self.state_mgr.save(exec_state)
                     
-                    logger.info(f"✅ ADJUSTMENT EXECUTED: {name}")
+                    logger.info(f"âœ… ADJUSTMENT EXECUTED: {name}")
                 else:
-                    logger.error(f"❌ ADJUSTMENT FAILED: {name}")
+                    logger.error(f"âŒ ADJUSTMENT FAILED: {name}")
                 
                 # Only process first triggered rule
                 break
@@ -1517,25 +1840,25 @@ class StrategyExecutorService:
             
             # Execute based on action type
             if action_type == "close_ce":
-                return self._adjustment_close_leg(name, exec_state, "CE", exchange, qty)
+                return self._adjustment_close_leg(name, exec_state, "CE", exchange, qty, config)
             
             elif action_type == "close_pe":
-                return self._adjustment_close_leg(name, exec_state, "PE", exchange, qty)
+                return self._adjustment_close_leg(name, exec_state, "PE", exchange, qty, config)
             
             elif action_type == "close_higher_delta":
                 leg = "CE" if abs(engine_state.ce_delta) >= abs(engine_state.pe_delta) else "PE"
                 logger.info(f"   Closing higher delta leg: {leg}")
-                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty)
+                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
             
             elif action_type == "close_lower_delta":
                 leg = "PE" if abs(engine_state.ce_delta) >= abs(engine_state.pe_delta) else "CE"
                 logger.info(f"   Closing lower delta leg: {leg}")
-                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty)
+                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
             
             elif action_type == "close_most_profitable" or action_type == "close_higher_pnl_leg":
                 leg = "CE" if engine_state.ce_pnl >= engine_state.pe_pnl else "PE"
-                logger.info(f"   Closing most profitable leg: {leg} (P&L: ₹{max(engine_state.ce_pnl, engine_state.pe_pnl):.2f})")
-                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty)
+                logger.info(f"   Closing most profitable leg: {leg} (P&L: â‚¹{max(engine_state.ce_pnl, engine_state.pe_pnl):.2f})")
+                return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
             
             elif action_type == "roll_ce":
                 return self._adjustment_roll_leg(name, exec_state, engine_state, "CE", config, reader, qty)
@@ -1549,7 +1872,7 @@ class StrategyExecutorService:
                 return success_ce and success_pe
             
             elif action_type == "lock_profit":
-                return self._adjustment_lock_profit(name, exec_state, engine_state, exchange, qty)
+                return self._adjustment_lock_profit(name, exec_state, engine_state, exchange, qty, config)
             
             elif action_type == "trailing_stop":
                 return self._adjustment_trailing_stop(name, exec_state, engine_state, action)
@@ -1577,11 +1900,11 @@ class StrategyExecutorService:
                 return False
         
         except Exception as e:
-            logger.error(f"❌ Adjustment execution error: {e}", exc_info=True)
+            logger.error(f"âŒ Adjustment execution error: {e}", exc_info=True)
             
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(
-                    f"⚠️ ADJUSTMENT ERROR\n"
+                    f"âš ï¸ ADJUSTMENT ERROR\n"
                     f"Strategy: {name}\n"
                     f"Action: {action_type}\n"
                     f"Error: {str(e)}"
@@ -1596,6 +1919,7 @@ class StrategyExecutorService:
         leg: str,
         exchange: str,
         qty: int,
+        config: Dict,
     ) -> bool:
         """Close a specific leg (CE or PE)."""
         try:
@@ -1607,6 +1931,7 @@ class StrategyExecutorService:
                 symbol = exec_state.ce_symbol
                 side = exec_state.ce_side
                 ltp = exec_state.ce_entry_price  # Approximate price
+                leg_qty = exec_state.ce_qty if exec_state.ce_qty > 0 else qty
             else:
                 if not exec_state.pe_symbol:
                     logger.warning(f"   PE leg not found in position")
@@ -1615,18 +1940,29 @@ class StrategyExecutorService:
                 symbol = exec_state.pe_symbol
                 side = exec_state.pe_side
                 ltp = exec_state.pe_entry_price
+                leg_qty = exec_state.pe_qty if exec_state.pe_qty > 0 else qty
             
             # Exit direction is opposite of entry
             exit_direction = "BUY" if side == "SELL" else "SELL"
+            identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+            order_type, price = self._resolve_order_contract(
+                exchange=exchange,
+                tradingsymbol=symbol,
+                preferred_order_type=identity_cfg.get("order_type"),
+                fallback_price=ltp,
+            )
+            if order_type == "LIMIT" and price <= 0:
+                logger.error(f"   Close leg requires LIMIT price but none is available: {symbol}")
+                return False
             
             # Build exit leg
             legs = [{
                 "tradingsymbol": symbol,
                 "direction": exit_direction,
-                "qty": qty,
-                "order_type": "MARKET",
-                "price": 0,  # Market order
-                "product_type": "NRML",
+                "qty": leg_qty,
+                "order_type": order_type,
+                "price": price,
+                "product_type": str(identity_cfg.get("product_type") or "NRML").upper(),
             }]
             
             # Send adjustment alert
@@ -1637,10 +1973,13 @@ class StrategyExecutorService:
                 "exchange": exchange,
                 "legs": legs,
             }
+            test_mode = self._resolve_intent_test_mode(config)
+            if test_mode:
+                alert["test_mode"] = test_mode
             
-            logger.info(f"   → Closing {leg} leg: {symbol}")
+            logger.info(f"   â†’ Closing {leg} leg: {symbol}")
             result = self.bot.process_alert(alert)
-            logger.info(f"   ← Close result: {result}")
+            logger.info(f"   â† Close result: {result}")
             
             # Update state - remove the closed leg
             if leg == "CE":
@@ -1681,16 +2020,24 @@ class StrategyExecutorService:
         try:
             basic = config.get("basic", {})
             exchange = basic.get("exchange", "NFO")
+            identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+            default_order_type = identity_cfg.get("order_type")
+            default_product_type = str(identity_cfg.get("product_type") or "NRML").upper()
+            test_mode = self._resolve_intent_test_mode(config)
             
             # Get current leg details
             if leg == "CE":
                 old_symbol = exec_state.ce_symbol
                 old_side = exec_state.ce_side
                 option_type = "CE"
+                old_ltp = exec_state.ce_entry_price
+                leg_qty = exec_state.ce_qty if exec_state.ce_qty > 0 else qty
             else:
                 old_symbol = exec_state.pe_symbol
                 old_side = exec_state.pe_side
                 option_type = "PE"
+                old_ltp = exec_state.pe_entry_price
+                leg_qty = exec_state.pe_qty if exec_state.pe_qty > 0 else qty
             
             if not old_symbol:
                 logger.warning(f"   {leg} leg not found in position")
@@ -1701,7 +2048,7 @@ class StrategyExecutorService:
             new_option = reader.find_option_by_delta(option_type, target_delta, tolerance=0.1)
             
             if not new_option:
-                logger.error(f"   No new {option_type} option found with delta ≈ {target_delta}")
+                logger.error(f"   No new {option_type} option found with delta â‰ˆ {target_delta}")
                 return False
             
             new_symbol = new_option.get("trading_symbol", "")
@@ -1710,6 +2057,25 @@ class StrategyExecutorService:
             
             # Exit old position
             exit_direction = "BUY" if old_side == "SELL" else "SELL"
+            close_order_type, close_price = self._resolve_order_contract(
+                exchange=exchange,
+                tradingsymbol=old_symbol,
+                preferred_order_type=default_order_type,
+                fallback_price=old_ltp,
+            )
+            if close_order_type == "LIMIT" and close_price <= 0:
+                logger.error(f"   Roll close leg requires LIMIT price but none is available: {old_symbol}")
+                return False
+
+            open_order_type, open_price = self._resolve_order_contract(
+                exchange=exchange,
+                tradingsymbol=new_symbol,
+                preferred_order_type=default_order_type,
+                fallback_price=new_ltp,
+            )
+            if open_order_type == "LIMIT" and open_price <= 0:
+                logger.error(f"   Roll open leg requires LIMIT price but none is available: {new_symbol}")
+                return False
             
             # Entry new position (same direction as original)
             legs = [
@@ -1717,19 +2083,19 @@ class StrategyExecutorService:
                 {
                     "tradingsymbol": old_symbol,
                     "direction": exit_direction,
-                    "qty": qty,
-                    "order_type": "MARKET",
-                    "price": 0,
-                    "product_type": "NRML",
+                    "qty": leg_qty,
+                    "order_type": close_order_type,
+                    "price": close_price,
+                    "product_type": default_product_type,
                 },
                 # Open new
                 {
                     "tradingsymbol": new_symbol,
                     "direction": old_side,
-                    "qty": qty,
-                    "order_type": "LIMIT",
-                    "price": new_ltp,
-                    "product_type": "NRML",
+                    "qty": leg_qty,
+                    "order_type": open_order_type,
+                    "price": open_price,
+                    "product_type": default_product_type,
                 },
             ]
             
@@ -1741,10 +2107,12 @@ class StrategyExecutorService:
                 "exchange": exchange,
                 "legs": legs,
             }
+            if test_mode:
+                alert["test_mode"] = test_mode
             
-            logger.info(f"   → Rolling {leg}: {old_symbol} → {new_symbol}")
+            logger.info(f"   â†’ Rolling {leg}: {old_symbol} â†’ {new_symbol}")
             result = self.bot.process_alert(alert)
-            logger.info(f"   ← Roll result: {result}")
+            logger.info(f"   â† Roll result: {result}")
             
             # Update state with new position
             if leg == "CE":
@@ -1770,6 +2138,7 @@ class StrategyExecutorService:
         engine_state: StrategyState,
         exchange: str,
         qty: int,
+        config: Dict,
     ) -> bool:
         """Lock in profit by closing the most profitable leg."""
         try:
@@ -1781,8 +2150,8 @@ class StrategyExecutorService:
                 leg = "PE"
                 pnl = engine_state.pe_pnl
             
-            logger.info(f"   Locking profit by closing {leg} (P&L: ₹{pnl:.2f})")
-            return self._adjustment_close_leg(name, exec_state, leg, exchange, qty)
+            logger.info(f"   Locking profit by closing {leg} (P&L: â‚¹{pnl:.2f})")
+            return self._adjustment_close_leg(name, exec_state, leg, exchange, qty, config)
             
         except Exception as e:
             logger.error(f"   Lock profit failed: {e}", exc_info=True)
@@ -1810,17 +2179,17 @@ class StrategyExecutorService:
                 engine_state.trailing_stop_level = current_pnl * (1 - trail_pct / 100.0)
                 
                 logger.info(f"   Trailing stop ACTIVATED:")
-                logger.info(f"   • Current P&L: ₹{current_pnl:.2f}")
-                logger.info(f"   • Trail %: {trail_pct}%")
-                logger.info(f"   • Stop Level: ₹{engine_state.trailing_stop_level:.2f}")
+                logger.info(f"   â€¢ Current P&L: â‚¹{current_pnl:.2f}")
+                logger.info(f"   â€¢ Trail %: {trail_pct}%")
+                logger.info(f"   â€¢ Stop Level: â‚¹{engine_state.trailing_stop_level:.2f}")
                 
                 if self.bot.telegram_enabled:
                     self.bot.send_telegram(
-                        f"📊 TRAILING STOP ACTIVATED\n"
+                        f"ðŸ“Š TRAILING STOP ACTIVATED\n"
                         f"Strategy: {name}\n"
-                        f"Current P&L: ₹{current_pnl:.2f}\n"
+                        f"Current P&L: â‚¹{current_pnl:.2f}\n"
                         f"Trail: {trail_pct}%\n"
-                        f"Stop Level: ₹{engine_state.trailing_stop_level:.2f}"
+                        f"Stop Level: â‚¹{engine_state.trailing_stop_level:.2f}"
                     )
                 
                 return True
@@ -1846,6 +2215,10 @@ class StrategyExecutorService:
         try:
             basic = config.get("basic", {})
             exchange = basic.get("exchange", "NFO")
+            identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+            default_order_type = identity_cfg.get("order_type")
+            default_product_type = str(identity_cfg.get("product_type") or "NRML").upper()
+            test_mode = self._resolve_intent_test_mode(config)
             
             # Get hedge parameters
             hedge_type = action.get("hedge_type", "both")  # "ce", "pe", or "both"
@@ -1857,13 +2230,22 @@ class StrategyExecutorService:
             if hedge_type in ("ce", "both"):
                 ce_hedge = reader.find_option_by_delta("CE", hedge_delta, tolerance=0.05)
                 if ce_hedge:
+                    ce_order_type, ce_price = self._resolve_order_contract(
+                        exchange=exchange,
+                        tradingsymbol=str(ce_hedge.get("trading_symbol", "")),
+                        preferred_order_type=default_order_type,
+                        fallback_price=ce_hedge.get("ltp", 0),
+                    )
+                    if ce_order_type == "LIMIT" and ce_price <= 0:
+                        logger.error("   CE hedge requires LIMIT price but none is available")
+                        return False
                     legs.append({
                         "tradingsymbol": ce_hedge.get("trading_symbol", ""),
                         "direction": "BUY",
                         "qty": qty,
-                        "order_type": "LIMIT",
-                        "price": float(ce_hedge.get("ltp", 0)),
-                        "product_type": "NRML",
+                        "order_type": ce_order_type,
+                        "price": ce_price,
+                        "product_type": default_product_type,
                     })
                     logger.info(f"   Adding CE hedge: {ce_hedge.get('trading_symbol', '')}")
             
@@ -1871,13 +2253,22 @@ class StrategyExecutorService:
             if hedge_type in ("pe", "both"):
                 pe_hedge = reader.find_option_by_delta("PE", hedge_delta, tolerance=0.05)
                 if pe_hedge:
+                    pe_order_type, pe_price = self._resolve_order_contract(
+                        exchange=exchange,
+                        tradingsymbol=str(pe_hedge.get("trading_symbol", "")),
+                        preferred_order_type=default_order_type,
+                        fallback_price=pe_hedge.get("ltp", 0),
+                    )
+                    if pe_order_type == "LIMIT" and pe_price <= 0:
+                        logger.error("   PE hedge requires LIMIT price but none is available")
+                        return False
                     legs.append({
                         "tradingsymbol": pe_hedge.get("trading_symbol", ""),
                         "direction": "BUY",
                         "qty": qty,
-                        "order_type": "LIMIT",
-                        "price": float(pe_hedge.get("ltp", 0)),
-                        "product_type": "NRML",
+                        "order_type": pe_order_type,
+                        "price": pe_price,
+                        "product_type": default_product_type,
                     })
                     logger.info(f"   Adding PE hedge: {pe_hedge.get('trading_symbol', '')}")
             
@@ -1893,10 +2284,12 @@ class StrategyExecutorService:
                 "exchange": exchange,
                 "legs": legs,
             }
+            if test_mode:
+                alert["test_mode"] = test_mode
             
-            logger.info(f"   → Adding {len(legs)} hedge leg(s)")
+            logger.info(f"   â†’ Adding {len(legs)} hedge leg(s)")
             result = self.bot.process_alert(alert)
-            logger.info(f"   ← Hedge result: {result}")
+            logger.info(f"   â† Hedge result: {result}")
             
             return True
             
@@ -1950,11 +2343,11 @@ class StrategyExecutorService:
             return
         
         if result.triggered:
-            logger.info(f"🚪 EXIT TRIGGERED: {name} | {result.rule_name}")
+            logger.info(f"ðŸšª EXIT TRIGGERED: {name} | {result.rule_name}")
             self._execute_exit(name, exec_state, config, result.rule_name)
     
-    def _send_entry_alert(self, name: str, config: Dict, legs: List[Dict]):
-        """Send ENTRY alert via bot.process_alert()."""
+    def _send_entry_alert(self, name: str, config: Dict, legs: List[Dict], test_mode: Optional[str] = None):
+        """Send ENTRY alert via bot.process_alert() and return OMS response."""
         basic = config.get("basic", {})
         
         alert = {
@@ -1964,14 +2357,18 @@ class StrategyExecutorService:
             "exchange": basic.get("exchange", "NFO"),
             "legs": legs,
         }
+        if test_mode:
+            alert["test_mode"] = test_mode
         
-        logger.info(f"→ ENTRY ALERT: {name} | {len(legs)} legs")
+        logger.info(f"â†’ ENTRY ALERT: {name} | {len(legs)} legs")
         
         try:
             result = self.bot.process_alert(alert)
-            logger.info(f"← ENTRY RESULT: {result}")
+            logger.info(f"â† ENTRY RESULT: {result}")
+            return result if isinstance(result, dict) else {"status": "UNKNOWN", "raw_result": result}
         except Exception as e:
-            logger.error(f"❌ Entry alert failed: {e}", exc_info=True)
+            logger.error(f"âŒ Entry alert failed: {e}", exc_info=True)
+            return {"status": "FAILED", "reason": str(e)}
     
     def _execute_exit(
         self,
@@ -1980,38 +2377,42 @@ class StrategyExecutorService:
         config: Dict,
         reason: str,
     ):
-        """Execute exit via bot.request_exit()."""
-        logger.info(f"🚪 EXECUTING EXIT: {name} | reason={reason}")
+        """Execute exit via broker (live) or virtual close (paper mode)."""
+        logger.info(f"ðŸšª EXECUTING EXIT: {name} | reason={reason}")
         
         try:
-            self.bot.request_exit(
-                scope="strategy",
-                strategy_name=name,
-                product_type="ALL",
-                reason=reason,
-                source="STRATEGY_EXECUTOR",
-            )
-            
-            # CRITICAL: Verify exit completed
-            symbols = [exec_state.ce_symbol, exec_state.pe_symbol]
-            is_verified, verify_reason = self.verifier.verify_exit(
-                name,
-                symbols=symbols,
-                timeout_sec=30,
-            )
-            
-            if not is_verified:
-                logger.error(f"❌ EXIT VERIFICATION FAILED: {name} | {verify_reason}")
+            paper_mode = self._is_paper_mode(config)
+            if not paper_mode:
+                self.bot.request_exit(
+                    scope="strategy",
+                    strategy_name=name,
+                    product_type="ALL",
+                    reason=reason,
+                    source="STRATEGY_EXECUTOR",
+                )
                 
-                if self.bot.telegram_enabled:
-                    self.bot.send_telegram(
-                        f"⚠️ EXIT INCOMPLETE\n"
-                        f"Strategy: {name}\n"
-                        f"Reason: {verify_reason}\n"
-                        f"Manual check required"
-                    )
+                # CRITICAL: Verify exit completed
+                symbols = [exec_state.ce_symbol, exec_state.pe_symbol]
+                is_verified, verify_reason = self.verifier.verify_exit(
+                    name,
+                    symbols=symbols,
+                    timeout_sec=30,
+                )
                 
-                return
+                if not is_verified:
+                    logger.error(f"âŒ EXIT VERIFICATION FAILED: {name} | {verify_reason}")
+                    
+                    if self.bot.telegram_enabled:
+                        self.bot.send_telegram(
+                            f"âš ï¸ EXIT INCOMPLETE\n"
+                            f"Strategy: {name}\n"
+                            f"Reason: {verify_reason}\n"
+                            f"Manual check required"
+                        )
+                    
+                    return
+            else:
+                logger.info(f"ðŸ§ª PAPER MODE EXIT: {name} | broker exit skipped")
             
             # FIXED: Get engine_state from registry to access combined_pnl
             engine_state = self._engine_states.get(name)
@@ -2019,9 +2420,9 @@ class StrategyExecutorService:
                 # Add current position P&L to cumulative daily P&L
                 exec_state.cumulative_daily_pnl += engine_state.combined_pnl
                 logger.info(
-                    f"💰 P&L Update: {name} | "
-                    f"Position P&L: ₹{engine_state.combined_pnl:.2f} | "
-                    f"Cumulative Daily: ₹{exec_state.cumulative_daily_pnl:.2f}"
+                    f"ðŸ’° P&L Update: {name} | "
+                    f"Position P&L: â‚¹{engine_state.combined_pnl:.2f} | "
+                    f"Cumulative Daily: â‚¹{exec_state.cumulative_daily_pnl:.2f}"
                 )
             
             # Clear position state
@@ -2039,14 +2440,14 @@ class StrategyExecutorService:
             
             self.state_mgr.save(exec_state)
             
-            logger.info(f"✅ EXIT COMPLETE: {name}")
+            logger.info(f"âœ… EXIT COMPLETE: {name}")
             
         except Exception as e:
-            logger.error(f"❌ Exit execution failed: {e}", exc_info=True)
+            logger.error(f"âŒ Exit execution failed: {e}", exc_info=True)
             
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(
-                    f"🚨 EXIT ERROR\n"
+                    f"ðŸš¨ EXIT ERROR\n"
                     f"Strategy: {name}\n"
                     f"Error: {str(e)}\n"
                     f"URGENT: Manual check required"

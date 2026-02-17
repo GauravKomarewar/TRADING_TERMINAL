@@ -9,9 +9,9 @@
 <script src="/dashboard/web/shared/layout.js" defer></script>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-/* 
-   SHOONYA STRATEGY  ADVANCED MANAGEMENT INTERFACE
-    */
+/* ═══════════════════════════════════════════════════════
+   SHOONYA STRATEGY — ADVANCED MANAGEMENT INTERFACE
+   ═══════════════════════════════════════════════════════ */
 :root {
   --bg:        #080c11;
   --panel:     #0d1420;
@@ -33,8 +33,8 @@
   --warning-d: #d97706;
   --accent:    #8b5cf6;
   --cyan:      #06b6d4;
-  --font-mono: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  --font-head: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-head: 'Syne', sans-serif;
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -42,16 +42,9 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
   overflow-x: hidden;
-}
-
-button,
-input,
-select,
-textarea {
-  font-family: inherit;
 }
 
 main {
@@ -60,7 +53,7 @@ main {
   margin: 0 auto;
 }
 
-/*  TOP BAR  */
+/* ───── TOP BAR ───── */
 .top-bar {
   display: flex;
   align-items: center;
@@ -114,14 +107,14 @@ main {
   font-size: 16px; font-weight: 300; line-height: 1;
 }
 
-/*  LAYOUT GRID  */
+/* ───── LAYOUT GRID ───── */
 .main-grid {
   display: grid;
   grid-template-rows: auto auto;
   gap: 16px;
 }
 
-/*  MONITOR WIDGET  */
+/* ═══════════════ MONITOR WIDGET ═══════════════ */
 .monitor-widget {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -336,7 +329,7 @@ main {
   font-weight: 700;
 }
 
-/*  CONTROL WIDGET  */
+/* ═══════════════ CONTROL WIDGET ═══════════════ */
 .control-widget {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -537,23 +530,21 @@ main {
 .empty-control p { font-size: 12px; }
 
 
-/*  MODAL OVERLAY  */
+/* ═══════════════ MODAL OVERLAY ═══════════════ */
 #modalOverlay {
   position: fixed;
-  top: 88px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9980;
-  background: var(--bg);
-  display: block;
-  width: 100%;
-  height: calc(100vh - 88px);
-  padding: 0;
-  overflow: hidden;
-  opacity: 1;
-  pointer-events: all;
-  transition: none;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
 }
 
 #modalOverlay.open {
@@ -561,22 +552,21 @@ main {
   pointer-events: all;
 }
 
-/*  BUILDER MODAL  */
+/* ───── BUILDER MODAL ───── */
 .builder-modal {
   width: 100%;
-  max-width: none;
-  height: 100%;
+  max-width: 1100px;
   background: var(--panel);
-  border: none;
-  border-radius: 0;
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
   overflow: hidden;
-  transform: none;
-  transition: none;
-  box-shadow: none;
-  margin: 0;
+  transform: translateY(-24px);
+  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+  margin: auto;
 }
 
-#modalOverlay.open .builder-modal { transform: none; }
+#modalOverlay.open .builder-modal { transform: translateY(0); }
 
 /* Builder Header */
 .builder-modal-header {
@@ -589,7 +579,7 @@ main {
 }
 
 .builder-modal-title {
-  font-family: inherit;
+  font-family: var(--font-head);
   font-size: 18px;
   font-weight: 800;
   background: linear-gradient(135deg, #e8edf5 0%, var(--primary) 100%);
@@ -737,7 +727,7 @@ main {
   background: linear-gradient(90deg, var(--border-2) 0%, transparent 100%);
 }
 
-/*  LEG BUILDER  */
+/* ───── LEG BUILDER ───── */
 .legs-container { display: flex; flex-direction: column; gap: 10px; }
 
 .leg-card {
@@ -981,23 +971,6 @@ main {
 
 .btn-cancel:hover { background: rgba(255,255,255,0.05); color: var(--text); }
 
-.btn-secondary {
-  padding: 9px 14px;
-  background: rgba(59,130,246,0.1);
-  border: 1px solid rgba(59,130,246,0.25);
-  border-radius: 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-  font-family: var(--font-head);
-}
-
-.btn-secondary:hover {
-  background: rgba(59,130,246,0.2);
-}
-
 .btn-save {
   padding: 9px 24px;
   background: linear-gradient(135deg, var(--success) 0%, var(--success-d) 100%);
@@ -1054,7 +1027,7 @@ main {
   .form-row.cols-4, .form-row.cols-3, .form-row.cols-2 { grid-template-columns: 1fr 1fr; }
 }
 
-/*  tiny toggle checkbox  */
+/* ── tiny toggle checkbox ── */
 .tog-wrap { display: flex; align-items: center; gap: 8px; }
 .tog { display:none; }
 .tog-lbl {
@@ -1080,39 +1053,170 @@ main {
 
 </style>
 </head>
-<body data-page="strategy" class="dashboard-shell">
+<body data-page="strategy">
 <div id="app-header"></div>
 
-<main></main>
+<main>
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <div>
+      <h1>⚡ Strategy Management</h1>
+      <p>Build, monitor and control advanced options strategies in real-time</p>
+    </div>
+    <button class="btn-create" onclick="openBuilder()">
+      <span class="plus-icon">+</span>
+      Create Strategy
+    </button>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- ══════ ADVANCED MONITOR WIDGET ══════ -->
+    <div class="monitor-widget">
+      <div class="widget-header">
+        <div class="widget-title">
+          <div class="live-dot"></div>
+          Live Position Monitor
+        </div>
+        <div class="monitor-tabs">
+          <button class="mtab active" onclick="switchMTab('all',this)">All Positions</button>
+          <button class="mtab" onclick="switchMTab('greeks',this)">Greeks View</button>
+          <button class="mtab" onclick="switchMTab('pnl',this)">P&L View</button>
+        </div>
+      </div>
+
+      <div class="monitor-body">
+        <!-- Orphan Legs -->
+        <div class="orphan-section">
+          <div class="section-label">⚠ Orphan Legs (Unassigned Positions)</div>
+          <div class="monitor-table-wrap" style="overflow-x:auto;">
+          <table class="orphan-table">
+            <thead>
+              <tr>
+                <th>Instrument</th>
+                <th>B/S</th>
+                <th>Qty</th>
+                <th>Avg</th>
+                <th>LTP</th>
+                <th>P&L</th>
+                <th>IV</th>
+                <th>Delta</th>
+                <th>Gamma</th>
+                <th>Theta</th>
+                <th>Vega</th>
+                <th>OI</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="orphanBody">
+              <tr>
+                <td colspan="13" style="text-align:center; color:var(--muted); padding:16px; font-size:11px;">
+                  No orphan positions detected
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <!-- Strategy Positions -->
+        <div class="strategy-section">
+          <div class="section-label">📊 Strategy Positions</div>
+          <div style="overflow-x:auto;">
+          <table class="monitor-table">
+            <thead>
+              <tr>
+                <th>Strategy / Leg</th>
+                <th>B/S</th>
+                <th>Qty</th>
+                <th>Avg</th>
+                <th>LTP</th>
+                <th>P&L</th>
+                <th>IV</th>
+                <th>Delta</th>
+                <th>Gamma</th>
+                <th>Theta</th>
+                <th>Vega</th>
+                <th>Net Δ</th>
+                <th>OI</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="monitorBody">
+              <tr>
+                <td colspan="14" style="text-align:center; color:var(--muted); padding:20px; font-size:11px;">
+                  No active strategy positions — start a strategy to see live data here
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+    </div><!-- /monitor-widget -->
+
+    <!-- ══════ STRATEGY CONTROL WIDGET ══════ -->
+    <div class="control-widget">
+      <div class="control-header-bar">
+        <div class="widget-title">🎛️ Strategy Control</div>
+        <div class="control-stats">
+          <div class="c-stat">
+            <div class="c-stat-val" id="statRunning" style="color:var(--success)">0</div>
+            <div class="c-stat-lbl">Running</div>
+          </div>
+          <div class="c-stat">
+            <div class="c-stat-val" id="statPaused" style="color:var(--warning)">0</div>
+            <div class="c-stat-lbl">Paused</div>
+          </div>
+          <div class="c-stat">
+            <div class="c-stat-val" id="statIdle" style="color:var(--muted)">0</div>
+            <div class="c-stat-lbl">Idle</div>
+          </div>
+          <div class="c-stat">
+            <div class="c-stat-val" id="statTotal">0</div>
+            <div class="c-stat-lbl">Total</div>
+          </div>
+        </div>
+      </div>
+      <div class="strategy-cards" id="strategyCards">
+        <div class="empty-control">
+          <div class="empty-ico">📭</div>
+          <p>No strategies saved yet.<br>Click <strong>+ Create Strategy</strong> to build one.</p>
+        </div>
+      </div>
+    </div><!-- /control-widget -->
+
+  </div><!-- /main-grid -->
+</main>
 
 
-<!-- 
+<!-- ═══════════════════════════════════════════
      STRATEGY CONSTRUCTOR MODAL
-      -->
+     ═══════════════════════════════════════════ -->
 <div id="modalOverlay" onclick="handleOverlayClick(event)">
   <div class="builder-modal" id="builderModal">
 
     <div class="builder-modal-header">
       <div>
-        <div class="builder-modal-title">Strategy Builder</div>
+        <div class="builder-modal-title">⚙ Strategy Constructor</div>
         <div class="builder-modal-sub" id="modalSubtitle">Define every parameter of your trading strategy</div>
       </div>
-      <button class="modal-close" onclick="closeBuilder()">X</button>
+      <button class="modal-close" onclick="closeBuilder()">✕</button>
     </div>
 
     <div class="builder-nav">
-      <button class="bnav-tab active" data-sec="identity" onclick="switchBSec('identity',this)">1. Identity</button>
-      <button class="bnav-tab" data-sec="entry" onclick="switchBSec('entry',this)">2. Entry <span class="tab-badge" id="badgeEntry">0</span></button>
-      <button class="bnav-tab" data-sec="adjustment" onclick="switchBSec('adjustment',this)">3. Adjustment <span class="tab-badge" id="badgeAdj">0</span></button>
-      <button class="bnav-tab" data-sec="exit" onclick="switchBSec('exit',this)">4. Exit <span class="tab-badge" id="badgeExit">0</span></button>
-      <button class="bnav-tab" data-sec="risk" onclick="switchBSec('risk',this)">5. Risk Management</button>
-      <button class="bnav-tab" data-sec="schedule" onclick="switchBSec('schedule',this)">6. Schedule</button>
+      <button class="bnav-tab active" data-sec="identity" onclick="switchBSec('identity',this)">① Identity</button>
+      <button class="bnav-tab" data-sec="entry" onclick="switchBSec('entry',this)">② Entry <span class="tab-badge" id="badgeEntry">0</span></button>
+      <button class="bnav-tab" data-sec="adjustment" onclick="switchBSec('adjustment',this)">③ Adjustment <span class="tab-badge" id="badgeAdj">0</span></button>
+      <button class="bnav-tab" data-sec="exit" onclick="switchBSec('exit',this)">④ Exit <span class="tab-badge" id="badgeExit">0</span></button>
+      <button class="bnav-tab" data-sec="risk" onclick="switchBSec('risk',this)">⑤ Risk Management</button>
+      <button class="bnav-tab" data-sec="schedule" onclick="switchBSec('schedule',this)">⑥ Schedule</button>
     </div>
 
     <div class="builder-body">
       <div id="alertBox" class="builder-alert"></div>
 
-      <!--  SECTION 1: IDENTITY  -->
+      <!-- ─── SECTION 1: IDENTITY ─── -->
       <div class="bsec active" id="sec-identity">
         <div class="sec-divider">Strategy Identity</div>
         <div class="form-row cols-3">
@@ -1125,18 +1229,17 @@ main {
             <input class="f-input" id="sId" placeholder="Auto-generated from name" readonly style="opacity:0.7; cursor:not-allowed;">
           </div>
           <div class="f-group">
-            <label class="f-label">Symbol *</label>
-            <select class="f-select" id="sDbSymbol">
-              <option value="">Loading symbols...</option>
-            </select>
+            <label class="f-label">Lot Size</label>
+            <input class="f-input" id="sLots" type="number" value="1" min="1">
           </div>
         </div>
 
         <div class="form-row cols-3">
           <div class="f-group">
-            <label class="f-label">DB Select (.sqlite suggestion)</label>
-            <input class="f-input" id="sDbFile" list="dbFileSuggestions" placeholder="Type or pick .sqlite file">
-            <datalist id="dbFileSuggestions"></datalist>
+            <label class="f-label">DB Symbol *</label>
+            <select class="f-select" id="sDbSymbol">
+              <option value="">Loading symbols...</option>
+            </select>
           </div>
           <div class="f-group">
             <label class="f-label">DB Expiry *</label>
@@ -1145,26 +1248,18 @@ main {
             </select>
           </div>
           <div class="f-group">
-            <label class="f-label">Expiry Day Trade</label>
-            <div class="tog-wrap" style="padding-top:8px;">
-              <input type="checkbox" class="tog" id="sAllowExpiryTrade" checked>
-              <label class="tog-lbl" for="sAllowExpiryTrade"></label>
-              <span class="tog-text">Allow trades on expiry day</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-row cols-3">
-          <div class="f-group">
-            <label class="f-label">Default Product Type</label>
+            <label class="f-label">Product Type</label>
             <select class="f-select" id="sProductType">
               <option value="MIS">MIS</option>
               <option value="NRML">NRML</option>
               <option value="CNC">CNC</option>
             </select>
           </div>
+        </div>
+
+        <div class="form-row cols-2">
           <div class="f-group">
-            <label class="f-label">Default Order Type</label>
+            <label class="f-label">Order Type</label>
             <select class="f-select" id="sOrderType">
               <option value="MARKET">Market</option>
               <option value="LIMIT">Limit</option>
@@ -1173,95 +1268,84 @@ main {
             </select>
           </div>
           <div class="f-group">
-            <label class="f-label">Lot Multiplier</label>
-            <input class="f-input" id="sLots" type="number" value="1" min="1">
+            <label class="f-label">Selected DB</label>
+            <input class="f-input" id="sDbPath" placeholder="Auto-generated from selected symbol+expiry" readonly>
           </div>
         </div>
 
         <div class="form-row cols-2">
           <div class="f-group">
-            <label class="f-label">Selected DB</label>
-            <input class="f-input" id="sDbPath" placeholder="Auto-generated from selected symbol+expiry" readonly>
+            <label class="f-label">Description</label>
+            <input class="f-input" id="sDesc" placeholder="Optional notes about this strategy">
           </div>
           <div class="f-group">
             <label class="f-label">Selected Exchange</label>
             <input class="f-input" id="sDbExchange" readonly placeholder="Auto">
           </div>
         </div>
-
-        <div class="form-row cols-1">
-          <div class="f-group">
-            <label class="f-label">Description</label>
-            <input class="f-input" id="sDesc" placeholder="Optional notes about this strategy">
-          </div>
-        </div>
       </div>
 
-      <!--  SECTION 2: ENTRY  -->
+      <!-- ─── SECTION 2: ENTRY ─── -->
       <div class="bsec" id="sec-entry">
         <div class="adj-ref-note">
-           Entry supports OPTIONS legs only (CE/PE) from the selected DB symbol+expiry. Conditions can use DB metrics, time, other-leg metrics, and ticker/index state.
+          ℹ Entry supports OPTIONS legs only (CE/PE) from the selected DB symbol+expiry. Conditions can use DB metrics, time, other-leg metrics, and ticker/index state.
         </div>
 
         <div class="sec-divider">Entry Legs</div>
         <div class="legs-container" id="entryLegs"></div>
         <button class="add-leg-btn" onclick="addLeg('entry')" style="margin-top:10px;">
-           Add Entry Leg
+          ＋ Add Entry Leg
         </button>
 
         <div class="sec-divider" style="margin-top:20px;">Combined Entry Conditions</div>
         <div class="combined-section">
-          <div class="combined-title"> Trigger when combined leg metrics satisfy:</div>
+          <div class="combined-title">⚡ Trigger when combined leg metrics satisfy:</div>
           <div class="conditions-list" id="entryCombined"></div>
-          <button class="add-cond-btn" onclick="addCombinedCond('entryCombined')"> Add Combined Condition</button>
+          <button class="add-cond-btn" onclick="addCombinedCond('entryCombined')">＋ Add Combined Condition</button>
         </div>
       </div>
 
-      <!--  SECTION 3: ADJUSTMENT  -->
+      <!-- ─── SECTION 3: ADJUSTMENT ─── -->
       <div class="bsec" id="sec-adjustment">
         <div class="adj-ref-note">
-           Adjustment rules apply to the option legs from selected DB. Decision conditions support DB/time/other-leg/index parameters only.
+          ↩ Adjustment rules apply to the option legs from selected DB. Decision conditions support DB/time/other-leg/index parameters only.
         </div>
 
         <div class="sec-divider">Adjustment Triggers & Actions</div>
         <div class="legs-container" id="adjLegs"></div>
         <button class="add-leg-btn" onclick="addAdjLeg()" style="margin-top:10px;">
-           Add Adjustment Rule
+          ＋ Add Adjustment Rule
         </button>
 
         <div class="sec-divider" style="margin-top:20px;">Combined Adjustment Conditions</div>
         <div class="combined-section">
-          <div class="combined-title"> Trigger adjustment when combined metrics satisfy:</div>
+          <div class="combined-title">⚡ Trigger adjustment when combined metrics satisfy:</div>
           <div class="conditions-list" id="adjCombined"></div>
-          <button class="add-cond-btn" onclick="addCombinedCond('adjCombined')"> Add Combined Condition</button>
-          <div class="f-group" style="margin-top:10px;">
-            <label class="f-label">Combined Adjustment Target Leg Tags</label>
-            <input class="f-input" id="adjCombinedTargets" placeholder="ENTRY_LEG_1, ENTRY_LEG_2">
-          </div>
+          <button class="add-cond-btn" onclick="addCombinedCond('adjCombined')">＋ Add Combined Condition</button>
         </div>
       </div>
 
-      <!--  SECTION 4: EXIT  -->
+      <!-- ─── SECTION 4: EXIT ─── -->
       <div class="bsec" id="sec-exit">
         <div class="adj-ref-note">
-           Exit decisions can use DB, time, leg, and ticker/index parameters. Execution remains options-leg specific.
+          🚪 Exit decisions can use DB, time, leg, and ticker/index parameters. Execution remains options-leg specific.
         </div>
 
         <div class="sec-divider">Exit Conditions per Leg</div>
         <div class="legs-container" id="exitLegs"></div>
         <button class="add-leg-btn" onclick="addExitLeg()" style="margin-top:10px;">
-           Add Exit Condition
+          ＋ Add Exit Condition
         </button>
 
         <div class="sec-divider" style="margin-top:20px;">Combined Exit Conditions</div>
         <div class="combined-section">
-          <div class="combined-title"> Exit strategy when combined metrics satisfy:</div>
+          <div class="combined-title">⚡ Exit strategy when combined metrics satisfy:</div>
           <div class="conditions-list" id="exitCombined"></div>
-          <button class="add-cond-btn" onclick="addCombinedCond('exitCombined')"> Add Combined Condition</button>
+          <button class="add-cond-btn" onclick="addCombinedCond('exitCombined')">＋ Add Combined Condition</button>
         </div>
       </div>
 
-      <!--  SECTION 5: RISK MANAGEMENT  -->
+      <!-- ─── SECTION 5: RISK MANAGEMENT ─── -->
       <div class="bsec" id="sec-risk">
         <div class="sec-divider">P&L Limits</div>
         <div class="risk-grid">
@@ -1269,7 +1353,7 @@ main {
             <div class="risk-card-title">Target Profit</div>
             <div class="form-row cols-2" style="margin-bottom:8px;">
               <div class="f-group">
-                <label class="f-label">Amount (INR)</label>
+                <label class="f-label">Amount (₹)</label>
                 <input class="f-input" id="rTargetAmt" type="number" placeholder="e.g. 5000">
               </div>
               <div class="f-group">
@@ -1291,7 +1375,7 @@ main {
             <div class="risk-card-title">Stop Loss</div>
             <div class="form-row cols-2" style="margin-bottom:8px;">
               <div class="f-group">
-                <label class="f-label">Amount (INR)</label>
+                <label class="f-label">Amount (₹)</label>
                 <input class="f-input" id="rSlAmt" type="number" placeholder="e.g. 3000">
               </div>
               <div class="f-group">
@@ -1313,16 +1397,16 @@ main {
             <div class="risk-card-title">Trailing Stop Loss</div>
             <div class="form-row cols-2" style="margin-bottom:8px;">
               <div class="f-group">
-                <label class="f-label">Trail Amount (INR)</label>
+                <label class="f-label">Trail Amount (₹)</label>
                 <input class="f-input" id="rTrailAmt" type="number" placeholder="e.g. 1000">
               </div>
               <div class="f-group">
-                <label class="f-label">Lock-in Profit (INR)</label>
+                <label class="f-label">Lock-in Profit (₹)</label>
                 <input class="f-input" id="rLockIn" type="number" placeholder="e.g. 2000">
               </div>
             </div>
             <div class="f-group">
-                <label class="f-label">Trail Step (INR)</label>
+              <label class="f-label">Trail Step (₹)</label>
               <input class="f-input" id="rTrailStep" type="number" placeholder="e.g. 500">
             </div>
           </div>
@@ -1364,7 +1448,7 @@ main {
             <div class="risk-card-title">Position Limits</div>
             <div class="form-row cols-2">
               <div class="f-group">
-                <label class="f-label">Max Capital (INR)</label>
+                <label class="f-label">Max Capital (₹)</label>
                 <input class="f-input" id="rMaxCap" type="number" placeholder="e.g. 200000">
               </div>
               <div class="f-group">
@@ -1376,7 +1460,7 @@ main {
         </div>
       </div>
 
-      <!--  SECTION 6: SCHEDULE  -->
+      <!-- ─── SECTION 6: SCHEDULE ─── -->
       <div class="bsec" id="sec-schedule">
         <div class="sec-divider">Trading Schedule</div>
         <div class="form-row cols-3">
@@ -1448,12 +1532,9 @@ main {
         <!-- Status messages here -->
       </div>
       <div class="footer-actions">
-        <button class="btn-cancel" onclick="resetBuilderForm()">Reset</button>
-        <button class="btn-secondary" onclick="loadSavedStrategyConfig()">Load</button>
-        <button class="btn-secondary" onclick="importStrategyConfigFromFile()">Import / Upload</button>
-        <button class="btn-cancel" onclick="closeBuilder()">Close</button>
+        <button class="btn-cancel" onclick="closeBuilder()">Cancel</button>
         <button class="btn-save" id="btnSave" onclick="saveStrategy()">
-           Save Strategy
+          💾 Save Strategy
         </button>
       </div>
     </div>
@@ -1462,9 +1543,9 @@ main {
 
 
 <script>
-/* 
+/* ═════════════════════════════════════════════════
    CONSTANTS & HELPERS
-    */
+   ═════════════════════════════════════════════════ */
 
 // Supported condition parameters (strictly mapped to runner/DB-supported values)
 const OC_PARAMS = [
@@ -1536,8 +1617,6 @@ let state = {
 let strategies = [];
 let activeDbSymbols = [];
 let dbSymbolExchangeMap = {};
-let dbFileSuggestions = [];
-let dbDerivedExecParams = [];
 let indexParamLoaded = false;
 
 function pushParamUnique(list, entry) {
@@ -1584,16 +1663,12 @@ function updateSelectedDbPath() {
   const expiry = selectedDbExpiry();
   const exchange = dbSymbolExchangeMap[symbol] || '';
   const dbPathEl = document.getElementById('sDbPath');
-  const dbFileEl = document.getElementById('sDbFile');
   const exEl = document.getElementById('sDbExchange');
   if (exEl) exEl.value = exchange;
   if (dbPathEl) {
     dbPathEl.value = symbol && expiry && exchange
       ? `shoonya_platform/market_data/option_chain/data/${exchange}_${symbol}_${expiry}.sqlite`
       : '';
-  }
-  if (dbFileEl) {
-    dbFileEl.value = symbol && expiry && exchange ? `${exchange}_${symbol}_${expiry}.sqlite` : '';
   }
 }
 
@@ -1611,67 +1686,6 @@ function populateDbExpiries(symbol) {
     `<option value="${exp}" ${i===0?'selected':''}>${exp}</option>`
   ).join('');
   updateSelectedDbPath();
-}
-
-function rebuildDbFileSuggestions() {
-  const dl = document.getElementById('dbFileSuggestions');
-  if (!dl) return;
-  dbFileSuggestions = [];
-  activeDbSymbols.forEach((item) => {
-    (item.expiries || []).forEach((exp) => {
-      dbFileSuggestions.push(`${item.exchange}_${item.symbol}_${exp}.sqlite`);
-    });
-  });
-  dl.innerHTML = dbFileSuggestions.map((f) => `<option value="${f}"></option>`).join('');
-}
-
-function applyDbFileSelection(rawFile) {
-  const file = String(rawFile || '').trim().replace(/\\/g, '/').split('/').pop() || '';
-  const clean = file.endsWith('.sqlite') ? file.slice(0, -7) : file;
-  const first = clean.indexOf('_');
-  if (first < 0) return false;
-  const exchange = clean.slice(0, first);
-  const rest = clean.slice(first + 1);
-  const parts = rest.split('_');
-  if (parts.length < 2) return false;
-  const expiry = parts[parts.length - 1];
-  const symbol = parts.slice(0, -1).join('_');
-  const symbolEl = document.getElementById('sDbSymbol');
-  const expiryEl = document.getElementById('sDbExpiry');
-  if (!symbolEl || !expiryEl || !symbol || !expiry) return false;
-  if (!Array.from(symbolEl.options).some((o) => o.value === symbol)) return false;
-  symbolEl.value = symbol;
-  populateDbExpiries(symbol);
-  if (Array.from(expiryEl.options).some((o) => o.value === expiry)) expiryEl.value = expiry;
-  dbSymbolExchangeMap[symbol] = dbSymbolExchangeMap[symbol] || exchange;
-  updateSelectedDbPath();
-  return true;
-}
-
-async function loadDbDerivedExecutionParams() {
-  const symbol = selectedDbSymbol();
-  const expiry = selectedDbExpiry();
-  const exchange = dbSymbolExchangeMap[symbol] || '';
-  if (!symbol || !expiry || !exchange) {
-    dbDerivedExecParams = [];
-    refreshExecutionMethodOptions();
-    return;
-  }
-  try {
-    const res = await fetch(
-      `/dashboard/option-chain?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(symbol)}&expiry=${encodeURIComponent(expiry)}&max_age=600`,
-      { credentials: 'include' }
-    );
-    if (!res.ok) throw new Error('Failed to fetch option chain fields');
-    const data = await res.json();
-    const row = Array.isArray(data?.rows) ? data.rows.find((r) => r && typeof r === 'object') : null;
-    const keys = row ? Object.keys(row) : [];
-    const skip = new Set(['symbol', 'exchange', 'expiry', 'option_type', 'strike', 'last_update']);
-    dbDerivedExecParams = keys.filter((k) => !skip.has(k)).sort();
-  } catch (e) {
-    dbDerivedExecParams = ['ltp', 'delta', 'gamma', 'theta', 'vega', 'iv', 'oi', 'volume'];
-  }
-  refreshExecutionMethodOptions();
 }
 
 async function loadDbSymbolsFromActiveChains() {
@@ -1699,13 +1713,10 @@ async function loadDbSymbolsFromActiveChains() {
       `<option value="${item.symbol}" ${i===idx?'selected':''}>${item.symbol} (${item.exchange})</option>`
     ).join('');
     populateDbExpiries(activeDbSymbols[idx].symbol);
-    rebuildDbFileSuggestions();
-    await loadDbDerivedExecutionParams();
   } catch (e) {
     symbolEl.innerHTML = '<option value="NIFTY">NIFTY (NFO)</option>';
     expiryEl.innerHTML = '<option value="">No expiries</option>';
     dbSymbolExchangeMap = { NIFTY: 'NFO' };
-    rebuildDbFileSuggestions();
     updateSelectedDbPath();
   }
 }
@@ -1757,40 +1768,10 @@ async function loadTickerConditionParams() {
 }
 
 /* Build <select> for OC params grouped by category */
-function collectTaggedLegParams() {
-  const pairs = [];
-  const seen = new Set();
-  const metrics = [
-    { suffix: 'delta', label: 'Delta' },
-    { suffix: 'gamma', label: 'Gamma' },
-    { suffix: 'theta', label: 'Theta' },
-    { suffix: 'vega', label: 'Vega' },
-    { suffix: 'pnl', label: 'PnL' },
-    { suffix: 'ltp', label: 'LTP' },
-    { suffix: 'qty', label: 'Qty' },
-  ];
-  document.querySelectorAll('.leg-card [data-role="leg-tag"]').forEach((el) => {
-    const tag = String(el.value || '').trim();
-    if (!tag) return;
-    metrics.forEach((m) => {
-      const v = `tag:${tag}:${m.suffix}`;
-      if (seen.has(v)) return;
-      seen.add(v);
-      pairs.push({ v, l: `${tag} ${m.label}`, cat: 'Tagged Leg Params' });
-    });
-  });
-  return pairs;
-}
-
-function getConditionParams() {
-  return [...OC_PARAMS, ...collectTaggedLegParams()];
-}
-
 function buildParamSelect(val = '') {
-  const sourceParams = getConditionParams();
   let cats = {};
-  sourceParams.forEach(p => { if(!cats[p.cat]) cats[p.cat]=[]; cats[p.cat].push(p); });
-  let html = `<select class="f-select" data-role="parameter" style="font-size:11px; padding:6px 8px;">`;
+  OC_PARAMS.forEach(p => { if(!cats[p.cat]) cats[p.cat]=[]; cats[p.cat].push(p); });
+  let html = `<select class="f-select" style="font-size:11px; padding:6px 8px;">`;
   html += `<option value="">-- Parameter --</option>`;
   for(let cat in cats) {
     html += `<optgroup label="${cat}">`;
@@ -1821,22 +1802,21 @@ function buildCombinedParamSelect(val = '') {
   return html;
 }
 
-/* 
+/* ──────────────────────────────────
    ADD / REMOVE CONDITION ROW
- */
+────────────────────────────────── */
 function addConditionRow(listId) {
   const list = document.getElementById(listId);
   if(!list) return;
   const rows = list.querySelectorAll('.condition-row').length;
-  const mode = getConditionModeForList(listId);
-  const joinHtml = rows > 0 ? `<div class="cond-join">${joinLabelFromMode(mode)}</div>` : '';
+  const joinHtml = rows > 0 ? `<div class="cond-join">AND</div>` : '';
 
   const row = document.createElement('div');
   row.innerHTML = joinHtml + `<div class="condition-row">
     ${buildParamSelect()}
     ${buildOpSelect()}
     <input class="f-input" data-role="value" placeholder="Value" style="font-size:11px; padding:6px 8px;">
-    <button class="cond-remove" onclick="removeConditionRow(this, '${listId}')"></button>
+    <button class="cond-remove" onclick="this.closest('.condition-row').previousElementSibling?.classList.contains('cond-join')&&this.closest('.condition-row').previousElementSibling.remove(); this.closest('.condition-row').remove();">✕</button>
   </div>`;
   list.appendChild(row);
   const condRow = row.querySelector('.condition-row');
@@ -1845,79 +1825,10 @@ function addConditionRow(listId) {
     if (selects[0]) selects[0].setAttribute('data-role', 'parameter');
     if (selects[1]) selects[1].setAttribute('data-role', 'comparator');
   }
-  refreshLegExecutionStateByList(listId);
   updateBadge(listId);
 }
 
 window.addCondition = addConditionRow; // alias
-
-function removeConditionRow(btn, listId) {
-  const row = btn.closest('.condition-row');
-  if (!row) return;
-  if (row.previousElementSibling?.classList.contains('cond-join')) row.previousElementSibling.remove();
-  row.remove();
-  refreshLegExecutionStateByList(listId);
-}
-
-function getConditionModeForList(listId) {
-  const m = String(listId || '').match(/^cond_(entry|adj|exit)_(\d+)$/);
-  if (!m) return 'and';
-  const section = m[1];
-  const id = m[2];
-  const sel = document.getElementById(`cond_mode_${section}_${id}`);
-  return String(sel?.value || 'and').toLowerCase();
-}
-
-function buildExecutionMethodSelect(val = '') {
-  const fields = (dbDerivedExecParams && dbDerivedExecParams.length) ? dbDerivedExecParams : ['ltp', 'delta', 'gamma', 'theta', 'vega', 'iv'];
-  return `<select class="f-select" data-role="execution-method" style="font-size:11px; padding:6px 8px;" disabled>
-    <option value="">Set conditions first...</option>
-    ${fields.map((f) => `<option value="${f}" ${f===val?'selected':''}>${String(f).toUpperCase()}</option>`).join('')}
-  </select>`;
-}
-
-function joinLabelFromMode(mode) {
-  return String(mode || '').toLowerCase() === 'or' ? 'OR' : 'AND';
-}
-
-function ruleTypeFromMode(mode) {
-  const m = String(mode || '').toLowerCase();
-  if (m === 'instant') return 'always';
-  if (m === 'if_then_else') return 'if_then_else';
-  return 'if_then';
-}
-
-function operatorFromMode(mode) {
-  return String(mode || '').toLowerCase() === 'or' ? 'OR' : 'AND';
-}
-
-function inferModeFromRule(ruleType, conditionsBlock, fallback = 'and') {
-  const rt = String(ruleType || '').toLowerCase();
-  const op = String(conditionsBlock?.operator || '').toUpperCase();
-  if (rt === 'always') return 'instant';
-  if (rt === 'if_then_else') return 'if_then_else';
-  if (op === 'OR') return 'or';
-  if (rt === 'if_then') return 'if_then';
-  return fallback;
-}
-
-function onConditionModeChange(section, id) {
-  const modeEl = document.getElementById(`cond_mode_${section}_${id}`);
-  const listId = `cond_${section}_${id}`;
-  const list = document.getElementById(listId);
-  const addBtn = document.getElementById(`cond_add_${section}_${id}`);
-  if (!modeEl || !list) return;
-  const mode = String(modeEl.value || 'and').toLowerCase();
-  if (mode === 'instant') {
-    list.innerHTML = '';
-    if (addBtn) addBtn.disabled = true;
-    refreshLegExecutionState(section, id);
-    return;
-  }
-  if (addBtn) addBtn.disabled = false;
-  list.querySelectorAll('.cond-join').forEach((el) => { el.textContent = joinLabelFromMode(mode); });
-  refreshLegExecutionState(section, id);
-}
 
 function addCombinedCond(listId) {
   const list = document.getElementById(listId);
@@ -1931,7 +1842,7 @@ function addCombinedCond(listId) {
     <input class="f-input" data-role="value" placeholder="Value" style="font-size:11px; padding:6px 8px;">
     ${buildJoinSelect()}
     <input class="f-input" data-role="compare_to" placeholder="Compare to" style="font-size:11px; padding:6px 8px;">
-    <button class="cond-remove" onclick="this.closest('.combined-cond-row').previousElementSibling?.classList.contains('cond-join')&&this.closest('.combined-cond-row').previousElementSibling.remove();this.closest('.combined-cond-row').remove();"></button>
+    <button class="cond-remove" onclick="this.closest('.combined-cond-row').previousElementSibling?.classList.contains('cond-join')&&this.closest('.combined-cond-row').previousElementSibling.remove();this.closest('.combined-cond-row').remove();">✕</button>
   </div>`;
   list.appendChild(wrap);
   const combinedRow = wrap.querySelector('.combined-cond-row');
@@ -1943,9 +1854,9 @@ function addCombinedCond(listId) {
   }
 }
 
-/* 
+/* ──────────────────────────────────
    LEG BUILDER
- */
+────────────────────────────────── */
 let legCounter = 0;
 
 function buildLegCard(id, section, legLabel) {
@@ -1953,39 +1864,18 @@ function buildLegCard(id, section, legLabel) {
   const isExit = section === 'exit';
   const condListId = `cond_${section}_${id}`;
   const legParamListId = `legparam_${section}_${id}`;
-  const defaultTag = `${section.toUpperCase()}_LEG_${id}`;
 
   return `
   <div class="leg-card" id="legcard_${section}_${id}">
     <div class="leg-header" onclick="toggleLeg('${section}_${id}')">
       <div class="leg-title">
-        <span class="expand-icon" id="expIcon_${section}_${id}"></span>
+        <span class="expand-icon" id="expIcon_${section}_${id}">▶</span>
         <span id="legTitleLabel_${section}_${id}">${legLabel || 'Leg ' + id}</span>
         <span class="badge-buy" id="legBadge_${section}_${id}">BUY</span>
       </div>
-      <button class="leg-remove" onclick="event.stopPropagation();removeLeg('${section}','${id}')"></button>
+      <button class="leg-remove" onclick="event.stopPropagation();removeLeg('${section}','${id}')">✕</button>
     </div>
     <div class="leg-body" id="legbody_${section}_${id}" style="display:none;">
-
-      <div class="form-row cols-2" style="margin-bottom:10px;">
-        <div class="f-group">
-          <label class="f-label">${isAdj ? 'Rule Tag' : 'Leg Tag'}</label>
-          <input class="f-input" data-role="leg-tag" value="${defaultTag}" oninput="refreshLegTagSelectors()">
-        </div>
-        ${isAdj ? `
-        <div class="f-group">
-          <label class="f-label">Adjust Target Leg Tags (comma-separated)</label>
-          <input class="f-input" data-role="adj-target-tags" placeholder="ENTRY_LEG_1, ENTRY_LEG_2">
-        </div>
-        ` : `
-        <div class="f-group">
-          <label class="f-label">${isExit ? 'Exit Execute Using DB Param' : 'Leg Identity'}</label>
-          ${isExit
-            ? buildExecutionMethodSelect()
-            : '<input class="f-input" value="Tag this leg to reuse in adjustments and exits" readonly style="font-size:11px;color:var(--muted);">'}
-        </div>
-        `}
-      </div>
 
       ${isAdj ? `
       <div class="f-group" style="margin-bottom:10px;">
@@ -1999,9 +1889,16 @@ function buildLegCard(id, section, legLabel) {
       ${isExit ? `
       <div class="form-row cols-2" style="margin-bottom:12px;">
         <div class="f-group">
-          <label class="f-label">Exit Leg Reference Tag</label>
+          <label class="f-label">Exit Leg Reference</label>
           <select class="f-select" id="exitRef_${id}" data-role="exit-ref">
             <option value="all">All Legs</option>
+            <option value="leg1">Leg 1</option>
+            <option value="leg2">Leg 2</option>
+            <option value="leg3">Leg 3</option>
+            <option value="profitable">Profitable Legs</option>
+            <option value="loss">Loss-making Legs</option>
+            <option value="specific_ce">Specific CE Leg</option>
+            <option value="specific_pe">Specific PE Leg</option>
           </select>
         </div>
         <div class="f-group">
@@ -2012,30 +1909,6 @@ function buildLegCard(id, section, legLabel) {
         </div>
       </div>
       ` : ''}
-
-      <!-- Leg-level Conditions -->
-      <div class="conditions-section">
-        <div class="conditions-label">Execution Condition (Required)</div>
-        <div class="form-row cols-2" style="margin-bottom:8px;">
-          <div class="f-group">
-            <label class="f-label">Condition Type</label>
-            <select class="f-select" id="cond_mode_${section}_${id}" data-role="condition-mode" onchange="onConditionModeChange('${section}','${id}')">
-              <option value="instant">Instant</option>
-              <option value="and">AND</option>
-              <option value="or">OR</option>
-              <option value="if_then">IF THEN</option>
-              <option value="if_then_else">IF THEN ELSE</option>
-            </select>
-          </div>
-          <div class="f-group">
-            <label class="f-label">Note</label>
-            <input class="f-input" value="Select a condition type first, then define leg behavior." readonly style="font-size:11px; color: var(--muted);">
-          </div>
-        </div>
-        <div class="conditions-label">Conditions for this Option Leg (DB/Time/Leg/Index)</div>
-        <div class="conditions-list" id="${condListId}"></div>
-        <button class="add-cond-btn" id="cond_add_${section}_${id}" onclick="addConditionRow('${condListId}')"> Add Condition</button>
-      </div>
 
       ${!isAdj && !isExit ? `
       <!-- Basic Leg Definition -->
@@ -2073,21 +1946,18 @@ function buildLegCard(id, section, legLabel) {
           <input class="f-input" data-role="lots" type="number" value="1" min="1" style="font-size:11px;">
         </div>
       </div>
-      <div class="form-row cols-2" style="margin-bottom:6px;">
-        <div class="f-group">
-          <label class="f-label">Execute Using DB Param</label>
-          ${buildExecutionMethodSelect()}
-        </div>
-        <div class="f-group">
-          <label class="f-label">Execution Param Target (optional)</label>
-          <input class="f-input" data-role="execution-value" placeholder="e.g. 0.30 or 200">
-        </div>
-      </div>
       ` : ''}
+
+      <!-- Leg-level Conditions -->
+      <div class="conditions-section">
+        <div class="conditions-label">📋 Conditions for this Option Leg (DB/Time/Leg/Index)</div>
+        <div class="conditions-list" id="${condListId}"></div>
+        <button class="add-cond-btn" onclick="addConditionRow('${condListId}')">＋ Add Condition</button>
+      </div>
 
       <!-- Leg-parameter Conditions -->
       <div class="conditions-section" style="margin-top:14px;">
-        <div class="conditions-label" style="color:var(--warning);"> Leg Parameter Triggers (live monitoring)</div>
+        <div class="conditions-label" style="color:var(--warning);">⚙ Leg Parameter Triggers (live monitoring)</div>
         <div class="f-group" style="margin-bottom:8px;">
           <label class="f-label">When this leg's parameter...</label>
         </div>
@@ -2126,9 +1996,6 @@ function addLeg(section) {
   container.appendChild(div.firstElementChild || div);
   // auto-open
   toggleLeg(`${section}_${id}`);
-  onConditionModeChange(section, id);
-  refreshLegExecutionState(section, id);
-  refreshLegTagSelectors();
   updateBadge(section);
 }
 
@@ -2138,7 +2005,6 @@ function addExitLeg() { addLeg('exit'); }
 function removeLeg(section, id) {
   const card = document.getElementById(`legcard_${section}_${id}`);
   if(card) card.remove();
-  refreshLegTagSelectors();
   updateBadge(section);
 }
 
@@ -2174,57 +2040,9 @@ function updateBadge(section) {
   badge.textContent = container ? container.querySelectorAll('.leg-card').length : 0;
 }
 
-function refreshLegExecutionState(section, id) {
-  const mode = String(document.getElementById(`cond_mode_${section}_${id}`)?.value || '').toLowerCase();
-  const condCount = document.querySelectorAll(`#cond_${section}_${id} .condition-row`).length;
-  const ready = mode !== 'instant' && condCount > 0;
-  const card = document.getElementById(`legcard_${section}_${id}`);
-  if (!card) return;
-  card.querySelectorAll('[data-role="execution-method"]').forEach((sel) => {
-    sel.disabled = !ready;
-    if (!ready) sel.value = '';
-  });
-}
-
-function refreshLegExecutionStateByList(listId) {
-  const m = String(listId || '').match(/^cond_(entry|adj|exit)_(\d+)$/);
-  if (!m) return;
-  refreshLegExecutionState(m[1], m[2]);
-}
-
-function refreshExecutionMethodOptions() {
-  const newFields = (dbDerivedExecParams && dbDerivedExecParams.length) ? dbDerivedExecParams : ['ltp', 'delta', 'gamma', 'theta', 'vega', 'iv'];
-  document.querySelectorAll('[data-role="execution-method"]').forEach((sel) => {
-    const current = sel.value;
-    sel.innerHTML = `<option value="">Set conditions first...</option>${newFields.map((f) => `<option value="${f}">${String(f).toUpperCase()}</option>`).join('')}`;
-    if (newFields.includes(current)) sel.value = current;
-  });
-}
-
-function refreshLegTagSelectors() {
-  const tags = Array.from(document.querySelectorAll('[data-role="leg-tag"]'))
-    .map((el) => String(el.value || '').trim())
-    .filter(Boolean);
-  const uniq = [...new Set(tags)];
-  document.querySelectorAll('[data-role="exit-ref"]').forEach((sel) => {
-    const current = sel.value || 'all';
-    const opts = ['all', ...uniq];
-    sel.innerHTML = opts.map((t) => `<option value="${t}">${t === 'all' ? 'All Legs' : t}</option>`).join('');
-    sel.value = opts.includes(current) ? current : 'all';
-  });
-  refreshConditionParameterOptions();
-}
-
-function refreshConditionParameterOptions() {
-  document.querySelectorAll('select[data-role="parameter"]').forEach((sel) => {
-    const current = sel.value;
-    sel.outerHTML = buildParamSelect(current);
-  });
-}
-
-/* 
+/* ═════════════════════════════════════════════════
    BUILDER MODAL CONTROLS
-    */
+   ═════════════════════════════════════════════════ */
 
 function openBuilder(editData = null) {
   if(editData) {
@@ -2235,15 +2053,12 @@ function openBuilder(editData = null) {
     document.getElementById('modalSubtitle').textContent = 'Define every parameter of your trading strategy';
     document.getElementById('sName').value = '';
     document.getElementById('sId').value = '';
-    document.getElementById('sDbFile').value = '';
-    document.getElementById('sAllowExpiryTrade').checked = true;
     document.getElementById('entryLegs').innerHTML = '';
     document.getElementById('adjLegs').innerHTML = '';
     document.getElementById('exitLegs').innerHTML = '';
     document.getElementById('entryCombined').innerHTML = '';
     document.getElementById('adjCombined').innerHTML = '';
     document.getElementById('exitCombined').innerHTML = '';
-    document.getElementById('adjCombinedTargets').value = '';
     legIds = { entry: 0, adj: 0, exit: 0 };
     ['badgeEntry','badgeAdj','badgeExit'].forEach(b => { const el=document.getElementById(b); if(el)el.textContent='0'; });
   }
@@ -2252,20 +2067,11 @@ function openBuilder(editData = null) {
 }
 
 function closeBuilder() {
-  window.location.href = '/dashboard/web/strategy.html';
+  document.getElementById('modalOverlay').classList.remove('open');
 }
 
 function handleOverlayClick(e) {
   if(e.target === document.getElementById('modalOverlay')) closeBuilder();
-}
-
-function resetBuilderForm() {
-  openBuilder(null);
-  const status = document.getElementById('saveStatus');
-  if (status) {
-    status.textContent = 'Form reset';
-    status.style.color = 'var(--muted)';
-  }
 }
 
 function switchBSec(sec, btn) {
@@ -2280,279 +2086,8 @@ function switchBSec(sec, btn) {
   }
 }
 
-function setSelectValue(el, value) {
-  if (!el || value === undefined || value === null) return;
-  const str = String(value);
-  const hasOption = Array.from(el.options || []).some(o => String(o.value) === str);
-  if (!hasOption) {
-    const opt = document.createElement('option');
-    opt.value = str;
-    opt.textContent = str;
-    el.appendChild(opt);
-  }
-  el.value = str;
-}
-
-function setInputValue(id, value) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.value = value === undefined || value === null ? '' : value;
-}
-
-function flattenConditions(block) {
-  if (!block) return [];
-  if (Array.isArray(block)) return block.filter(x => x && typeof x === 'object' && x.parameter);
-  if (block && Array.isArray(block.rules)) {
-    return block.rules.filter(x => x && typeof x === 'object' && x.parameter);
-  }
-  if (block && typeof block === 'object' && block.parameter) return [block];
-  return [];
-}
-
-function fillConditionRows(listId, conditions) {
-  const list = document.getElementById(listId);
-  if (!list) return;
-  list.innerHTML = '';
-  (conditions || []).forEach((c) => {
-    addConditionRow(listId);
-    const rows = list.querySelectorAll('.condition-row');
-    const row = rows[rows.length - 1];
-    if (!row) return;
-    const p = row.querySelector('select[data-role="parameter"]');
-    const cmp = row.querySelector('select[data-role="comparator"]');
-    const v = row.querySelector('input[data-role="value"]');
-    if (p) setSelectValue(p, c.parameter || '');
-    if (cmp) setSelectValue(cmp, c.comparator || '>');
-    if (v) v.value = Array.isArray(c.value) ? c.value.join(',') : (c.value ?? '');
-  });
-  refreshLegExecutionStateByList(listId);
-}
-
-function setLegConditionMode(section, id, mode) {
-  const sel = document.getElementById(`cond_mode_${section}_${id}`);
-  if (!sel) return;
-  const allowed = ['instant', 'and', 'or', 'if_then', 'if_then_else'];
-  const m = allowed.includes(String(mode || '').toLowerCase()) ? String(mode).toLowerCase() : 'and';
-  sel.value = m;
-  onConditionModeChange(section, id);
-}
-
-function fillCombinedRows(listId, conditions) {
-  const list = document.getElementById(listId);
-  if (!list) return;
-  list.innerHTML = '';
-  (conditions || []).forEach((c) => {
-    addCombinedCond(listId);
-    const rows = list.querySelectorAll('.combined-cond-row');
-    const row = rows[rows.length - 1];
-    if (!row) return;
-    const p = row.querySelector('select[data-role="parameter"]');
-    const cmp = row.querySelector('select[data-role="comparator"]');
-    const v = row.querySelector('input[data-role="value"]');
-    if (p) setSelectValue(p, c.parameter || '');
-    if (cmp) setSelectValue(cmp, c.comparator || '>');
-    if (v) v.value = Array.isArray(c.value) ? c.value.join(',') : (c.value ?? '');
-  });
-}
-
-function fillEntryLegs(legs) {
-  document.getElementById('entryLegs').innerHTML = '';
-  legIds.entry = 0;
-  (legs || []).forEach((leg, idx) => {
-    addLeg('entry');
-    const cards = document.querySelectorAll('#entryLegs .leg-card');
-    const card = cards[cards.length - 1];
-    if (!card) return;
-    setSelectValue(card.querySelector('[data-role="side"]'), leg.side || 'SELL');
-    setSelectValue(card.querySelector('[data-role="option-type"]'), leg.option_type || 'CE');
-    setSelectValue(card.querySelector('[data-role="strike-selection"]'), leg.strike_selection || 'atm');
-    const strike = card.querySelector('[data-role="strike-value"]');
-    if (strike) strike.value = leg.strike_value ?? '';
-    const lots = card.querySelector('[data-role="lots"]');
-    if (lots) lots.value = leg.lots ?? 1;
-    const legTag = card.querySelector('[data-role="leg-tag"]');
-    if (legTag) legTag.value = leg.leg_tag || `ENTRY_LEG_${idx + 1}`;
-    const execMethod = card.querySelector('[data-role="execution-method"]');
-    if (execMethod) setSelectValue(execMethod, leg.execution?.selection_metric || leg.execution_metric || '');
-    const execValue = card.querySelector('[data-role="execution-value"]');
-    if (execValue) execValue.value = leg.execution?.selection_value ?? leg.execution_value ?? '';
-    setLegConditionMode('entry', idx + 1, leg.condition_mode || inferModeFromRule(leg.rule_type, leg.conditions, 'and'));
-    fillConditionRows(`cond_entry_${idx + 1}`, flattenConditions(leg.conditions));
-    onConditionModeChange('entry', idx + 1);
-    updateLegBadge('entry', idx + 1, String(leg.side || 'SELL').toUpperCase());
-    updateLegTitle('entry', idx + 1, `${leg.option_type || 'CE'}_${leg.strike_selection || 'atm'}`);
-  });
-  refreshLegTagSelectors();
-  updateBadge('entry');
-}
-
-function fillAdjustmentRules(rules) {
-  document.getElementById('adjLegs').innerHTML = '';
-  document.getElementById('adjCombined').innerHTML = '';
-  legIds.adj = 0;
-  let legIndex = 0;
-  (rules || []).forEach((rule, idx) => {
-    const source = rule?.action?.details?.source || '';
-    if (source === 'combined_adjustment') {
-      fillCombinedRows('adjCombined', flattenConditions(rule.conditions));
-      const targets = Array.isArray(rule?.action?.details?.target_leg_tags) ? rule.action.details.target_leg_tags : [];
-      setInputValue('adjCombinedTargets', targets.join(', '));
-      return;
-    }
-    legIndex += 1;
-    addAdjLeg();
-    const cards = document.querySelectorAll('#adjLegs .leg-card');
-    const card = cards[cards.length - 1];
-    if (!card) return;
-    setSelectValue(card.querySelector('[data-role="adj-action"]'), rule?.action?.type || 'custom');
-    const legTag = card.querySelector('[data-role="leg-tag"]');
-    if (legTag) legTag.value = rule?.rule_tag || `ADJ_LEG_${legIndex}`;
-    const targetTags = card.querySelector('[data-role="adj-target-tags"]');
-    if (targetTags) {
-      const targets = Array.isArray(rule?.action?.details?.target_leg_tags)
-        ? rule.action.details.target_leg_tags
-        : (rule?.action?.details?.target_leg_tags ? [rule.action.details.target_leg_tags] : []);
-      targetTags.value = targets.join(', ');
-    }
-    setLegConditionMode('adj', legIndex, inferModeFromRule(rule?.rule_type, rule?.conditions, 'and'));
-    fillConditionRows(`cond_adj_${legIndex}`, flattenConditions(rule.conditions));
-    onConditionModeChange('adj', legIndex);
-  });
-  refreshLegTagSelectors();
-  updateBadge('adj');
-}
-
-function fillExitRules(exitCfg) {
-  const legRules = Array.isArray(exitCfg?.leg_rules) ? exitCfg.leg_rules : [];
-  document.getElementById('exitLegs').innerHTML = '';
-  document.getElementById('exitCombined').innerHTML = '';
-  legIds.exit = 0;
-  legRules.forEach((rule, idx) => {
-    addExitLeg();
-    const cards = document.querySelectorAll('#exitLegs .leg-card');
-    const card = cards[cards.length - 1];
-    if (!card) return;
-    const legTag = card.querySelector('[data-role="leg-tag"]');
-    if (legTag) legTag.value = rule.leg_tag || `EXIT_LEG_${idx + 1}`;
-    setSelectValue(card.querySelector('[data-role="exit-ref"]'), rule.exit_leg_ref || 'all');
-    setSelectValue(card.querySelector('[data-role="exit-order-type"]'), rule.order_type || 'MARKET');
-    setSelectValue(card.querySelector('[data-role="execution-method"]'), rule.execution?.selection_metric || '');
-    setLegConditionMode('exit', idx + 1, rule.condition_mode || inferModeFromRule(rule.rule_type, rule.conditions, 'and'));
-    fillConditionRows(`cond_exit_${idx + 1}`, flattenConditions(rule.conditions));
-    onConditionModeChange('exit', idx + 1);
-  });
-
-  const combined = flattenConditions(exitCfg?.conditions).filter(c => c.parameter !== 'time_current');
-  fillCombinedRows('exitCombined', combined);
-  refreshLegTagSelectors();
-  updateBadge('exit');
-}
-
-function applyStrategyToForm(s, nameHint = '') {
-  const strategyName = s?.name || nameHint || '';
-  openBuilder({ id: s.id || strategyName, name: strategyName });
-
-  setInputValue('sName', strategyName);
-  setInputValue('sId', s.id || String(strategyName).toUpperCase().replace(/\s+/g, '_'));
-  setInputValue('sDesc', s.description || '');
-  setInputValue('sLots', s.identity?.lots ?? s.basic?.lots ?? 1);
-  const allowExpiry = s.identity?.allow_expiry_day_trade;
-  const allowExpiryLegacy = s.identity?.expiry_day_trade;
-  document.getElementById('sAllowExpiryTrade').checked = allowExpiry ?? allowExpiryLegacy ?? true;
-
-  setSelectValue(document.getElementById('sProductType'), s.identity?.product_type || 'NRML');
-  setSelectValue(document.getElementById('sOrderType'), s.identity?.order_type || 'MARKET');
-
-  const dbSymbol = s.identity?.db_symbol || s.identity?.underlying || s.basic?.underlying || '';
-  const dbExpiry = s.identity?.db_expiry || s.identity?.expiry_custom || '';
-  const dbPathRaw = s.identity?.db_path || s.market_config?.db_path || '';
-  if (dbSymbol) {
-    setSelectValue(document.getElementById('sDbSymbol'), dbSymbol);
-    populateDbExpiries(dbSymbol);
-  }
-  if (dbExpiry) setSelectValue(document.getElementById('sDbExpiry'), dbExpiry);
-  if ((!dbSymbol || !dbExpiry) && dbPathRaw) applyDbFileSelection(dbPathRaw);
-  updateSelectedDbPath();
-  loadDbDerivedExecutionParams();
-
-  fillEntryLegs(Array.isArray(s.entry?.action?.legs) ? s.entry.action.legs : []);
-  fillCombinedRows('entryCombined', flattenConditions(s.entry?.conditions));
-  fillAdjustmentRules(Array.isArray(s.adjustment?.rules) ? s.adjustment.rules : []);
-  fillExitRules(s.exit || {});
-
-  setInputValue('schEntry', s.timing?.entry_time || s.schedule?.entry_time || '09:20');
-  setInputValue('schExit', s.timing?.exit_time || s.schedule?.exit_time || '15:15');
-  setInputValue('rTargetAmt', s.rms?.daily?.profit_target ?? '');
-  setInputValue('rSlAmt', s.rms?.daily?.loss_limit ?? '');
-  setInputValue('rMaxDelta', s.rms?.greeks?.max_delta ?? '');
-  setInputValue('rMaxLegs', s.rms?.position?.max_lots ?? 4);
-  setInputValue('rMaxCap', s.rms?.position?.max_value ?? '');
-}
-
-async function loadStrategyByName(name) {
-  const res = await fetch(`/dashboard/strategy/${encodeURIComponent(name)}`, { credentials: 'include' });
-  if (!res.ok) throw new Error(`Failed to load strategy: ${name}`);
-  const body = await res.json();
-  const s = body?.config || {};
-  applyStrategyToForm(s, name);
-}
-
-async function loadStrategyFromQuery() {
-  const params = new URLSearchParams(window.location.search || '');
-  const name = (params.get('edit') || '').trim();
-  if (!name) return;
-  try {
-    await loadStrategyByName(name);
-  } catch (e) {
-    showAlert(`Could not load strategy "${name}" for edit`, 'error');
-  }
-}
-
-async function loadSavedStrategyConfig() {
-  try {
-    const res = await fetch('/dashboard/strategy/configs', { credentials: 'include' });
-    if (!res.ok) throw new Error('Failed to fetch saved configs');
-    const body = await res.json();
-    const configs = Array.isArray(body?.configs) ? body.configs : [];
-    if (!configs.length) {
-      showAlert('No saved strategy configs found.', 'error');
-      return;
-    }
-    const labels = configs.map((c) => `${c.name} | ${String(c.file || '').replace(/\.json$/i, '')}`);
-    const pick = prompt(`Enter strategy name or slug to load:\n${labels.join('\n')}`);
-    if (!pick) return;
-    const input = pick.trim();
-    const match = configs.find((c) => c.name === input || String(c.file || '').replace(/\.json$/i, '') === input);
-    const key = match ? String(match.file || '').replace(/\.json$/i, '') : input;
-    await loadStrategyByName(key);
-    showAlert(`Loaded strategy: ${input}`, 'success');
-  } catch (e) {
-    showAlert(`Load failed: ${e.message}`, 'error');
-  }
-}
-
-function importStrategyConfigFromFile() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const json = JSON.parse(text);
-      const cfg = json?.config && typeof json.config === 'object' ? json.config : json;
-      applyStrategyToForm(cfg, cfg?.name || file.name.replace(/\.json$/i, ''));
-      showAlert(`Imported: ${file.name}`, 'success');
-    } catch (err) {
-      showAlert(`Import failed: ${err.message}`, 'error');
-    }
-  };
-  input.click();
-}
-
 // Auto-generate strategy ID from name
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
   const nameInput = document.getElementById('sName');
   if(nameInput) nameInput.addEventListener('input', () => {
     const id = nameInput.value.toUpperCase().replace(/\s+/g,'_').replace(/[^A-Z0-9_]/g,'');
@@ -2560,11 +2095,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   const dbSymbolEl = document.getElementById('sDbSymbol');
   const dbExpiryEl = document.getElementById('sDbExpiry');
-  const dbFileEl = document.getElementById('sDbFile');
   if (dbSymbolEl) {
     dbSymbolEl.addEventListener('change', () => {
       populateDbExpiries(dbSymbolEl.value);
-      loadDbDerivedExecutionParams();
       document.getElementById('entryLegs').innerHTML = '';
       document.getElementById('adjLegs').innerHTML = '';
       document.getElementById('exitLegs').innerHTML = '';
@@ -2575,7 +2108,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (dbExpiryEl) {
     dbExpiryEl.addEventListener('change', () => {
       updateSelectedDbPath();
-      loadDbDerivedExecutionParams();
       document.getElementById('entryLegs').innerHTML = '';
       document.getElementById('adjLegs').innerHTML = '';
       document.getElementById('exitLegs').innerHTML = '';
@@ -2583,21 +2115,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       ['badgeEntry','badgeAdj','badgeExit'].forEach(b => { const el=document.getElementById(b); if(el)el.textContent='0'; });
     });
   }
-  if (dbFileEl) {
-    dbFileEl.addEventListener('change', () => {
-      if (!applyDbFileSelection(dbFileEl.value)) return;
-      loadDbDerivedExecutionParams();
-    });
-  }
-  await loadDbSymbolsFromActiveChains();
+  loadDbSymbolsFromActiveChains();
   loadTickerConditionParams();
-  openBuilder();
-  await loadStrategyFromQuery();
+  loadStrategies();
+  setInterval(loadStrategies, 6000);
+  setInterval(refreshMonitorMock, 4000);
 });
 
-/* 
+/* ═════════════════════════════════════════════════
    SAVE STRATEGY
-    */
+   ═════════════════════════════════════════════════ */
 function maybeNumber(value) {
   if (value === null || value === undefined) return null;
   const str = String(value).trim();
@@ -2690,48 +2217,17 @@ function readCombinedRows(containerId) {
   return out;
 }
 
-function getLegIdFromCard(card, section, fallback) {
-  const idText = String(card?.id || '');
-  const m = idText.match(new RegExp(`^legcard_${section}_(\\d+)$`));
-  return m ? Number(m[1]) : fallback;
-}
-
-function readLegConditionConfig(section, id, legMeta = null, fallbackParam = 'time_in_position_sec') {
-  const mode = String(document.getElementById(`cond_mode_${section}_${id}`)?.value || 'and').toLowerCase();
-  const rules = readConditionRows(`cond_${section}_${id}`, legMeta);
-  if (mode === 'instant') {
-    return {
-      mode,
-      rule_type: 'always',
-      operator: 'AND',
-      rules: [{ parameter: fallbackParam, comparator: '>=', value: 0 }],
-    };
-  }
-  return {
-    mode,
-    rule_type: ruleTypeFromMode(mode),
-    operator: operatorFromMode(mode),
-    rules: rules.length ? rules : [{ parameter: fallbackParam, comparator: '>=', value: 0 }],
-  };
-}
-
 function parseEntryLeg(card, idx) {
-  const legId = getLegIdFromCard(card, 'entry', idx + 1);
   const side = card.querySelector('[data-role="side"]')?.value || 'SELL';
   const instrument = 'OPTION';
   const optionType = card.querySelector('[data-role="option-type"]')?.value || 'CE';
   const strikeSelection = card.querySelector('[data-role="strike-selection"]')?.value || 'atm';
   const strikeValue = maybeNumber(card.querySelector('[data-role="strike-value"]')?.value);
   const lots = maybeNumber(card.querySelector('[data-role="lots"]')?.value) || 1;
-  const legTag = String(card.querySelector('[data-role="leg-tag"]')?.value || `ENTRY_LEG_${idx + 1}`).trim();
-  const execMethod = card.querySelector('[data-role="execution-method"]')?.value || '';
-  const execValue = parseConditionValue('==', card.querySelector('[data-role="execution-value"]')?.value || '');
   const expiry = selectedDbExpiry() || 'current';
   const legMeta = { option_type: optionType };
-  const condCfg = readLegConditionConfig('entry', legId, legMeta, 'time_in_position_sec');
   return {
     leg_id: idx + 1,
-    leg_tag: legTag,
     side,
     instrument,
     option_type: optionType,
@@ -2739,13 +2235,7 @@ function parseEntryLeg(card, idx) {
     strike_value: strikeValue,
     lots,
     expiry,
-    condition_mode: condCfg.mode,
-    rule_type: condCfg.rule_type,
-    conditions: condCfg.rules,
-    execution: {
-      selection_metric: execMethod || null,
-      selection_value: execValue,
-    },
+    conditions: readConditionRows(`cond_entry_${idx + 1}`, legMeta),
   };
 }
 
@@ -2783,7 +2273,6 @@ async function saveStrategy() {
   const selectedExpiry = (document.getElementById('sDbExpiry').value || '').trim();
   const productType = document.getElementById('sProductType').value || 'NRML';
   const orderType = document.getElementById('sOrderType').value || 'MARKET';
-  const allowExpiryTrade = !!document.getElementById('sAllowExpiryTrade').checked;
   const entryTime = document.getElementById('schEntry').value || '09:20';
   const exitTime = document.getElementById('schExit').value || '15:15';
   const lots = maybeNumber(document.getElementById('sLots').value) || 1;
@@ -2807,35 +2296,24 @@ async function saveStrategy() {
   const sqoffMins = maybeNumber(document.getElementById('schSqoffMins').value);
 
   const adjustmentRules = adjCards.map((card, idx) => {
-    const legId = getLegIdFromCard(card, 'adj', idx + 1);
     const actionType = card.querySelector('[data-role="adj-action"]')?.value || 'custom';
-    const ruleTag = String(card.querySelector('[data-role="leg-tag"]')?.value || `ADJ_LEG_${idx + 1}`).trim();
-    const targetTags = String(card.querySelector('[data-role="adj-target-tags"]')?.value || '')
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean);
-    const condCfg = readLegConditionConfig('adj', legId, null, 'time_in_position_sec');
+    const legConds = readConditionRows(`cond_adj_${idx + 1}`);
     return {
       priority: idx + 1,
       name: `Adjustment Rule ${idx + 1}`,
-      rule_tag: ruleTag,
-      rule_type: condCfg.rule_type,
-      conditions: { operator: condCfg.operator, rules: condCfg.rules },
-      action: { type: actionType, details: { source: `adj_leg_${idx + 1}`, target_leg_tags: targetTags } },
+      rule_type: 'if_then',
+      conditions: legConds.length ? { operator: 'AND', rules: legConds } : { operator: 'AND', rules: [{ parameter: 'time_in_position_sec', comparator: '>=', value: 0 }] },
+      action: { type: actionType, details: { source: `adj_leg_${idx + 1}` } },
     };
   });
 
   if (adjCombined.length) {
-    const combinedTargets = String(document.getElementById('adjCombinedTargets')?.value || '')
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean);
     adjustmentRules.push({
       priority: adjustmentRules.length + 1,
       name: 'Combined Adjustment Rule',
       rule_type: 'if_then',
       conditions: { operator: 'AND', rules: adjCombined },
-      action: { type: 'shift_strikes', details: { source: 'combined_adjustment', target_leg_tags: combinedTargets } },
+      action: { type: 'shift_strikes', details: { source: 'combined_adjustment' } },
     });
   }
 
@@ -2888,22 +2366,12 @@ async function saveStrategy() {
       rule_type: 'if_any',
       conditions: exitConditions,
       action: { type: 'close_all_positions' },
-      leg_rules: exitCards.map((card, idx) => {
-        const legId = getLegIdFromCard(card, 'exit', idx + 1);
-        const condCfg = readLegConditionConfig('exit', legId, null, 'time_in_position_sec');
-        return {
-          name: `Exit Leg Rule ${idx + 1}`,
-          leg_tag: String(card.querySelector('[data-role="leg-tag"]')?.value || `EXIT_LEG_${idx + 1}`).trim(),
-          exit_leg_ref: card.querySelector('[data-role="exit-ref"]')?.value || 'all',
-          order_type: card.querySelector('[data-role="exit-order-type"]')?.value || 'MARKET',
-          execution: {
-            selection_metric: card.querySelector('[data-role="execution-method"]')?.value || null,
-          },
-          condition_mode: condCfg.mode,
-          rule_type: condCfg.rule_type,
-          conditions: condCfg.rules,
-        };
-      }),
+      leg_rules: exitCards.map((card, idx) => ({
+        name: `Exit Leg Rule ${idx + 1}`,
+        exit_leg_ref: card.querySelector('[data-role="exit-ref"]')?.value || 'all',
+        order_type: card.querySelector('[data-role="exit-order-type"]')?.value || 'MARKET',
+        conditions: readConditionRows(`cond_exit_${idx + 1}`),
+      })),
     },
     risk_management: {
       max_loss_per_day: maybeNumber(document.getElementById('rSlAmt')?.value),
@@ -2926,8 +2394,6 @@ async function saveStrategy() {
       db_expiry: selectedExpiry,
       market_type: marketType,
       db_path: dbPath,
-      allow_expiry_day_trade: allowExpiryTrade,
-      expiry_day_trade: allowExpiryTrade,
     },
     market_config: {
       market_type: marketType,
@@ -2956,7 +2422,6 @@ async function saveStrategy() {
       exit_time: exitTime,
       active_days: activeDays.length ? activeDays : ['mon', 'tue', 'wed', 'thu', 'fri'],
       square_off_before_min: sqoffMins,
-      entry_on_expiry_day: allowExpiryTrade,
     },
   };
 
@@ -2988,7 +2453,7 @@ async function saveStrategy() {
       statusEl.textContent = 'Saved successfully';
       statusEl.style.color = 'var(--success)';
       showAlert('Strategy saved with full config.', 'success');
-      setTimeout(() => { closeBuilder(); }, 1000);
+      setTimeout(() => { closeBuilder(); loadStrategies(); }, 1000);
       return;
     }
 
@@ -3000,6 +2465,8 @@ async function saveStrategy() {
   } catch(e) {
     statusEl.textContent = 'API offline';
     statusEl.style.color = 'var(--warning)';
+    strategies.push(payload);
+    renderStrategies(strategies);
     showAlert('Saved locally (API unavailable).', 'success');
     setTimeout(() => closeBuilder(), 1200);
   } finally {
@@ -3010,14 +2477,277 @@ async function saveStrategy() {
 function showAlert(msg, type) {
   const box = document.getElementById('alertBox');
   box.className = `builder-alert show ${type}`;
-  box.innerHTML = `<span>${type==='success'?'':''}</span> ${msg}`;
+  box.innerHTML = `<span>${type==='success'?'✓':'✕'}</span> ${msg}`;
   setTimeout(() => box.classList.remove('show'), 4000);
 }
 
-/* 
+/* ═════════════════════════════════════════════════
    LOAD + RENDER STRATEGIES
-    */
+   ═════════════════════════════════════════════════ */
+async function loadStrategies() {
+  try {
+    const res = await fetch('/dashboard/strategy/configs', { credentials:'include' });
+    if(res.ok) {
+      const data = await res.json();
+      strategies = data.configs || [];
+      renderStrategies(strategies);
+    } else if(res.status === 401) {
+      window.location.href = '/';
+    }
+  } catch(e) {
+    renderStrategies(strategies); // show cached
+  }
+}
 
+function renderStrategies(list) {
+  const container = document.getElementById('strategyCards');
+  const statR = document.getElementById('statRunning');
+  const statP = document.getElementById('statPaused');
+  const statI = document.getElementById('statIdle');
+  const statT = document.getElementById('statTotal');
+
+  const running = list.filter(s=>s.status==='RUNNING').length;
+  const paused  = list.filter(s=>s.status==='PAUSED').length;
+  const idle    = list.filter(s=>!['RUNNING','PAUSED'].includes(s.status)).length;
+  if(statR) statR.textContent = running;
+  if(statP) statP.textContent = paused;
+  if(statI) statI.textContent = idle;
+  if(statT) statT.textContent = list.length;
+
+  if(!list.length) {
+    container.innerHTML = `<div class="empty-control">
+      <div class="empty-ico">📭</div>
+      <p>No strategies saved yet.<br>Click <strong>+ Create Strategy</strong> to build one.</p>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = list.map(s => {
+    const status   = (s.status || 'IDLE').toUpperCase();
+    const statusCls = status.toLowerCase();
+    const isRunning = status === 'RUNNING';
+    const isPaused  = status === 'PAUSED';
+    const isIdle    = !isRunning && !isPaused;
+
+    const targetVal = s.rms?.daily?.profit_target ?? null;
+    const slVal = s.rms?.daily?.loss_limit ?? s.risk_management?.max_loss_per_day ?? null;
+    const target = targetVal ? `₹${Number(targetVal).toLocaleString('en-IN')}` : '--';
+    const sl     = slVal ? `₹${Number(slVal).toLocaleString('en-IN')}` : '--';
+    const freq   = s.schedule?.frequency || 'manual';
+    const und    = s.basic?.underlying || s.identity?.underlying || 'NIFTY';
+    const legs   = Array.isArray(s.entry?.action?.legs) ? s.entry.action.legs.length : (s.entry?.legs?.count || 0);
+    const entryT = s.timing?.entry_time || s.schedule?.entry_time || s.identity?.entry_time || '--:--';
+
+    return `
+    <div class="s-card ${statusCls}" id="scard_${s.id || s.name}">
+      <div class="s-card-top">
+        <div>
+          <div class="s-card-name">${s.name}</div>
+          <div class="s-card-sub">${s.strategy_type||s.identity?.strategy_type||'custom'} • ${und} • ${freq} • ${legs} leg${legs!==1?'s':''}</div>
+        </div>
+        <div class="status-pill ${statusCls}">
+          <div class="status-dot"></div>
+          ${status}
+        </div>
+      </div>
+
+      <div class="s-card-metrics">
+        <div class="s-metric">
+          <div class="s-metric-val val-accent">${entryT}</div>
+          <div class="s-metric-lbl">Entry</div>
+        </div>
+        <div class="s-metric">
+          <div class="s-metric-val val-pos">${target}</div>
+          <div class="s-metric-lbl">Target</div>
+        </div>
+        <div class="s-metric">
+          <div class="s-metric-val val-neg">${sl}</div>
+          <div class="s-metric-lbl">SL</div>
+        </div>
+        <div class="s-metric">
+          <div class="s-metric-val val-neu">${s.basic?.lots||s.identity?.lots||1}</div>
+          <div class="s-metric-lbl">Lots</div>
+        </div>
+      </div>
+
+      <div class="s-card-actions">
+        ${isRunning ? `
+          <div class="running-lock">🔒 Running — locked</div>
+          <button class="s-btn s-btn-pause" onclick="sendIntent('${s.name}','PAUSE')">⏸ Pause</button>
+          <button class="s-btn s-btn-stop" onclick="sendIntent('${s.name}','EXIT')">⏹ Stop</button>
+        ` : isPaused ? `
+          <button class="s-btn s-btn-start" onclick="sendIntent('${s.name}','ENTRY')">▶ Resume</button>
+          <button class="s-btn s-btn-edit" onclick="openBuilder(${JSON.stringify(s).replace(/"/g,'&quot;')})">✏ Edit</button>
+          <button class="s-btn s-btn-stop" onclick="sendIntent('${s.name}','EXIT')">⏹ Stop</button>
+        ` : `
+          <button class="s-btn s-btn-start" onclick="sendIntent('${s.name}','ENTRY')">▶ Start</button>
+          <button class="s-btn s-btn-edit" onclick="openBuilder(${JSON.stringify(s).replace(/"/g,'&quot;')})">✏ Edit</button>
+          <button class="s-btn s-btn-stop" onclick="sendIntent('${s.name}','EXIT')" ${isIdle?'disabled':''}>⏹ Stop</button>
+        `}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ═════════════════════════════════════════════════
+   INTENT / ACTION
+   ═════════════════════════════════════════════════ */
+async function sendIntent(stratName, action) {
+  try {
+    const res = await fetch('/dashboard/intent/strategy', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ strategy_name: stratName, action }),
+      credentials: 'include',
+    });
+    if(res.ok) {
+      // Optimistically update status
+      const idx = strategies.findIndex(s=>s.name===stratName);
+      if(idx>=0) {
+        if(action==='ENTRY') strategies[idx].status='RUNNING';
+        else if(action==='PAUSE') strategies[idx].status='PAUSED';
+        else if(action==='EXIT') strategies[idx].status='IDLE';
+        renderStrategies(strategies);
+      }
+      setTimeout(loadStrategies, 800);
+    } else {
+      const err = await res.json().catch(()=>({}));
+      alert(`Failed: ${err.detail || res.statusText}`);
+    }
+  } catch(e) {
+    // Optimistic fallback
+    const idx = strategies.findIndex(s=>s.name===stratName);
+    if(idx>=0) {
+      if(action==='ENTRY') strategies[idx].status='RUNNING';
+      else if(action==='PAUSE') strategies[idx].status='PAUSED';
+      else if(action==='EXIT') strategies[idx].status='IDLE';
+      renderStrategies(strategies);
+    }
+  }
+}
+
+/* ═════════════════════════════════════════════════
+   MONITOR TAB SWITCH
+   ═════════════════════════════════════════════════ */
+function switchMTab(tab, btn) {
+  document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+}
+
+/* ═════════════════════════════════════════════════
+   MOCK MONITOR DATA (replace with real API)
+   ═════════════════════════════════════════════════ */
+function refreshMonitorMock() {
+  const orphanBody = document.getElementById('orphanBody');
+  const monitorBody = document.getElementById('monitorBody');
+
+  // Only show mock if running strategies exist
+  const running = strategies.filter(s => s.status === 'RUNNING');
+  if(!running.length) return;
+
+  // Mock orphan (1 leg)
+  orphanBody.innerHTML = `
+    <tr>
+      <td><span class="badge-ce">CE</span> NIFTY 24200 CE 27JUN</td>
+      <td><span class="badge-buy">BUY</span></td>
+      <td>50</td>
+      <td class="val-muted">142.50</td>
+      <td class="val-neg">134.20</td>
+      <td class="val-neg">-₹415</td>
+      <td class="val-muted">12.4%</td>
+      <td class="val-pos">+0.42</td>
+      <td class="val-muted">0.003</td>
+      <td class="val-neg">-1.82</td>
+      <td class="val-warn">+0.95</td>
+      <td class="val-muted">1.2M</td>
+      <td><button class="s-btn s-btn-stop" style="padding:3px 8px;font-size:9px;">Close</button></td>
+    </tr>`;
+
+  // Mock running strategy rows
+  let html = '';
+  running.forEach((s, si) => {
+    const pnl = (Math.random()-0.4) * 3000;
+    const pnlCls = pnl>=0 ? 'val-pos' : 'val-neg';
+    const pnlStr = `${pnl>=0?'+':''  }₹${Math.abs(pnl).toFixed(0)}`;
+    const delta = ((Math.random()-0.5)*0.3).toFixed(2);
+    html += `
+    <tr class="strategy-group-row" onclick="toggleMonitorGroup('${si}')">
+      <td><span class="expand-icon" id="mg_${si}">▶</span> <strong style="font-family:var(--font-head)">${s.name}</strong></td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="${pnlCls}"><strong>${pnlStr}</strong></td>
+      <td>—</td>
+      <td class="${parseFloat(delta)>=0?'val-pos':'val-neg'}">${delta}</td>
+      <td>—</td>
+      <td class="val-neg">${(-Math.random()*5).toFixed(2)}</td>
+      <td class="val-warn">${(Math.random()*2).toFixed(2)}</td>
+      <td class="${parseFloat(delta)>=0?'val-pos':'val-neg'}">${delta}</td>
+      <td>—</td>
+      <td><span class="status-pill running" style="font-size:9px;padding:2px 6px;">RUNNING</span></td>
+    </tr>
+    <tr class="sub-row" id="mg_rows_${si}" style="display:none;">
+      <td>└ <span class="badge-sell">SELL</span> NIFTY ATM CE</td>
+      <td><span class="badge-sell">SELL</span></td>
+      <td>50</td>
+      <td class="val-muted">210.00</td>
+      <td class="val-muted">${(195+Math.random()*30).toFixed(1)}</td>
+      <td class="val-pos">+₹${(Math.random()*1500).toFixed(0)}</td>
+      <td class="val-muted">${(11+Math.random()*5).toFixed(1)}%</td>
+      <td class="val-neg">-0.50</td>
+      <td class="val-muted">0.004</td>
+      <td class="val-pos">+1.95</td>
+      <td class="val-neg">-1.10</td>
+      <td>—</td>
+      <td class="val-muted">3.4M</td>
+      <td>—</td>
+    </tr>
+    <tr class="sub-row" id="mg_rows2_${si}" style="display:none;">
+      <td>└ <span class="badge-sell">SELL</span> NIFTY ATM PE</td>
+      <td><span class="badge-sell">SELL</span></td>
+      <td>50</td>
+      <td class="val-muted">205.00</td>
+      <td class="val-muted">${(190+Math.random()*30).toFixed(1)}</td>
+      <td class="val-pos">+₹${(Math.random()*1500).toFixed(0)}</td>
+      <td class="val-muted">${(11+Math.random()*5).toFixed(1)}%</td>
+      <td class="val-pos">+0.50</td>
+      <td class="val-muted">0.004</td>
+      <td class="val-pos">+1.90</td>
+      <td class="val-neg">-1.05</td>
+      <td>—</td>
+      <td class="val-muted">2.9M</td>
+      <td>—</td>
+    </tr>
+    <tr class="combined-row" id="mg_combined_${si}" style="display:none;">
+      <td>⚡ Combined Greeks</td>
+      <td>—</td><td>—</td><td>—</td><td>—</td>
+      <td>${pnlStr}</td>
+      <td>${(12+Math.random()*4).toFixed(1)}%</td>
+      <td>${delta}</td>
+      <td>${(0.008+Math.random()*0.002).toFixed(4)}</td>
+      <td>${(3.8+Math.random()*0.5).toFixed(2)}</td>
+      <td>${(-2.1-Math.random()*0.3).toFixed(2)}</td>
+      <td>${delta}</td>
+      <td>—</td>
+      <td>—</td>
+    </tr>`;
+  });
+
+  monitorBody.innerHTML = html || `<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:20px;font-size:11px;">No active strategy positions</td></tr>`;
+}
+
+function toggleMonitorGroup(idx) {
+  const rows = [
+    document.getElementById(`mg_rows_${idx}`),
+    document.getElementById(`mg_rows2_${idx}`),
+    document.getElementById(`mg_combined_${idx}`),
+  ];
+  const icon = document.getElementById(`mg_${idx}`);
+  const visible = rows[0] && rows[0].style.display !== 'none';
+  rows.forEach(r => { if(r) r.style.display = visible ? 'none' : 'table-row'; });
+  if(icon) icon.style.transform = visible ? '' : 'rotate(90deg)';
+}
 
 // Keyboard close
 document.addEventListener('keydown', e => {

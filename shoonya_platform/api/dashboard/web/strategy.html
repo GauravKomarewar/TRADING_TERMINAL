@@ -645,7 +645,7 @@ async function stopStrategy(name) {
 
 
 function editStrategy(name) {
-  openBuilderPage();
+  openBuilderPage(name);
 }
 
 // ====== CLONE ======
@@ -919,8 +919,9 @@ function closeModal(id) {
   $(id).classList.remove('show');
 }
 
-function openBuilderPage() {
-  window.location.href = '/dashboard/web/strategy_builder.html';
+function openBuilderPage(name = '') {
+  const qs = name ? `?edit=${encodeURIComponent(name)}` : '';
+  window.location.href = `/dashboard/web/strategy_builder.html${qs}`;
 }
 
 function openLogs(name) {

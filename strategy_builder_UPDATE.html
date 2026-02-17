@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategy Builder | Shoonya</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #07090f;
+  --panel:   #0c1018;
+  --panel-2: #101521;
+  --panel-3: #161e2e;
+  --border:  #1a2540;
+  --border-2:#223060;
+  --text:    #dde4f0;
+  --sub:     #8494b0;
+  --muted:   #4e6080;
+  --primary: #3d8ef0;
+  --success: #18c97a;
+  --danger:  #f05252;
+  --warning: #f0a030;
+  --accent:  #9068f5;
+  --cyan:    #18b8d4;
+  --orange:  #f07030;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'DM Sans', system-ui, sans-serif;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100vh; overflow:hidden; }
+body { background:var(--bg); color:var(--text); font-family:var(--sans); font-size:13.5px; line-height:1.55; }
+button, input, select, textarea { font-family:var(--sans); }
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:var(--bg); }
+::-webkit-scrollbar-thumb { background:var(--border-2); border-radius:4px; }
+
+/* ── TOPBAR ── */
+.topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 24px; height:54px; flex-shrink:0;
+  background:var(--panel); border-bottom:1px solid var(--border);
+}
+.topbar-brand { display:flex; flex-direction:column; gap:1px; }
+.topbar-title { font-size:15px; font-weight:700; letter-spacing:-0.2px; color:var(--text); }
+.topbar-sub   { font-size:11px; color:var(--sub); font-weight:400; }
+.topbar-actions { display:flex; align-items:center; gap:6px; }
+
+/* ── NAV TABS ── */
+.nav-tabs {
+  display:flex; flex-shrink:0; height:40px;
+  background:var(--panel-2); border-bottom:1px solid var(--border);
+  overflow-x:auto;
+}
+.nav-tabs::-webkit-scrollbar { height:0; }
+.nav-tab {
+  padding:0 20px; height:40px; font-size:12.5px; font-weight:600;
+  color:var(--sub); background:transparent; border:none;
+  border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap;
+  display:flex; align-items:center; gap:6px;
+  transition:color .15s, border-color .15s;
+}
+.nav-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
+.nav-tab:hover:not(.active) { color:var(--text); }
+.tab-badge {
+  background:var(--primary); color:#fff; border-radius:8px;
+  font-size:9.5px; font-weight:700; padding:1px 5px; min-width:16px; text-align:center;
+}
+
+/* ── BODY ── */
+.builder-body { height:calc(100vh - 54px - 40px); overflow-y:auto; padding:22px 26px; }
+
+/* ── SECTIONS ── */
+.bsec { display:none; }
+.bsec.active { display:block; }
+
+/* ── SEC TITLE ── */
+.sec-title {
+  font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+  color:var(--primary); margin:0 0 16px;
+  display:flex; align-items:center; gap:10px;
+}
+.sec-title::after { content:''; flex:1; height:1px; background:linear-gradient(90deg,var(--border-2),transparent); }
+.st-orange { color:var(--orange); }
+.st-accent  { color:var(--accent); }
+.st-success { color:var(--success); }
+
+/* ── FORM ── */
+.f-row { display:grid; gap:12px; margin-bottom:14px; }
+.f-row.c2 { grid-template-columns:1fr 1fr; }
+.f-row.c3 { grid-template-columns:1fr 1fr 1fr; }
+.f-row.c4 { grid-template-columns:repeat(4,1fr); }
+.f-row.c5 { grid-template-columns:repeat(5,1fr); }
+.f-group { display:flex; flex-direction:column; gap:5px; }
+.f-label { font-size:11.5px; font-weight:500; color:var(--sub); }
+.f-input, .f-select {
+  padding:7px 10px; background:var(--panel-2); border:1px solid var(--border);
+  border-radius:6px; color:var(--text); font-size:13px; font-family:var(--sans);
+  transition:border-color .15s, box-shadow .15s; width:100%;
+}
+.f-input:focus, .f-select:focus {
+  outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(61,142,240,.12);
+}
+.f-input[readonly] { opacity:.5; cursor:not-allowed; background:var(--panel); }
+.f-select option { background:var(--panel-3); }
+
+/* ── TOGGLE ── */
+.tog-wrap { display:flex; align-items:center; gap:8px; }
+.tog { display:none; }
+.tog-lbl {
+  width:38px; height:20px; background:var(--border-2); border-radius:10px;
+  cursor:pointer; position:relative; transition:background .2s; flex-shrink:0;
+}
+.tog-lbl::after {
+  content:''; width:14px; height:14px; background:#fff; border-radius:50%;
+  position:absolute; top:3px; left:3px; transition:transform .2s;
+}
+.tog:checked + .tog-lbl { background:var(--primary); }
+.tog:checked + .tog-lbl::after { transform:translateX(18px); }
+.tog-text { font-size:12.5px; color:var(--sub); font-weight:500; }
+
+/* ── BUTTONS ── */
+.btn {
+  display:inline-flex; align-items:center; gap:5px; padding:7px 14px;
+  border:none; border-radius:6px; font-size:12.5px; font-weight:600;
+  cursor:pointer; transition:all .15s; font-family:var(--sans); white-space:nowrap;
+}
+.btn-primary  { background:var(--primary); color:#fff; }
+.btn-primary:hover  { background:#2d7ce0; }
+.btn-success  { background:rgba(24,201,122,.13); color:var(--success); border:1px solid rgba(24,201,122,.3); }
+.btn-success:hover  { background:rgba(24,201,122,.22); }
+.btn-danger   { background:rgba(240,82,82,.11); color:var(--danger); border:1px solid rgba(240,82,82,.28); }
+.btn-danger:hover   { background:rgba(240,82,82,.21); }
+.btn-ghost    { background:transparent; color:var(--sub); border:1px solid var(--border-2); }
+.btn-ghost:hover    { color:var(--text); background:rgba(255,255,255,.04); }
+.btn-sm  { padding:5px 12px; font-size:12px; }
+.btn:disabled { opacity:.3; cursor:not-allowed; pointer-events:none; }
+
+/* ── INFO BOX ── */
+.info-box {
+  padding:10px 14px; border-radius:6px; font-size:12.5px; font-weight:400;
+  display:flex; align-items:flex-start; gap:8px; margin-bottom:16px; line-height:1.5;
+}
+.ib-cyan   { background:rgba(24,184,212,.06); border:1px solid rgba(24,184,212,.2);  color:var(--cyan); }
+.ib-orange { background:rgba(240,112,48,.06); border:1px solid rgba(240,112,48,.2);  color:var(--orange); }
+.ib-accent { background:rgba(144,104,245,.06); border:1px solid rgba(144,104,245,.2); color:var(--accent); }
+
+/* ── ALERT ── */
+.alert {
+  padding:10px 14px; border-radius:6px; font-size:12.5px;
+  margin-bottom:14px; display:none; align-items:center; gap:8px;
+}
+.alert.show { display:flex; }
+.alert-success { background:rgba(24,201,122,.09); border:1px solid var(--success); color:var(--success); }
+.alert-error   { background:rgba(240,82,82,.09);  border:1px solid var(--danger);  color:var(--danger); }
+
+/* ── LEG CARD ── */
+.legs-cont { display:flex; flex-direction:column; gap:10px; }
+.leg-card {
+  background:var(--panel-2); border:1px solid var(--border);
+  border-radius:8px; overflow:hidden; transition:border-color .2s;
+}
+.leg-card:hover { border-color:var(--border-2); }
+.leg-card.lc-buy  { border-left:3px solid var(--success); }
+.leg-card.lc-sell { border-left:3px solid var(--danger); }
+.leg-card.lc-adj  { border-left:3px solid var(--warning); }
+.leg-card.lc-exit { border-left:3px solid var(--accent); }
+
+.leg-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:9px 13px; background:rgba(0,0,0,.22);
+  cursor:pointer; gap:10px; user-select:none;
+}
+.leg-head-left { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.leg-expand { color:var(--muted); font-size:10px; transition:transform .2s; }
+.leg-card.open .leg-expand { transform:rotate(90deg); }
+
+.leg-tag {
+  font-family:var(--mono); font-size:10px; font-weight:600;
+  padding:2px 7px; border-radius:4px;
+  background:rgba(240,112,48,.12); border:1px solid rgba(240,112,48,.3); color:var(--orange);
+}
+.leg-name { font-size:13px; font-weight:600; color:var(--text); }
+
+.badge { display:inline-flex; align-items:center; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; }
+.b-buy  { background:rgba(24,201,122,.14); color:#20d982; }
+.b-sell { background:rgba(240,82,82,.14);  color:#f47070; }
+.b-ce   { background:rgba(61,142,240,.14); color:#70a8f0; }
+.b-pe   { background:rgba(240,82,82,.14);  color:#f47070; }
+
+.leg-del {
+  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+  background:rgba(240,82,82,.09); border:1px solid rgba(240,82,82,.22);
+  border-radius:5px; cursor:pointer; color:var(--danger); font-size:15px; flex-shrink:0;
+}
+.leg-del:hover { background:rgba(240,82,82,.22); }
+
+.leg-body { padding:13px; display:none; }
+.leg-card.open .leg-body { display:block; }
+
+/* ── COND AREA ── */
+.cond-area {
+  background:rgba(0,0,0,.17); border:1px solid rgba(255,255,255,.05);
+  border-radius:8px; padding:12px; margin-bottom:10px;
+}
+.ca-title {
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+  margin-bottom:9px; display:flex; align-items:center; gap:7px;
+}
+.ca-green   { color:var(--success); }
+.ca-orange  { color:var(--orange); }
+.ca-accent  { color:var(--accent); }
+.ca-cyan    { color:var(--cyan); }
+
+.cond-row {
+  display:grid; gap:6px; align-items:center;
+  background:rgba(0,0,0,.17); padding:7px 9px; border-radius:6px;
+  border:1px solid rgba(255,255,255,.04); margin-bottom:5px;
+}
+.cr-std { grid-template-columns:1fr 82px 120px 26px; }
+.cr-cmb { grid-template-columns:1fr 82px 120px 72px 120px 26px; }
+.cr-trg { grid-template-columns:1fr 82px 110px 150px 26px; }
+
+.cond-join { font-size:9px; font-weight:700; color:var(--warning); text-align:center; font-family:var(--mono); padding:2px 0; }
+.cond-rm {
+  width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+  background:rgba(240,82,82,.07); border:1px solid rgba(240,82,82,.18);
+  border-radius:4px; cursor:pointer; color:var(--danger); font-size:14px;
+}
+.cond-rm:hover { background:rgba(240,82,82,.2); }
+
+.add-cond-btn {
+  display:inline-flex; align-items:center; gap:5px; padding:5px 10px;
+  background:rgba(144,104,245,.07); border:1px dashed rgba(144,104,245,.35);
+  border-radius:6px; color:var(--accent); font-size:11.5px; font-weight:600;
+  cursor:pointer; transition:all .15s; margin-top:4px;
+}
+.add-cond-btn:hover { background:rgba(144,104,245,.15); border-style:solid; }
+
+.add-leg-btn {
+  display:flex; align-items:center; gap:7px; padding:9px 14px; margin-top:10px;
+  border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s;
+}
+.alb-entry { background:rgba(24,201,122,.05); border:1px dashed rgba(24,201,122,.3);  color:var(--success); }
+.alb-entry:hover { background:rgba(24,201,122,.12); border-style:solid; }
+.alb-adj   { background:rgba(240,160,48,.05); border:1px dashed rgba(240,160,48,.3);  color:var(--warning); }
+.alb-adj:hover   { background:rgba(240,160,48,.12); border-style:solid; }
+.alb-exit  { background:rgba(144,104,245,.05); border:1px dashed rgba(144,104,245,.3); color:var(--accent);  }
+.alb-exit:hover  { background:rgba(144,104,245,.12); border-style:solid; }
+
+/* ── EXEC PARAMS ── */
+.exec-params {
+  background:rgba(61,142,240,.04); border:1px solid rgba(61,142,240,.15);
+  border-radius:7px; padding:12px; margin-top:10px;
+}
+.exec-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--primary); margin-bottom:10px; }
+
+/* ── COMBINED SECTION ── */
+.combined-sec {
+  background:rgba(144,104,245,.04); border:1px solid rgba(144,104,245,.15);
+  border-radius:8px; padding:13px; margin-top:16px;
+}
+.combined-title { font-size:12.5px; font-weight:600; color:var(--accent); margin-bottom:10px; }
+
+/* ── P&L / RISK CARDS ── */
+.card-grid { display:grid; gap:12px; margin-bottom:18px; }
+.cg-2 { grid-template-columns:1fr 1fr; }
+.cg-3 { grid-template-columns:1fr 1fr 1fr; }
+.pnl-card {
+  background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px;
+}
+.pnl-card-title { font-size:13px; font-weight:600; color:var(--text); margin-bottom:12px; }
+
+/* ── STEP ── */
+.step-row { display:flex; align-items:center; gap:6px; margin-bottom:12px; }
+.step-dot {
+  width:22px; height:22px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-size:10px; font-weight:700; flex-shrink:0;
+}
+.sd-on   { background:var(--primary); color:#fff; }
+.sd-done { background:var(--success); color:#fff; }
+.sd-off  { background:var(--border-2); color:var(--muted); }
+.step-line { flex:1; height:1px; background:var(--border); }
+.step-lbl  { font-size:11.5px; color:var(--sub); white-space:nowrap; font-weight:500; }
+
+/* ── TAG SELECT ── */
+.tag-sel {
+  padding:6px 8px; background:rgba(240,112,48,.08);
+  border:1px solid rgba(240,112,48,.28); border-radius:6px;
+  color:var(--orange); font-size:12.5px; font-family:var(--sans); font-weight:600;
+}
+
+/* ── MODAL ── */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.72); z-index:9000; display:none; align-items:center; justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal-box { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:22px; max-width:440px; width:90%; }
+.modal-title { font-size:15px; font-weight:700; margin-bottom:10px; }
+.modal-msg   { font-size:13px; color:var(--sub); margin-bottom:18px; }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+
+/* ── RESPONSIVE ── */
+@media (max-width:860px) { .cg-3{grid-template-columns:1fr 1fr;} .f-row.c5{grid-template-columns:repeat(3,1fr);} .cr-std{grid-template-columns:1fr 80px;} }
+@media (max-width:580px) { .cg-2,.cg-3{grid-template-columns:1fr;} .f-row.c3,.f-row.c4,.f-row.c2{grid-template-columns:1fr 1fr;} }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="topbar-title" id="builder-title">Strategy Builder</div>
+    <div class="topbar-sub"   id="builder-sub">Define every parameter of your trading strategy</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-ghost btn-sm" onclick="importStrategy()">↑ Import</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadFromFolder()">📂 Load</button>
+    <button class="btn btn-ghost btn-sm" onclick="resetForm()">↺ Reset</button>
+    <button class="btn btn-success btn-sm" id="btnSave" onclick="saveStrategy()">💾 Save</button>
+    <button class="btn btn-danger  btn-sm" onclick="closeBuilder()">✕ Close</button>
+  </div>
+</div>
+
+<!-- NAV TABS -->
+<div class="nav-tabs">
+  <button class="nav-tab active" data-sec="identity"   onclick="switchSec('identity',this)">1. Identity</button>
+  <button class="nav-tab"        data-sec="entry"      onclick="switchSec('entry',this)">2. Entry <span class="tab-badge" id="badgeEntry">0</span></button>
+  <button class="nav-tab"        data-sec="adjustment" onclick="switchSec('adjustment',this)">3. Adjustment <span class="tab-badge" id="badgeAdj">0</span></button>
+  <button class="nav-tab"        data-sec="exit"       onclick="switchSec('exit',this)">4. Exit &amp; Risk <span class="tab-badge" id="badgeExit">0</span></button>
+  <button class="nav-tab"        data-sec="schedule"   onclick="switchSec('schedule',this)">5. Schedule</button>
+</div>
+
+<!-- BUILDER BODY -->
+<div class="builder-body">
+  <div id="alertBox" class="alert"></div>
+
+  <!-- ═══ 1. IDENTITY ═══ -->
+  <div class="bsec active" id="sec-identity">
+    <div class="sec-title">Strategy Identity</div>
+    <div class="f-row c3">
+      <div class="f-group">
+        <label class="f-label">Strategy Name *</label>
+        <input class="f-input" id="sName" placeholder="e.g. NIFTY Weekly Straddle" oninput="onNameInput()">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Strategy ID (auto)</label>
+        <input class="f-input" id="sId" readonly placeholder="Auto-generated from name">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Lot Multiplier</label>
+        <input class="f-input" id="sLots" type="number" value="1" min="1">
+      </div>
+    </div>
+    <div class="f-row c3">
+      <div class="f-group">
+        <label class="f-label">Symbol *</label>
+        <select class="f-select" id="sSymbol" onchange="onSymbolChange()"><option value="">Loading…</option></select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">DB File (.sqlite) *</label>
+        <select class="f-select" id="sDbFile" onchange="onDbFileChange()"><option value="">Select symbol first</option></select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Expiry (from DB file)</label>
+        <input class="f-input" id="sExpiry" readonly placeholder="Auto-parsed">
+      </div>
+    </div>
+    <div class="f-row c4">
+      <div class="f-group">
+        <label class="f-label">Exchange</label>
+        <input class="f-input" id="sExchange" readonly placeholder="Auto">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Product Type</label>
+        <select class="f-select" id="sProductType">
+          <option value="MIS">MIS</option><option value="NRML">NRML</option><option value="CNC">CNC</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Order Type</label>
+        <select class="f-select" id="sOrderType">
+          <option value="MARKET">Market</option><option value="LIMIT">Limit</option>
+          <option value="SL">Stop Loss</option><option value="SLM">SL-Market</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Expiry-Day Trade</label>
+        <div class="tog-wrap" style="margin-top:7px;">
+          <input type="checkbox" class="tog" id="togExpiry" onchange="document.getElementById('expiryLbl').textContent=this.checked?'Allowed':'Blocked'">
+          <label class="tog-lbl" for="togExpiry"></label>
+          <span class="tog-text" id="expiryLbl">Blocked</span>
+        </div>
+      </div>
+    </div>
+    <div class="f-row c2">
+      <div class="f-group">
+        <label class="f-label">Description</label>
+        <input class="f-input" id="sDesc" placeholder="Optional notes">
+      </div>
+      <div class="f-group">
+        <label class="f-label">DB Path (auto)</label>
+        <input class="f-input" id="sDbPath" readonly placeholder="Auto-generated">
+      </div>
+    </div>
+    <div class="info-box ib-cyan">
+      ℹ When Expiry-Day Trade is <strong>Blocked</strong>, the runner skips entry if today matches the DB expiry date. Toggle <strong>Allowed</strong> to permit expiry-day execution.
+    </div>
+  </div>
+
+  <!-- ═══ 2. ENTRY ═══ -->
+  <div class="bsec" id="sec-entry">
+    <div class="info-box ib-cyan">
+      📌 Each leg gets a unique tag e.g. <strong>LEG_CE_1</strong>. Define conditions first — execution params unlock after selecting a condition mode. All DB metrics, greeks, time and index values are available as condition parameters.
+    </div>
+    <div class="sec-title">Entry Legs</div>
+    <div class="legs-cont" id="entryLegs"></div>
+    <button class="add-leg-btn alb-entry" onclick="addEntryLeg()">＋  Add Entry Leg</button>
+
+    <div class="combined-sec">
+      <div class="combined-title">⚡ Combined Entry Gate — strategy enters only when these are satisfied</div>
+      <div id="entryCombined"></div>
+      <button class="add-cond-btn" onclick="addCmbRow('entryCombined')">＋ Add Combined Condition</button>
+    </div>
+  </div>
+
+  <!-- ═══ 3. ADJUSTMENT ═══ -->
+  <div class="bsec" id="sec-adjustment">
+    <div class="info-box ib-orange">
+      🔄 Reference tagged legs (e.g. <strong>LEG_CE_1</strong>) to compare one leg's parameters against another's, or use combined strategy metrics to trigger adjustments on individual or multiple legs.
+    </div>
+    <div class="sec-title st-orange">Adjustment Rules</div>
+    <div class="legs-cont" id="adjLegs"></div>
+    <button class="add-leg-btn alb-adj" onclick="addAdjLeg()">＋  Add Adjustment Rule</button>
+
+    <div class="combined-sec">
+      <div class="combined-title">⚡ Combined Adjustment Gate — fires when these strategy-level metrics are satisfied</div>
+      <div id="adjCombined"></div>
+      <button class="add-cond-btn" onclick="addCmbRow('adjCombined')">＋ Add Combined Condition</button>
+    </div>
+  </div>
+
+  <!-- ═══ 4. EXIT & RISK ═══ -->
+  <div class="bsec" id="sec-exit">
+    <div class="info-box ib-accent">
+      🚪 Strategy-level P&amp;L exits, Greek limits, position controls, and per-leg exit conditions are all managed here.
+    </div>
+
+    <!-- Strategy P&L Exits -->
+    <div class="sec-title">Strategy-Level P&amp;L Exits</div>
+    <div class="card-grid cg-3">
+      <div class="pnl-card">
+        <div class="pnl-card-title">🎯 Target Profit</div>
+        <div class="f-row c2" style="margin-bottom:10px;">
+          <div class="f-group"><label class="f-label">Amount (₹)</label><input class="f-input" id="exitTargetAmt" type="number" placeholder="e.g. 5000"></div>
+          <div class="f-group"><label class="f-label">% of Premium</label><input class="f-input" id="exitTargetPct" type="number" placeholder="e.g. 50"></div>
+        </div>
+        <div class="f-group"><label class="f-label">On Hit</label>
+          <select class="f-select" id="exitTargetAction">
+            <option value="exit_all">Exit All Legs</option><option value="trail">Trail Profit</option>
+            <option value="partial">Partial 50%</option><option value="lock_trail">Lock &amp; Trail</option>
+          </select>
+        </div>
+      </div>
+      <div class="pnl-card">
+        <div class="pnl-card-title">🛑 Stop Loss</div>
+        <div class="f-row c2" style="margin-bottom:10px;">
+          <div class="f-group"><label class="f-label">Amount (₹)</label><input class="f-input" id="exitSlAmt" type="number" placeholder="e.g. 3000"></div>
+          <div class="f-group"><label class="f-label">% of Premium</label><input class="f-input" id="exitSlPct" type="number" placeholder="e.g. 100"></div>
+        </div>
+        <div class="f-group"><label class="f-label">On Hit</label>
+          <select class="f-select" id="exitSlAction">
+            <option value="exit_all">Exit All Legs</option><option value="adjust">Trigger Adjustment</option><option value="partial">Partial 50%</option>
+          </select>
+        </div>
+      </div>
+      <div class="pnl-card">
+        <div class="pnl-card-title">📈 Trailing Stop Loss</div>
+        <div class="f-row c2" style="margin-bottom:10px;">
+          <div class="f-group"><label class="f-label">Trail (₹)</label><input class="f-input" id="exitTrailAmt" type="number" placeholder="e.g. 1000"></div>
+          <div class="f-group"><label class="f-label">Lock-in (₹)</label><input class="f-input" id="exitLockIn" type="number" placeholder="e.g. 2000"></div>
+        </div>
+        <div class="f-group"><label class="f-label">Trail Step (₹)</label><input class="f-input" id="exitTrailStep" type="number" placeholder="e.g. 500"></div>
+      </div>
+    </div>
+
+    <!-- Greek & Position Risk -->
+    <div class="sec-title">Greek &amp; Position Risk Limits</div>
+    <div class="card-grid cg-3" style="margin-bottom:22px;">
+      <div class="pnl-card">
+        <div class="pnl-card-title">Δ Delta Limits</div>
+        <div class="f-row c2">
+          <div class="f-group"><label class="f-label">Max Net Delta</label><input class="f-input" id="rMaxDelta" type="number" placeholder="e.g. 0.5" step="0.01"></div>
+          <div class="f-group"><label class="f-label">On Breach</label>
+            <select class="f-select" id="rDeltaAction">
+              <option value="hedge">Auto Hedge</option><option value="adjust">Trigger Adjustment</option><option value="alert">Alert Only</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="pnl-card">
+        <div class="pnl-card-title">σ IV Range (Entry Block)</div>
+        <div class="f-row c2">
+          <div class="f-group"><label class="f-label">Max IV</label><input class="f-input" id="rMaxIv" type="number" placeholder="e.g. 25"></div>
+          <div class="f-group"><label class="f-label">Min IV</label><input class="f-input" id="rMinIv" type="number" placeholder="e.g. 10"></div>
+        </div>
+      </div>
+      <div class="pnl-card">
+        <div class="pnl-card-title">⚖ Position Limits</div>
+        <div class="f-row c2">
+          <div class="f-group"><label class="f-label">Max Capital (₹)</label><input class="f-input" id="rMaxCap" type="number" placeholder="e.g. 200000"></div>
+          <div class="f-group"><label class="f-label">Max Legs</label><input class="f-input" id="rMaxLegs" type="number" value="4" min="1"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Per-Leg Exit -->
+    <div class="sec-title st-accent">Per-Leg Exit Conditions</div>
+    <div class="legs-cont" id="exitLegs"></div>
+    <button class="add-leg-btn alb-exit" onclick="addExitLeg()">＋  Add Exit Leg Condition</button>
+
+    <!-- Combined Exit -->
+    <div class="combined-sec">
+      <div class="combined-title">⚡ Combined Exit Gate — exits strategy when any of these are satisfied</div>
+      <div id="exitCombined"></div>
+      <button class="add-cond-btn" onclick="addCmbRow('exitCombined')">＋ Add Combined Condition</button>
+    </div>
+  </div>
+
+  <!-- ═══ 5. SCHEDULE ═══ -->
+  <div class="bsec" id="sec-schedule">
+    <div class="sec-title">Trading Schedule</div>
+    <div class="f-row c3">
+      <div class="f-group"><label class="f-label">Frequency</label>
+        <select class="f-select" id="schFreq">
+          <option value="daily">Daily</option><option value="weekly">Weekly</option>
+          <option value="monthly">Monthly (Expiry Week)</option><option value="manual">Manual Only</option>
+        </select>
+      </div>
+      <div class="f-group"><label class="f-label">Entry Time</label><input class="f-input" id="schEntry" type="time" value="09:20"></div>
+      <div class="f-group"><label class="f-label">Exit Time (EOD)</label><input class="f-input" id="schExit" type="time" value="15:15"></div>
+    </div>
+    <div class="f-row c3">
+      <div class="f-group"><label class="f-label">Expiry Type</label>
+        <select class="f-select" id="schExpiry">
+          <option value="weekly">Current Weekly</option><option value="next_weekly">Next Weekly</option>
+          <option value="monthly">Monthly</option><option value="next_monthly">Next Monthly</option>
+        </select>
+      </div>
+      <div class="f-group"><label class="f-label">DTE Min</label><input class="f-input" id="schDteMin" type="number" placeholder="e.g. 1"></div>
+      <div class="f-group"><label class="f-label">DTE Max</label><input class="f-input" id="schDteMax" type="number" placeholder="e.g. 7"></div>
+    </div>
+    <div class="f-row c3">
+      <div class="f-group"><label class="f-label">Square Off Before (mins)</label><input class="f-input" id="schSqoff" type="number" placeholder="e.g. 30"></div>
+      <div class="f-group"><label class="f-label">Entry on Expiry Day</label>
+        <select class="f-select" id="schEntryExpiry"><option value="yes">Yes</option><option value="no">No</option></select>
+      </div>
+      <div class="f-group"><label class="f-label">Active Days</label>
+        <select class="f-select" id="schDays" multiple style="height:78px;">
+          <option value="0" selected>Monday</option><option value="1" selected>Tuesday</option>
+          <option value="2" selected>Wednesday</option><option value="3" selected>Thursday</option>
+          <option value="4" selected>Friday</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div><!-- /builder-body -->
+
+<!-- LOAD MODAL -->
+<div class="modal-overlay" id="loadModal">
+  <div class="modal-box">
+    <div class="modal-title">Load Saved Strategy</div>
+    <div class="modal-msg">Choose a strategy config from the server:</div>
+    <select class="f-select" id="loadSelect" style="margin-bottom:16px;"><option value="">Loading…</option></select>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('loadModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmLoad()">Load</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ════ CONSTANTS ════ */
+const OPERATORS = ['>', '>=', '<', '<=', '==', '!=', '~=', 'between', 'not_between'];
+const JOIN_OPS  = ['AND', 'OR'];
+const ADJ_ACTS  = ['close_higher_delta','close_lower_delta','close_ce','close_pe',
+                   'roll_ce','roll_pe','roll_both','shift_strikes','lock_profit',
+                   'trailing_stop','do_nothing','custom'];
+
+const DB_PARAMS = [
+  {v:'ce_ltp',l:'CE LTP',cat:'Option Legs'},{v:'pe_ltp',l:'PE LTP',cat:'Option Legs'},
+  {v:'ce_strike',l:'CE Strike',cat:'Option Legs'},{v:'pe_strike',l:'PE Strike',cat:'Option Legs'},
+  {v:'ce_oi',l:'CE OI',cat:'Option Legs'},{v:'pe_oi',l:'PE OI',cat:'Option Legs'},
+  {v:'ce_delta',l:'CE Delta',cat:'Greeks'},{v:'pe_delta',l:'PE Delta',cat:'Greeks'},
+  {v:'ce_gamma',l:'CE Gamma',cat:'Greeks'},{v:'pe_gamma',l:'PE Gamma',cat:'Greeks'},
+  {v:'ce_theta',l:'CE Theta',cat:'Greeks'},{v:'pe_theta',l:'PE Theta',cat:'Greeks'},
+  {v:'ce_vega',l:'CE Vega',cat:'Greeks'},{v:'pe_vega',l:'PE Vega',cat:'Greeks'},
+  {v:'ce_iv',l:'CE IV',cat:'Volatility'},{v:'pe_iv',l:'PE IV',cat:'Volatility'},
+  {v:'total_premium',l:'Total Premium',cat:'Premium'},
+  {v:'ce_premium_decay_pct',l:'CE Decay %',cat:'Premium'},
+  {v:'pe_premium_decay_pct',l:'PE Decay %',cat:'Premium'},
+  {v:'total_premium_decay_pct',l:'Total Decay %',cat:'Premium'},
+  {v:'net_delta',l:'Net Delta',cat:'Strategy'},{v:'delta_diff',l:'Delta Diff (CE-PE)',cat:'Strategy'},
+  {v:'combined_pnl',l:'Combined P&L',cat:'Strategy'},{v:'combined_pnl_pct',l:'Combined P&L %',cat:'Strategy'},
+  {v:'any_leg_delta',l:'Any Leg Delta (abs)',cat:'Strategy'},
+  {v:'both_legs_delta_below',l:'Both Legs Delta Below',cat:'Strategy'},
+  {v:'both_legs_delta_above',l:'Both Legs Delta Above',cat:'Strategy'},
+  {v:'max_leg_delta',l:'Max Leg Delta',cat:'Strategy'},{v:'min_leg_delta',l:'Min Leg Delta',cat:'Strategy'},
+  {v:'higher_delta_leg',l:'Higher Delta Leg',cat:'Strategy'},{v:'lower_delta_leg',l:'Lower Delta Leg',cat:'Strategy'},
+  {v:'most_profitable_leg',l:'Most Profitable Leg',cat:'Strategy'},
+  {v:'least_profitable_leg',l:'Least Profitable Leg',cat:'Strategy'},
+  {v:'time_current',l:'Current Time (HH:MM)',cat:'Time'},
+  {v:'time_in_position_sec',l:'Time In Position (sec)',cat:'Time'},
+  {v:'time_since_last_adj_sec',l:'Time Since Last Adj (sec)',cat:'Time'},
+  {v:'spot_price',l:'Underlying Spot',cat:'Index/Ticker'},
+  {v:'spot_change',l:'Spot Change',cat:'Index/Ticker'},
+  {v:'spot_change_pct',l:'Spot Change %',cat:'Index/Ticker'},
+  {v:'india_vix',l:'India VIX',cat:'Index/Ticker'},
+  {v:'atm_strike',l:'ATM Strike',cat:'Index/Ticker'},
+  {v:'fut_ltp',l:'Futures LTP',cat:'Index/Ticker'},
+];
+
+const CMB_PARAMS = [
+  {v:'net_delta',l:'Net Delta'},{v:'combined_pnl',l:'Combined P&L'},
+  {v:'combined_pnl_pct',l:'Combined P&L %'},{v:'delta_diff',l:'Delta Diff'},
+  {v:'any_leg_delta',l:'Any Leg Delta'},{v:'both_legs_delta_below',l:'Both Legs Delta Below'},
+  {v:'both_legs_delta_above',l:'Both Legs Delta Above'},
+  {v:'time_current',l:'Current Time'},{v:'spot_price',l:'Underlying Spot'},{v:'india_vix',l:'India VIX'},
+];
+
+/* ════ STATE ════ */
+const ST = {
+  cnt:{entry:0,adj:0,exit:0},
+  tags:[],
+  symMap:{},
+  indexParams:[],
+  indexLoaded:false,
+};
+
+/* ════ UTILS ════ */
+const $   = id => document.getElementById(id);
+const mn  = v  => { const n=Number(v); return isFinite(n)?n:null; };
+const esc = s  => String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const gv  = id => ($( id )?.value||'').trim();
+const sv  = (id,v)=>{ const e=$(id); if(e) e.value=v??''; };
+const setSel = (el,v)=>{
+  if(!el) return; const s=String(v||'');
+  if(![...el.options].some(o=>o.value===s)){const o=document.createElement('option');o.value=s;o.textContent=s;el.appendChild(o);}
+  el.value=s;
+};
+
+function showAlert(msg,type='success'){
+  const b=$('alertBox'); b.className=`alert alert-${type} show`; b.textContent=msg;
+  clearTimeout(b._t); b._t=setTimeout(()=>b.classList.remove('show'),4500);
+}
+
+/* ════ SELECT BUILDERS ════ */
+function paramOpts(cur=''){
+  const all=[...DB_PARAMS,...ST.indexParams];
+  const cats={};
+  all.forEach(p=>{if(!cats[p.cat])cats[p.cat]=[];cats[p.cat].push(p);});
+  let h='<option value="">— Parameter —</option>';
+  for(const c in cats){
+    h+=`<optgroup label="${esc(c)}">`;
+    cats[c].forEach(p=>h+=`<option value="${p.v}"${p.v===cur?' selected':''}>${esc(p.l)}</option>`);
+    h+='</optgroup>';
+  }
+  return h;
+}
+const opOpts  = (cur='>') => OPERATORS.map(o=>`<option value="${o}"${o===cur?' selected':''}>${o}</option>`).join('');
+const jnOpts  = (cur='AND') => JOIN_OPS.map(j=>`<option value="${j}"${j===cur?' selected':''}>${j}</option>`).join('');
+function cmbParamOpts(cur=''){
+  const all=[...CMB_PARAMS,...ST.indexParams.map(p=>({v:p.v,l:p.l}))];
+  return '<option value="">— Metric —</option>'+all.map(p=>`<option value="${p.v}"${p.v===cur?' selected':''}>${esc(p.l)}</option>`).join('');
+}
+function tagOpts(){
+  if(!ST.tags.length) return '<option value="">No tagged legs yet</option>';
+  return '<option value="">— Tagged Leg —</option>'+
+    ST.tags.map(t=>`<option value="${t.tag}">${t.tag} (${t.side} ${t.opt||''})</option>`).join('');
+}
+
+/* ════ CONDITION ROWS ════ */
+function makeCondRow(lid,pv='',ov='>',vv=''){
+  const box=$(lid); if(!box) return;
+  const n=box.querySelectorAll('.cond-row').length;
+  const d=document.createElement('div');
+  d.innerHTML=(n?'<div class="cond-join">AND</div>':'')+
+    `<div class="cond-row cr-std">
+      <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="param">${paramOpts(pv)}</select>
+      <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="op">${opOpts(ov)}</select>
+      <input  class="f-input"  data-role="val" value="${esc(vv)}" placeholder="Value" style="font-size:12.5px;padding:6px 8px;">
+      <button class="cond-rm" onclick="rmRow(this)">−</button>
+    </div>`;
+  box.appendChild(d);
+}
+
+function addCmbRow(lid,pv='',ov='>',vv=''){
+  const box=$(lid); if(!box) return;
+  const n=box.querySelectorAll('.cond-row').length;
+  const d=document.createElement('div');
+  d.innerHTML=(n?'<div class="cond-join">AND</div>':'')+
+    `<div class="cond-row cr-cmb">
+      <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="param">${cmbParamOpts(pv)}</select>
+      <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="op">${opOpts(ov)}</select>
+      <input  class="f-input"  data-role="val" value="${esc(vv)}" placeholder="Value" style="font-size:12.5px;padding:6px 8px;">
+      <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="join">${jnOpts()}</select>
+      <input  class="f-input"  data-role="compare_to" placeholder="Compare to" style="font-size:12.5px;padding:6px 8px;">
+      <button class="cond-rm" onclick="rmRow(this)">−</button>
+    </div>`;
+  box.appendChild(d);
+}
+
+function rmRow(btn){
+  const row=btn.closest('.cond-row');
+  const prev=row.previousElementSibling;
+  if(prev?.classList.contains('cond-join')) prev.remove();
+  row.remove();
+}
+
+/* ════ TAGS ════ */
+function mkTag(sec,opt,id){ return `${sec==='entry'?'LEG':sec==='adj'?'ADJ':'EXIT'}_${(opt||'X').toUpperCase()}_${id}`; }
+function regTag(id,tag,sec,opt='',side=''){ ST.tags=ST.tags.filter(x=>!(x.id===id&&x.section===sec)); ST.tags.push({id,tag,section:sec,opt,side}); }
+function unregTag(id,sec){ ST.tags=ST.tags.filter(x=>!(x.id===id&&x.section===sec)); }
+function refreshTagSels(){ document.querySelectorAll('.tag-sel').forEach(s=>{const c=s.value;s.innerHTML=tagOpts();s.value=c;}); }
+
+/* ════ ENTRY LEG ════ */
+function addEntryLeg(){
+  ST.cnt.entry++;
+  const id=ST.cnt.entry;
+  const tag=mkTag('entry','CE',id);
+  regTag(id,tag,'entry','CE','SELL');
+
+  const html=`
+<div class="leg-card lc-sell open" id="lc_entry_${id}">
+  <div class="leg-head" onclick="togLeg('entry_${id}')">
+    <div class="leg-head-left">
+      <span class="leg-expand" id="lx_entry_${id}">▶</span>
+      <span class="leg-tag"  id="lt_entry_${id}">${tag}</span>
+      <span class="leg-name" id="ln_entry_${id}">Entry Leg ${id}</span>
+      <span class="badge b-sell" id="lbs_entry_${id}">SELL</span>
+      <span class="badge b-ce"   id="lbt_entry_${id}">CE</span>
+    </div>
+    <button class="leg-del" onclick="event.stopPropagation();removeLeg('entry',${id})">−</button>
+  </div>
+  <div class="leg-body" id="lb_entry_${id}">
+    <div class="step-row">
+      <div class="step-dot sd-on">1</div>
+      <div class="step-lbl" style="color:var(--text);font-weight:600;">Set Conditions</div>
+      <div class="step-line"></div>
+      <div class="step-dot sd-done">2</div>
+      <div class="step-lbl">Execution Parameters</div>
+    </div>
+    <div class="cond-area">
+      <div class="ca-title ca-green">Condition Mode</div>
+      <div class="f-row c2" style="margin-bottom:10px;">
+        <div class="f-group">
+          <label class="f-label">Logic</label>
+          <select class="f-select" id="cm_entry_${id}" onchange="onCondMode('entry',${id})">
+            <option value="instant">Instant — no condition</option>
+            <option value="and">AND — all must be true</option>
+            <option value="or">OR — any one true</option>
+            <option value="if_then">IF … THEN</option>
+            <option value="if_then_else">IF … THEN … ELSE</option>
+          </select>
+        </div>
+        <div class="f-group">
+          <label class="f-label">Hint</label>
+          <input class="f-input" readonly value="Select mode, then add conditions" style="opacity:.42;">
+        </div>
+      </div>
+      <div id="cl_entry_${id}"></div>
+      <button class="add-cond-btn" id="cab_entry_${id}" onclick="makeCondRow('cl_entry_${id}')">＋ Add Condition</button>
+    </div>
+    <div class="exec-params">
+      <div class="exec-title">Execution Parameters</div>
+      <div class="f-row c5">
+        <div class="f-group"><label class="f-label">Buy / Sell</label>
+          <select class="f-select" data-role="side" onchange="onSide('entry',${id},this.value)">
+            <option value="SELL">SELL</option><option value="BUY">BUY</option>
+          </select>
+        </div>
+        <div class="f-group"><label class="f-label">CE / PE</label>
+          <select class="f-select" data-role="opt-type" onchange="onOptType('entry',${id},this.value)">
+            <option value="CE">CE</option><option value="PE">PE</option>
+          </select>
+        </div>
+        <div class="f-group"><label class="f-label">Strike Select</label>
+          <select class="f-select" data-role="strike-sel">
+            <option value="atm">ATM</option><option value="atm+1">ATM+1</option>
+            <option value="atm-1">ATM-1</option><option value="atm+2">ATM+2</option>
+            <option value="atm-2">ATM-2</option><option value="delta">By Delta</option>
+            <option value="strike">By Strike</option><option value="premium">By Premium</option>
+            <option value="otm_pct">OTM %</option>
+          </select>
+        </div>
+        <div class="f-group"><label class="f-label">Strike / Value</label>
+          <input class="f-input" data-role="strike-val" placeholder="e.g. 0.3 / 200">
+        </div>
+        <div class="f-group"><label class="f-label">Lots</label>
+          <input class="f-input" data-role="lots" type="number" value="1" min="1">
+        </div>
+      </div>
+      <div class="cond-area" style="margin-top:10px;border-color:rgba(240,160,48,.15);">
+        <div class="ca-title ca-orange">Live Param Triggers</div>
+        <div id="pt_entry_${id}"></div>
+        <button class="add-cond-btn" style="border-color:rgba(240,160,48,.3);color:var(--warning);" onclick="addTrigger('pt_entry_${id}')">＋ Add Trigger</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+  const wrap=document.createElement('div'); wrap.innerHTML=html;
+  $('entryLegs').appendChild(wrap.firstElementChild);
+  onCondMode('entry',id); updBadge('entry'); refreshTagSels();
+}
+
+function addTrigger(lid){
+  const box=$(lid); if(!box) return;
+  const d=document.createElement('div');
+  d.innerHTML=`<div class="cond-row cr-trg" style="margin-bottom:5px;">
+    <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="param">${paramOpts()}</select>
+    <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="op">${opOpts()}</select>
+    <input  class="f-input"  data-role="val" placeholder="Value" style="font-size:12.5px;padding:6px 8px;">
+    <select class="f-select" style="font-size:12.5px;padding:6px 8px;" data-role="action">
+      <option value="">Then…</option>
+      <option value="close_leg">Close this Leg</option><option value="alert">Alert Only</option>
+      <option value="book_partial">Book 50%</option><option value="add_hedge">Add Hedge</option>
+      <option value="trigger_adj">Trigger Adjustment</option>
+    </select>
+    <button class="cond-rm" onclick="this.closest('.cond-row').remove()">−</button>
+  </div>`;
+  box.appendChild(d.firstElementChild);
+}
+
+function onCondMode(sec,id){
+  const mode=gv(`cm_${sec}_${id}`);
+  const btn=$(`cab_${sec}_${id}`);
+  if(btn) btn.disabled=(mode==='instant');
+}
+function onSide(sec,id,v){
+  const card=$(`lc_${sec}_${id}`);
+  if(card) card.className=`leg-card lc-${v==='BUY'?'buy':'sell'} open`;
+  const b=$(`lbs_${sec}_${id}`); if(b){b.className=`badge b-${v.toLowerCase()}`;b.textContent=v;}
+  const opt=$(`lc_${sec}_${id}`)?.querySelector('[data-role="opt-type"]')?.value||'CE';
+  const tag=mkTag(sec,opt,id); regTag(id,tag,sec,opt,v);
+  const el=$(`lt_${sec}_${id}`); if(el) el.textContent=tag;
+  refreshTagSels();
+}
+function onOptType(sec,id,v){
+  const b=$(`lbt_${sec}_${id}`); if(b){b.className=`badge b-${v.toLowerCase()}`;b.textContent=v;}
+  const side=$(`lc_${sec}_${id}`)?.querySelector('[data-role="side"]')?.value||'SELL';
+  const tag=mkTag(sec,v,id); regTag(id,tag,sec,v,side);
+  const el=$(`lt_${sec}_${id}`); if(el) el.textContent=tag;
+  refreshTagSels();
+}
+
+/* ════ ADJUSTMENT LEG ════ */
+function addAdjLeg(){
+  ST.cnt.adj++;
+  const id=ST.cnt.adj;
+  regTag(id,`ADJ_RULE_${id}`,'adj');
+
+  const html=`
+<div class="leg-card lc-adj open" id="lc_adj_${id}">
+  <div class="leg-head" onclick="togLeg('adj_${id}')">
+    <div class="leg-head-left">
+      <span class="leg-expand" id="lx_adj_${id}">▶</span>
+      <span class="leg-tag" style="background:rgba(240,160,48,.11);border-color:rgba(240,160,48,.3);color:var(--warning);">ADJ_RULE_${id}</span>
+      <span class="leg-name">Adjustment Rule ${id}</span>
+    </div>
+    <button class="leg-del" onclick="event.stopPropagation();removeLeg('adj',${id})">−</button>
+  </div>
+  <div class="leg-body" id="lb_adj_${id}">
+    <div class="cond-area">
+      <div class="ca-title ca-orange">Trigger Conditions</div>
+      <div class="f-row c3" style="margin-bottom:10px;">
+        <div class="f-group"><label class="f-label">Condition Mode</label>
+          <select class="f-select" id="cm_adj_${id}"><option value="and">AND</option><option value="or">OR</option><option value="if_then">IF … THEN</option></select>
+        </div>
+        <div class="f-group"><label class="f-label">Reference Leg (Tag)</label>
+          <select class="f-select tag-sel" data-role="tag-ref">${tagOpts()}</select>
+        </div>
+        <div class="f-group"><label class="f-label">Compare Against Leg (Tag)</label>
+          <select class="f-select tag-sel" data-role="tag-ref2">${tagOpts()}</select>
+        </div>
+      </div>
+      <div id="cl_adj_${id}"></div>
+      <button class="add-cond-btn" onclick="makeCondRow('cl_adj_${id}')">＋ Add Condition</button>
+    </div>
+    <div class="exec-params" style="border-color:rgba(240,160,48,.17);background:rgba(240,160,48,.03);">
+      <div class="exec-title" style="color:var(--warning);">Adjustment Action</div>
+      <div class="f-row c3">
+        <div class="f-group"><label class="f-label">Action Type</label>
+          <select class="f-select" data-role="adj-action">${ADJ_ACTS.map(a=>`<option value="${a}">${a.replace(/_/g,' ')}</option>`).join('')}</select>
+        </div>
+        <div class="f-group"><label class="f-label">Target Leg (Tag)</label>
+          <select class="f-select tag-sel" data-role="adj-target">${tagOpts()}</select>
+        </div>
+        <div class="f-group"><label class="f-label">Shift Strikes By</label>
+          <input class="f-input" data-role="shift-by" placeholder="e.g. 1 or −2" type="number">
+        </div>
+      </div>
+      <div class="f-row c2">
+        <div class="f-group"><label class="f-label">Max Adjustments / Day</label><input class="f-input" data-role="max-adj" type="number" value="2" min="1"></div>
+        <div class="f-group"><label class="f-label">Cooldown (seconds)</label><input class="f-input" data-role="cooldown" type="number" value="60"></div>
+      </div>
+    </div>
+  </div>
+</div>`;
+  const wrap=document.createElement('div'); wrap.innerHTML=html;
+  $('adjLegs').appendChild(wrap.firstElementChild);
+  updBadge('adj');
+}
+
+/* ════ EXIT LEG ════ */
+function addExitLeg(){
+  ST.cnt.exit++;
+  const id=ST.cnt.exit;
+
+  const html=`
+<div class="leg-card lc-exit open" id="lc_exit_${id}">
+  <div class="leg-head" onclick="togLeg('exit_${id}')">
+    <div class="leg-head-left">
+      <span class="leg-expand" id="lx_exit_${id}">▶</span>
+      <span class="leg-tag" style="background:rgba(144,104,245,.11);border-color:rgba(144,104,245,.3);color:var(--accent);">EXIT_RULE_${id}</span>
+      <span class="leg-name">Exit Leg Rule ${id}</span>
+    </div>
+    <button class="leg-del" onclick="event.stopPropagation();removeLeg('exit',${id})">−</button>
+  </div>
+  <div class="leg-body" id="lb_exit_${id}">
+    <div class="f-row c3" style="margin-bottom:12px;">
+      <div class="f-group"><label class="f-label">Exit Leg Reference</label>
+        <select class="f-select tag-sel" data-role="exit-ref">${tagOpts()}
+          <option value="all">All Legs</option>
+          <option value="profitable">Profitable Legs</option>
+          <option value="loss">Loss-making Legs</option>
+        </select>
+      </div>
+      <div class="f-group"><label class="f-label">Exit Order Type</label>
+        <select class="f-select" data-role="exit-order-type">
+          <option value="MARKET">Market</option><option value="LIMIT">Limit</option><option value="SLM">SL-Market</option>
+        </select>
+      </div>
+      <div class="f-group"><label class="f-label">Condition Mode</label>
+        <select class="f-select" id="cm_exit_${id}">
+          <option value="instant">Instant</option><option value="and">AND</option>
+          <option value="or">OR</option><option value="if_then">IF … THEN</option>
+        </select>
+      </div>
+    </div>
+    <div class="cond-area">
+      <div class="ca-title ca-accent">Exit Conditions</div>
+      <div id="cl_exit_${id}"></div>
+      <button class="add-cond-btn" onclick="makeCondRow('cl_exit_${id}')">＋ Add Condition</button>
+    </div>
+    <div class="exec-params" style="border-color:rgba(144,104,245,.17);background:rgba(144,104,245,.03);margin-top:10px;">
+      <div class="exec-title" style="color:var(--accent);">Leg-Level P&amp;L Exit</div>
+      <div class="f-row c3">
+        <div class="f-group"><label class="f-label">Profit Target (₹)</label><input class="f-input" data-role="leg-target" type="number" placeholder="e.g. 2000"></div>
+        <div class="f-group"><label class="f-label">Stop Loss (₹)</label><input class="f-input" data-role="leg-sl" type="number" placeholder="e.g. −1000"></div>
+        <div class="f-group"><label class="f-label">Trailing (₹)</label><input class="f-input" data-role="leg-trail" type="number" placeholder="e.g. 500"></div>
+      </div>
+    </div>
+  </div>
+</div>`;
+  const wrap=document.createElement('div'); wrap.innerHTML=html;
+  $('exitLegs').appendChild(wrap.firstElementChild);
+  updBadge('exit');
+}
+
+/* ════ COMMON LEG UTILS ════ */
+function togLeg(key){
+  const card=$(`lc_${key}`),body=$(`lb_${key}`),icon=$(`lx_${key}`);
+  if(!card||!body) return;
+  const open=card.classList.contains('open');
+  open?card.classList.remove('open'):card.classList.add('open');
+  body.style.display=open?'none':'block';
+  if(icon) icon.style.transform=open?'':'rotate(90deg)';
+}
+function removeLeg(sec,id){
+  $(`lc_${sec}_${id}`)?.remove();
+  unregTag(id,sec); updBadge(sec); refreshTagSels();
+}
+function updBadge(sec){
+  const map={entry:'badgeEntry',adj:'badgeAdj',exit:'badgeExit'};
+  const cont={entry:'entryLegs',adj:'adjLegs',exit:'exitLegs'};
+  const el=$(map[sec]),box=$(cont[sec]);
+  if(el&&box) el.textContent=box.querySelectorAll('.leg-card').length;
+}
+
+/* ════ SECTION SWITCH ════ */
+function switchSec(sec,btn){
+  document.querySelectorAll('.bsec').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  $(`sec-${sec}`)?.classList.add('active');
+  if(btn) btn.classList.add('active');
+}
+
+/* ════ DB / SYMBOL ════ */
+async function loadSymbols(){
+  const el=$('sSymbol');
+  try {
+    const r=await fetch('/dashboard/option-chain/active-symbols',{credentials:'include'});
+    if(!r.ok) throw 0;
+    const items=await r.json();
+    ST.symMap={};
+    (Array.isArray(items)?items:[]).forEach(it=>{ST.symMap[it.symbol]=it;});
+    const di=items.findIndex(x=>x.symbol==='NIFTY'),idx=di>=0?di:0;
+    el.innerHTML=(Array.isArray(items)?items:[]).map((it,i)=>`<option value="${it.symbol}"${i===idx?' selected':''}>${esc(it.symbol)} (${esc(it.exchange)})</option>`).join('');
+    if(items.length) onSymbolChange();
+  } catch(e){ el.innerHTML='<option value="NIFTY">NIFTY (NFO)</option>'; loadDbFiles('NIFTY','NFO'); }
+}
+
+function onSymbolChange(){
+  const sym=gv('sSymbol'),item=ST.symMap[sym];
+  sv('sExchange',item?.exchange||'NFO');
+  loadDbFiles(sym,item?.exchange||'NFO',item?.expiries);
+}
+
+async function loadDbFiles(sym,exchange,fallback){
+  const el=$('sDbFile');
+  try {
+    const r=await fetch(`/dashboard/option-chain/db-files?symbol=${encodeURIComponent(sym)}`,{credentials:'include'});
+    if(!r.ok) throw 0;
+    const data=await r.json();
+    const files=Array.isArray(data)?data:(data.files||[]);
+    el.innerHTML=files.length
+      ? files.map((f,i)=>`<option value="${esc(f.filename||f.path||f)}"${i===0?' selected':''}>${esc(f.label||f.filename||f.expiry||f)}</option>`).join('')
+      : '<option value="">No DB files found</option>';
+    if(files.length) onDbFileChange();
+  } catch(e){
+    const exps=Array.isArray(fallback)?fallback:[];
+    el.innerHTML=exps.length
+      ? exps.map((exp,i)=>`<option value="${exchange}_${sym}_${exp}.sqlite"${i===0?' selected':''}>${sym} ${exp}</option>`).join('')
+      : `<option value="${exchange}_${sym}_current.sqlite">${sym}</option>`;
+    onDbFileChange();
+  }
+}
+
+function onDbFileChange(){
+  const f=gv('sDbFile');
+  const m=f.match(/([A-Z]+)_([A-Z]+)_([0-9A-Z]+)\.sqlite/i);
+  if(m){sv('sExpiry',m[3]);sv('sExchange',m[1]);}
+  sv('sDbPath',f?`shoonya_platform/market_data/option_chain/data/${f}`:'');
+}
+
+async function loadIndexParams(){
+  if(ST.indexLoaded) return;
+  try {
+    const r=await fetch('/dashboard/index-tokens/list',{credentials:'include'});
+    if(!r.ok) throw 0;
+    const data=await r.json();
+    const all=data?.all||{};
+    const major=Array.isArray(data?.major)?data.major:[];
+    const order=[],seen=new Set();
+    major.forEach(s=>{if(!seen.has(s)){seen.add(s);order.push(s);}});
+    Object.keys(all).sort().forEach(s=>{if(!seen.has(s)){seen.add(s);order.push(s);}});
+    order.forEach(sym=>{
+      const lbl=all[sym]?.name||sym;
+      ST.indexParams.push({v:`index_${sym}_ltp`,l:`${lbl} LTP`,cat:'Index/Ticker'});
+      ST.indexParams.push({v:`index_${sym}_change_pct`,l:`${lbl} Chg%`,cat:'Index/Ticker'});
+      CMB_PARAMS.push({v:`index_${sym}_ltp`,l:`${sym} LTP`});
+      CMB_PARAMS.push({v:`index_${sym}_change_pct`,l:`${sym} Chg%`});
+    });
+  } catch(e){}
+  ST.indexLoaded=true;
+}
+
+/* ════ IDENTITY ════ */
+function onNameInput(){
+  sv('sId',gv('sName').toUpperCase().replace(/\s+/g,'_').replace(/[^A-Z0-9_]/g,''));
+}
+
+/* ════ READ HELPERS ════ */
+function rdRows(cid){
+  const b=$(cid); if(!b) return [];
+  return [...b.querySelectorAll('.cond-row')].flatMap(r=>{
+    const p=r.querySelector('[data-role="param"]')?.value||'';
+    const op=r.querySelector('[data-role="op"]')?.value||'>';
+    const v=r.querySelector('[data-role="val"]')?.value||'';
+    if(!p||!v) return [];
+    const parsed=(op==='between'||op==='not_between')?v.split(',').map(Number):(Number(v)||v);
+    return [{parameter:p,comparator:op,value:parsed}];
+  });
+}
+function rdCmb(cid){
+  const b=$(cid); if(!b) return [];
+  return [...b.querySelectorAll('.cond-row')].flatMap(r=>{
+    const p=r.querySelector('[data-role="param"]')?.value||'';
+    const op=r.querySelector('[data-role="op"]')?.value||'>';
+    const v=r.querySelector('[data-role="val"]')?.value||'';
+    if(!p||!v) return [];
+    return [{parameter:p,comparator:op,value:Number(v)||v}];
+  });
+}
+
+function rdEntryLegs(){
+  return [...document.querySelectorAll('#entryLegs .leg-card')].map((card,idx)=>{
+    const id=parseInt(card.id.split('_').pop());
+    const tag=$(`lt_entry_${id}`)?.textContent||mkTag('entry','CE',id);
+    const side=card.querySelector('[data-role="side"]')?.value||'SELL';
+    const optType=card.querySelector('[data-role="opt-type"]')?.value||'CE';
+    const mode=card.querySelector(`[id^="cm_entry_"]`)?.value||'and';
+    return {leg_id:idx+1,tag,side,instrument:'OPTION',option_type:optType,
+      strike_selection:card.querySelector('[data-role="strike-sel"]')?.value||'atm',
+      strike_value:mn(card.querySelector('[data-role="strike-val"]')?.value),
+      lots:mn(card.querySelector('[data-role="lots"]')?.value)||1,
+      expiry:gv('sExpiry')||'current',condition_mode:mode,conditions:rdRows(`cl_entry_${id}`)};
+  });
+}
+function rdAdjRules(){
+  return [...document.querySelectorAll('#adjLegs .leg-card')].map((card,idx)=>{
+    const id=parseInt(card.id.split('_').pop());
+    const mode=card.querySelector(`[id^="cm_adj_"]`)?.value||'and';
+    return {priority:idx+1,name:`Adjustment Rule ${idx+1}`,rule_type:'if_then',condition_mode:mode,
+      reference_tag:card.querySelector('[data-role="tag-ref"]')?.value||'',
+      compare_tag:card.querySelector('[data-role="tag-ref2"]')?.value||'',
+      conditions:{operator:mode.toUpperCase()==='OR'?'OR':'AND',rules:rdRows(`cl_adj_${id}`)},
+      action:{type:card.querySelector('[data-role="adj-action"]')?.value||'custom',
+        target_tag:card.querySelector('[data-role="adj-target"]')?.value||'',
+        shift_by:mn(card.querySelector('[data-role="shift-by"]')?.value),
+        max_per_day:mn(card.querySelector('[data-role="max-adj"]')?.value)||2,
+        cooldown_sec:mn(card.querySelector('[data-role="cooldown"]')?.value)||60}};
+  });
+}
+function rdExitLegs(){
+  return [...document.querySelectorAll('#exitLegs .leg-card')].map((card,idx)=>{
+    const id=parseInt(card.id.split('_').pop());
+    const mode=card.querySelector(`[id^="cm_exit_"]`)?.value||'and';
+    return {name:`Exit Rule ${idx+1}`,
+      exit_leg_ref:card.querySelector('[data-role="exit-ref"]')?.value||'all',
+      order_type:card.querySelector('[data-role="exit-order-type"]')?.value||'MARKET',
+      condition_mode:mode,conditions:rdRows(`cl_exit_${id}`),
+      leg_pnl:{target:mn(card.querySelector('[data-role="leg-target"]')?.value),
+        stop_loss:mn(card.querySelector('[data-role="leg-sl"]')?.value),
+        trailing:mn(card.querySelector('[data-role="leg-trail"]')?.value)}};
+  });
+}
+
+/* ════ SAVE ════ */
+async function saveStrategy(){
+  const name=gv('sName'); if(!name){showAlert('Strategy name is required.','error');return;}
+  const id=gv('sId')||name.toUpperCase().replace(/\s+/g,'_');
+  const slug=name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  const sym=gv('sSymbol'),dbFile=gv('sDbFile'),exchange=gv('sExchange')||'NFO',expiry=gv('sExpiry');
+  const entryTime=gv('schEntry')||'09:20',exitTime=gv('schExit')||'15:15';
+  const activeDays=[...($('schDays')?.selectedOptions||[])].map(o=>['mon','tue','wed','thu','fri','sat','sun'][o.value]||o.value);
+  const entryLegs=rdEntryLegs(),adjRules=rdAdjRules(),exitLegs=rdExitLegs();
+
+  const inferEntry=legs=>{
+    const ce=legs.find(l=>l.option_type==='CE'),pe=legs.find(l=>l.option_type==='PE');
+    if(ce&&pe&&ce.side==='SELL'&&pe.side==='SELL') return 'short_both';
+    if(ce&&pe&&ce.side==='BUY'&&pe.side==='BUY')   return 'long_both';
+    if(ce?.side==='SELL') return 'short_ce'; if(pe?.side==='SELL') return 'short_pe';
+    if(ce?.side==='BUY')  return 'long_ce';  if(pe?.side==='BUY')  return 'long_pe';
+    return 'custom';
+  };
+
+  const payload={
+    schema_version:'3.0',id,name,description:gv('sDesc'),enabled:true,status:'IDLE',strategy_type:'custom',
+    identity:{exchange,underlying:sym,instrument_type:exchange==='MCX'?'OPTFUT':'OPTIDX',
+      expiry_mode:'custom',expiry_custom:expiry,product_type:gv('sProductType')||'NRML',
+      order_type:gv('sOrderType')||'MARKET',lots:mn(gv('sLots'))||1,
+      db_symbol:sym,db_expiry:expiry,market_type:'database_market',
+      db_path:gv('sDbPath'),db_file:dbFile,expiry_day_trade_allowed:$('togExpiry')?.checked||false},
+    basic:{exchange,underlying:sym,lots:mn(gv('sLots'))||1},
+    timing:{entry_time:entryTime,exit_time:exitTime},
+    market_data:{source:'sqlite',db_path:gv('sDbPath'),db_file:dbFile},
+    entry:{rule_type:'if_then',
+      conditions:{operator:'AND',rules:rdCmb('entryCombined')},
+      action:{type:inferEntry(entryLegs),legs:entryLegs}},
+    adjustment:{enabled:adjRules.length>0,check_interval_min:5,cooldown_seconds:60,rules:adjRules},
+    exit:{rule_type:'if_any',
+      target_profit:{amount:mn(gv('exitTargetAmt')),pct:mn(gv('exitTargetPct')),action:gv('exitTargetAction')},
+      stop_loss:{amount:mn(gv('exitSlAmt')),pct:mn(gv('exitSlPct')),action:gv('exitSlAction')},
+      trailing:{trail_amount:mn(gv('exitTrailAmt')),lock_in:mn(gv('exitLockIn')),step:mn(gv('exitTrailStep'))},
+      risk:{max_delta:mn(gv('rMaxDelta')),delta_action:gv('rDeltaAction'),
+        max_iv:mn(gv('rMaxIv')),min_iv:mn(gv('rMinIv')),
+        max_lots:mn(gv('rMaxLegs'))||4,max_capital:mn(gv('rMaxCap'))},
+      conditions:[...rdCmb('exitCombined'),{parameter:'time_current',comparator:'>=',value:exitTime,description:'Scheduled exit'}],
+      action:{type:'close_all_positions'},leg_rules:exitLegs},
+    schedule:{frequency:gv('schFreq'),entry_time:entryTime,exit_time:exitTime,
+      active_days:activeDays,square_off_before_min:mn(gv('schSqoff')),
+      dte_min:mn(gv('schDteMin')),dte_max:mn(gv('schDteMax')),
+      entry_on_expiry_day:gv('schEntryExpiry')==='yes'},
+    meta:{created_at:new Date().toISOString(),updated_at:new Date().toISOString()},
+  };
+
+  const btn=$('btnSave'); btn.disabled=true; btn.textContent='Saving…';
+  try {
+    let r=await fetch(`/dashboard/strategy/${encodeURIComponent(slug)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),credentials:'include'});
+    if(r.status===404) r=await fetch('/dashboard/strategy/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),credentials:'include'});
+    if(r.ok){showAlert(`"${name}" saved successfully.`,'success');setTimeout(closeBuilder,1200);}
+    else {const err=await r.json().catch(()=>({}));showAlert(err.detail||r.statusText||'Save failed.','error');}
+  } catch(e){
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${slug||'strategy'}.json`;a.click();
+    showAlert('API offline — config downloaded as JSON.','success');
+  } finally { btn.disabled=false; btn.textContent='💾 Save'; }
+}
+
+/* ════ LOAD / IMPORT ════ */
+async function loadFromFolder(){
+  const modal=$('loadModal'),sel=$('loadSelect');
+  sel.innerHTML='<option>Loading…</option>'; modal.classList.add('open');
+  try {
+    const r=await fetch('/dashboard/strategy/configs',{credentials:'include'});
+    if(!r.ok) throw 0;
+    const d=await r.json();
+    const cfgs=d.configs||d.strategies||[];
+    sel.innerHTML=cfgs.length
+      ? cfgs.map(c=>`<option value="${esc(c.id||c.name)}">${esc(c.name)} — ${esc(c.identity?.underlying||'?')}</option>`).join('')
+      : '<option value="">No saved strategies</option>';
+  } catch(e){sel.innerHTML='<option value="">Could not load list</option>';}
+}
+async function confirmLoad(){
+  const slug=gv('loadSelect'); if(!slug){showAlert('Select a strategy.','error');return;}
+  closeModal('loadModal');
+  try {
+    const r=await fetch(`/dashboard/strategy/${encodeURIComponent(slug)}`,{credentials:'include'});
+    if(!r.ok) throw 0;
+    populateForm((await r.json())?.config||await r.json());
+  } catch(e){showAlert('Could not load strategy.','error');}
+}
+function importStrategy(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.json';
+  inp.onchange=async e=>{
+    const f=e.target.files[0];if(!f)return;
+    try{populateForm(JSON.parse(await f.text()));showAlert('Strategy imported.','success');}
+    catch(e){showAlert('Invalid JSON file.','error');}
+  };inp.click();
+}
+
+/* ════ POPULATE FORM ════ */
+function populateForm(s){
+  if(!s) return;
+  sv('sName',s.name||'');sv('sId',s.id||'');sv('sDesc',s.description||'');
+  sv('sLots',s.identity?.lots||s.basic?.lots||1);
+  setSel($('sProductType'),s.identity?.product_type||'NRML');
+  setSel($('sOrderType'),s.identity?.order_type||'MARKET');
+  const sym=s.identity?.db_symbol||s.identity?.underlying||'';
+  const dbFile=s.identity?.db_file||s.market_data?.db_file||'';
+  const expiry=s.identity?.expiry_custom||s.identity?.db_expiry||'';
+  if(sym){setSel($('sSymbol'),sym);onSymbolChange();}
+  if(dbFile) setTimeout(()=>{setSel($('sDbFile'),dbFile);onDbFileChange();},400);
+  if(expiry) sv('sExpiry',expiry);
+  if(s.identity?.exchange) sv('sExchange',s.identity.exchange);
+  if($('togExpiry')) $('togExpiry').checked=!!(s.identity?.expiry_day_trade_allowed);
+  $('expiryLbl').textContent=$('togExpiry')?.checked?'Allowed':'Blocked';
+  sv('schEntry',s.timing?.entry_time||s.schedule?.entry_time||'09:20');
+  sv('schExit',s.timing?.exit_time||s.schedule?.exit_time||'15:15');
+  setSel($('schFreq'),s.schedule?.frequency||'daily');
+  sv('schDteMin',s.schedule?.dte_min||'');sv('schDteMax',s.schedule?.dte_max||'');
+  sv('schSqoff',s.schedule?.square_off_before_min||'');
+  // Exit & Risk
+  sv('exitTargetAmt',s.exit?.target_profit?.amount||s.rms?.daily?.profit_target||'');
+  sv('exitSlAmt',s.exit?.stop_loss?.amount||s.rms?.daily?.loss_limit||'');
+  sv('exitTrailAmt',s.exit?.trailing?.trail_amount||'');sv('exitLockIn',s.exit?.trailing?.lock_in||'');sv('exitTrailStep',s.exit?.trailing?.step||'');
+  sv('rMaxDelta',s.exit?.risk?.max_delta||s.rms?.greeks?.max_delta||'');
+  sv('rMaxLegs',s.exit?.risk?.max_lots||s.rms?.position?.max_lots||4);
+  sv('rMaxCap',s.exit?.risk?.max_capital||s.rms?.position?.max_value||'');
+  sv('rMaxIv',s.exit?.risk?.max_iv||'');sv('rMinIv',s.exit?.risk?.min_iv||'');
+  // Clear
+  $('entryLegs').innerHTML='';$('adjLegs').innerHTML='';$('exitLegs').innerHTML='';
+  $('entryCombined').innerHTML='';$('adjCombined').innerHTML='';$('exitCombined').innerHTML='';
+  ST.cnt={entry:0,adj:0,exit:0};ST.tags=[];
+  // Restore entry
+  (s.entry?.action?.legs||[]).forEach(leg=>{
+    addEntryLeg();const id=ST.cnt.entry;
+    const card=$(`lc_entry_${id}`);if(!card)return;
+    setSel(card.querySelector('[data-role="side"]'),leg.side||'SELL');
+    setSel(card.querySelector('[data-role="opt-type"]'),leg.option_type||'CE');
+    setSel(card.querySelector('[data-role="strike-sel"]'),leg.strike_selection||'atm');
+    const sv2=card.querySelector('[data-role="strike-val"]');if(sv2)sv2.value=leg.strike_value||'';
+    const lv=card.querySelector('[data-role="lots"]');if(lv)lv.value=leg.lots||1;
+    const mc=$(`cm_entry_${id}`);if(mc)mc.value=leg.condition_mode||'and';
+    (leg.conditions||[]).forEach(c=>makeCondRow(`cl_entry_${id}`,c.parameter,c.comparator,c.value));
+    onSide('entry',id,leg.side||'SELL');onOptType('entry',id,leg.option_type||'CE');
+  });
+  (s.entry?.conditions?.rules||[]).forEach(c=>addCmbRow('entryCombined',c.parameter,c.comparator,c.value));
+  // Restore adj
+  (s.adjustment?.rules||[]).filter(r=>r.action?.details?.source!=='combined_adjustment').forEach(rule=>{
+    addAdjLeg();const id=ST.cnt.adj;
+    const card=$(`lc_adj_${id}`);if(!card)return;
+    setSel(card.querySelector('[data-role="adj-action"]'),rule.action?.type||'custom');
+    const mc=$(`cm_adj_${id}`);if(mc)mc.value=rule.condition_mode||'and';
+    (rule.conditions?.rules||rule.conditions||[]).forEach(c=>makeCondRow(`cl_adj_${id}`,c.parameter,c.comparator,c.value));
+  });
+  // Restore exit
+  (s.exit?.leg_rules||[]).forEach(rule=>{
+    addExitLeg();const id=ST.cnt.exit;
+    const card=$(`lc_exit_${id}`);if(!card)return;
+    setSel(card.querySelector('[data-role="exit-ref"]'),rule.exit_leg_ref||'all');
+    setSel(card.querySelector('[data-role="exit-order-type"]'),rule.order_type||'MARKET');
+    const mc=$(`cm_exit_${id}`);if(mc)mc.value=rule.condition_mode||'and';
+    (rule.conditions||[]).forEach(c=>makeCondRow(`cl_exit_${id}`,c.parameter,c.comparator,c.value));
+  });
+  (s.exit?.conditions||[]).filter(c=>c.parameter!=='time_current').forEach(c=>addCmbRow('exitCombined',c.parameter,c.comparator,c.value));
+  updBadge('entry');updBadge('adj');updBadge('exit');
+  showAlert(`Loaded: ${s.name}`,'success');
+  switchSec('identity',document.querySelector('.nav-tab[data-sec="identity"]'));
+}
+
+/* ════ MISC ════ */
+function resetForm(){
+  ['sName','sId','sDesc'].forEach(id=>$(id)&&($(id).value=''));sv('sLots',1);
+  ['entryLegs','adjLegs','exitLegs','entryCombined','adjCombined','exitCombined'].forEach(id=>$(id).innerHTML='');
+  ST.cnt={entry:0,adj:0,exit:0};ST.tags=[];
+  updBadge('entry');updBadge('adj');updBadge('exit');
+  showAlert('Form reset.','success');
+}
+function closeBuilder(){ window.location.href='/dashboard/web/strategy.html'; }
+function closeModal(id){ $(id)?.classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');});});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));});
+
+/* ════ INIT ════ */
+async function init(){
+  await loadSymbols();
+  await loadIndexParams();
+  const p=new URLSearchParams(window.location.search);
+  const editName=(p.get('edit')||'').trim();
+  if(editName){
+    $('builder-title').textContent='Edit Strategy';
+    $('builder-sub').textContent=`Editing: ${editName}`;
+    try {
+      const r=await fetch(`/dashboard/strategy/${encodeURIComponent(editName)}`,{credentials:'include'});
+      if(!r.ok) throw 0;
+      const b=await r.json();populateForm(b?.config||b);
+    } catch(e){showAlert(`Could not load "${editName}".`,'error');}
+  }
+}
+document.addEventListener('DOMContentLoaded',init);
+</script>
+</body>
+</html>

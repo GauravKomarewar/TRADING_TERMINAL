@@ -94,6 +94,9 @@ class StrategyState:
         self.cumulative_daily_pnl: float = 0.0
         # Live index/ticker ribbon snapshot (NIFTY, INDIAVIX, etc.)
         self.index_data: Dict[str, Dict[str, float]] = {}
+        # Tag → option_type mapping built from entry.action.legs at registration.
+        # e.g. {"LEG@1": "CE", "LEG@2": "PE"} — used to resolve tag.X.Y parameters.
+        self.tag_map: Dict[str, str] = {}
 
     def set_index_ticks(self, ticks: Dict[str, Optional[Dict[str, Any]]]) -> None:
         """Store normalized index/ticker values for dynamic condition params."""
@@ -273,6 +276,19 @@ class StrategyState:
         resolver = param_map.get(name)
         if resolver is not None:
             return resolver()
+
+        # ─── tag.LEG@1.delta style parameters (strategy_builder adjustment conditions) ───
+        # Resolves via tag_map: {"LEG@1": "CE"} → tag.LEG@1.delta → ce_delta
+        tag_m = re.match(r"^tag\.([^.]+)\.([a-z_]+)$", str(name or ""))
+        if tag_m:
+            tag_key = tag_m.group(1)          # e.g. "LEG@1"
+            metric = tag_m.group(2)            # e.g. "delta"
+            option_type = self.tag_map.get(tag_key, "").upper()
+            if option_type in ("CE", "PE"):
+                mapped_param = f"{option_type.lower()}_{metric}"
+                return self.get_param(mapped_param)
+            logger.warning(f"tag.{tag_key}.{metric}: tag not in tag_map or unknown option_type '{option_type}'")
+            return None
 
         # Dynamic index parameters:
         #   index_NIFTY_ltp, index_INDIAVIX_change_pct, index_BANKNIFTY_pc, etc.

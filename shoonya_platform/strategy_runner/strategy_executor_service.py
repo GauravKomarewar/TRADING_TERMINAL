@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 STRATEGY EXECUTOR SERVICE - PRODUCTION GRADE v2.0
 ==================================================
@@ -220,6 +220,81 @@ def _normalize_config_for_runner(config: Dict[str, Any], strategy_name: str) -> 
     if _looks_like_dashboard_v2(config):
         return _convert_dashboard_v2_to_runner_v3(config, strategy_name), True
     return config, False
+
+
+def _inject_pnl_exit_conditions(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Inject exit.target_profit and exit.stop_loss from the strategy_builder v3 schema
+    into exit.conditions as proper combined_pnl conditions.
+
+    The builder outputs these as structured blocks rather than pre-baked conditions,
+    so the runner must convert them at load time.
+    """
+    exit_cfg = config.get("exit", {})
+    if not isinstance(exit_cfg, dict):
+        return config
+
+    conditions = exit_cfg.get("conditions", {})
+    if not isinstance(conditions, dict):
+        conditions = {"operator": "OR", "rules": []}
+
+    rules = conditions.get("rules", [])
+    if not isinstance(rules, list):
+        rules = []
+
+    # Build a set of (parameter, comparator) already present so we don't duplicate
+    existing_conds = {(r.get("parameter"), r.get("comparator")) for r in rules if isinstance(r, dict)}
+
+    # ── Target profit injection ─────────────────────────────────────────
+    target_profit = exit_cfg.get("target_profit", {}) or {}
+    tp_amount = target_profit.get("amount") if isinstance(target_profit, dict) else None
+    if tp_amount is not None:
+        try:
+            tp_val = float(tp_amount)
+            if tp_val > 0 and ("combined_pnl", ">=") not in existing_conds:
+                rules.append({
+                    "parameter": "combined_pnl",
+                    "comparator": ">=",
+                    "value": tp_val,
+                    "description": f"Target profit ₹{tp_val:.0f}",
+                    "_source": "target_profit.amount",
+                })
+        except (TypeError, ValueError):
+            pass
+
+    # ── Stop loss injection ─────────────────────────────────────────────
+    stop_loss = exit_cfg.get("stop_loss", {}) or {}
+    sl_amount = stop_loss.get("amount") if isinstance(stop_loss, dict) else None
+    if sl_amount is not None:
+        try:
+            sl_val = float(sl_amount)
+            if sl_val != 0 and ("combined_pnl", "<=") not in existing_conds:
+                rules.append({
+                    "parameter": "combined_pnl",
+                    "comparator": "<=",
+                    "value": -abs(sl_val),
+                    "description": f"Stop loss ₹{abs(sl_val):.0f}",
+                    "_source": "stop_loss.amount",
+                })
+        except (TypeError, ValueError):
+            pass
+
+    # ── Trailing stop injection ─────────────────────────────────────────
+    trailing = exit_cfg.get("trailing", {}) or {}
+    trail_amount = trailing.get("trail_amount") if isinstance(trailing, dict) else None
+    lock_in = trailing.get("lock_in") if isinstance(trailing, dict) else None
+    if trail_amount is not None and lock_in is not None:
+        # Trailing is handled separately in executor; no static condition needed.
+        logger.debug("Trailing stop configured — handled dynamically in executor")
+
+    if rules:
+        conditions["rules"] = rules
+        if not conditions.get("operator"):
+            conditions["operator"] = "OR"
+        exit_cfg["conditions"] = conditions
+        config["exit"] = exit_cfg
+
+    return config
 
 
 # ===================================================================
@@ -1185,6 +1260,10 @@ class StrategyExecutorService:
                 name,
             )
 
+        # Inject P&L exit conditions from builder structured blocks (target_profit, stop_loss)
+        config = _inject_pnl_exit_conditions(config)
+        logger.debug(f"Exit conditions after P&L injection: {config.get('exit', {}).get('conditions', {})}")
+
         # 2ï¸âƒ£ Validate normalized config
         is_valid, errors = validate_config(config)
         if not is_valid:
@@ -1283,7 +1362,16 @@ class StrategyExecutorService:
         # 8ï¸âƒ£ Register in executor
         self._strategies[name] = config
         self._exec_states[name] = exec_state
-        self._engine_states[name] = StrategyState()
+        engine_state = StrategyState()
+        # Build tag -> option_type mapping from entry legs for condition resolution
+        engine_state.tag_map = {
+            leg.get("tag", ""): str(leg.get("option_type", "")).upper()
+            for leg in (config.get("entry", {}).get("action", {}).get("legs") or [])
+            if isinstance(leg, dict) and leg.get("tag") and leg.get("option_type")
+        }
+        if engine_state.tag_map:
+            logger.info(f"✅ Tag map built for {name}: {engine_state.tag_map}")
+        self._engine_states[name] = engine_state
         self._readers[name] = MarketReader(exchange, underlying, db_path=db_path)
         
         logger.info(f"âœ… Strategy registered: {name} | run_id={run_id}")
@@ -1814,6 +1902,38 @@ class StrategyExecutorService:
             target_delta = num_val if sel == "delta" and val is not None else default_delta
             return reader.find_option_by_delta(option_type, target_delta, tolerance=0.1)
 
+        # Per-leg condition gating: evaluate conditions_block for each leg.
+        # Skip any leg whose IF conditions are not met.
+        def _leg_conditions_met(leg_cfg: dict) -> bool:
+            cond_block = leg_cfg.get("conditions_block")
+            if not cond_block or not isinstance(cond_block, dict):
+                return True  # No conditions = always execute
+            rules = cond_block.get("rules", [])
+            if not rules:
+                return True  # Empty rules = always execute
+            from shoonya_platform.strategy_runner.condition_engine import evaluate_condition as _eval_cond
+            result = _eval_cond(cond_block, engine_state)
+            if not result:
+                mode = leg_cfg.get("condition_mode", "if_then")
+                if mode == "if_then_else":
+                    else_block = leg_cfg.get("else_conditions_block")
+                    if else_block and isinstance(else_block, dict) and else_block.get("rules"):
+                        return _eval_cond(else_block, engine_state)
+            return result
+
+        # Apply per-leg condition gate when builder legs are present
+        if action_legs:
+            for _leg_item in action_legs:
+                if not isinstance(_leg_item, dict):
+                    continue
+                _otype = str(_leg_item.get("option_type", "")).upper()
+                if not _leg_conditions_met(_leg_item):
+                    logger.info(f"  Leg {_otype} skipped: per-leg conditions not met")
+                    if _otype == "CE":
+                        include_ce = False
+                    elif _otype == "PE":
+                        include_pe = False
+
         # Find options from builder leg intent.
         ce_option = _select_option("CE", ce_delta_target) if include_ce else None
         pe_option = _select_option("PE", pe_delta_target) if include_pe else None
@@ -2044,6 +2164,19 @@ class StrategyExecutorService:
         if action_type == "do_nothing":
             logger.info(f"   Action: do_nothing - no execution needed")
             return True
+
+        # strategy_builder v3: simple_close_open_new
+        # action.details.leg_swaps: [{close_tag, new_leg: {side, option_type, ...}}]
+        # close_tag maps to CE/PE via engine_state.tag_map (built at registration).
+        if action_type == "simple_close_open_new":
+            return self._execute_simple_close_open_new(
+                name=name,
+                exec_state=exec_state,
+                engine_state=engine_state,
+                config=config,
+                action=action,
+                reader=reader,
+            )
         
         try:
             # Get basic config for exchange and lots
@@ -2127,6 +2260,191 @@ class StrategyExecutorService:
             
             return False
     
+    def _execute_simple_close_open_new(
+        self,
+        *,
+        name: str,
+        exec_state: ExecutionState,
+        engine_state: StrategyState,
+        config: Dict,
+        action: Dict,
+        reader: MarketReader,
+    ) -> bool:
+        """
+        Execute strategy_builder v3 'simple_close_open_new' adjustment.
+
+        action.details.leg_swaps is a list of:
+            {close_tag: 'LEG@1', new_leg: {side, option_type, strike_selection, strike_value, lots, order_type}}
+
+        close_tag is resolved to CE/PE via engine_state.tag_map, which is built
+        at registration from entry.action.legs[].tag + option_type.
+        """
+        details = action.get("details") or {}
+        leg_swaps = details.get("leg_swaps") or []
+        if not leg_swaps:
+            logger.error(f"simple_close_open_new: no leg_swaps in action.details for {name}")
+            return False
+
+        basic = config.get("basic", {}) or {}
+        identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+        exchange = str(basic.get("exchange") or identity_cfg.get("exchange") or "NFO").upper()
+        lots_base = int(basic.get("lots") or 1)
+        lot_size = reader.get_lot_size() or 1
+        default_order_type = identity_cfg.get("order_type")
+        default_product_type = str(identity_cfg.get("product_type") or "NRML").upper()
+        test_mode = self._resolve_intent_test_mode(config)
+
+        overall_success = True
+
+        for swap in leg_swaps:
+            if not isinstance(swap, dict):
+                continue
+
+            close_tag = str(swap.get("close_tag") or "").strip()
+            new_leg_cfg = swap.get("new_leg") or {}
+
+            # Resolve close_tag -> option_type -> CE/PE
+            option_type = engine_state.tag_map.get(close_tag, "").upper()
+            if not option_type:
+                # Fallback: check if tag directly encodes option type
+                if "CE" in close_tag.upper():
+                    option_type = "CE"
+                elif "PE" in close_tag.upper():
+                    option_type = "PE"
+                else:
+                    logger.error(f"simple_close_open_new: cannot resolve tag '{close_tag}' to CE/PE for {name}")
+                    overall_success = False
+                    continue
+
+            logger.info(f"  Swap: close {close_tag} ({option_type}), open new {new_leg_cfg.get('option_type','?')}")
+
+            # --- Step 1: Close the current leg ---
+            qty_for_close = (exec_state.ce_qty if option_type == "CE" else exec_state.pe_qty) or (lots_base * lot_size)
+            close_ok = self._adjustment_close_leg(
+                name=name,
+                exec_state=exec_state,
+                engine_state=engine_state,
+                leg=option_type,
+                exchange=exchange,
+                qty=qty_for_close,
+                config=config,
+            )
+            if not close_ok:
+                logger.error(f"simple_close_open_new: close of {option_type} failed for {name}")
+                overall_success = False
+                continue
+
+            # --- Step 2: Open the new leg ---
+            new_opt_type = str(new_leg_cfg.get("option_type") or option_type).upper()
+            new_side = str(new_leg_cfg.get("side") or "SELL").upper()
+            new_lots = int(new_leg_cfg.get("lots") or lots_base)
+            new_qty = new_lots * lot_size
+            sel = str(new_leg_cfg.get("strike_selection") or "atm").lower()
+            sel_val = new_leg_cfg.get("strike_value")
+
+            def _safe_float_local(v, d=0.0):
+                try: return float(v)
+                except: return float(d)
+
+            # Select the new option
+            new_option = None
+            if sel == "delta" and sel_val is not None:
+                new_option = reader.find_option_by_delta(new_opt_type, _safe_float_local(sel_val, 0.30), tolerance=0.1)
+            elif sel == "premium" and sel_val is not None:
+                prem = _safe_float_local(sel_val)
+                new_option = reader.find_option_by_premium(new_opt_type, prem, tolerance=max(5.0, prem * 0.3))
+            elif sel == "strike" and sel_val is not None:
+                new_option = reader.get_option_at_strike(_safe_float_local(sel_val), new_opt_type)
+            elif sel.startswith("atm"):
+                atm = reader.get_atm_strike() or reader.get_spot_price()
+                try:
+                    chain = reader.get_full_chain() or []
+                    strikes = sorted({_safe_float_local(r.get('strike', 0)) for r in chain if _safe_float_local(r.get('strike', 0)) > 0})
+                    step = min(strikes[i+1] - strikes[i] for i in range(len(strikes)-1)) if len(strikes) >= 2 else 50.0
+                except Exception:
+                    step = 50.0
+                sign = 1.0
+                steps = 0.0
+                if "+" in sel:
+                    steps = _safe_float_local(sel.split("+", 1)[1], 0.0)
+                elif "-" in sel:
+                    steps = _safe_float_local(sel.split("-", 1)[1], 0.0)
+                    sign = -1.0
+                target = atm + (sign * steps * step)
+                new_option = reader.get_option_at_strike(target, new_opt_type)
+            else:
+                # Default: by delta 0.30
+                new_option = reader.find_option_by_delta(new_opt_type, 0.30, tolerance=0.1)
+
+            if not new_option:
+                logger.error(f"simple_close_open_new: could not find new {new_opt_type} option for {name}")
+                overall_success = False
+                continue
+
+            new_symbol = str(new_option.get("trading_symbol") or "")
+            new_ltp = float(new_option.get("ltp") or 0.0)
+            new_strike = float(new_option.get("strike") or 0.0)
+            preferred_otype = str(new_leg_cfg.get("order_type") or default_order_type or "")
+
+            open_order_type, open_price = self._resolve_order_contract(
+                exchange=exchange,
+                tradingsymbol=new_symbol,
+                preferred_order_type=preferred_otype,
+                fallback_price=new_ltp,
+            )
+            if open_order_type == "LIMIT" and open_price <= 0:
+                logger.error(f"simple_close_open_new: new leg {new_symbol} requires LIMIT price but none available")
+                overall_success = False
+                continue
+
+            open_alert = {
+                "secret_key": self._resolve_webhook_secret(),
+                "execution_type": "ADJUSTMENT",
+                "strategy_name": name,
+                "exchange": exchange,
+                "legs": [{
+                    "tradingsymbol": new_symbol,
+                    "direction": new_side,
+                    "qty": new_qty,
+                    "order_type": open_order_type,
+                    "price": open_price,
+                    "product_type": str(new_leg_cfg.get("product_type") or default_product_type).upper(),
+                }],
+            }
+            if test_mode:
+                open_alert["test_mode"] = test_mode
+
+            logger.info(f"  Opening new {new_opt_type} leg: {new_symbol} {new_side} x{new_qty}")
+            open_result = self.bot.process_alert(open_alert)
+            logger.info(f"  Open result: {open_result}")
+
+            # Track the newly opened leg in exec_state
+            self._open_monitored_leg(
+                strategy_name=name,
+                exchange=exchange,
+                symbol=new_symbol,
+                side=new_side,
+                qty=new_qty,
+                entry_price=new_ltp,
+                source="ADJUSTMENT_SWAP",
+            )
+            if new_opt_type == "CE":
+                exec_state.ce_symbol = new_symbol
+                exec_state.ce_strike = new_strike
+                exec_state.ce_qty = new_qty
+                exec_state.ce_side = new_side
+                exec_state.ce_entry_price = new_ltp
+            elif new_opt_type == "PE":
+                exec_state.pe_symbol = new_symbol
+                exec_state.pe_strike = new_strike
+                exec_state.pe_qty = new_qty
+                exec_state.pe_side = new_side
+                exec_state.pe_entry_price = new_ltp
+            exec_state.has_position = True
+            self.state_mgr.save(exec_state)
+
+        return overall_success
+
     def _adjustment_close_leg(
         self,
         name: str,

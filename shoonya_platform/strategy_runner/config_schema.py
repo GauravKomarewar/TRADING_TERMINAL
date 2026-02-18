@@ -95,6 +95,8 @@ VALID_ADJUSTMENT_ACTIONS = {
     "shift_strikes",
     "do_nothing",
     "custom",
+    # v3 strategy_builder action type
+    "simple_close_open_new",
 }
 
 VALID_EXIT_ACTIONS = {
@@ -347,8 +349,17 @@ def _validate_condition(cond: Dict, path: str, errors: List[ValidationError]):
     if not param:
         errors.append(ValidationError(f"{path}.parameter", "Missing parameter"))
     elif param not in VALID_PARAMETERS and not INDEX_PARAM_PATTERN.match(str(param)):
-        errors.append(ValidationError(f"{path}.parameter",
-            f"Unknown parameter '{param}'. Valid: {sorted(VALID_PARAMETERS)}", "warning"))
+        # Allow tag.X.Y parameters (strategy_builder per-leg conditions)
+        tag_param_pattern = re.compile(r"^tag\.[^.]+\.[a-z_]+$")
+        # Allow combined context parameters from builder
+        combined_ctx_params = {
+            "combined_entry_if_true", "combined_entry_else_true", "combined_entry_action_type",
+            "combined_adj_if_true", "combined_adj_else_true", "combined_adj_action_type",
+            "combined_exit_if_true", "combined_exit_else_true", "combined_exit_action_type",
+        }
+        if not tag_param_pattern.match(str(param)) and param not in combined_ctx_params:
+            errors.append(ValidationError(f"{path}.parameter",
+                f"Unknown parameter '{param}'. Valid: {sorted(VALID_PARAMETERS)}", "warning"))
 
     comp = cond.get("comparator")
     if not comp:
@@ -398,7 +409,8 @@ def _validate_conditions_block(block: Dict, path: str, errors: List[ValidationEr
             return
 
         if len(rules) == 0:
-            errors.append(ValidationError(f"{path}.rules", "rules array is empty"))
+            errors.append(ValidationError(f"{path}.rules",
+                "rules array is empty — conditions may be handled via combined_conditions", "warning"))
 
         for i, rule in enumerate(rules):
             if isinstance(rule, dict):

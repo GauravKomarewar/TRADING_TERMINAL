@@ -1,0 +1,316 @@
+{
+  "schema_version": "3.0",
+  "id": "BUILDER_V3_NIFTY_STRANGLE",
+  "name": "Builder v3 – NIFTY Short Strangle (Integration Test)",
+  "description": "Sells NIFTY CE + PE at ~0.30 delta. Adjusts when a leg delta drifts above 0.50 by closing + reopening at 0.30 delta. Exits at ₹2000 profit or ₹3000 stop-loss.",
+  "enabled": true,
+  "status": "IDLE",
+  "strategy_type": "custom",
+  "identity": {
+    "exchange": "NFO",
+    "underlying": "NIFTY",
+    "instrument_type": "OPTIDX",
+    "expiry_mode": "custom",
+    "expiry_custom": "27FEB25",
+    "product_type": "NRML",
+    "order_type": "MARKET",
+    "lots": 1,
+    "db_symbol": "NIFTY",
+    "db_expiry": "27FEB25",
+    "market_type": "database_market",
+    "db_path": null,
+    "db_file": null,
+    "expiry_day_trade_allowed": false,
+    "allow_expiry_day_trade": false
+  },
+  "basic": {
+    "exchange": "NFO",
+    "underlying": "NIFTY",
+    "lots": 1
+  },
+  "timing": {
+    "entry_time": "09:20",
+    "exit_time": "15:28"
+  },
+  "market_data": {
+    "source": "sqlite",
+    "db_path": null,
+    "db_file": null
+  },
+  "entry": {
+    "rule_type": "if_then",
+    "conditions": {
+      "operator": "AND",
+      "rules": []
+    },
+    "else_conditions_block": null,
+    "combined_conditions": {
+      "if_block": {
+        "operator": "AND",
+        "rules": [
+          {
+            "parameter": "index_INDIAVIX_ltp",
+            "comparator": "between",
+            "value": [12, 25],
+            "description": "VIX between 12 and 25"
+          }
+        ]
+      },
+      "else_block": null
+    },
+    "action": {
+      "type": "place_entry_legs",
+      "legs": [
+        {
+          "leg_id": 1,
+          "tag": "LEG@1",
+          "side": "SELL",
+          "instrument": "OPTION",
+          "option_type": "CE",
+          "strike_selection": "delta",
+          "strike_value": 0.30,
+          "lots": 1,
+          "expiry": "current",
+          "condition_mode": "if_then",
+          "rule_type": "if_then",
+          "conditions": [],
+          "conditions_block": {
+            "operator": "AND",
+            "rules": [
+              {
+                "parameter": "ce_delta",
+                "comparator": "between",
+                "value": [0.15, 0.50],
+                "description": "CE delta in valid range"
+              }
+            ]
+          },
+          "else_conditions": [],
+          "else_conditions_block": null,
+          "then_action": {
+            "side": "SELL",
+            "instrument": "OPTION",
+            "option_type": "CE",
+            "strike_selection": "delta",
+            "strike_value": 0.30,
+            "lots": 1,
+            "order_type": "MARKET",
+            "selection_metric": ""
+          },
+          "else_action": null
+        },
+        {
+          "leg_id": 2,
+          "tag": "LEG@2",
+          "side": "SELL",
+          "instrument": "OPTION",
+          "option_type": "PE",
+          "strike_selection": "delta",
+          "strike_value": 0.30,
+          "lots": 1,
+          "expiry": "current",
+          "condition_mode": "if_then",
+          "rule_type": "if_then",
+          "conditions": [],
+          "conditions_block": {
+            "operator": "AND",
+            "rules": [
+              {
+                "parameter": "pe_delta",
+                "comparator": "between",
+                "value": [0.15, 0.50],
+                "description": "PE delta in valid range"
+              }
+            ]
+          },
+          "else_conditions": [],
+          "else_conditions_block": null,
+          "then_action": {
+            "side": "SELL",
+            "instrument": "OPTION",
+            "option_type": "PE",
+            "strike_selection": "delta",
+            "strike_value": 0.30,
+            "lots": 1,
+            "order_type": "MARKET",
+            "selection_metric": ""
+          },
+          "else_action": null
+        }
+      ],
+      "details": {
+        "import_mode": "combined_into_legs",
+        "combined_if_block": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "index_INDIAVIX_ltp",
+              "comparator": "between",
+              "value": [12, 25],
+              "description": "VIX between 12 and 25"
+            }
+          ]
+        },
+        "combined_else_block": null,
+        "lots_multiplier": 1
+      }
+    }
+  },
+  "adjustment": {
+    "enabled": true,
+    "check_interval_min": 5,
+    "cooldown_seconds": 300,
+    "combined_conditions": {
+      "if_block": { "operator": "AND", "rules": [] },
+      "else_block": null
+    },
+    "rules": [
+      {
+        "priority": 1,
+        "name": "CE Delta Drift – Roll",
+        "rule_type": "if_then",
+        "condition_mode": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "tag.LEG@1.delta",
+              "comparator": ">=",
+              "value": 0.50,
+              "description": "CE (LEG@1) delta drifted above 0.50"
+            }
+          ]
+        },
+        "action": {
+          "type": "simple_close_open_new",
+          "target_tag": "",
+          "shift_by": null,
+          "max_per_day": 2,
+          "cooldown_sec": 300,
+          "details": {
+            "leg_swaps": [
+              {
+                "close_tag": "LEG@1",
+                "new_leg": {
+                  "side": "SELL",
+                  "instrument": "OPTION",
+                  "option_type": "CE",
+                  "strike_selection": "delta",
+                  "strike_value": 0.30,
+                  "lots": 1,
+                  "order_type": "MARKET"
+                }
+              }
+            ],
+            "target_leg_tags": ["LEG@1"]
+          }
+        }
+      },
+      {
+        "priority": 2,
+        "name": "PE Delta Drift – Roll",
+        "rule_type": "if_then",
+        "condition_mode": "if_then",
+        "conditions": {
+          "operator": "AND",
+          "rules": [
+            {
+              "parameter": "tag.LEG@2.delta",
+              "comparator": ">=",
+              "value": 0.50,
+              "description": "PE (LEG@2) delta drifted above 0.50"
+            }
+          ]
+        },
+        "action": {
+          "type": "simple_close_open_new",
+          "target_tag": "",
+          "shift_by": null,
+          "max_per_day": 2,
+          "cooldown_sec": 300,
+          "details": {
+            "leg_swaps": [
+              {
+                "close_tag": "LEG@2",
+                "new_leg": {
+                  "side": "SELL",
+                  "instrument": "OPTION",
+                  "option_type": "PE",
+                  "strike_selection": "delta",
+                  "strike_value": 0.30,
+                  "lots": 1,
+                  "order_type": "MARKET"
+                }
+              }
+            ],
+            "target_leg_tags": ["LEG@2"]
+          }
+        }
+      }
+    ]
+  },
+  "exit": {
+    "rule_type": "if_any",
+    "target_profit": {
+      "amount": 2000,
+      "pct": null,
+      "action": "close_all"
+    },
+    "stop_loss": {
+      "amount": 3000,
+      "pct": null,
+      "action": "close_all"
+    },
+    "trailing": {
+      "trail_amount": null,
+      "lock_in": null,
+      "step": null
+    },
+    "risk": {
+      "max_delta": null,
+      "delta_action": null,
+      "max_iv": null,
+      "min_iv": null,
+      "max_lots": null,
+      "max_capital": null
+    },
+    "conditions": {
+      "operator": "OR",
+      "rules": [
+        {
+          "parameter": "time_current",
+          "comparator": ">=",
+          "value": "15:28",
+          "description": "Scheduled exit"
+        }
+      ]
+    },
+    "else_conditions_block": null,
+    "combined_conditions": {
+      "if_block": {
+        "operator": "OR",
+        "rules": []
+      },
+      "else_block": null
+    },
+    "action": {
+      "type": "close_all_positions",
+      "details": { "scope": "all", "order_type": "MARKET" }
+    },
+    "leg_rules": []
+  },
+  "risk_management": {
+    "max_loss_per_day": 3000,
+    "max_trades_per_day": null,
+    "position_sizing": { "max_lots": null }
+  },
+  "schedule": {
+    "frequency": "daily",
+    "entry_time": "09:20",
+    "exit_time": "15:28",
+    "active_days": ["mon", "tue", "wed", "thu", "fri"],
+    "square_off_before_min": 2,
+    "dte_min": null,
+    "dte_max": null
+  }
+}

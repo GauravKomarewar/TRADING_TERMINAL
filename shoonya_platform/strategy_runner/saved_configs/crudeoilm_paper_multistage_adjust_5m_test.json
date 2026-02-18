@@ -2,7 +2,7 @@
   "schema_version": "3.0",
   "name": "CRUDEOILM_PAPER_MULTISTAGE_ADJUST_5M_TEST",
   "description": "Paper test: 5m lifecycle with 1m staged adjustments (profit, delta, greek/price, both-leg) then exit all",
-  "paper_mode": true,
+  "paper_mode": false,
   "run_once": true,
   "poll_interval_sec": 2,
   "basic": {
@@ -212,5 +212,13 @@
     }
   },
   "status": "RUNNING",
-  "status_updated_at": "2026-02-16T18:00:45.817084"
+  "status_updated_at": "2026-02-16T18:00:45.817084",
+  "identity": {
+    "paper_mode": false,
+    "test_mode": null
+  },
+  "test_mode": null,
+  "id": "CRUDEOILM_PAPER_MULTISTAGE_ADJUST_5M_TEST",
+  "created_at": "2026-02-19T00:32:42",
+  "updated_at": "2026-02-19T00:32:42"
 }

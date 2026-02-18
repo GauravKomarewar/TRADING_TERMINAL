@@ -1028,26 +1028,21 @@ class StrategyExecutorService:
         
         # BLOCK: Strategy has positions
         reason = (
-            f"Strategy '{strategy_name}' has active positions:
-"
-            f"  CE: {exec_state.ce_symbol} ({exec_state.ce_qty})
-"
-            f"  PE: {exec_state.pe_symbol} ({exec_state.pe_qty})
-"
+            f"Strategy '{strategy_name}' has active positions:\n"
+            f"  CE: {exec_state.ce_symbol} ({exec_state.ce_qty})\n"
+            f"  PE: {exec_state.pe_symbol} ({exec_state.pe_qty})\n"
             f"Close all positions before changing mode."
         )
-        
+
         logger.critical(
-            f"🚫 MODE CHANGE BLOCKED: {strategy_name}
-"
-            f"   Reason: Active positions detected
-"
-            f"   CE: {exec_state.ce_symbol} ({exec_state.ce_qty})
-"
+            f"🚫 MODE CHANGE BLOCKED: {strategy_name}\n"
+            f"   Reason: Active positions detected\n"
+            f"   CE: {exec_state.ce_symbol} ({exec_state.ce_qty})\n"
             f"   PE: {exec_state.pe_symbol} ({exec_state.pe_qty})"
         )
         
         return False, reason
+
     
     def get_strategy_mode(self, strategy_name: str) -> str:
         """
@@ -1831,14 +1826,12 @@ class StrategyExecutorService:
         
         if current_mode != config_mode:
             logger.warning(
-                f"⚠️ MODE MISMATCH DETECTED: {name}
-"
-                f"   Memory mode: {current_mode}
-"
-                f"   Config mode: {config_mode}
-"
+                f"⚠️ MODE MISMATCH DETECTED: {name}\n"
+                f"   Memory mode: {current_mode}\n"
+                f"   Config mode: {config_mode}\n"
                 f"   Reloading config..."
             )
+
             self.reload_strategy_config(name)
         result = evaluate_entry_rules(config, engine_state)
         
@@ -2119,32 +2112,25 @@ class StrategyExecutorService:
         # SAFETY CHECK: Log execution mode prominently
         paper_mode = self._is_paper_mode(config)
         execution_mode = "MOCK (PAPER)" if paper_mode else "LIVE (REAL MONEY)"
+
         logger.critical(
-            f"{'🧪' if paper_mode else '⚡'} ENTRY EXECUTION MODE: {execution_mode}
-"
-            f"   Strategy: {name}
-"
-            f"   Paper Mode: {paper_mode}
-"
-            f"   Test Mode: {test_mode}
-"
+            f"{'🧪' if paper_mode else '⚡'} ENTRY EXECUTION MODE: {execution_mode}\n"
+            f"   Strategy: {name}\n"
+            f"   Paper Mode: {paper_mode}\n"
+            f"   Test Mode: {test_mode}\n"
             f"   Legs: {len(legs)}"
         )
-        
+
         if not paper_mode and self.bot.telegram_enabled:
             self.bot.send_telegram(
-                f"⚡ LIVE TRADE ALERT
-"
-                f"━━━━━━━━━━━━━━━━━
-"
-                f"Strategy: {name}
-"
-                f"Mode: LIVE (REAL MONEY)
-"
-                f"Legs: {len(legs)}
-"
+                f"⚡ LIVE TRADE ALERT\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"Strategy: {name}\n"
+                f"Mode: LIVE (REAL MONEY)\n"
+                f"Legs: {len(legs)}\n"
                 f"━━━━━━━━━━━━━━━━━"
             )
+
         
         # Send entry alert to OMS
         alert_result = self._send_entry_alert(name, config, legs, test_mode=test_mode)

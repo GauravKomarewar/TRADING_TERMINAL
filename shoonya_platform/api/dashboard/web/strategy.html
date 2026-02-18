@@ -6,8 +6,60 @@
 <title>Strategy Manager | Shoonya Platform</title>
 <link rel="stylesheet" href="/dashboard/web/styles/common.css">
 <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
-<script src="/dashboard/web/shared/pages-config.js" defer></script>
-<script src="/dashboard/web/shared/layout.js" defer></script>
+<script src="/dashboard/web/shared/pages-config.js" defer>
+
+
+// ====== MODE TOGGLE ======
+async function toggleMode(name) {
+  const btn = document.getElementById('mode-btn-' + name);
+  if (btn.disabled) return;
+
+  const currentMode = btn.textContent.includes('LIVE') ? 'LIVE' : 'MOCK';
+  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Switching...';
+
+    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+    toast(`Mode changed to ${newMode}`, 'success');
+    loadStrategies();  // reload to reflect new mode
+  } catch (e) {
+    toast('Mode change failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
+  }
+}
+
+
+</script>
+<script src="/dashboard/web/shared/layout.js" defer>
+
+
+// ====== MODE TOGGLE ======
+async function toggleMode(name) {
+  const btn = document.getElementById('mode-btn-' + name);
+  if (btn.disabled) return;
+
+  const currentMode = btn.textContent.includes('LIVE') ? 'LIVE' : 'MOCK';
+  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Switching...';
+
+    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+    toast(`Mode changed to ${newMode}`, 'success');
+    loadStrategies();  // reload to reflect new mode
+  } catch (e) {
+    toast('Mode change failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
+  }
+}
+
+
+</script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -1012,14 +1064,16 @@ document.querySelectorAll('.modal').forEach((modalEl) => {
 });
 
 
-catch(e) {
-      s.mode = 'LIVE';
-      s.can_change_mode = true;
-    }
-  });
-  
-  await Promise.all(promises);
-}
+// ====== MODE TOGGLE ======
+
+
+// ====== MODE TOGGLE ======
+
+
+// ====== MODE TOGGLE ======
+
+
+
 
 
 // ====== MODE TOGGLE ======
@@ -1044,49 +1098,6 @@ async function toggleMode(name) {
   }
 }
 
-// ====== MODE TOGGLE ======
-async function toggleMode(name) {
-  const btn = document.getElementById('mode-btn-' + name);
-  if (btn.disabled) return;
-
-  const currentMode = btn.textContent.includes('LIVE') ? 'LIVE' : 'MOCK';
-  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
-
-  try {
-    btn.disabled = true;
-    btn.textContent = 'Switching...';
-
-    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
-    toast(`Mode changed to ${newMode}`, 'success');
-    loadStrategies();  // reload to reflect new mode
-  } catch (e) {
-    toast('Mode change failed: ' + e.message, 'error');
-    btn.disabled = false;
-    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
-  }
-}
-
-// ====== MODE TOGGLE ======
-async function toggleMode(name) {
-  const btn = document.getElementById('mode-btn-' + name);
-  if (btn.disabled) return;
-
-  const currentMode = btn.textContent.includes('LIVE') ? 'LIVE' : 'MOCK';
-  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
-
-  try {
-    btn.disabled = true;
-    btn.textContent = 'Switching...';
-
-    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
-    toast(`Mode changed to ${newMode}`, 'success');
-    loadStrategies();  // reload to reflect new mode
-  } catch (e) {
-    toast('Mode change failed: ' + e.message, 'error');
-    btn.disabled = false;
-    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
-  }
-}
 
 </script>
 </body>

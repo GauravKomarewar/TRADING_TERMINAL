@@ -1008,6 +1008,93 @@ class StrategyExecutorService:
         """
         return self._has_paper_mode_flag(config) or (self._resolve_test_mode(config) is not None)
 
+
+    
+    def _validate_mode_change_allowed(self, strategy_name: str) -> Tuple[bool, str]:
+        """
+        CRITICAL: Validate if mode change is allowed.
+        Only allow when NO active positions exist.
+        
+        Returns:
+            (allowed: bool, reason: str)
+        """
+        exec_state = self._exec_states.get(strategy_name)
+        
+        if not exec_state:
+            return True, "No execution state found"
+        
+        if not exec_state.has_position:
+            return True, "No active positions"
+        
+        # BLOCK: Strategy has positions
+        reason = (
+            f"Strategy '{strategy_name}' has active positions:
+"
+            f"  CE: {exec_state.ce_symbol} ({exec_state.ce_qty})
+"
+            f"  PE: {exec_state.pe_symbol} ({exec_state.pe_qty})
+"
+            f"Close all positions before changing mode."
+        )
+        
+        logger.critical(
+            f"🚫 MODE CHANGE BLOCKED: {strategy_name}
+"
+            f"   Reason: Active positions detected
+"
+            f"   CE: {exec_state.ce_symbol} ({exec_state.ce_qty})
+"
+            f"   PE: {exec_state.pe_symbol} ({exec_state.pe_qty})"
+        )
+        
+        return False, reason
+    
+    def get_strategy_mode(self, strategy_name: str) -> str:
+        """
+        Get current execution mode for a strategy.
+        
+        Returns:
+            "LIVE" or "MOCK"
+        """
+        config = self._strategies.get(strategy_name)
+        if not config:
+            return "LIVE"  # Default to LIVE for safety
+        
+        return "MOCK" if self._is_paper_mode(config) else "LIVE"
+    
+    def reload_strategy_config(self, strategy_name: str) -> bool:
+        """
+        Reload strategy configuration from disk.
+        Used after mode changes to pick up new config.
+        
+        Returns:
+            True if reload successful, False otherwise
+        """
+        try:
+            config_path = Path(__file__).parent / "saved_configs" / f"{strategy_name}.json"
+            
+            if not config_path.exists():
+                logger.error(f"Config file not found: {config_path}")
+                return False
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                new_config = json.load(f)
+            
+            # Validate new config
+            is_valid, errors = validate_config(new_config)
+            if not is_valid:
+                logger.error(f"Invalid config after reload: {errors}")
+                return False
+            
+            # Update in memory
+            self._strategies[strategy_name] = new_config
+            
+            logger.info(f"✓ Reloaded config for {strategy_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to reload config for {strategy_name}: {e}", exc_info=True)
+            return False
     def _resolve_intent_test_mode(self, config: Dict[str, Any]) -> Optional[str]:
         """
         Resolve test_mode sent to OMS intents.
@@ -1019,6 +1106,24 @@ class StrategyExecutorService:
         if self._has_paper_mode_flag(config):
             return "SUCCESS"
         return None
+
+
+    def has_position(self, strategy_name: str) -> bool:
+        """Return True if the strategy currently holds an open position."""
+        exec_state = self._exec_states.get(strategy_name)
+        return exec_state.has_position if exec_state else False
+
+
+    def has_position(self, strategy_name: str) -> bool:
+        """Return True if the strategy currently holds an open position."""
+        exec_state = self._exec_states.get(strategy_name)
+        return exec_state.has_position if exec_state else False
+
+
+    def has_position(self, strategy_name: str) -> bool:
+        """Return True if the strategy currently holds an open position."""
+        exec_state = self._exec_states.get(strategy_name)
+        return exec_state.has_position if exec_state else False
 
     def _resolve_order_contract(
         self,
@@ -1719,6 +1824,22 @@ class StrategyExecutorService:
         reader: MarketReader,
     ):
         """Check entry conditions and execute if triggered."""
+        
+        # CRITICAL: Verify mode hasn't changed unexpectedly
+        current_mode = self.get_strategy_mode(name)
+        config_mode = "MOCK" if self._is_paper_mode(config) else "LIVE"
+        
+        if current_mode != config_mode:
+            logger.warning(
+                f"⚠️ MODE MISMATCH DETECTED: {name}
+"
+                f"   Memory mode: {current_mode}
+"
+                f"   Config mode: {config_mode}
+"
+                f"   Reloading config..."
+            )
+            self.reload_strategy_config(name)
         result = evaluate_entry_rules(config, engine_state)
         
         if not result or not isinstance(result, RuleResult) or not result.triggered:
@@ -1994,6 +2115,36 @@ class StrategyExecutorService:
         if not legs:
             logger.error(f"âŒ ENTRY ABORTED: {name} | no executable legs for action={action_type}")
             return
+        
+        # SAFETY CHECK: Log execution mode prominently
+        paper_mode = self._is_paper_mode(config)
+        execution_mode = "MOCK (PAPER)" if paper_mode else "LIVE (REAL MONEY)"
+        logger.critical(
+            f"{'🧪' if paper_mode else '⚡'} ENTRY EXECUTION MODE: {execution_mode}
+"
+            f"   Strategy: {name}
+"
+            f"   Paper Mode: {paper_mode}
+"
+            f"   Test Mode: {test_mode}
+"
+            f"   Legs: {len(legs)}"
+        )
+        
+        if not paper_mode and self.bot.telegram_enabled:
+            self.bot.send_telegram(
+                f"⚡ LIVE TRADE ALERT
+"
+                f"━━━━━━━━━━━━━━━━━
+"
+                f"Strategy: {name}
+"
+                f"Mode: LIVE (REAL MONEY)
+"
+                f"Legs: {len(legs)}
+"
+                f"━━━━━━━━━━━━━━━━━"
+            )
         
         # Send entry alert to OMS
         alert_result = self._send_entry_alert(name, config, legs, test_mode=test_mode)

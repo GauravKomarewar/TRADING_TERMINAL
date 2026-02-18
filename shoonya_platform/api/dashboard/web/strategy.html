@@ -345,6 +345,21 @@ input:checked + .toggle-slider:before {
   background:rgba(255,255,255,0.04); font-weight:700;
 }
 .monitor-tables-stack { margin-top: 8px; }
+
+.badge-mode { font-family: var(--font-mono); font-weight: 700; font-size: 10px; }
+.badge-live { 
+  background: linear-gradient(120deg, #fb7185, #f43f5e); 
+  color: #fff; 
+  border: 1px solid #fb7185; 
+  box-shadow: 0 0 12px rgba(251, 113, 133, 0.3);
+}
+.badge-mock { 
+  background: rgba(251, 203, 92, 0.2); 
+  color: var(--warning); 
+  border: 1px solid var(--warning); 
+}
+.mode-changing { opacity: 0.5; pointer-events: none; }
+.btn-mode { font-size: 11px; padding: 5px 10px; }
 </style>
 </head>
 <body>
@@ -359,7 +374,9 @@ input:checked + .toggle-slider:before {
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>    <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>  </div>
+    <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>
+    <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>
+  </div>
 
   <!-- ====== TAB 1: ALL STRATEGIES ====== -->
   <div id="list-tab" class="tab-content active">
@@ -516,7 +533,8 @@ function switchTab(name, btnEl=null) {
   if (activeBtn) activeBtn.classList.add('active');
   $(tabMap[name]).classList.add('active');
   
-  if (name === 'list') loadStrategies();
+  if (name === 'list') loadStrategies();
+
   if (name === 'monitor') loadLiveMonitor();
 }
 
@@ -578,11 +596,25 @@ function renderStrategies() {
           <div class="strat-card-name">
             <span class="status-dot ${status.toLowerCase()}"></span>
             ${escHtml(s.name)}
+            ${
+              s.mode === 'LIVE'
+                ? '<span class="badge badge-mode badge-live" id="mode-badge-' + escHtml(s.name) + '">⚡ LIVE</span>'
+                : '<span class="badge badge-mode badge-mock" id="mode-badge-' + escHtml(s.name) + '">🧪 MOCK</span>'
+            }
             ${enabled ? '<span class="badge badge-enabled">Enabled</span>' : '<span class="badge badge-disabled">Disabled</span>'}
             ${status !== 'IDLE' ? `<span class="badge badge-${status.toLowerCase()}">${status}</span>` : ''}
           </div>
           <div class="strat-card-actions">
-            ${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name)}')">Start</button>` : ''}
+            
+            <button 
+              class="btn btn-secondary btn-sm btn-mode"
+              id="mode-btn-${escHtml(s.name)}"
+              onclick="toggleMode('${escHtml(s.name)}')"
+              ${!s.can_change_mode ? 'disabled title="' + escHtml(s.mode_change_reason || '') + '"' : ''}>
+              ${s.mode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE'}
+            </button>
+            
+${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name)}')">Start</button>` : ''}
             ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name)}')">Stop</button>` : ''}
             <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name)}')">Logs</button>
             <button class="btn btn-secondary btn-sm" onclick="viewDetails('${escHtml(s.name)}')">View</button>
@@ -852,6 +884,11 @@ async function loadLiveMonitor() {
             <div class="strat-card-header">
               <div class="strat-card-name">
                 ${escHtml(g.strategy_name)}
+                ${
+                  g.mode === 'LIVE'
+                    ? '<span class="badge badge-mode badge-live">⚡ LIVE</span>'
+                    : '<span class="badge badge-mode badge-mock">🧪 MOCK</span>'
+                }
                 ${g.active ? '<span class="badge badge-running">ACTIVE</span>' : '<span class="badge badge-stopped">INACTIVE</span>'}
               </div>
               <div style="font-size:12px;color:${Number(g.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'};">PnL ${fmt2(g.total_pnl)}</div>
@@ -973,6 +1010,84 @@ document.querySelectorAll('.modal').forEach((modalEl) => {
     if (e.target === modalEl) modalEl.classList.remove('show');
   });
 });
+
+
+catch(e) {
+      s.mode = 'LIVE';
+      s.can_change_mode = true;
+    }
+  });
+  
+  await Promise.all(promises);
+}
+
+
+// ====== MODE TOGGLE ======
+async function toggleMode(name) {
+  const btn = document.getElementById('mode-btn-' + name);
+  if (btn.disabled) return;
+
+  const currentMode = btn.textContent.includes('LIVE') ? 'LIVE' : 'MOCK';
+  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Switching...';
+
+    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+    toast(`Mode changed to ${newMode}`, 'success');
+    loadStrategies();  // reload to reflect new mode
+  } catch (e) {
+    toast('Mode change failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
+  }
+}
+
+// ====== MODE TOGGLE ======
+async function toggleMode(name) {
+  const btn = document.getElementById('mode-btn-' + name);
+  if (btn.disabled) return;
+
+  const currentMode = btn.textContent.includes('LIVE') ? 'LIVE' : 'MOCK';
+  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Switching...';
+
+    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+    toast(`Mode changed to ${newMode}`, 'success');
+    loadStrategies();  // reload to reflect new mode
+  } catch (e) {
+    toast('Mode change failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
+  }
+}
+
+// ====== MODE TOGGLE ======
+async function toggleMode(name) {
+  const btn = document.getElementById('mode-btn-' + name);
+  if (btn.disabled) return;
+
+  const currentMode = btn.textContent.includes('LIVE') ? 'LIVE' : 'MOCK';
+  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Switching...';
+
+    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+    toast(`Mode changed to ${newMode}`, 'success');
+    loadStrategies();  // reload to reflect new mode
+  } catch (e) {
+    toast('Mode change failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
+  }
+}
+
 </script>
 </body>
 </html>

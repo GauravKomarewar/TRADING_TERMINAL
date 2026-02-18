@@ -1084,15 +1084,18 @@ def load_strategy_config(
         return data
     except Exception as e:
         raise HTTPException(500, f"Failed to read config: {e}")
-
-
 @router.get("/strategy/configs")
 def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
-    """List all saved strategy configs with full data."""
+    """List all saved strategy configs with full data and live/mock mode."""
     cfg_dir = _get_strategy_configs_dir()
     runtime_running = _get_runtime_running_slugs(ctx)
     configs = []
     parse_errors = []
+
+    # Get executor service to query mode and position info
+    bot = ctx["bot"]
+    service = getattr(bot, "strategy_executor_service", None)
+
     for f in sorted(cfg_dir.glob("*.json")):
         if f.name == "STRATEGY_CONFIG_SCHEMA.json":
             continue
@@ -1100,9 +1103,20 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
             data = json.loads(f.read_text(encoding="utf-8"))
             slug = f.stem
             file_status = str(data.get("status", "IDLE") or "IDLE").upper()
-            # Runtime truth is authoritative for active execution.
-            # If file says RUNNING but runtime is flat (e.g. run_once finished), surface IDLE.
             effective_status = "RUNNING" if slug in runtime_running else ("IDLE" if file_status == "RUNNING" else file_status)
+
+            # ---- mode and can_change ----
+            mode = "LIVE"
+            can_change = True
+            mode_change_reason = None
+            if service:
+                mode = service.get_strategy_mode(slug)
+                has_pos = service.has_position(slug) if hasattr(service, "has_position") else False
+                if has_pos:
+                    can_change = False
+                    mode_change_reason = "Strategy has active positions"
+            # -----------------------------
+
             configs.append({
                 "schema_version": data.get("schema_version", "1.0"),
                 "name": data.get("name", f.stem),
@@ -1121,6 +1135,10 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
                 "adjustment": data.get("adjustment", {}),
                 "exit": data.get("exit", {}),
                 "rms": data.get("rms", {}),
+                # mode info for frontend
+                "mode": mode,
+                "can_change_mode": can_change,
+                "mode_change_reason": mode_change_reason,
             })
         except Exception as e:
             parse_errors.append(f"{f.name}: {e}")
@@ -1131,7 +1149,6 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
         "directory": str(cfg_dir),
         "parse_errors": parse_errors[:20],
     }
-
 
 @router.get("/monitoring/all-strategies-status")
 def get_all_strategies_execution_status(
@@ -3453,3 +3470,285 @@ def get_runner_file_logs(
     except Exception as e:
         logger.error(f"Error reading file logs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ======================================================================
+# 🔄 LIVE/MOCK MODE MANAGEMENT (PRODUCTION SAFE)
+# ======================================================================
+
+@router.get("/strategy/{strategy_name}/mode")
+def get_strategy_mode(
+    strategy_name: str,
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Get current execution mode (LIVE/MOCK) for a strategy.
+    
+    Returns:
+        {
+            "strategy_name": "NIFTY_DNSS",
+            "mode": "LIVE" | "MOCK",
+            "can_change": true/false,
+            "reason": "Has active positions" (if can_change=false),
+            "config": {...}
+        }
+    """
+    try:
+        slug = _slugify(strategy_name)
+        config = load_strategy_json(slug)
+        
+        if not config:
+            raise HTTPException(404, f"Strategy '{strategy_name}' not found")
+        
+        # Determine current mode
+        identity = config.get("identity", {}) or {}
+        paper_mode = bool(
+            config.get("paper_mode") or 
+            identity.get("paper_mode") or 
+            config.get("is_paper")
+        )
+        
+        test_mode = (
+            config.get("test_mode") or 
+            identity.get("test_mode")
+        )
+        
+        mode = "MOCK" if (paper_mode or test_mode) else "LIVE"
+        
+        # Check if mode can be changed (no active positions)
+        can_change = True
+        reason = None
+        position_details = {}
+        
+        try:
+            bot = ctx["bot"]
+            service = bot.strategy_executor_service
+            exec_state = service._exec_states.get(slug)
+            
+            if exec_state and exec_state.has_position:
+                can_change = False
+                reason = "Strategy has active positions - close all positions before changing mode"
+                position_details = {
+                    "ce_symbol": exec_state.ce_symbol,
+                    "pe_symbol": exec_state.pe_symbol,
+                    "ce_qty": exec_state.ce_qty,
+                    "pe_qty": exec_state.pe_qty,
+                }
+        except Exception as e:
+            logger.warning(f"Could not check positions for {strategy_name}: {e}")
+        
+        return {
+            "strategy_name": strategy_name,
+            "mode": mode,
+            "can_change": can_change,
+            "reason": reason,
+            "position_details": position_details,
+            "config": {
+                "paper_mode": paper_mode,
+                "test_mode": test_mode,
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting mode for {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/strategy/{strategy_name}/mode")
+def set_strategy_mode(
+    strategy_name: str,
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Change execution mode for a strategy (LIVE <-> MOCK).
+    
+    SAFETY: Only allowed when strategy has NO active positions.
+    
+    Payload:
+        {
+            "mode": "LIVE" | "MOCK"
+        }
+    """
+    try:
+        new_mode = str(payload.get("mode", "")).strip().upper()
+        
+        if new_mode not in ("LIVE", "MOCK"):
+            raise HTTPException(400, "mode must be 'LIVE' or 'MOCK'")
+        
+        slug = _slugify(strategy_name)
+        config = load_strategy_json(slug)
+        
+        if not config:
+            raise HTTPException(404, f"Strategy '{strategy_name}' not found")
+        
+        # CRITICAL: Check for active positions
+        bot = ctx["bot"]
+        service = bot.strategy_executor_service
+        
+        # Use executor's validation method
+        allowed, block_reason = service._validate_mode_change_allowed(slug)
+        
+        if not allowed:
+            raise HTTPException(
+                409,
+                {
+                    "error": "Cannot change mode with active positions",
+                    "detail": block_reason,
+                    "has_position": True,
+                }
+            )
+        
+        # Get current mode
+        identity = config.get("identity", {}) or {}
+        paper_mode = bool(
+            config.get("paper_mode") or 
+            identity.get("paper_mode") or 
+            config.get("is_paper")
+        )
+        test_mode = config.get("test_mode") or identity.get("test_mode")
+        
+        previous_mode = "MOCK" if (paper_mode or test_mode) else "LIVE"
+        
+        # No change needed
+        if previous_mode == new_mode:
+            return {
+                "success": True,
+                "strategy_name": strategy_name,
+                "previous_mode": previous_mode,
+                "new_mode": new_mode,
+                "message": "Mode unchanged (already in requested mode)",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Update config
+        if "identity" not in config:
+            config["identity"] = {}
+        
+        if new_mode == "MOCK":
+            config["paper_mode"] = True
+            config["identity"]["paper_mode"] = True
+            config["test_mode"] = "SUCCESS"
+            config["identity"]["test_mode"] = "SUCCESS"
+        else:  # LIVE
+            config["paper_mode"] = False
+            config["identity"]["paper_mode"] = False
+            config["test_mode"] = None
+            config["identity"]["test_mode"] = None
+        
+        # Save config
+        save_strategy_json(slug, config)
+        
+        # If strategy is running, need to restart it
+        needs_restart = slug in service._strategies
+        restart_message = ""
+        
+        if needs_restart:
+            logger.critical(
+                f"⚠️ MODE CHANGE: {strategy_name} | {previous_mode} -> {new_mode} | "
+                f"Strategy is running and will be restarted"
+            )
+            
+            try:
+                # Unregister
+                service.unregister_strategy(slug)
+                with bot._live_strategies_lock:
+                    bot._live_strategies.pop(slug, None)
+                
+                # Re-register with new config
+                strategy_file = STRATEGY_CONFIG_DIR / f"{slug}.json"
+                service.register_strategy(name=slug, config_path=str(strategy_file))
+                with bot._live_strategies_lock:
+                    bot._live_strategies[slug] = {
+                        "type": "executor_service",
+                        "config_path": str(strategy_file),
+                        "started_at": time.time(),
+                    }
+                
+                restart_message = "Strategy restarted with new mode"
+            except Exception as restart_err:
+                logger.error(f"Failed to restart strategy: {restart_err}")
+                restart_message = f"Warning: Strategy restart failed - {restart_err}"
+        
+        logger.critical(
+            f"✓ MODE CHANGED: {strategy_name} | {previous_mode} -> {new_mode}"
+        )
+        
+        if bot.telegram_enabled:
+            mode_emoji = "⚡" if new_mode == "LIVE" else "🧪"
+            bot.send_telegram(
+                f"{mode_emoji} MODE CHANGE\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"Strategy: {strategy_name}\n"
+                f"Previous: {previous_mode}\n"
+                f"New: {new_mode}\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"{restart_message if needs_restart else 'Strategy not running'}"
+            )
+        
+        return {
+            "success": True,
+            "strategy_name": strategy_name,
+            "previous_mode": previous_mode,
+            "new_mode": new_mode,
+            "was_running": needs_restart,
+            "restart_message": restart_message,
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting mode for {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/strategy/{strategy_name}/positions/active")
+def check_strategy_positions(
+    strategy_name: str,
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Check if strategy has active positions.
+    """
+    try:
+        slug = _slugify(strategy_name)
+        
+        bot = ctx["bot"]
+        service = bot.strategy_executor_service
+        exec_state = service._exec_states.get(slug)
+        
+        if not exec_state:
+            return {
+                "strategy_name": strategy_name,
+                "has_position": False,
+                "message": "Strategy not found in executor",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        if not exec_state.has_position:
+            return {
+                "strategy_name": strategy_name,
+                "has_position": False,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        position_age = time.time() - exec_state.entry_timestamp if exec_state.entry_timestamp > 0 else 0
+        
+        return {
+            "strategy_name": strategy_name,
+            "has_position": True,
+            "ce_symbol": exec_state.ce_symbol,
+            "pe_symbol": exec_state.pe_symbol,
+            "ce_qty": exec_state.ce_qty,
+            "pe_qty": exec_state.pe_qty,
+            "entry_time": datetime.fromtimestamp(exec_state.entry_timestamp).isoformat() if exec_state.entry_timestamp > 0 else None,
+            "position_age_seconds": int(position_age),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error checking positions for {strategy_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+

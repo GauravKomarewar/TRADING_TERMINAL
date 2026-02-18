@@ -274,6 +274,31 @@ button, input, select, textarea { font-family:var(--sans); }
   border-radius:8px; padding:13px; margin-top:16px;
 }
 .combined-title { font-size:12.5px; font-weight:600; color:var(--accent); margin-bottom:10px; }
+.summary-box {
+  margin-top:12px; padding:10px 12px; border-radius:8px;
+  border:1px solid var(--border-2); background:rgba(16,21,33,.45);
+}
+.summary-title {
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+  color:var(--cyan); margin-bottom:6px;
+}
+.summary-text {
+  white-space:pre-line; font-size:12px; color:var(--sub); line-height:1.5;
+}
+#sec-entry, #sec-adjustment, #sec-exit { display:flex; flex-direction:column; }
+#sec-entry > .combined-sec { order:1; }
+#sec-entry > #entryLegs { order:2; }
+#sec-entry > .alb-entry { order:3; }
+#sec-entry > .summary-box { order:99; }
+#sec-adjustment > .combined-sec { order:1; }
+#sec-adjustment > #adjLegs { order:2; }
+#sec-adjustment > .alb-adj { order:3; }
+#sec-adjustment > .summary-box { order:99; }
+#sec-exit > .combined-sec { order:1; }
+#sec-exit > .sec-title.st-accent { order:2; }
+#sec-exit > #exitLegs { order:3; }
+#sec-exit > .alb-exit { order:4; }
+#sec-exit > .summary-box { order:99; }
 
 /* ── P&L / RISK CARDS ── */
 .card-grid { display:grid; gap:12px; margin-bottom:18px; }
@@ -450,6 +475,39 @@ button, input, select, textarea { font-family:var(--sans); }
         <div id="entryCombinedElse"></div>
         <button class="add-cond-btn" style="border-color:rgba(240,82,82,.4);color:var(--danger);" onclick="addCombinedGroup('entryCombinedElse','ELSE')">＋ Add ELSE Combined Condition</button>
       </div>
+      <div class="exec-params" style="margin-top:10px;">
+        <div class="exec-title">Combined Entry Action</div>
+        <div class="f-row c3">
+          <div class="f-group"><label class="f-label">Action Type</label>
+            <select class="f-select" id="entryCombinedActionType" onchange="onEntryCombinedActionTypeChange()">
+              <option value="auto_infer">Auto (from Entry legs)</option>
+              <option value="short_both">Short Both</option><option value="long_both">Long Both</option>
+              <option value="short_ce">Short CE</option><option value="short_pe">Short PE</option>
+              <option value="long_ce">Long CE</option><option value="long_pe">Long PE</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="f-group"><label class="f-label">Order Type Override</label>
+            <select class="f-select" id="entryCombinedOrderType">
+              <option value="">Use Global Default</option>
+              <option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option>
+              <option value="SL">SL</option><option value="SLM">SLM</option>
+            </select>
+          </div>
+          <div class="f-group"><label class="f-label">Lots Multiplier</label>
+            <input class="f-input" id="entryCombinedLotsMultiplier" type="number" min="1" value="1">
+          </div>
+        </div>
+        <div class="cond-area" id="entryCombinedCustomWrap" style="display:none;margin-top:8px;border-color:rgba(24,184,212,.2);background:rgba(24,184,212,.04);">
+          <div class="ca-title ca-cyan">Custom Combined Entry Legs</div>
+          <div id="entryCombinedLegRows"></div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addEntryCombinedLegRow()">+ Add Custom Leg</button>
+        </div>
+      </div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-title">Entry Summary</div>
+      <div class="summary-text" id="entrySummary">No entry rules yet.</div>
     </div>
   </div>
 
@@ -481,12 +539,35 @@ button, input, select, textarea { font-family:var(--sans); }
         <div id="adjCombinedElse"></div>
         <button class="add-cond-btn" style="border-color:rgba(240,82,82,.4);color:var(--danger);" onclick="addCombinedGroup('adjCombinedElse','ELSE')">＋ Add ELSE Combined Condition</button>
       </div>
-      <div class="f-row c2" style="margin-top:10px;">
-        <div class="f-group">
-          <label class="f-label">Combined Targets (tags)</label>
-          <input class="f-input" id="adjCombinedTargets" placeholder="LEG@1, LEG@2">
+      <div class="exec-params" style="margin-top:10px;border-color:rgba(240,160,48,.17);background:rgba(240,160,48,.03);">
+        <div class="exec-title" style="color:var(--warning);">Combined Adjustment Action</div>
+        <div class="f-row c2">
+          <div class="f-group"><label class="f-label">Action Type</label>
+            <select class="f-select" id="adjCombinedActionType" onchange="onAdjCombinedActionTypeChange()">
+              <option value="simple_close_open_new">Simple Close + Open New</option>
+              <option value="shift_strikes">Shift Strikes</option>
+              <option value="do_nothing">Do Nothing</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="f-group" id="adjCombinedTargetsWrap">
+            <label class="f-label">Combined Targets (tags)</label>
+            <input class="f-input" id="adjCombinedTargets" placeholder="LEG@1, LEG@2">
+          </div>
+        </div>
+        <div class="f-row c2" id="adjCombinedShiftWrap" style="display:none;">
+          <div class="f-group"><label class="f-label">Shift By</label><input class="f-input" id="adjCombinedShiftBy" type="number" placeholder="e.g. 1 / -1"></div>
+        </div>
+        <div class="cond-area" id="adjCombinedSwapWrap" style="display:none;margin-top:8px;border-color:rgba(24,184,212,.2);background:rgba(24,184,212,.04);">
+          <div class="ca-title ca-cyan">Close + Open Pairs</div>
+          <div id="adjCombinedSwapRows"></div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addCombinedAdjSwapRow()">+ Add Leg Pair</button>
         </div>
       </div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-title">Adjustment Summary</div>
+      <div class="summary-text" id="adjSummary">No adjustment rules yet.</div>
     </div>
   </div>
 
@@ -592,6 +673,33 @@ button, input, select, textarea { font-family:var(--sans); }
         <div id="exitCombinedElse"></div>
         <button class="add-cond-btn" style="border-color:rgba(240,82,82,.4);color:var(--danger);" onclick="addCombinedGroup('exitCombinedElse','ELSE')">＋ Add ELSE Combined Condition</button>
       </div>
+      <div class="exec-params" style="margin-top:10px;border-color:rgba(144,104,245,.17);background:rgba(144,104,245,.03);">
+        <div class="exec-title" style="color:var(--accent);">Combined Exit Action</div>
+        <div class="f-row c3">
+          <div class="f-group"><label class="f-label">Action Type</label>
+            <select class="f-select" id="exitCombinedActionType" onchange="onExitCombinedActionTypeChange()">
+              <option value="close_all_positions">Close All Positions</option>
+              <option value="close_profitable_legs">Close Profitable Legs</option>
+              <option value="close_loss_legs">Close Loss-making Legs</option>
+              <option value="do_nothing">Do Nothing</option>
+            </select>
+          </div>
+          <div class="f-group" id="exitCombinedScopeWrap"><label class="f-label">Exit Scope</label>
+            <select class="f-select" id="exitCombinedScope">
+              <option value="all">All Legs</option><option value="profitable">Profitable Legs</option><option value="loss">Loss-making Legs</option>
+            </select>
+          </div>
+          <div class="f-group" id="exitCombinedOrderWrap"><label class="f-label">Order Type</label>
+            <select class="f-select" id="exitCombinedOrderType">
+              <option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option><option value="SLM">SLM</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-title">Exit Summary</div>
+      <div class="summary-text" id="exitSummary">No exit rules yet.</div>
     </div>
   </div>
 
@@ -653,9 +761,10 @@ button, input, select, textarea { font-family:var(--sans); }
 /* ════ CONSTANTS ════ */
 const OPERATORS = ['>', '>=', '<', '<=', '==', '!=', '~=', 'between', 'not_between'];
 const JOIN_OPS  = ['AND', 'OR'];
-const ADJ_ACTS  = ['close_higher_delta','close_lower_delta','close_ce','close_pe',
-                   'roll_ce','roll_pe','roll_both','shift_strikes','lock_profit',
-                   'trailing_stop','do_nothing','custom'];
+const ADJ_ACTS  = ['simple_close_open_new'];
+const ADJ_ACTION_META = {
+  simple_close_open_new:{help:'Close selected leg and open a new replacement leg. Use + to add multiple leg pairs.'},
+};
 
 const DB_PARAMS = [
   {v:'ce_ltp',l:'CE LTP',cat:'Option Legs'},{v:'pe_ltp',l:'PE LTP',cat:'Option Legs'},
@@ -688,6 +797,15 @@ const DB_PARAMS = [
   {v:'india_vix',l:'India VIX',cat:'Index/Ticker'},
   {v:'atm_strike',l:'ATM Strike',cat:'Index/Ticker'},
   {v:'fut_ltp',l:'Futures LTP',cat:'Index/Ticker'},
+  {v:'combined_entry_if_true',l:'Combined Entry IF True (0/1)',cat:'Combined Context'},
+  {v:'combined_entry_else_true',l:'Combined Entry ELSE True (0/1)',cat:'Combined Context'},
+  {v:'combined_entry_action_type',l:'Combined Entry Action Type',cat:'Combined Context'},
+  {v:'combined_adj_if_true',l:'Combined Adj IF True (0/1)',cat:'Combined Context'},
+  {v:'combined_adj_else_true',l:'Combined Adj ELSE True (0/1)',cat:'Combined Context'},
+  {v:'combined_adj_action_type',l:'Combined Adj Action Type',cat:'Combined Context'},
+  {v:'combined_exit_if_true',l:'Combined Exit IF True (0/1)',cat:'Combined Context'},
+  {v:'combined_exit_else_true',l:'Combined Exit ELSE True (0/1)',cat:'Combined Context'},
+  {v:'combined_exit_action_type',l:'Combined Exit Action Type',cat:'Combined Context'},
 ];
 
 const CMB_PARAMS = [
@@ -696,6 +814,9 @@ const CMB_PARAMS = [
   {v:'any_leg_delta',l:'Any Leg Delta'},{v:'both_legs_delta_below',l:'Both Legs Delta Below'},
   {v:'both_legs_delta_above',l:'Both Legs Delta Above'},
   {v:'time_current',l:'Current Time'},{v:'spot_price',l:'Underlying Spot'},{v:'india_vix',l:'India VIX'},
+  {v:'combined_entry_if_true',l:'Combined Entry IF True (0/1)'},
+  {v:'combined_adj_if_true',l:'Combined Adj IF True (0/1)'},
+  {v:'combined_exit_if_true',l:'Combined Exit IF True (0/1)'},
 ];
 const LEG_METRICS = [
   {v:'ltp',l:'LTP'},
@@ -779,6 +900,10 @@ function tagOpts(){
 function legMetricOpts(cur=''){
   return '<option value="">— Leg Param —</option>'+
     LEG_METRICS.map(m=>`<option value="${m.v}"${m.v===cur?' selected':''}>${m.l}</option>`).join('');
+}
+function prettyAdjAction(s){
+  if(String(s)==='simple_close_open_new') return 'Simple Close + Open New';
+  return String(s||'').split('_').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
 }
 function splitTaggedParam(p){
   const s=String(p||'');
@@ -911,6 +1036,123 @@ function onCombinedElseToggle(kind){
   if(wrap) wrap.style.display=on?'block':'none';
   if(lbl) lbl.textContent=on?'Enabled':'Disabled';
 }
+function onEntryCombinedActionTypeChange(){
+  const t=gv('entryCombinedActionType')||'auto_infer';
+  const wrap=$('entryCombinedCustomWrap');
+  if(wrap) wrap.style.display=t==='custom'?'block':'none';
+}
+function onAdjCombinedActionTypeChange(){
+  const t=gv('adjCombinedActionType')||'simple_close_open_new';
+  const swapWrap=$('adjCombinedSwapWrap');
+  const shiftWrap=$('adjCombinedShiftWrap');
+  const targetsWrap=$('adjCombinedTargetsWrap');
+  if(swapWrap) swapWrap.style.display=t==='simple_close_open_new'?'block':'none';
+  if(shiftWrap) shiftWrap.style.display=t==='shift_strikes'?'grid':'none';
+  if(targetsWrap) targetsWrap.style.display=(t==='do_nothing')?'none':'block';
+  if(t==='simple_close_open_new' && $('adjCombinedSwapRows') && !$('adjCombinedSwapRows').children.length){
+    addCombinedAdjSwapRow();
+  }
+}
+function onExitCombinedActionTypeChange(){
+  const t=gv('exitCombinedActionType')||'close_all_positions';
+  const off=(t==='do_nothing');
+  const sw=$('exitCombinedScopeWrap'),ow=$('exitCombinedOrderWrap');
+  if(sw) sw.style.display=off?'none':'block';
+  if(ow) ow.style.display=off?'none':'block';
+}
+function syncCombinedAdjNewOptType(closeSel){
+  const row=closeSel?.closest('.cond-area');
+  if(!row) return;
+  const newOpt=row.querySelector('[data-role="cadj-new-opt-type"]');
+  if(!newOpt) return;
+  const tag=closeSel.value||'';
+  const meta=ST.tags.find(t=>t.section==='entry' && t.tag===tag);
+  if(meta?.opt==='CE' || meta?.opt==='PE') newOpt.value=meta.opt;
+}
+function addCombinedAdjSwapRow(seed=null){
+  const box=$('adjCombinedSwapRows');
+  if(!box) return;
+  const row=document.createElement('div');
+  row.className='cond-area';
+  row.style.marginTop='8px';
+  row.style.borderColor='rgba(24,184,212,.2)';
+  row.style.background='rgba(24,184,212,.04)';
+  row.innerHTML=`
+    <div class="cond-area" style="margin-bottom:8px;border-color:rgba(240,82,82,.24);background:rgba(240,82,82,.06);">
+      <div class="ca-title" style="color:var(--danger);">Close Leg</div>
+      <div class="f-row c2" style="margin-bottom:0;">
+        <div class="f-group"><label class="f-label">Leg to Close (Tag)</label>
+          <select class="f-select tag-sel" data-role="cadj-close-tag" onchange="syncCombinedAdjNewOptType(this)">${tagOpts()}</select>
+        </div>
+        <div class="f-group" style="display:flex;align-items:flex-end;justify-content:flex-end;">
+          <button class="btn btn-danger btn-sm" type="button" onclick="this.closest('.cond-area').parentElement.remove()">Remove Pair</button>
+        </div>
+      </div>
+    </div>
+    <div class="cond-area" style="margin-bottom:0;border-color:rgba(24,184,212,.28);background:rgba(24,184,212,.07);">
+      <div class="ca-title ca-cyan">Open New Leg</div>
+      <div class="f-row c4">
+        <div class="f-group"><label class="f-label">New Buy / Sell</label><select class="f-select" data-role="cadj-new-side"><option value="SELL">SELL</option><option value="BUY">BUY</option></select></div>
+        <div class="f-group"><label class="f-label">New CE / PE</label><select class="f-select" data-role="cadj-new-opt-type"><option value="CE">CE</option><option value="PE">PE</option></select></div>
+        <div class="f-group"><label class="f-label">New Strike Select</label>
+          <select class="f-select" data-role="cadj-new-strike-sel">
+            <option value="atm">ATM</option><option value="atm+1">ATM+1</option><option value="atm-1">ATM-1</option>
+            <option value="atm+2">ATM+2</option><option value="atm-2">ATM-2</option><option value="delta">By Delta</option>
+            <option value="strike">By Strike</option><option value="premium">By Premium</option><option value="otm_pct">OTM %</option>
+          </select>
+        </div>
+      </div>
+      <div class="f-row c4">
+        <div class="f-group"><label class="f-label">New Strike / Value</label><input class="f-input" data-role="cadj-new-strike-val" placeholder="e.g. 0.3 / 200"></div>
+        <div class="f-group"><label class="f-label">New Lots</label><input class="f-input" data-role="cadj-new-lots" type="number" value="1" min="1"></div>
+        <div class="f-group"><label class="f-label">New Order Type</label><select class="f-select" data-role="cadj-new-order-type"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option><option value="SL">SL</option><option value="SLM">SLM</option></select></div>
+      </div>
+    </div>`;
+  box.appendChild(row);
+  const closeSel=row.querySelector('[data-role="cadj-close-tag"]');
+  if(seed){
+    setSel(closeSel,seed.close_tag||'');
+    setSel(row.querySelector('[data-role="cadj-new-side"]'),seed.new_leg?.side||'SELL');
+    setSel(row.querySelector('[data-role="cadj-new-opt-type"]'),seed.new_leg?.option_type||'CE');
+    setSel(row.querySelector('[data-role="cadj-new-strike-sel"]'),seed.new_leg?.strike_selection||'atm');
+    const sv=row.querySelector('[data-role="cadj-new-strike-val"]'); if(sv) sv.value=seed.new_leg?.strike_value??'';
+    const lt=row.querySelector('[data-role="cadj-new-lots"]'); if(lt) lt.value=seed.new_leg?.lots??1;
+    setSel(row.querySelector('[data-role="cadj-new-order-type"]'),seed.new_leg?.order_type||'MARKET');
+    if(!seed.new_leg?.option_type) syncCombinedAdjNewOptType(closeSel);
+  } else {
+    syncCombinedAdjNewOptType(closeSel);
+  }
+}
+function addEntryCombinedLegRow(seed=null){
+  const box=$('entryCombinedLegRows');
+  if(!box) return;
+  const row=document.createElement('div');
+  row.className='cond-area';
+  row.style.marginTop='8px';
+  row.style.borderColor='rgba(24,184,212,.2)';
+  row.style.background='rgba(24,184,212,.04)';
+  row.innerHTML=`
+    <div class="f-row c5">
+      <div class="f-group"><label class="f-label">Buy / Sell</label><select class="f-select" data-role="ec-side"><option value="SELL">SELL</option><option value="BUY">BUY</option></select></div>
+      <div class="f-group"><label class="f-label">CE / PE</label><select class="f-select" data-role="ec-opt"><option value="CE">CE</option><option value="PE">PE</option></select></div>
+      <div class="f-group"><label class="f-label">Strike Select</label><select class="f-select" data-role="ec-strike-sel"><option value="atm">ATM</option><option value="atm+1">ATM+1</option><option value="atm-1">ATM-1</option><option value="atm+2">ATM+2</option><option value="atm-2">ATM-2</option><option value="delta">By Delta</option><option value="strike">By Strike</option><option value="premium">By Premium</option><option value="otm_pct">OTM %</option></select></div>
+      <div class="f-group"><label class="f-label">Strike / Value</label><input class="f-input" data-role="ec-strike-val"></div>
+      <div class="f-group"><label class="f-label">Lots</label><input class="f-input" data-role="ec-lots" type="number" value="1" min="1"></div>
+    </div>
+    <div class="f-row c2">
+      <div class="f-group"><label class="f-label">Order Type</label><select class="f-select" data-role="ec-order"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option><option value="SL">SL</option><option value="SLM">SLM</option></select></div>
+      <div class="f-group" style="display:flex;align-items:flex-end;justify-content:flex-end;"><button class="btn btn-danger btn-sm" type="button" onclick="this.closest('.cond-area').remove()">Remove Leg</button></div>
+    </div>`;
+  box.appendChild(row);
+  if(seed){
+    setSel(row.querySelector('[data-role="ec-side"]'),seed.side||'SELL');
+    setSel(row.querySelector('[data-role="ec-opt"]'),seed.option_type||'CE');
+    setSel(row.querySelector('[data-role="ec-strike-sel"]'),seed.strike_selection||'atm');
+    const sv=row.querySelector('[data-role="ec-strike-val"]'); if(sv) sv.value=seed.strike_value??'';
+    const lots=row.querySelector('[data-role="ec-lots"]'); if(lots) lots.value=seed.lots??1;
+    setSel(row.querySelector('[data-role="ec-order"]'),seed.order_type||'MARKET');
+  }
+}
 
 function rmRow(btn){
   const row=btn.closest('.cond-row');
@@ -1032,10 +1274,7 @@ function addEntryLeg(){
           <input class="f-input" data-role="lots" type="number" value="1" min="1">
         </div>
       </div>
-      <div class="f-row c2" style="margin-top:8px;">
-        <div class="f-group"><label class="f-label">Execution Metric</label>
-          <select class="f-select" data-role="execution-method">${execMethodOpts()}</select>
-        </div>
+      <div class="f-row" style="margin-top:8px;">
         <div class="f-group"><label class="f-label">Order Type Override</label>
           <select class="f-select" data-role="entry-order-type">
             <option value="">Use Default</option><option value="MARKET">MARKET</option>
@@ -1126,7 +1365,7 @@ function addCondGroup(listId,label='IF',entryId=null,seed=null){
   const g=document.createElement('div');
   g.className='cond-group';
   g.setAttribute('data-rows-id',rowsId);
-  const lockExpr=`refreshEntryLock(${entryId||0})`;
+  const lockExpr=`refreshEntryLock(${entryId||0});maybeRefreshEntryLockByListId('${listId}')`;
   g.innerHTML=`
     <div class="cond-group-head">
       <div class="cond-group-title">${label} Condition</div>
@@ -1154,15 +1393,22 @@ function addCondGroup(listId,label='IF',entryId=null,seed=null){
     makeCondRow(rowsId);
   }
   refreshEntryLock(entryId||0);
+  maybeRefreshEntryLockByListId(listId);
 }
 function refreshEntryLock(id){
   if(id) applyEntryExecLock(id);
 }
 function maybeRefreshEntryLockByListId(lid){
   const m=String(lid).match(/^cl_entry_(if|else)_(\d+)(?:_rows_\d+)?$/);
-  if(!m) return;
-  const id=parseInt(m[2],10);
-  if(Number.isFinite(id)) applyEntryExecLock(id);
+  if(m){
+    const id=parseInt(m[2],10);
+    if(Number.isFinite(id)) applyEntryExecLock(id);
+    return;
+  }
+  const am=String(lid).match(/^cl_adj_(\d+)(?:_rows_\d+)?$/);
+  if(!am) return;
+  const adjId=parseInt(am[1],10);
+  if(Number.isFinite(adjId)) applyAdjActionLock(adjId);
 }
 function applyEntryExecLock(id){
   const mode=gv(`cm_entry_${id}`);
@@ -1183,6 +1429,111 @@ function applyEntryExecLock(id){
     elseBox.style.pointerEvents=locked ? 'none' : '';
   }
 }
+function applyAdjActionLock(id){
+  const condCount=$(`cl_adj_${id}`)?.querySelectorAll('.cond-row').length||0;
+  const locked=(condCount===0);
+  const box=$(`lb_adj_${id}`)?.querySelector('.exec-params');
+  if(!box) return;
+  box.querySelectorAll('input,select,button').forEach(el=>{ el.disabled=locked; });
+  box.style.opacity=locked ? '.55' : '1';
+  box.style.pointerEvents=locked ? 'none' : '';
+}
+function applyAdjActionUI(id){
+  const card=$(`lc_adj_${id}`);
+  if(!card) return;
+  const type=card.querySelector('[data-role="adj-action"]')?.value||'simple_close_open_new';
+  const cfg=ADJ_ACTION_META[type]||ADJ_ACTION_META.simple_close_open_new;
+  const help=card.querySelector('[data-role="adj-action-help"]');
+  if(help) help.textContent=cfg.help;
+}
+function onAdjActionChange(id){
+  applyAdjActionUI(id);
+}
+function syncAdjNewOptType(closeSel){
+  const row=closeSel?.closest('.cond-area');
+  if(!row) return;
+  const newOpt=row.querySelector('[data-role="adj-new-opt-type"]');
+  if(!newOpt) return;
+  const tag=closeSel.value||'';
+  const meta=ST.tags.find(t=>t.section==='entry' && t.tag===tag);
+  if(meta?.opt==='CE' || meta?.opt==='PE'){
+    newOpt.value=meta.opt;
+  }
+}
+function addAdjSwapRow(id,seed=null){
+  const box=$(`adjSwapRows_${id}`);
+  if(!box) return;
+  const row=document.createElement('div');
+  row.className='cond-area';
+  row.style.marginTop='8px';
+  row.style.borderColor='rgba(24,184,212,.2)';
+  row.style.background='rgba(24,184,212,.04)';
+  row.innerHTML=`
+    <div class="cond-area" style="margin-bottom:8px;border-color:rgba(240,82,82,.24);background:rgba(240,82,82,.06);">
+      <div class="ca-title" style="color:var(--danger);">Close Leg</div>
+      <div class="f-row c2" style="margin-bottom:0;">
+        <div class="f-group"><label class="f-label">Leg to Close (Tag)</label>
+          <select class="f-select tag-sel" data-role="adj-close-tag" onchange="syncAdjNewOptType(this)">${tagOpts()}</select>
+        </div>
+        <div class="f-group" style="display:flex;align-items:flex-end;justify-content:flex-end;">
+          <button class="btn btn-danger btn-sm" type="button" onclick="this.closest('.cond-area').parentElement.remove()">Remove Pair</button>
+        </div>
+      </div>
+    </div>
+    <div class="cond-area" style="margin-bottom:0;border-color:rgba(24,184,212,.28);background:rgba(24,184,212,.07);">
+      <div class="ca-title ca-cyan">Open New Leg</div>
+      <div class="f-row c4">
+        <div class="f-group"><label class="f-label">New Buy / Sell</label>
+          <select class="f-select" data-role="adj-new-side">
+            <option value="SELL">SELL</option><option value="BUY">BUY</option>
+          </select>
+        </div>
+        <div class="f-group"><label class="f-label">New CE / PE</label>
+          <select class="f-select" data-role="adj-new-opt-type">
+            <option value="CE">CE</option><option value="PE">PE</option>
+          </select>
+        </div>
+        <div class="f-group"><label class="f-label">New Strike Select</label>
+          <select class="f-select" data-role="adj-new-strike-sel">
+            <option value="atm">ATM</option><option value="atm+1">ATM+1</option>
+            <option value="atm-1">ATM-1</option><option value="atm+2">ATM+2</option>
+            <option value="atm-2">ATM-2</option><option value="delta">By Delta</option>
+            <option value="strike">By Strike</option><option value="premium">By Premium</option>
+            <option value="otm_pct">OTM %</option>
+          </select>
+        </div>
+      </div>
+      <div class="f-row c4">
+        <div class="f-group"><label class="f-label">New Strike / Value</label>
+          <input class="f-input" data-role="adj-new-strike-val" placeholder="e.g. 0.3 / 200">
+        </div>
+        <div class="f-group"><label class="f-label">New Lots</label>
+          <input class="f-input" data-role="adj-new-lots" type="number" value="1" min="1">
+        </div>
+        <div class="f-group"><label class="f-label">New Order Type</label>
+          <select class="f-select" data-role="adj-new-order-type">
+            <option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option>
+            <option value="SL">SL</option><option value="SLM">SLM</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  `;
+  box.appendChild(row);
+  const closeSel=row.querySelector('[data-role="adj-close-tag"]');
+  if(seed){
+    setSel(closeSel,seed.close_tag||'');
+    setSel(row.querySelector('[data-role="adj-new-side"]'),seed.new_leg?.side||'SELL');
+    setSel(row.querySelector('[data-role="adj-new-opt-type"]'),seed.new_leg?.option_type||'CE');
+    setSel(row.querySelector('[data-role="adj-new-strike-sel"]'),seed.new_leg?.strike_selection||'atm');
+    const sv1=row.querySelector('[data-role="adj-new-strike-val"]'); if(sv1) sv1.value=seed.new_leg?.strike_value??'';
+    const sv2=row.querySelector('[data-role="adj-new-lots"]'); if(sv2) sv2.value=seed.new_leg?.lots??1;
+    setSel(row.querySelector('[data-role="adj-new-order-type"]'),seed.new_leg?.order_type||'MARKET');
+    if(!seed.new_leg?.option_type) syncAdjNewOptType(closeSel);
+  } else {
+    syncAdjNewOptType(closeSel);
+  }
+}
 function copyThenToElse(id){
   const card=$(`lc_entry_${id}`);
   if(!card) return;
@@ -1198,9 +1549,6 @@ function copyThenToElse(id){
     const b=card.querySelector(`[data-role="${to}"]`);
     if(a&&b) b.value=a.value;
   });
-  const em=card.querySelector('[data-role="execution-method"]');
-  const eem=card.querySelector('[data-role="else-execution-method"]');
-  if(em&&eem) eem.value=em.value;
 }
 function hasEntryLegs(){
   return (document.querySelectorAll('#entryLegs .leg-card').length||0)>0;
@@ -1267,15 +1615,16 @@ function addAdjLeg(){
     </div>
     <div class="exec-params" style="border-color:rgba(240,160,48,.17);background:rgba(240,160,48,.03);">
       <div class="exec-title" style="color:var(--warning);">Adjustment Action</div>
-      <div class="f-row c3">
+      <div class="f-row">
         <div class="f-group"><label class="f-label">Action Type</label>
-          <select class="f-select" data-role="adj-action">${ADJ_ACTS.map(a=>`<option value="${a}">${a.replace(/_/g,' ')}</option>`).join('')}</select>
+          <select class="f-select" data-role="adj-action" onchange="onAdjActionChange(${id})">${ADJ_ACTS.map(a=>`<option value="${a}">${prettyAdjAction(a)}</option>`).join('')}</select>
         </div>
-        <div class="f-group"><label class="f-label">Target Leg (Tag)</label>
-          <select class="f-select tag-sel" data-role="adj-target">${tagOpts()}</select>
-        </div>
-        <div class="f-group"><label class="f-label">Shift Strikes By</label>
-          <input class="f-input" data-role="shift-by" placeholder="e.g. 1 or −2" type="number">
+      </div>
+      <div class="lock-note" data-role="adj-action-help" style="margin-top:4px;color:var(--sub);"></div>
+      <div id="adjSwapRows_${id}"></div>
+      <div class="f-row">
+        <div class="f-group" style="display:flex;align-items:flex-end;">
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addAdjSwapRow(${id})">+ Add Leg Pair</button>
         </div>
       </div>
       <div class="f-row c2">
@@ -1287,6 +1636,9 @@ function addAdjLeg(){
 </div>`;
   const wrap=document.createElement('div'); wrap.innerHTML=html;
   $('adjLegs').appendChild(wrap.firstElementChild);
+  addAdjSwapRow(id);
+  applyAdjActionUI(id);
+  applyAdjActionLock(id);
   updBadge('adj');
 }
 
@@ -1650,6 +2002,104 @@ function rdCombinedIfElse(prefix){
   const elseBlock=useElse?rdCombinedBlock(`${prefix}Else`):{operator:'AND',rules:[]};
   return {ifBlock,elseBlock,useElse:useElse && elseBlock.rules.length>0};
 }
+function rdEntryCombinedCustomLegs(){
+  return [...document.querySelectorAll('#entryCombinedLegRows .cond-area')].map(row=>({
+    side:row.querySelector('[data-role="ec-side"]')?.value||'SELL',
+    instrument:'OPTION',
+    option_type:row.querySelector('[data-role="ec-opt"]')?.value||'CE',
+    strike_selection:row.querySelector('[data-role="ec-strike-sel"]')?.value||'atm',
+    strike_value:mn(row.querySelector('[data-role="ec-strike-val"]')?.value),
+    lots:mn(row.querySelector('[data-role="ec-lots"]')?.value)||1,
+    order_type:row.querySelector('[data-role="ec-order"]')?.value||'MARKET'
+  }));
+}
+function rdCombinedAdjAction(){
+  const type=gv('adjCombinedActionType')||'simple_close_open_new';
+  const targets=String(gv('adjCombinedTargets')).split(',').map(x=>x.trim()).filter(Boolean);
+  const details={source:'combined_adjustment',target_leg_tags:targets};
+  if(type==='shift_strikes'){
+    details.shift_by=mn(gv('adjCombinedShiftBy'));
+  }
+  if(type==='simple_close_open_new'){
+    const rows=[...( $('adjCombinedSwapRows')?.children || [] )];
+    details.leg_swaps=rows.map(row=>({
+      close_tag:row.querySelector('[data-role="cadj-close-tag"]')?.value||'',
+      new_leg:{
+        side:row.querySelector('[data-role="cadj-new-side"]')?.value||'SELL',
+        instrument:'OPTION',
+        option_type:row.querySelector('[data-role="cadj-new-opt-type"]')?.value||'CE',
+        strike_selection:row.querySelector('[data-role="cadj-new-strike-sel"]')?.value||'atm',
+        strike_value:mn(row.querySelector('[data-role="cadj-new-strike-val"]')?.value),
+        lots:mn(row.querySelector('[data-role="cadj-new-lots"]')?.value)||1,
+        order_type:row.querySelector('[data-role="cadj-new-order-type"]')?.value||'MARKET'
+      }
+    })).filter(x=>x.close_tag);
+  }
+  return {type,details};
+}
+function rdCombinedExitAction(){
+  return {
+    type:gv('exitCombinedActionType')||'close_all_positions',
+    details:{
+      scope:gv('exitCombinedScope')||'all',
+      order_type:gv('exitCombinedOrderType')||'MARKET'
+    }
+  };
+}
+function validateCombinedActions(entryCombined,adjCombined,exitCombined,entryLegs,adjRules,exitLegs){
+  const hasIndividualAdj=(adjRules||[]).length>0;
+  const hasIndividualExit=(exitLegs||[]).length>0;
+  if(entryCombined.ifBlock.rules.length){
+    const t=gv('entryCombinedActionType')||'auto_infer';
+    const customLegs=rdEntryCombinedCustomLegs();
+    if(t==='custom' && !customLegs.length && !entryLegs.length){
+      return 'Combined Entry Action "Custom" requires custom legs or entry legs.';
+    }
+    if(t!=='custom' && t!=='auto_infer' && !entryLegs.length){
+      return 'Combined Entry action requires at least one Entry leg.';
+    }
+  }
+  for(const [i,r] of (adjRules||[]).entries()){
+    const swaps=(r?.action?.details?.leg_swaps||[]);
+    const tags=swaps.map(s=>s.close_tag).filter(Boolean);
+    if(tags.length!==new Set(tags).size){
+      return `Adjustment Rule ${i+1}: same close leg appears multiple times.`;
+    }
+    if(r?.action?.type==='simple_close_open_new' && !tags.length){
+      return `Adjustment Rule ${i+1}: add at least one close/open leg pair.`;
+    }
+  }
+  if(adjCombined.ifBlock.rules.length){
+    const a=rdCombinedAdjAction();
+    if(a.type==='shift_strikes' && (a.details.shift_by===null || !a.details.target_leg_tags.length)){
+      return 'Combined Adjustment "Shift Strikes" needs targets and shift value.';
+    }
+    if(a.type==='simple_close_open_new' && !(a.details.leg_swaps||[]).length){
+      return 'Combined Adjustment "Simple Close + Open New" needs at least one close/open pair.';
+    }
+    if(a.type==='simple_close_open_new'){
+      const tags=(a.details.leg_swaps||[]).map(s=>s.close_tag).filter(Boolean);
+      if(tags.length!==new Set(tags).size){
+        return 'Combined Adjustment: duplicate close-leg tags found in action pairs.';
+      }
+    }
+    if(hasIndividualAdj && a.type!=='do_nothing'){
+      return 'Use either Individual Adjustment rules OR Combined Adjustment action, not both active actions together.';
+    }
+  }
+  if(exitCombined.ifBlock.rules.length){
+    const x=rdCombinedExitAction();
+    if(x.type!=='do_nothing' && !x.details.order_type){
+      return 'Combined Exit action requires order type.';
+    }
+    if(hasIndividualExit && x.type!=='do_nothing'){
+      return 'Use either Individual Exit leg rules OR Combined Exit action, not both active actions together.';
+    }
+  } else if(hasIndividualExit===false){
+    return 'No Exit action configured. Add Combined Exit conditions/action or at least one Exit leg rule.';
+  }
+  return '';
+}
 
 function rdEntryLegs(){
   return [...document.querySelectorAll('#entryLegs .leg-card')].map((card,idx)=>{
@@ -1694,15 +2144,29 @@ function rdAdjRules(){
     const id=parseInt(card.id.split('_').pop());
     const mode=card.querySelector(`[id^="cm_adj_"]`)?.value||'and';
     const ruleType=modeToRuleType(mode);
-    const targetTag=card.querySelector('[data-role="adj-target"]')?.value||'';
+    const actionType='simple_close_open_new';
+    const swapBox=$(`adjSwapRows_${id}`);
+    const swaps=[...(swapBox?.children||[])].map(row=>({
+      close_tag:row.querySelector('[data-role="adj-close-tag"]')?.value||'',
+      new_leg:{
+        side:row.querySelector('[data-role="adj-new-side"]')?.value||'SELL',
+        instrument:'OPTION',
+        option_type:row.querySelector('[data-role="adj-new-opt-type"]')?.value||'CE',
+        strike_selection:row.querySelector('[data-role="adj-new-strike-sel"]')?.value||'atm',
+        strike_value:mn(row.querySelector('[data-role="adj-new-strike-val"]')?.value),
+        lots:mn(row.querySelector('[data-role="adj-new-lots"]')?.value)||1,
+        order_type:row.querySelector('[data-role="adj-new-order-type"]')?.value||'MARKET'
+      }
+    })).filter(s=>s.close_tag);
+    const details={leg_swaps:swaps,target_leg_tags:swaps.map(s=>s.close_tag)};
     return {priority:idx+1,name:`Adjustment Rule ${idx+1}`,rule_type:ruleType,condition_mode:mode,
       conditions:rdGroupedEntryBlock(`cl_adj_${id}`,mode),
-      action:{type:card.querySelector('[data-role="adj-action"]')?.value||'custom',
-        target_tag:targetTag,
-        shift_by:mn(card.querySelector('[data-role="shift-by"]')?.value),
+      action:{type:actionType,
+        target_tag:'',
+        shift_by:null,
         max_per_day:mn(card.querySelector('[data-role="max-adj"]')?.value)||2,
         cooldown_sec:mn(card.querySelector('[data-role="cooldown"]')?.value)||60,
-        details:{target_leg_tags:targetTag?[targetTag]:[]}}};
+        details}};
   });
 }
 function rdExitLegs(){
@@ -1720,6 +2184,56 @@ function rdExitLegs(){
         trailing:mn(card.querySelector('[data-role="leg-trail"]')?.value)}};
   });
 }
+function updateLiveSummaries(){
+  const entryLegCount=document.querySelectorAll('#entryLegs .leg-card').length;
+  const entryIfCount=document.querySelectorAll('#entryCombined .cond-row').length;
+  const entryElseCount=document.querySelectorAll('#entryCombinedElse .cond-row').length;
+  const entryAct=gv('entryCombinedActionType')||'auto_infer';
+  const entryTxt=[
+    `Entry legs: ${entryLegCount}`,
+    `Combined IF conditions: ${entryIfCount}`,
+    `Combined ELSE conditions: ${entryElseCount}`,
+    `Combined action: ${entryAct}`
+  ].join('\n');
+  if($('entrySummary')) $('entrySummary').textContent=entryTxt;
+
+  const adjLegCount=document.querySelectorAll('#adjLegs .leg-card').length;
+  const adjIfCount=document.querySelectorAll('#adjCombined .cond-row').length;
+  const adjElseCount=document.querySelectorAll('#adjCombinedElse .cond-row').length;
+  const adjAct=gv('adjCombinedActionType')||'simple_close_open_new';
+  const adjPairs=document.querySelectorAll('#adjCombinedSwapRows [data-role="cadj-close-tag"]').length;
+  const adjConflict=(adjIfCount>0 && adjAct!=='do_nothing' && adjLegCount>0);
+  const adjTxt=[
+    `Adjustment rules: ${adjLegCount}`,
+    `Combined IF conditions: ${adjIfCount}`,
+    `Combined ELSE conditions: ${adjElseCount}`,
+    `Combined action: ${adjAct}`,
+    `Combined action pairs: ${adjPairs}`,
+    `Conflict check: ${adjConflict?'CONFLICT (combined + individual actions active)':'OK'}`
+  ].join('\n');
+  if($('adjSummary')) $('adjSummary').textContent=adjTxt;
+
+  const exitLegCount=document.querySelectorAll('#exitLegs .leg-card').length;
+  const exitIfCount=document.querySelectorAll('#exitCombined .cond-row').length;
+  const exitElseCount=document.querySelectorAll('#exitCombinedElse .cond-row').length;
+  const exitAct=gv('exitCombinedActionType')||'close_all_positions';
+  const exitConflict=(exitIfCount>0 && exitAct!=='do_nothing' && exitLegCount>0);
+  const exitTxt=[
+    `Exit leg rules: ${exitLegCount}`,
+    `Combined IF conditions: ${exitIfCount}`,
+    `Combined ELSE conditions: ${exitElseCount}`,
+    `Combined action: ${exitAct}`,
+    `Conflict check: ${exitConflict?'CONFLICT (combined + individual actions active)':'OK'}`
+  ].join('\n');
+  if($('exitSummary')) $('exitSummary').textContent=exitTxt;
+}
+const scheduleSummaryUpdate=(()=>{
+  let t=null;
+  return ()=>{
+    clearTimeout(t);
+    t=setTimeout(updateLiveSummaries,40);
+  };
+})();
 
 /* ════ SAVE ════ */
 async function saveStrategy(){
@@ -1733,7 +2247,11 @@ async function saveStrategy(){
   const entryCombined=rdCombinedIfElse('entryCombined');
   const adjCombined=rdCombinedIfElse('adjCombined');
   const exitCombined=rdCombinedIfElse('exitCombined');
-  const adjCombinedTargets=String(gv('adjCombinedTargets')).split(',').map(x=>x.trim()).filter(Boolean);
+  const entryCombinedActionType=gv('entryCombinedActionType')||'auto_infer';
+  const adjCombinedAction=rdCombinedAdjAction();
+  const exitCombinedAction=rdCombinedExitAction();
+  const validationErr=validateCombinedActions(entryCombined,adjCombined,exitCombined,entryLegs,adjRules,exitLegs);
+  if(validationErr){ showAlert(validationErr,'error'); return; }
   if(adjCombined.ifBlock.rules.length){
     adjRules.push({
       priority:adjRules.length+1,
@@ -1742,7 +2260,7 @@ async function saveStrategy(){
       condition_mode:'and',
       conditions:adjCombined.ifBlock,
       else_conditions_block:adjCombined.useElse?adjCombined.elseBlock:null,
-      action:{type:'shift_strikes',details:{source:'combined_adjustment',target_leg_tags:adjCombinedTargets}}
+      action:adjCombinedAction
     });
   }
 
@@ -1759,6 +2277,8 @@ async function saveStrategy(){
   const expiryAllowed=$('togExpiry')?.checked||false;
   const maxLots=mn(gv('rMaxLegs'))||4;
   const maxCap=mn(gv('rMaxCap'));
+  const entryCombinedCustomLegs=rdEntryCombinedCustomLegs();
+  const resolvedEntryType=entryCombinedActionType==='auto_infer'?inferEntry(entryLegs):entryCombinedActionType;
   const payload={
     schema_version:'3.0',id,name,description:gv('sDesc'),enabled:true,status:'IDLE',strategy_type:'custom',
     identity:{exchange,underlying:sym,instrument_type:exchange==='MCX'?'OPTFUT':'OPTIDX',
@@ -1773,7 +2293,13 @@ async function saveStrategy(){
     entry:{rule_type:'if_then',
       conditions:entryCombined.ifBlock,
       else_conditions_block:entryCombined.useElse?entryCombined.elseBlock:null,
-      action:{type:inferEntry(entryLegs),legs:entryLegs}},
+      action:{type:resolvedEntryType,
+        legs:(resolvedEntryType==='custom' && entryCombinedCustomLegs.length)?entryCombinedCustomLegs:entryLegs,
+        details:{
+          order_type_override:gv('entryCombinedOrderType')||null,
+          lots_multiplier:mn(gv('entryCombinedLotsMultiplier'))||1,
+          custom_legs:entryCombinedCustomLegs
+        }}},
     adjustment:{enabled:adjRules.length>0,check_interval_min:5,cooldown_seconds:60,rules:adjRules},
     exit:{rule_type:'if_any',
       target_profit:{amount:mn(gv('exitTargetAmt')),pct:mn(gv('exitTargetPct')),action:gv('exitTargetAction')},
@@ -1784,7 +2310,7 @@ async function saveStrategy(){
         max_lots:maxLots,max_capital:maxCap},
       conditions:{operator:'OR',rules:[...exitCombined.ifBlock.rules,{parameter:'time_current',comparator:'>=',value:exitTime,description:'Scheduled exit'}]},
       else_conditions_block:exitCombined.useElse?exitCombined.elseBlock:null,
-      action:{type:'close_all_positions'},leg_rules:exitLegs},
+      action:exitCombinedAction,leg_rules:exitLegs},
     risk_management:{
       max_loss_per_day:mn(gv('exitSlAmt')),
       max_trades_per_day:null,
@@ -1876,10 +2402,23 @@ function populateForm(s){
   $('entryLegs').innerHTML='';$('adjLegs').innerHTML='';$('exitLegs').innerHTML='';
   $('entryCombined').innerHTML='';$('adjCombined').innerHTML='';$('exitCombined').innerHTML='';
   $('entryCombinedElse').innerHTML='';$('adjCombinedElse').innerHTML='';$('exitCombinedElse').innerHTML='';
+  if($('entryCombinedLegRows')) $('entryCombinedLegRows').innerHTML='';
+  if($('adjCombinedSwapRows')) $('adjCombinedSwapRows').innerHTML='';
   if($('use_else_cmb_entry')) $('use_else_cmb_entry').checked=false;
   if($('use_else_cmb_adj')) $('use_else_cmb_adj').checked=false;
   if($('use_else_cmb_exit')) $('use_else_cmb_exit').checked=false;
   onCombinedElseToggle('entry');onCombinedElseToggle('adj');onCombinedElseToggle('exit');
+  setSel($('entryCombinedActionType'),'auto_infer');
+  setSel($('adjCombinedActionType'),'simple_close_open_new');
+  setSel($('exitCombinedActionType'),'close_all_positions');
+  sv('entryCombinedOrderType','');
+  sv('entryCombinedLotsMultiplier',1);
+  sv('adjCombinedShiftBy','');
+  sv('exitCombinedScope','all');
+  sv('exitCombinedOrderType','MARKET');
+  onEntryCombinedActionTypeChange();
+  onAdjCombinedActionTypeChange();
+  onExitCombinedActionTypeChange();
   sv('adjCombinedTargets','');
   ST.cnt={entry:0,adj:0,exit:0};ST.tags=[];
   refreshAdjustmentAvailability();
@@ -1904,7 +2443,6 @@ function populateForm(s){
     const elseRows=leg.else_conditions?.length ? leg.else_conditions : [];
     const elseSeeds=blockToGroupSeeds(leg.else_conditions_block, elseRows);
     elseSeeds.forEach(seed=>addCondGroup(`cl_entry_else_${id}`,'ELSE',id,seed));
-    setSel(card.querySelector('[data-role="execution-method"]'),leg.then_action?.selection_metric||leg.execution?.selection_metric||'');
     setSel(card.querySelector('[data-role="entry-order-type"]'),leg.then_action?.order_type||'');
     const elseAction=leg.else_action||null;
     if(elseAction){
@@ -1929,6 +2467,13 @@ function populateForm(s){
       onCombinedElseToggle('entry');
       eeSeeds.forEach(seed=>addCombinedGroup('entryCombinedElse','ELSE',seed));
     }
+    setSel($('entryCombinedActionType'),s.entry?.action?.type||'auto_infer');
+    setSel($('entryCombinedOrderType'),s.entry?.action?.details?.order_type_override||'');
+    sv('entryCombinedLotsMultiplier',s.entry?.action?.details?.lots_multiplier??1);
+    if($('entryCombinedLegRows')) $('entryCombinedLegRows').innerHTML='';
+    const ecLegs=(s.entry?.action?.details?.custom_legs||((s.entry?.action?.type==='custom')?(s.entry?.action?.legs||[]):[]));
+    ecLegs.forEach(leg=>addEntryCombinedLegRow(leg));
+    onEntryCombinedActionTypeChange();
   }
   // Restore adj
   (s.adjustment?.rules||[]).forEach(rule=>{
@@ -1942,12 +2487,27 @@ function populateForm(s){
         onCombinedElseToggle('adj');
         aeSeeds.forEach(seed=>addCombinedGroup('adjCombinedElse','ELSE',seed));
       }
+      setSel($('adjCombinedActionType'),rule.action?.type||'simple_close_open_new');
       sv('adjCombinedTargets',(rule.action?.details?.target_leg_tags||[]).join(', '));
+      sv('adjCombinedShiftBy',rule.action?.details?.shift_by??'');
+      if($('adjCombinedSwapRows')) $('adjCombinedSwapRows').innerHTML='';
+      (rule.action?.details?.leg_swaps||[]).forEach(seed=>addCombinedAdjSwapRow(seed));
+      if(!(rule.action?.details?.leg_swaps||[]).length) addCombinedAdjSwapRow();
+      onAdjCombinedActionTypeChange();
       return;
     }
     addAdjLeg();const id=ST.cnt.adj;
     const card=$(`lc_adj_${id}`);if(!card)return;
-    setSel(card.querySelector('[data-role="adj-action"]'),rule.action?.type||'custom');
+    setSel(card.querySelector('[data-role="adj-action"]'),'simple_close_open_new');
+    const maxAdj=card.querySelector('[data-role="max-adj"]'); if(maxAdj) maxAdj.value=rule.action?.max_per_day??2;
+    const cooldown=card.querySelector('[data-role="cooldown"]'); if(cooldown) cooldown.value=rule.action?.cooldown_sec??60;
+    const swaps=Array.isArray(rule.action?.details?.leg_swaps) ? rule.action.details.leg_swaps : [];
+    const fallbackClose=rule.action?.target_tag||rule.action?.details?.target_leg_tags?.[0]||'';
+    const fallbackNew=rule.action?.details?.new_leg||null;
+    const seeds=swaps.length ? swaps : (fallbackClose&&fallbackNew ? [{close_tag:fallbackClose,new_leg:fallbackNew}] : []);
+    const wrap=$(`adjSwapRows_${id}`); if(wrap) wrap.innerHTML='';
+    (seeds.length?seeds:[null]).forEach(seed=>addAdjSwapRow(id,seed));
+    applyAdjActionUI(id);
     const mc=$(`cm_adj_${id}`);if(mc)mc.value=rule.condition_mode||'if_then';
     const adjRows=Array.isArray(rule.conditions)?rule.conditions:[];
     const adjSeeds=blockToGroupSeeds(rule.conditions,adjRows);
@@ -1987,9 +2547,14 @@ function populateForm(s){
       onCombinedElseToggle('exit');
       xSeeds.forEach(seed=>addCombinedGroup('exitCombinedElse','ELSE',seed));
     }
+    setSel($('exitCombinedActionType'),s.exit?.action?.type||'close_all_positions');
+    setSel($('exitCombinedScope'),s.exit?.action?.details?.scope||'all');
+    setSel($('exitCombinedOrderType'),s.exit?.action?.details?.order_type||'MARKET');
+    onExitCombinedActionTypeChange();
   }
   updBadge('entry');updBadge('adj');updBadge('exit');
   refreshAdjustmentAvailability();
+  updateLiveSummaries();
   showAlert(`Loaded: ${s.name}`,'success');
   switchSec('identity',document.querySelector('.nav-tab[data-sec="identity"]'));
 }
@@ -1999,14 +2564,29 @@ function resetForm(){
   ['sName','sId','sDesc'].forEach(id=>$(id)&&($(id).value=''));sv('sLots',1);
   ['entryLegs','adjLegs','exitLegs','entryCombined','adjCombined','exitCombined'].forEach(id=>$(id).innerHTML='');
   ['entryCombinedElse','adjCombinedElse','exitCombinedElse'].forEach(id=>$(id).innerHTML='');
+  if($('entryCombinedLegRows')) $('entryCombinedLegRows').innerHTML='';
+  if($('adjCombinedSwapRows')) $('adjCombinedSwapRows').innerHTML='';
   if($('use_else_cmb_entry')) $('use_else_cmb_entry').checked=false;
   if($('use_else_cmb_adj')) $('use_else_cmb_adj').checked=false;
   if($('use_else_cmb_exit')) $('use_else_cmb_exit').checked=false;
   onCombinedElseToggle('entry');onCombinedElseToggle('adj');onCombinedElseToggle('exit');
+  setSel($('entryCombinedActionType'),'auto_infer');
+  setSel($('adjCombinedActionType'),'simple_close_open_new');
+  setSel($('exitCombinedActionType'),'close_all_positions');
+  sv('entryCombinedOrderType','');
+  sv('entryCombinedLotsMultiplier',1);
+  sv('adjCombinedShiftBy','');
+  sv('exitCombinedScope','all');
+  sv('exitCombinedOrderType','MARKET');
+  onEntryCombinedActionTypeChange();
+  onAdjCombinedActionTypeChange();
+  onExitCombinedActionTypeChange();
+  addCombinedAdjSwapRow();
   sv('adjCombinedTargets','');
   ST.cnt={entry:0,adj:0,exit:0};ST.tags=[];
   updBadge('entry');updBadge('adj');updBadge('exit');
   refreshAdjustmentAvailability();
+  updateLiveSummaries();
   showAlert('Form reset.','success');
 }
 function closeBuilder(){ window.location.href='/dashboard/web/strategy.html'; }
@@ -2014,12 +2594,20 @@ function closeModal(id){ $(id)?.classList.remove('open'); }
 
 document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');});});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));});
+document.addEventListener('input',scheduleSummaryUpdate);
+document.addEventListener('change',scheduleSummaryUpdate);
+document.addEventListener('click',scheduleSummaryUpdate);
 
 /* ════ INIT ════ */
 async function init(){
   await loadSymbols();
   await loadIndexParams();
   refreshAdjustmentAvailability();
+  onEntryCombinedActionTypeChange();
+  onAdjCombinedActionTypeChange();
+  onExitCombinedActionTypeChange();
+  if($('adjCombinedSwapRows') && !$('adjCombinedSwapRows').children.length) addCombinedAdjSwapRow();
+  updateLiveSummaries();
   const p=new URLSearchParams(window.location.search);
   const editName=(p.get('edit')||'').trim();
   if(editName){
@@ -2036,3 +2624,4 @@ document.addEventListener('DOMContentLoaded',init);
 </script>
 </body>
 </html>
+

@@ -18,7 +18,7 @@
 # ======================================================================
 from functools import lru_cache
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 import logging
 from uuid import uuid4
 from pathlib import Path
@@ -47,19 +47,19 @@ from shoonya_platform.strategy_runner.config_schema import validate_config
 
 from shoonya_platform.persistence.audit_strategy import log_audit
 
-def ensure_complete_config(cfg):
+def ensure_complete_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg or {}
 
 
-def convert_v2_to_factory_format(cfg):
+def convert_v2_to_factory_format(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg or {}
 
 
-def is_v2_config(cfg):
+def is_v2_config(cfg: Dict[str, Any]) -> bool:
     return False
 
 
-def get_factory_config(cfg):
+def get_factory_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg or {}
 
 from shoonya_platform.api.dashboard.api.schemas import (
@@ -712,9 +712,9 @@ def delete_orphan_rule(
             str(Path(__file__).resolve().parents[4] / "shoonya_platform" / "persistence" / "data" / "orders.db"),
             timeout=5
         )
+        rows_updated = 0
         try:
             cur = db.cursor()
-            
             cur.execute(
                 """
                 UPDATE control_intents
@@ -723,13 +723,12 @@ def delete_orphan_rule(
                 """,
                 (rule_id,)
             )
-            
-            if cur.rowcount == 0:
-                raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
-            
+            rows_updated = cur.rowcount
             db.commit()
         finally:
             db.close()
+        if rows_updated == 0:
+            raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
         
         return {
             "rule_id": rule_id,
@@ -737,6 +736,8 @@ def delete_orphan_rule(
             "message": "Rule deactivated - monitoring stopped"
         }
         
+    except HTTPException:
+        raise  # Re-raise 404/409/etc. without wrapping in 500
     except Exception as e:
         logger.exception(f"Failed to delete rule {rule_id}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1204,7 +1205,7 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
             can_change = True
             mode_change_reason = None
             if service:
-                mode = service.get_strategy_mode(slug)
+                mode = service.get_strategy_mode(slug) if hasattr(service, "get_strategy_mode") else "LIVE"
                 has_pos = service.has_position(slug) if hasattr(service, "has_position") else False
                 if has_pos:
                     can_change = False

@@ -902,7 +902,10 @@ class StrategyExecutorService:
         # Utilities
         self.reconciler = BrokerReconciler(bot)
         self.verifier = ExecutionVerifier(bot)
-        
+
+        self._mode_change_dict_lock = threading.Lock()
+        self._mode_change_lock: Dict[str, threading.Lock] = {}
+
         # Strategy registry
         self._strategies: Dict[str, Dict] = {}
         self._readers: Dict[str, MarketReader] = {}
@@ -949,6 +952,12 @@ class StrategyExecutorService:
         )
         return ""
 
+    def acquire_mode_change_lock(self, strategy_name: str) -> threading.Lock:
+        with self._mode_change_dict_lock:
+            if strategy_name not in self._mode_change_lock:
+                self._mode_change_lock[strategy_name] = threading.Lock()
+            return self._mode_change_lock[strategy_name]
+            
     def _resolve_test_mode(self, config: Dict[str, Any]) -> Optional[str]:
         """
         Resolve OMS test_mode from strategy config.
@@ -1101,18 +1110,6 @@ class StrategyExecutorService:
         if self._has_paper_mode_flag(config):
             return "SUCCESS"
         return None
-
-
-    def has_position(self, strategy_name: str) -> bool:
-        """Return True if the strategy currently holds an open position."""
-        exec_state = self._exec_states.get(strategy_name)
-        return exec_state.has_position if exec_state else False
-
-
-    def has_position(self, strategy_name: str) -> bool:
-        """Return True if the strategy currently holds an open position."""
-        exec_state = self._exec_states.get(strategy_name)
-        return exec_state.has_position if exec_state else False
 
 
     def has_position(self, strategy_name: str) -> bool:
@@ -1833,6 +1830,7 @@ class StrategyExecutorService:
             )
 
             self.reload_strategy_config(name)
+        config = self._strategies[name]  # use updated config
         result = evaluate_entry_rules(config, engine_state)
         
         if not result or not isinstance(result, RuleResult) or not result.triggered:
@@ -2142,7 +2140,7 @@ class StrategyExecutorService:
         # CRITICAL: Verify execution
         ce_symbol = ce_option.get("trading_symbol", "") if ce_option else ""
         pe_symbol = pe_option.get("trading_symbol", "") if pe_option else ""
-        
+
         if not paper_mode:
             is_verified, reason = self.verifier.verify_entry(name, ce_symbol, pe_symbol, timeout_sec=30)
 
@@ -2150,7 +2148,6 @@ class StrategyExecutorService:
                 logger.error(f"❌ ENTRY VERIFICATION FAILED: {name} | {reason}")
 
                 # Fast recovery: if broker already has positions, reconstruct state now
-                # instead of waiting for the periodic reconciler.
                 basic_cfg = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
                 identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
                 exchange = basic_cfg.get("exchange") or identity_cfg.get("exchange") or "NFO"
@@ -2172,10 +2169,11 @@ class StrategyExecutorService:
                         f"Reason: {reason}\n"
                         f"Check OMS logs"
                     )
-
                 return
+            # Verification succeeded → continue to update state
         else:
             logger.info(f"🧪 PAPER MODE ENTRY: {name} | verification skipped")
+
         # Update execution state
         exec_state.has_position = True
         if ce_option:
@@ -2190,7 +2188,7 @@ class StrategyExecutorService:
             exec_state.ce_qty = 0
             exec_state.ce_side = ""
             exec_state.ce_entry_price = 0.0
-        
+
         if pe_option:
             exec_state.pe_symbol = pe_symbol
             exec_state.pe_strike = float(pe_option.get("strike", 0))
@@ -2203,7 +2201,7 @@ class StrategyExecutorService:
             exec_state.pe_qty = 0
             exec_state.pe_side = ""
             exec_state.pe_entry_price = 0.0
-        
+
         exec_state.entry_timestamp = time.time()
         exec_state.total_trades_today += len(legs)
 
@@ -2227,9 +2225,9 @@ class StrategyExecutorService:
                 entry_price=float(pe_option.get("ltp", 0) or 0.0),
                 source="ENTRY",
             )
-        
+
         self.state_mgr.save(exec_state)
-        
+
         logger.info(
             f"{'PAPER ENTRY COMPLETE' if paper_mode else 'ENTRY COMPLETE'}: {name}"
         )
@@ -3082,7 +3080,7 @@ class StrategyExecutorService:
     ):
         """Execute exit via broker (live) or virtual close (paper mode)."""
         logger.info(f"EXECUTING EXIT: {name} | reason={reason}")
-        
+
         try:
             paper_mode = self._is_paper_mode(config)
             if not paper_mode:
@@ -3093,7 +3091,7 @@ class StrategyExecutorService:
                     reason=reason,
                     source="STRATEGY_EXECUTOR",
                 )
-                
+
                 # CRITICAL: Verify exit completed
                 symbols = [exec_state.ce_symbol, exec_state.pe_symbol]
                 is_verified, verify_reason = self.verifier.verify_exit(
@@ -3101,10 +3099,10 @@ class StrategyExecutorService:
                     symbols=symbols,
                     timeout_sec=30,
                 )
-                
+
                 if not is_verified:
                     logger.error(f"EXIT VERIFICATION FAILED: {name} | {verify_reason}")
-                    
+
                     if self.bot.telegram_enabled:
                         self.bot.send_telegram(
                             f"âš ï¸ EXIT INCOMPLETE\n"
@@ -3112,11 +3110,19 @@ class StrategyExecutorService:
                             f"Reason: {verify_reason}\n"
                             f"Manual check required"
                         )
-                    
+
+                    # Fast recovery: reconcile state
+                    basic_cfg = config.get("basic", {}) if isinstance(config.get("basic"), dict) else {}
+                    identity_cfg = config.get("identity", {}) if isinstance(config.get("identity"), dict) else {}
+                    exchange = basic_cfg.get("exchange") or identity_cfg.get("exchange") or "NFO"
+                    underlying = basic_cfg.get("underlying") or identity_cfg.get("underlying") or "NIFTY"
+                    _, reconcile_reason = self.reconciler.reconcile(exec_state, exchange, underlying)
+                    if reconcile_reason in ("forced_state_clear", "reconstructed_from_broker", "qty_sync_forced"):
+                        self.state_mgr.save(exec_state)
                     return
             else:
                 logger.info(f"PAPER MODE EXIT: {name} | broker exit skipped")
-            
+
             # FIXED: Get engine_state from registry to access combined_pnl
             engine_state = self._engine_states.get(name)
             if engine_state:
@@ -3156,7 +3162,7 @@ class StrategyExecutorService:
                         realized_pnl=0.0,
                         exit_price=None,
                     )
-            
+
             # Clear position state
             exec_state.has_position = False
             exec_state.ce_symbol = ""
@@ -3169,9 +3175,9 @@ class StrategyExecutorService:
             exec_state.pe_qty = 0
             exec_state.pe_side = ""
             exec_state.pe_entry_price = 0.0
-            
+
             self.state_mgr.save(exec_state)
-            
+
             logger.info(f"EXIT COMPLETE: {name}")
 
             # Optional one-shot mode: auto-stop strategy after first full exit.
@@ -3191,10 +3197,10 @@ class StrategyExecutorService:
                     self.state_mgr.delete(name)
                 except Exception as stop_err:
                     logger.warning(f"Could not auto-stop run_once strategy {name}: {stop_err}")
-            
+
         except Exception as e:
             logger.error(f"Exit execution failed: {e}", exc_info=True)
-            
+
             if self.bot.telegram_enabled:
                 self.bot.send_telegram(
                     f"ðŸš¨ EXIT ERROR\n"

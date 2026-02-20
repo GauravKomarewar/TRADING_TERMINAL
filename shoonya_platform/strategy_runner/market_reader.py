@@ -1,92 +1,94 @@
 #!/usr/bin/env python3
 """
-market_reader.py — Live SQLite Option Chain Reader
-====================================================
+market_reader.py — Live SQLite Option Chain Reader (Production‑Ready)
+======================================================================
 
-Reads live option chain data from the SQLite databases in:
+Reads live option chain data from SQLite databases in:
     market_data/option_chain/data/{EXCHANGE}_{SYMBOL}_{DD-MMM-YYYY}.sqlite
 
-The OptionChainSupervisor thread writes snapshots into these DBs continuously.
-This reader opens them in read-only WAL mode and queries live data.
-
-Auto-resolves the correct database file based on exchange + symbol + expiry logic.
+Supports multiple expiries, strike step auto‑detection, snapshot freshness checks,
+and robust match_leg attribute handling. Fully compatible with the Universal
+Multi‑Leg Strategy Execution Engine.
 """
 
 import glob
 import logging
-import os
 import re
 import sqlite3
-from datetime import date, datetime, timedelta
+from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-logger = logging.getLogger("fresh_strategy.market_reader")
+from .models import StrikeConfig, OptionType, StrikeMode
 
-# Path to DB folder
+logger = logging.getLogger(__name__)
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DB_FOLDER = _PROJECT_ROOT / "shoonya_platform" / "market_data" / "option_chain" / "data"
+
+# Allowed match parameters for strike selection (map to SQL expressions)
+MATCH_PARAM_TO_SQL = {
+    "delta": "delta",
+    "abs_delta": "ABS(delta)",
+    "gamma": "gamma",
+    "theta": "theta",
+    "vega": "vega",
+    "iv": "iv",
+    "ltp": "ltp",
+    "oi": "oi",
+    "volume": "volume",
+    "strike": "strike",
+}
 
 
 class MarketReader:
     """
-    Reads live option chain data from SQLite database.
-
-    Auto-resolves the correct .sqlite file.
-    Exposes simple query methods for the condition engine.
+    Production‑ready market reader with connection pooling, freshness checks,
+    and dynamic strike step detection.
     """
 
-    def __init__(self, exchange: str, symbol: str, db_path: Optional[str] = None):
+    def __init__(self, exchange: str, symbol: str, max_stale_seconds: int = 30):
         """
         Args:
             exchange: NFO, MCX, etc.
             symbol: NIFTY, BANKNIFTY, etc.
-            db_path: Explicit path to .sqlite file. If None, auto-resolves.
+            max_stale_seconds: Maximum allowed age of snapshot (seconds) before
+                                raising an exception in data retrieval.
         """
         self.exchange = exchange.upper()
         self.symbol = symbol.upper()
-        self._db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+        self.max_stale_seconds = max_stale_seconds
+        self._conns: Dict[str, Optional[sqlite3.Connection]] = {}
+        self._strike_step_cache: Dict[str, float] = {}  # expiry -> strike step
 
-    @property
-    def db_path(self) -> Optional[str]:
-        """Resolved database path."""
-        if self._db_path and Path(self._db_path).exists():
-            return self._db_path
-        resolved = self._resolve_db_path()
-        if resolved:
-            self._db_path = resolved
-        return self._db_path
-
-    def _resolve_db_path(self) -> Optional[str]:
-        """
-        Auto-resolve the correct .sqlite file from the data folder.
-
-        Strategy:
-        1. List all files matching {EXCHANGE}_{SYMBOL}_*.sqlite
-        2. Parse the expiry date from each filename
-        3. Pick the one whose expiry is >= today and nearest (current weekly)
-        4. If none in the future, pick the most recent one
-        """
+    # ----------------------------------------------------------------------
+    # Internal helpers
+    # ----------------------------------------------------------------------
+    def _resolve_db_path(self, expiry: Optional[str] = None) -> Optional[str]:
+        """Resolve full path to SQLite file; if expiry None, pick nearest future."""
         folder = DB_FOLDER
         if not folder.exists():
             logger.error(f"DB folder not found: {folder}")
             return None
 
+        if expiry is not None:
+            filename = f"{self.exchange}_{self.symbol}_{expiry}.sqlite"
+            file_path = folder / filename
+            return str(file_path) if file_path.exists() else None
+
+        # No expiry: auto-resolve to nearest future expiry
         pattern = f"{self.exchange}_{self.symbol}_*.sqlite"
         matches = list(folder.glob(pattern))
-
         if not matches:
-            logger.error(f"No database files matching {pattern} in {folder}")
+            logger.error(f"No database files matching {pattern}")
             return None
 
-        # Parse dates from filenames: {EXCHANGE}_{SYMBOL}_{DD-MMM-YYYY}.sqlite
         today = date.today()
         candidates = []
-
         for f in matches:
-            name = f.stem  # e.g. NFO_NIFTY_17-FEB-2026
-            parts = name.split("_", 2)  # ['NFO', 'NIFTY', '17-FEB-2026']
+            name = f.stem
+            parts = name.split("_", 2)
             if len(parts) < 3:
                 continue
             date_str = parts[2]
@@ -94,181 +96,243 @@ class MarketReader:
                 expiry_date = datetime.strptime(date_str, "%d-%b-%Y").date()
                 candidates.append((f, expiry_date))
             except ValueError:
-                logger.debug(f"Skipping file with unparseable date: {f.name}")
                 continue
 
         if not candidates:
-            # Fallback: just use the first match
-            logger.warning(f"Could not parse dates, using first match: {matches[0].name}")
+            logger.warning(f"Using first match: {matches[0].name}")
             return str(matches[0])
 
-        # Future or today expiries
         future = [(f, d) for f, d in candidates if d >= today]
         if future:
-            # Pick nearest future expiry
             future.sort(key=lambda x: x[1])
             chosen = future[0]
         else:
-            # All expired, pick most recent
             candidates.sort(key=lambda x: x[1], reverse=True)
             chosen = candidates[0]
 
-        logger.info(f"Resolved DB: {chosen[0].name} (expiry: {chosen[1]})")
+        logger.info(f"Resolved default DB: {chosen[0].name} (expiry: {chosen[1]})")
         return str(chosen[0])
 
-    def connect(self) -> bool:
-        """Open connection with validation."""
-        path = self.db_path
+    def _get_connection(self, expiry: Optional[str] = None) -> Optional[sqlite3.Connection]:
+        key = expiry or "default"
+        # Try to reuse an existing connection
+        conn = self._conns.get(key)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except Exception:
+                self._close_connection(key)
+
+        path = self._resolve_db_path(expiry)
         if not path:
-            logger.error(f"No DB found for {self.exchange}_{self.symbol}")
-            return False
-        
-        # CRITICAL: Verify file exists and is not empty
+            return None
+
         path_obj = Path(path)
-        if not path_obj.exists():
-            logger.error(f"DB file does not exist: {path}")
-            return False
-        
-        if path_obj.stat().st_size < 1024:  # Less than 1KB = likely empty
-            logger.error(f"DB file too small (corrupt?): {path} ({path_obj.stat().st_size} bytes)")
-            return False
-        
+        if not path_obj.exists() or path_obj.stat().st_size < 1024:
+            logger.error(f"DB file missing or too small: {path}")
+            return None
+
         try:
             uri = f"file:{path}?mode=ro"
-            self._conn = sqlite3.connect(uri, uri=True, timeout=5)
-            self._conn.row_factory = sqlite3.Row
-            
-            # VALIDATE schema exists
-            tables = self._conn.execute(
+            conn = sqlite3.connect(uri, uri=True, timeout=5)
+            conn.row_factory = sqlite3.Row
+
+            tables = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
-            
             table_names = {row[0] for row in tables}
             required_tables = {"option_chain", "meta"}
-            
             if not required_tables.issubset(table_names):
-                logger.error(f"Missing required tables: {required_tables - table_names}")
-                self.close()
-                return False
-            
-            # VALIDATE has data
-            row_count = self._conn.execute("SELECT COUNT(*) FROM option_chain").fetchone()[0]
+                logger.error(f"Missing tables: {required_tables - table_names}")
+                conn.close()
+                return None
+
+            row_count = conn.execute("SELECT COUNT(*) FROM option_chain").fetchone()[0]
             if row_count == 0:
-                logger.error(f"option_chain table is empty in {path}")
-                self.close()
-                return False
-            
+                logger.error(f"option_chain table empty in {path}")
+                conn.close()
+                return None
+
             logger.info(f"Connected to DB: {path_obj.name} ({row_count} rows)")
-            return True
-            
+            self._conns[key] = conn
+            return conn
         except Exception as e:
             logger.error(f"Connection failed: {path} | {e}")
-            return False
+            return None
 
-    def close(self):
-        """Close database connection."""
-        if self._conn:
+    def _close_connection(self, key: str):
+        conn = self._conns.pop(key, None)
+        if conn:
             try:
-                self._conn.close()
+                conn.close()
             except Exception:
                 pass
-            self._conn = None
 
-    def _ensure_conn(self) -> bool:
-        """Ensure we have a connection, reconnect if needed."""
-        if self._conn is None:
-            return self.connect()
-        # Test connection is alive
+    def close_all(self):
+        for key in list(self._conns.keys()):
+            self._close_connection(key)
+
+    def __del__(self):
+        self.close_all()
+
+    def _get_strike_step(self, expiry: Optional[str] = None) -> float:
+        """
+        Determine the strike price step (minimum difference between consecutive strikes)
+        from the option chain. Caches the result per expiry.
+        """
+        key = expiry or "default"
+        if key in self._strike_step_cache:
+            return self._strike_step_cache[key]
+
+        conn = self._get_connection(expiry)
+        if not conn:
+            return 50.0  # fallback
+        assert conn is not None  # for type checker
+
         try:
-            self._conn.execute("SELECT 1")
-            return True
-        except Exception:
-            self.close()
-            return self.connect()
+            cur = conn.cursor()
+            cur.execute("SELECT DISTINCT strike FROM option_chain ORDER BY strike")
+            strikes = [row[0] for row in cur.fetchall()]
+            if len(strikes) < 2:
+                return 50.0
 
-    # ─── Queries ─────────────────────────────────────────────────────────────
+            diffs = [strikes[i+1] - strikes[i] for i in range(len(strikes)-1)]
+            # Filter out zero (shouldn't happen, but safe)
+            diffs = [d for d in diffs if d > 0]
+            if not diffs:
+                return 50.0
 
-    def get_full_chain(self) -> List[Dict[str, Any]]:
-        """Read the entire option chain as a list of dicts."""
-        if not self._ensure_conn():
-            return []
-        assert self._conn is not None
-        try:
-            cur = self._conn.cursor()
-            cur.execute("SELECT * FROM option_chain WHERE ltp > 0 ORDER BY strike, option_type")
-            return [dict(row) for row in cur.fetchall()]
+            # Use most common difference (mode)
+            step = Counter(diffs).most_common(1)[0][0]
+            self._strike_step_cache[key] = step
+            logger.debug(f"Strike step for {key}: {step}")
+            return step
         except Exception as e:
-            logger.error(f"get_full_chain error: {e}")
-            return []
+            logger.error(f"Failed to compute strike step: {e}")
+            return 50.0
 
-    def get_meta(self) -> Dict[str, str]:
-        """Read the meta table as a dict."""
-        if not self._ensure_conn():
+    def _check_freshness(self, expiry: Optional[str] = None):
+        """Raise an exception if snapshot is older than max_stale_seconds."""
+        age = self.get_snapshot_age_seconds(expiry)
+        if age > self.max_stale_seconds:
+            raise RuntimeError(
+                f"Snapshot too old: {age:.1f}s > {self.max_stale_seconds}s"
+            )
+
+    # ----------------------------------------------------------------------
+    # Public data retrieval methods (with optional expiry)
+    # ----------------------------------------------------------------------
+    def get_meta(self, expiry: Optional[str] = None) -> Dict[str, str]:
+        conn = self._get_connection(expiry)
+        if not conn:
             return {}
-        assert self._conn is not None
+        assert conn is not None
         try:
-            cur = self._conn.cursor()
+            cur = conn.cursor()
             cur.execute("SELECT key, value FROM meta")
             return {row["key"]: row["value"] for row in cur.fetchall()}
         except Exception as e:
             logger.error(f"get_meta error: {e}")
             return {}
 
-    def get_spot_price(self) -> float:
-        """Get current spot price from meta table."""
-        meta = self.get_meta()
+    def get_spot_price(self, expiry: Optional[str] = None) -> float:
+        meta = self.get_meta(expiry)
         try:
             return float(meta.get("spot_ltp", 0))
         except (ValueError, TypeError):
             return 0.0
 
-    def get_atm_strike(self) -> float:
-        """Get ATM strike from meta table."""
-        meta = self.get_meta()
+    def get_atm_strike(self, expiry: Optional[str] = None) -> float:
+        meta = self.get_meta(expiry)
         try:
             return float(meta.get("atm", 0))
         except (ValueError, TypeError):
             return 0.0
 
-    def get_fut_ltp(self) -> float:
-        """Get futures LTP from meta table."""
-        meta = self.get_meta()
+    def get_fut_ltp(self, expiry: Optional[str] = None) -> float:
+        meta = self.get_meta(expiry)
         try:
             return float(meta.get("fut_ltp", 0))
         except (ValueError, TypeError):
             return 0.0
 
-    def get_snapshot_age_seconds(self) -> float:
-        """How old is the latest snapshot (seconds ago)."""
-        meta = self.get_meta()
+    def get_snapshot_age_seconds(self, expiry: Optional[str] = None) -> float:
+        meta = self.get_meta(expiry)
         try:
             ts = float(meta.get("snapshot_ts", 0))
             return datetime.now().timestamp() - ts
         except (ValueError, TypeError):
             return 99999.0
 
+    def get_lot_size(self, expiry: Optional[str] = None) -> int:
+        conn = self._get_connection(expiry)
+        if not conn:
+            return 1
+        assert conn is not None
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT lot_size FROM option_chain WHERE lot_size IS NOT NULL LIMIT 1")
+            row = cur.fetchone()
+            if row and row["lot_size"]:
+                return int(row["lot_size"])
+        except Exception:
+            pass
+        from shoonya_platform.strategy_runner.config_schema import LOT_SIZES
+        return LOT_SIZES.get(self.symbol, 1)
+
+    def get_full_chain(self, expiry: Optional[str] = None) -> List[Dict[str, Any]]:
+        self._check_freshness(expiry)   # optional safety
+        conn = self._get_connection(expiry)
+        if not conn:
+            return []
+        assert conn is not None
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM option_chain WHERE ltp > 0 ORDER BY strike, option_type")
+            return [dict(row) for row in cur.fetchall()]
+        except Exception as e:
+            logger.error(f"get_full_chain error: {e}")
+            return []
+
+    def get_option_at_strike(
+        self, strike: float, option_type: Union[str, OptionType], expiry: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        self._check_freshness(expiry)
+        if isinstance(option_type, OptionType):
+            option_type = option_type.value
+        conn = self._get_connection(expiry)
+        if not conn:
+            return None
+        assert conn is not None
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM option_chain WHERE strike = ? AND option_type = ?",
+                (strike, option_type.upper())
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"get_option_at_strike error: {e}")
+            return None
+
     def find_option_by_delta(
         self,
-        option_type: str,
+        option_type: Union[str, OptionType],
         target_delta: float,
         tolerance: float = 0.05,
+        expiry: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """
-        Find the option with delta closest to target.
-
-        Args:
-            option_type: 'CE' or 'PE'
-            target_delta: Target absolute delta (e.g. 0.30)
-            tolerance: Max acceptable distance from target
-
-        Returns:
-            Option row dict or None
-        """
-        if not self._ensure_conn():
+        self._check_freshness(expiry)
+        if isinstance(option_type, OptionType):
+            option_type = option_type.value
+        conn = self._get_connection(expiry)
+        if not conn:
             return None
-        assert self._conn is not None
+        assert conn is not None
         try:
-            cur = self._conn.cursor()
+            cur = conn.cursor()
             cur.execute("""
                 SELECT * FROM option_chain
                 WHERE option_type = ?
@@ -286,16 +350,20 @@ class MarketReader:
 
     def find_option_by_premium(
         self,
-        option_type: str,
+        option_type: Union[str, OptionType],
         target_premium: float,
         tolerance: float = 10.0,
+        expiry: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Find option with LTP closest to target premium."""
-        if not self._ensure_conn():
+        self._check_freshness(expiry)
+        if isinstance(option_type, OptionType):
+            option_type = option_type.value
+        conn = self._get_connection(expiry)
+        if not conn:
             return None
-        assert self._conn is not None
+        assert conn is not None
         try:
-            cur = self._conn.cursor()
+            cur = conn.cursor()
             cur.execute("""
                 SELECT * FROM option_chain
                 WHERE option_type = ?
@@ -310,49 +378,22 @@ class MarketReader:
             logger.error(f"find_option_by_premium error: {e}")
             return None
 
-    def get_option_at_strike(
-        self, strike: float, option_type: str
-    ) -> Optional[Dict[str, Any]]:
-        """Get option data for a specific strike and type."""
-        if not self._ensure_conn():
-            return None
-        assert self._conn is not None
-        try:
-            cur = self._conn.cursor()
-            cur.execute("""
-                SELECT * FROM option_chain
-                WHERE strike = ? AND option_type = ?
-            """, (strike, option_type.upper()))
-            row = cur.fetchone()
-            return dict(row) if row else None
-        except Exception as e:
-            logger.error(f"get_option_at_strike error: {e}")
-            return None
-
-    def find_option_by_strike_offset(
-        self,
-        option_type: str,
-        offset_from_atm: float,
-    ) -> Optional[Dict[str, Any]]:
-        """Find option at ATM ± offset."""
-        atm = self.get_atm_strike()
-        if atm <= 0:
-            return None
-        target_strike = atm + offset_from_atm
-        return self.get_option_at_strike(target_strike, option_type)
-
     def find_option_by_iv(
         self,
-        option_type: str,
+        option_type: Union[str, OptionType],
         target_iv: float,
         tolerance: float = 5.0,
+        expiry: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Find option with IV closest to target."""
-        if not self._ensure_conn():
+        self._check_freshness(expiry)
+        if isinstance(option_type, OptionType):
+            option_type = option_type.value
+        conn = self._get_connection(expiry)
+        if not conn:
             return None
-        assert self._conn is not None
+        assert conn is not None
         try:
-            cur = self._conn.cursor()
+            cur = conn.cursor()
             cur.execute("""
                 SELECT * FROM option_chain
                 WHERE option_type = ?
@@ -368,59 +409,432 @@ class MarketReader:
             logger.error(f"find_option_by_iv error: {e}")
             return None
 
-    def get_atm_options(self) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        """
-        Get ATM CE and PE at the same strike.
-
-        Returns:
-            (ce_option_dict, pe_option_dict) — either may be None
-        """
-        atm = self.get_atm_strike()
-        if atm <= 0:
-            return None, None
-        ce = self.get_option_at_strike(atm, "CE")
-        pe = self.get_option_at_strike(atm, "PE")
-        return ce, pe
-
-    def find_option_by_premium_range(
+    def find_option_by_criteria(
         self,
-        option_type: str,
-        min_premium: float,
-        max_premium: float,
+        option_type: Union[str, OptionType],
+        target_attr: str,
+        target_value: float,
+        tolerance: float = 0.01,
+        expiry: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Find option with LTP within a premium range, closest to midpoint."""
-        if not self._ensure_conn():
+        """
+        Find option where an attribute (delta, abs_delta, iv, etc.) is closest to target.
+        Uses a mapping to convert attribute name to SQL expression.
+        """
+        self._check_freshness(expiry)
+        if isinstance(option_type, OptionType):
+            option_type = option_type.value
+
+        if target_attr not in MATCH_PARAM_TO_SQL:
+            raise ValueError(f"Unsupported attribute for match: {target_attr}")
+
+        sql_expr = MATCH_PARAM_TO_SQL[target_attr]
+        conn = self._get_connection(expiry)
+        if not conn:
             return None
-        assert self._conn is not None
-        mid = (min_premium + max_premium) / 2.0
+        assert conn is not None
         try:
-            cur = self._conn.cursor()
-            cur.execute("""
+            cur = conn.cursor()
+            # Safe because sql_expr comes from our controlled mapping
+            query = f"""
                 SELECT * FROM option_chain
                 WHERE option_type = ?
-                  AND ltp >= ? AND ltp <= ?
-                ORDER BY ABS(ltp - ?) ASC
+                  AND ltp > 0
+                  AND ABS({sql_expr} - ?) <= ?
+                ORDER BY ABS({sql_expr} - ?) ASC
                 LIMIT 1
-            """, (option_type.upper(), min_premium, max_premium, mid))
+            """
+            cur.execute(query, (option_type.upper(), target_value, tolerance, target_value))
             row = cur.fetchone()
             return dict(row) if row else None
         except Exception as e:
-            logger.error(f"find_option_by_premium_range error: {e}")
+            logger.error(f"find_option_by_criteria error: {e}")
             return None
 
-    def get_lot_size(self) -> int:
-        """Get lot size from first row of option chain, or fallback."""
-        if not self._ensure_conn():
-            return 1
-        assert self._conn is not None
+    def get_atm_options(
+        self, expiry: Optional[str] = None
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        atm = self.get_atm_strike(expiry)
+        if atm <= 0:
+            return None, None
+        ce = self.get_option_at_strike(atm, "CE", expiry)
+        pe = self.get_option_at_strike(atm, "PE", expiry)
+        return ce, pe
+
+    # ----------------------------------------------------------------------
+    # High-level strike resolution (used by EntryEngine / AdjustmentEngine)
+    # ----------------------------------------------------------------------
+    def resolve_strike(
+        self,
+        config: StrikeConfig,
+        symbol: str,  # kept for interface compatibility
+        expiry: Optional[str] = None,
+        reference_leg_state=None,
+    ) -> Tuple[float, Dict[str, Any]]:
+        """
+        Resolve strike and option data from StrikeConfig.
+        Raises RuntimeError if snapshot too old or data not found.
+        """
+        # Freshness check
+        self._check_freshness(expiry)
+
+        mode = config.mode
+        opt_type = config.option_type
+        # Read ATM strike once for efficiency
+        atm = self.get_atm_strike(expiry)
+
+        opt_data: Optional[Dict[str, Any]] = None
+        strike: float = 0.0  # will be assigned in each branch
+
+        if mode == StrikeMode.STANDARD:
+            sel = config.strike_selection
+            if sel is None:
+                raise ValueError("Standard strike mode requires 'strike_selection'")
+
+            val = config.strike_value
+
+            # Handle atm±n with arbitrary offset
+            if sel == "atm":
+                strike = atm
+            elif sel.startswith("atm+") or sel.startswith("atm-"):
+                match = re.match(r"atm([+-]\d+)", sel)
+                if match:
+                    offset = int(match.group(1))
+                    step = self._get_strike_step(expiry)
+                    strike = atm + offset * step
+                else:
+                    raise ValueError(f"Malformed atm offset: {sel}")
+            elif sel == "delta":
+                target = float(val) if val else 0.3
+                opt_data = self.find_option_by_delta(opt_type, target, expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for delta={target}")
+                strike = opt_data["strike"]
+            elif sel == "premium":
+                target = float(val) if val else 50
+                opt_data = self.find_option_by_premium(opt_type, target, expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for premium={target}")
+                strike = opt_data["strike"]
+            elif sel == "iv":
+                target = float(val) if val else 15.0
+                opt_data = self.find_option_by_iv(opt_type, target, expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for IV={target}")
+                strike = opt_data["strike"]
+            else:
+                raise ValueError(f"Unsupported standard selection: {sel}")
+
+            if sel not in ["delta", "premium", "iv"]:
+                # For simple strike selections, get option data now
+                opt_data = self.get_option_at_strike(strike, opt_type, expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option data at strike {strike}")
+
+        elif mode == StrikeMode.EXACT:
+            exact = config.exact_strike
+            if exact is None:
+                raise ValueError("Exact strike mode requires 'exact_strike'")
+            strike = exact
+            if config.rounding:
+                strike = round(strike / config.rounding) * config.rounding
+            opt_data = self.get_option_at_strike(strike, opt_type, expiry)
+            if opt_data is None:
+                raise ValueError(f"No option data at exact strike {strike}")
+
+        elif mode == StrikeMode.ATM_POINTS:
+            offset = config.atm_offset_points or 0
+            strike = atm + offset
+            if config.rounding:
+                strike = round(strike / config.rounding) * config.rounding
+            opt_data = self.get_option_at_strike(strike, opt_type, expiry)
+            if opt_data is None:
+                raise ValueError(f"No option data at ATM+{offset} (strike {strike})")
+
+        elif mode == StrikeMode.ATM_PCT:
+            pct = config.atm_offset_pct or 0
+            strike = atm * (1 + pct / 100)
+            if config.rounding:
+                strike = round(strike / config.rounding) * config.rounding
+            opt_data = self.get_option_at_strike(strike, opt_type, expiry)
+            if opt_data is None:
+                raise ValueError(f"No option data at ATM+{pct}% (strike {strike})")
+
+        elif mode == StrikeMode.MATCH_LEG:
+            if reference_leg_state is None:
+                raise ValueError("Match leg mode requires a reference leg state")
+            match_param = config.match_param
+            if match_param is None:
+                raise ValueError("Match leg mode requires 'match_param'")
+            if not hasattr(reference_leg_state, match_param):
+                raise ValueError(
+                    f"Reference leg has no attribute '{match_param}'. "
+                    f"Available: delta, abs_delta, iv, theta, vega, gamma, pnl, pnl_pct, ltp, strike"
+                )
+            attr_value = getattr(reference_leg_state, match_param)
+            target = attr_value * config.match_multiplier + config.match_offset
+            opt_data = self.find_option_by_criteria(
+                opt_type,
+                match_param,
+                target,
+                tolerance=0.1,
+                expiry=expiry
+            )
+            if opt_data is None:
+                raise ValueError(f"No option found matching {match_param}={target}")
+            strike = opt_data["strike"]
+
+        else:
+            raise ValueError(f"Unknown strike mode: {mode}")
+
+        # At this point, strike must be a numeric value and opt_data must be set.
+        assert isinstance(strike, (int, float)), "Strike must be numeric"
+        assert opt_data is not None, "Internal error: opt_data not assigned"
+        return strike, opt_data
+
+    def resolve_expiry_mode(self, mode: str) -> str:
+        """
+        Convert an expiry mode string (e.g., 'weekly_current', 'weekly_next')
+        into an actual expiry date string (format DD-MMM-YYYY) by scanning
+        the available DB files.
+
+        Raises ValueError if mode cannot be resolved.
+        """
+        # If it's already a date-like string (contains digits and hyphens), assume it's a date.
+        if re.match(r'\d{1,2}-[A-Za-z]{3}-\d{4}', mode):
+            return mode
+
+        # Determine target based on mode
+        today = date.today()
+        pattern = f"{self.exchange}_{self.symbol}_*.sqlite"
+        folder = DB_FOLDER
+        if not folder.exists():
+            raise ValueError(f"DB folder not found: {folder}")
+
+        matches = list(folder.glob(pattern))
+        if not matches:
+            raise ValueError(f"No database files for {self.exchange}_{self.symbol}")
+
+        # Parse expiry dates from filenames
+        expiries = []
+        for f in matches:
+            name = f.stem
+            parts = name.split("_", 2)
+            if len(parts) < 3:
+                continue
+            date_str = parts[2]
+            try:
+                exp_date = datetime.strptime(date_str, "%d-%b-%Y").date()
+                expiries.append((exp_date, date_str))
+            except ValueError:
+                continue
+
+        if not expiries:
+            raise ValueError("No valid expiry dates found in filenames")
+
+        expiries.sort(key=lambda x: x[0])  # sort by date
+
+        if mode == "weekly_current" or mode == "monthly_current":
+            # Find the nearest future expiry (>= today)
+            future = [d for d in expiries if d[0] >= today]
+            if future:
+                return future[0][1]
+            # If none future, return the latest (last of the year)
+            return expiries[-1][1]
+
+        elif mode == "weekly_next":
+            # Find the first expiry after the current weekly (which we take as the first future expiry)
+            current = self.resolve_expiry_mode("weekly_current")  # recursive but safe
+            cur_date = datetime.strptime(current, "%d-%b-%Y").date()
+            for exp_date, exp_str in expiries:
+                if exp_date > cur_date:
+                    return exp_str
+            # Wrap to first of next year? Or raise? We'll return first.
+            return expiries[0][1]
+
+        elif mode == "monthly_next":
+            current = self.resolve_expiry_mode("monthly_current")
+            cur_date = datetime.strptime(current, "%d-%b-%Y").date()
+            for exp_date, exp_str in expiries:
+                if exp_date > cur_date:
+                    return exp_str
+            return expiries[0][1]
+
+        else:
+            raise ValueError(f"Unsupported expiry mode: {mode}")
+
+    def get_next_expiry(self, current_expiry: str, mode: str = "weekly_next") -> str:
+        """
+        Given a current expiry string (format DD-MMM-YYYY) and a mode
+        ('weekly_next', 'monthly_next', 'weekly_current', 'monthly_current'),
+        return the next available expiry date string from the DB folder.
+        """
+        # If mode is *_current, return current_expiry (assumed to be a valid date)
+        if mode in ("weekly_current", "monthly_current"):
+            return current_expiry
+
+        # For next modes, find the next expiry after current_expiry
+        pattern = f"{self.exchange}_{self.symbol}_*.sqlite"
+        folder = DB_FOLDER
+        if not folder.exists():
+            raise RuntimeError(f"DB folder not found: {folder}")
+
+        matches = list(folder.glob(pattern))
+        if not matches:
+            raise RuntimeError(f"No database files for {self.exchange}_{self.symbol}")
+
+        # Parse expiry dates from filenames
+        expiries = []
+        for f in matches:
+            name = f.stem
+            parts = name.split("_", 2)
+            if len(parts) < 3:
+                continue
+            date_str = parts[2]
+            try:
+                exp_date = datetime.strptime(date_str, "%d-%b-%Y").date()
+                expiries.append((exp_date, date_str))
+            except ValueError:
+                continue
+
+        if not expiries:
+            raise RuntimeError("No valid expiry dates found in filenames")
+
+        expiries.sort(key=lambda x: x[0])  # sort by date
+
+        # Parse current_expiry
         try:
-            cur = self._conn.cursor()
-            cur.execute("SELECT lot_size FROM option_chain WHERE lot_size IS NOT NULL LIMIT 1")
-            row = cur.fetchone()
-            if row and row["lot_size"]:
-                return int(row["lot_size"])
-        except Exception:
-            pass
-        # Fallback lookup
-        from shoonya_platform.strategy_runner.config_schema import LOT_SIZES
-        return LOT_SIZES.get(self.symbol, 1)
+            cur_date = datetime.strptime(current_expiry, "%d-%b-%Y").date()
+        except ValueError:
+            # Fallback: return the first future expiry
+            today = datetime.now().date()
+            future = [d for d in expiries if d[0] >= today]
+            if future:
+                return future[0][1]
+            return expiries[-1][1]
+
+        # Find the next expiry after cur_date
+        for exp_date, exp_str in expiries:
+            if exp_date > cur_date:
+                return exp_str
+
+        # If none after, wrap to the first (next year)
+        return expiries[0][1]
+
+
+# ==============================================================================
+# The following mock class is used in unit tests to simulate the MarketReader
+# behavior without needing actual database files. It provides hardcoded responses
+# for all methods, with signatures matching the base class exactly.
+# ==============================================================================
+
+class MockMarketReader(MarketReader):
+    """Simple mock for testing."""
+
+    def __init__(self, exchange: str = "NFO", symbol: str = "NIFTY"):
+        super().__init__(exchange, symbol)
+        self._spot = 25000.0
+        self._atm = 25000.0
+        self._fut = 25050.0
+        self._chain_cache = {}
+
+    def get_spot_price(self, expiry: Optional[str] = None) -> float:
+        return self._spot
+
+    def get_atm_strike(self, expiry: Optional[str] = None) -> float:
+        return self._atm
+
+    def get_fut_ltp(self, expiry: Optional[str] = None) -> float:
+        return self._fut
+
+    def get_option_at_strike(
+        self, strike: float, option_type: Union[str, OptionType], expiry: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        if isinstance(option_type, OptionType):
+            opt_type = option_type.value
+        else:
+            opt_type = option_type
+        return {
+            "strike": strike,
+            "option_type": opt_type.upper(),
+            "ltp": 100.0,
+            "delta": 0.5 if opt_type.upper() == "CE" else -0.5,
+            "gamma": 0.005,
+            "theta": -10,
+            "vega": 20,
+            "iv": 15.0,
+            "oi": 10000,
+            "volume": 500,
+        }
+
+    def find_option_by_delta(
+        self,
+        option_type: Union[str, OptionType],
+        target_delta: float,
+        tolerance: float = 0.05,
+        expiry: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if isinstance(option_type, OptionType):
+            opt_type = option_type.value
+        else:
+            opt_type = option_type
+        # Crude linear approximation
+        strike = self._atm - (target_delta * 2000) if opt_type.upper() == "CE" else self._atm + (target_delta * 2000)
+        return self.get_option_at_strike(strike, opt_type)
+
+    def find_option_by_premium(
+        self,
+        option_type: Union[str, OptionType],
+        target_premium: float,
+        tolerance: float = 10.0,
+        expiry: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if isinstance(option_type, OptionType):
+            opt_type = option_type.value
+        else:
+            opt_type = option_type
+        strike = self._atm - (target_premium * 5) if opt_type.upper() == "CE" else self._atm + (target_premium * 5)
+        return self.get_option_at_strike(strike, opt_type)
+
+    def find_option_by_iv(
+        self,
+        option_type: Union[str, OptionType],
+        target_iv: float,
+        tolerance: float = 5.0,
+        expiry: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if isinstance(option_type, OptionType):
+            opt_type = option_type.value
+        else:
+            opt_type = option_type
+        return self.get_option_at_strike(self._atm, opt_type)
+
+    def find_option_by_criteria(
+        self,
+        option_type: Union[str, OptionType],
+        target_attr: str,
+        target_value: float,
+        tolerance: float = 0.01,
+        expiry: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if isinstance(option_type, OptionType):
+            opt_type = option_type.value
+        else:
+            opt_type = option_type
+        return self.get_option_at_strike(self._atm, opt_type)
+
+    def resolve_strike(
+        self,
+        config: StrikeConfig,
+        symbol: str,
+        expiry: Optional[str] = None,
+        reference_leg_state=None,
+    ) -> Tuple[float, Dict[str, Any]]:
+        # Simplified resolve – just return ATM for standard atm, otherwise default
+        if config.mode == StrikeMode.STANDARD and config.strike_selection == "atm":
+            strike = self._atm
+        else:
+            strike = 25000.0
+        opt_data = self.get_option_at_strike(strike, config.option_type)
+        assert opt_data is not None
+        return strike, opt_data

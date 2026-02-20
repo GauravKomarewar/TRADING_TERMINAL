@@ -92,9 +92,6 @@ from shoonya_platform.risk.supreme_risk import SupremeRiskManager
 from shoonya_platform.execution.generic_control_consumer import GenericControlIntentConsumer
 from shoonya_platform.execution.strategy_control_consumer import StrategyControlConsumer
 
-# ---------------- REPORTING ----------------
-from shoonya_platform.strategy_runner.universal_settings.universal_strategy_reporter import build_strategy_report
-
 #--------------------MODELS--------------
 from shoonya_platform.domain.business_models import TradeRecord, AlertData, LegResult, BotStats, OrderResult, AccountInfo
 #--------------------UTILS--------------
@@ -120,15 +117,8 @@ from shoonya_platform.market_data.feeds import index_tokens_subscriber
 # NEW: Strategy executor components from strategy_runner folder
 from shoonya_platform.strategy_runner.strategy_executor_service import (
     StrategyExecutorService,
-    StateManager,
-    BrokerReconciler,
-    ExecutionVerifier,
 )
 from shoonya_platform.strategy_runner.market_reader import MarketReader
-from shoonya_platform.strategy_runner.config_schema import (
-    validate_config_file,
-    coerce_config_numerics,
-)
 
 logger = get_component_logger('trading_bot')
 

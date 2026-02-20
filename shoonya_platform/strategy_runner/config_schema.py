@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-config_schema.py — JSON Strategy Config Validator
-===================================================
+config_schema.py — JSON Strategy Config Validator (v4)
+========================================================
 
-Validates every possible field and combination in the v3.0 strategy JSON schema.
+Validates every possible field and combination in the v4.0 strategy JSON schema.
 Ensures configs built by dashboard strategy_builder.html (or edited by hand) are correct
 before the runner processes them.
 
@@ -15,96 +15,144 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-logger = logging.getLogger("fresh_strategy.validator")
+logger = logging.getLogger(__name__)
 
-# ─── Valid values ────────────────────────────────────────────────────────────
+# =============================================================================
+# VALID VALUE SETS (based on strategy_builder.html and engine models)
+# =============================================================================
 
 VALID_EXCHANGES = {"NFO", "MCX", "BFO", "NSE", "BSE", "CDS", "NCDEX"}
+
 VALID_UNDERLYINGS = {
     "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY",
     "SENSEX", "BANKEX",
     "CRUDEOIL", "CRUDEOILM", "GOLD", "GOLDM", "SILVER", "SILVERM",
     "NATURALGAS", "COPPER", "ZINC", "LEAD", "ALUMINIUM", "NICKEL",
 }
-VALID_EXPIRY_MODES = {"weekly_current", "weekly_next", "monthly_current", "monthly_next", "custom"}
-VALID_MARKET_SOURCES = {"database", "sqlite"}
-VALID_COMPARATORS = {">", ">=", "<", "<=", "==", "!=", "~=", "between", "not_between"}
-VALID_OPERATORS = {"AND", "OR"}
+
+VALID_PRODUCT_TYPES = {"NRML", "MIS", "CNC"}
+VALID_ORDER_TYPES = {"MARKET", "LIMIT", "SL", "SLM"}
+VALID_INSTRUMENT_TYPES = {"OPT", "FUT"}
+VALID_OPTION_TYPES = {"CE", "PE"}
+VALID_SIDES = {"BUY", "SELL"}
+
+VALID_EXPIRY_MODES = {
+    "strategy_default", "weekly_current", "weekly_next", "monthly_current", "monthly_next", "custom"
+}
+VALID_ENTRY_SEQUENCES = {"parallel", "sequential"}
+
+VALID_STRIKE_MODES = {"standard", "exact", "atm_points", "atm_pct", "match_leg"}
+VALID_STRIKE_SELECTIONS = {
+    "atm", "atm+1", "atm-1", "atm+2", "atm-2", "atm+3", "atm-3",
+    "atm+4", "atm-4", "atm+5", "atm-5",
+    "atm_points", "atm_pct", "exact_strike",
+    "delta", "premium", "iv", "theta", "vega", "gamma", "oi", "volume", "otm_pct",
+    "max_pain", "pcr_inflection",
+}
+
+VALID_COMPARATORS = {
+    ">", ">=", "<", "<=", "==", "!=", "~=",
+    "between", "not_between",
+    "crosses_above", "crosses_below",
+    "is_true", "is_false",
+}
+VALID_JOIN_OPERATORS = {"AND", "OR"}
+
 VALID_RULE_TYPES = {"if_then", "if_then_else", "if_any", "always"}
-INDEX_PARAM_PATTERN = re.compile(
-    r"^index_[A-Za-z0-9]+_(ltp|pc|change|change_pct|open|high|low|close)$"
-)
-
-LOT_SIZES = {
-    "NIFTY": 65, "BANKNIFTY": 30, "FINNIFTY": 60,
-    "MIDCPNIFTY": 120, "SENSEX": 10, "BANKEX": 15,
-    "CRUDEOIL": 100, "CRUDEOILM": 10, "GOLD": 100,
-    "GOLDM": 10, "SILVER": 30, "SILVERM": 5,
-    "NATURALGAS": 1250, "COPPER": 2500,
-}
-
-# Parameters that can appear in conditions
-VALID_PARAMETERS = {
-    # Per-leg greeks
-    "ce_delta", "pe_delta", "ce_gamma", "pe_gamma",
-    "ce_theta", "pe_theta", "ce_vega", "pe_vega", "ce_iv", "pe_iv",
-    # Per-leg prices
-    "ce_ltp", "pe_ltp", "ce_entry_price", "pe_entry_price",
-    # Per-leg PnL
-    "ce_pnl", "pe_pnl", "ce_pnl_pct", "pe_pnl_pct",
-    # Combined / calculated
-    "net_delta", "combined_pnl", "combined_pnl_pct", "delta_diff",
-    "any_leg_delta", "both_legs_delta_below", "both_legs_delta_above",
-    "min_leg_delta", "max_leg_delta",
-    "higher_delta_leg", "lower_delta_leg",
-    "most_profitable_leg", "least_profitable_leg",
-    # Spot / market
-    "spot_price", "spot_change", "spot_change_pct",
-    "atm_strike", "fut_ltp",
-    # Ticker aliases
-    "india_vix",
-    # Time
-    "time_current", "time_in_position_sec", "time_since_last_adjustment_sec",
-    # Position
-    "adjustments_today", "total_trades_today",
-    # Premium
-    "ce_premium_decay_pct", "pe_premium_decay_pct",
-    "total_premium", "total_premium_decay_pct",
-    # Legacy (deprecated)
-    "both_legs_delta",  # Deprecated: use both_legs_delta_below or both_legs_delta_above
-}
 
 VALID_ENTRY_ACTIONS = {
-    "short_both", "long_both",
-    "short_ce", "short_pe", "long_ce", "long_pe",
-    "short_straddle", "short_strangle", "long_straddle", "long_strangle",
-    "iron_condor", "iron_butterfly",
-    "custom",
+    "simple_close_open_new",  # actually not used in entry, but builder includes it in action types
+    "open_hedge", "close_leg", "partial_close_lots", "reduce_by_pct",
+    "roll_to_next_expiry", "convert_to_spread",
 }
+# Entry actions are more specific; we'll validate based on the builder's output.
+# In v4 entry, the action is defined per leg in its execution block, not as a top-level action.
+# So we only need to validate that each leg has a valid side/option_type etc.
 
 VALID_ADJUSTMENT_ACTIONS = {
-    "close_higher_delta", "close_lower_delta",
-    "close_higher_pnl_leg", "close_most_profitable",
-    "close_ce", "close_pe",
-    "roll_ce", "roll_pe", "roll_both",
-    "add_hedge", "remove_hedge",
-    "lock_profit", "trailing_stop",
-    "increase_lots", "decrease_lots",
-    "shift_strikes",
-    "do_nothing",
-    "custom",
-    # v3 strategy_builder action type
-    "simple_close_open_new",
+    "simple_close_open_new", "open_hedge", "close_leg",
+    "partial_close_lots", "reduce_by_pct",
+    "roll_to_next_expiry", "convert_to_spread",
 }
 
-VALID_EXIT_ACTIONS = {
-    "close_all_positions", "close_ce", "close_pe",
-    "partial_exit", "custom",
+VALID_EXIT_ACTIONS = {"exit_all", "trail", "partial_50", "partial_lots", "lock_trail"}
+
+# All parameters that can appear in conditions (from builder's BASE_PARAMS)
+# This list is comprehensive but may be extended; we'll do a warning for unknown.
+KNOWN_PARAMETERS = {
+    # Option Legs
+    "ce_ltp", "pe_ltp", "ce_strike", "pe_strike", "ce_oi", "pe_oi",
+    "ce_oi_change", "pe_oi_change", "ce_volume", "pe_volume",
+    "ce_bid_ask_spread", "pe_bid_ask_spread",
+    "ce_moneyness", "pe_moneyness",
+
+    # Greeks Signed
+    "ce_delta", "pe_delta", "ce_gamma", "pe_gamma",
+    "ce_theta", "pe_theta", "ce_vega", "pe_vega",
+
+    # Greeks Absolute
+    "abs(ce_delta)", "abs(pe_delta)", "abs(ce_gamma)", "abs(pe_gamma)",
+    "abs(ce_theta)", "abs(pe_theta)", "abs(ce_vega)", "abs(pe_vega)",
+    "abs(net_delta)", "abs(delta_diff)",
+
+    # Portfolio Greeks
+    "portfolio_delta", "portfolio_gamma", "portfolio_theta", "portfolio_vega",
+    "abs(portfolio_delta)",
+
+    # Volatility
+    "ce_iv", "pe_iv", "iv_skew", "india_vix", "atm_iv",
+
+    # Premium & Cost
+    "total_premium", "premium_collected", "total_cost_basis",
+    "ce_premium_decay_pct", "pe_premium_decay_pct", "total_premium_decay_pct",
+    "max_profit_potential",
+
+    # Strategy P&L
+    "net_delta", "delta_diff", "combined_pnl", "combined_pnl_pct",
+    "unrealised_pnl", "realised_pnl", "profit_step",
+
+    # Breakeven
+    "breakeven_upper", "breakeven_lower", "breakeven_distance",
+    "spot_vs_upper_be", "spot_vs_lower_be",
+
+    # OI / Market Data
+    "pcr", "pcr_volume", "max_pain_strike", "spot_vs_max_pain",
+    "total_oi_ce", "total_oi_pe", "oi_buildup_ce", "oi_buildup_pe",
+
+    # Leg Status
+    "active_legs_count", "closed_legs_count", "any_leg_active", "all_legs_active",
+    "adjustment_count", "adj_count_today",
+
+    # Time
+    "time_current", "time_in_position_sec", "time_since_last_adj_sec",
+    "session_type", "minutes_to_exit", "is_expiry_day", "days_to_expiry",
+
+    # Index/Spot
+    "spot_price", "spot_change", "spot_change_pct", "atm_strike", "fut_ltp",
+    "index_NIFTY_ltp", "index_NIFTY_change_pct",
+    "index_BANKNIFTY_ltp", "index_BANKNIFTY_change_pct",
+    "index_SENSEX_ltp", "index_SENSEX_change_pct",
+    "index_FINNIFTY_ltp", "index_FINNIFTY_change_pct",
+    "index_MIDCPNIFTY_ltp",
+    "index_CRUDEOIL_ltp", "index_CRUDEOIL_change_pct",
+    "index_GOLDPETAL_ltp", "index_SILVERMIC_ltp", "index_NATGASMINI_ltp",
+
+    # Dynamic leg refs
+    "higher_delta_leg", "lower_delta_leg",
+    "most_profitable_leg", "least_profitable_leg",
+    "max_leg_delta", "min_leg_delta",
+    "any_leg_delta_above", "all_legs_delta_below",
 }
 
+# Tag parameters are dynamic; they are validated by pattern.
+TAG_PARAM_PATTERN = re.compile(r"^tag\.[^.]+\.(?:delta|abs_delta|gamma|theta|vega|iv|pnl|pnl_pct|ltp|oi|volume|strike|is_active|moneyness)$")
+INDEX_PARAM_PATTERN = re.compile(r"^index_[A-Za-z0-9]+_(?:ltp|pc|change|change_pct|open|high|low|close)$")
 
+# =============================================================================
+# VALIDATION ERROR CLASS
+# =============================================================================
 class ValidationError:
     """Single validation error with path context."""
     def __init__(self, path: str, message: str, severity: str = "error"):
@@ -115,10 +163,12 @@ class ValidationError:
     def __repr__(self):
         return f"[{self.severity.upper()}] {self.path}: {self.message}"
 
-
+# =============================================================================
+# MAIN VALIDATION ENTRY POINT
+# =============================================================================
 def validate_config(config: Dict[str, Any]) -> Tuple[bool, List[ValidationError]]:
     """
-    Validate a complete strategy JSON config.
+    Validate a complete strategy JSON config (v4).
 
     Returns:
         (is_valid, errors_list)
@@ -130,48 +180,50 @@ def validate_config(config: Dict[str, Any]) -> Tuple[bool, List[ValidationError]
         errors.append(ValidationError("root", "Config must be a JSON object"))
         return False, errors
 
-    # ── Top level ──
+    # Top level fields
     _validate_top_level(config, errors)
 
-    # ── basic ──
-    if "basic" in config:
-        _validate_basic(config["basic"], errors)
+    # identity section
+    if "identity" in config:
+        _validate_identity(config["identity"], errors, prefix="identity")
     else:
-        errors.append(ValidationError("basic", "Missing required section 'basic'"))
+        errors.append(ValidationError("identity", "Missing required section 'identity'"))
 
-    # ── timing ──
+    # timing section
     if "timing" in config:
-        _validate_timing(config["timing"], errors)
+        _validate_timing(config["timing"], errors, prefix="timing")
     else:
         errors.append(ValidationError("timing", "Missing required section 'timing'"))
 
-    # ── market_data ──
+    # schedule section
+    if "schedule" in config:
+        _validate_schedule(config["schedule"], errors, prefix="schedule")
+    else:
+        errors.append(ValidationError("schedule", "Missing required section 'schedule'"))
+
+    # market_data section (optional)
     if "market_data" in config:
-        _validate_market_data(config["market_data"], errors)
+        _validate_market_data(config["market_data"], errors, prefix="market_data")
 
-    # ── calculated_params (optional) ──
-    if "calculated_params" in config:
-        _validate_calculated_params(config["calculated_params"], errors)
-
-    # ── entry ──
+    # entry section
     if "entry" in config:
-        _validate_entry(config["entry"], errors)
+        _validate_entry(config["entry"], errors, prefix="entry")
     else:
         errors.append(ValidationError("entry", "Missing required section 'entry'"))
 
-    # ── adjustment (optional) ──
+    # adjustment section (optional)
     if "adjustment" in config:
-        _validate_adjustment(config["adjustment"], errors)
+        _validate_adjustment(config["adjustment"], errors, prefix="adjustment")
 
-    # ── exit ──
+    # exit section
     if "exit" in config:
-        _validate_exit(config["exit"], errors)
+        _validate_exit(config["exit"], errors, prefix="exit")
     else:
         errors.append(ValidationError("exit", "Missing required section 'exit'"))
 
-    # ── risk_management (optional) ──
-    if "risk_management" in config:
-        _validate_risk(config["risk_management"], errors)
+    # rms section (optional)
+    if "rms" in config:
+        _validate_rms(config["rms"], errors, prefix="rms")
 
     is_valid = not any(e.severity == "error" for e in errors)
     return is_valid, errors
@@ -199,349 +251,1046 @@ def validate_config_file(path: str) -> Tuple[bool, List[ValidationError], Option
 
 
 def coerce_config_numerics(config: Any) -> Any:
-    """Recursively coerce numerics with proper int preservation."""
-    _INT_KEYS = {
-        # Position sizing
-        "lots", "qty", "max_lots",
-        # Counters
-        "max_adjustments_per_day", "max_trades_per_day",
-        "adjustments_today", "total_trades_today",
-        # Timing (seconds/minutes as integers)
-        "check_interval_min", "cooldown_seconds",
-        "timeout_sec", "poll_interval_sec",
-        # Priorities
-        "priority",
-    }
-    
-    def _walk(obj: Any, key: str = "") -> Any:
-        if isinstance(obj, dict):
-            return {k: _walk(v, k) for k, v in obj.items()}
-        
-        if isinstance(obj, list):
-            return [_walk(item, key) for item in obj]
-        
-        # Time strings like "09:20" stay as-is
-        if isinstance(obj, str) and ":" in obj:
-            return obj
-        
-        # Numbers
-        if isinstance(obj, (int, float)):
+    """
+    Recursively convert numeric strings to appropriate int/float.
+    Useful after loading JSON where numbers may be strings.
+    """
+    if isinstance(config, dict):
+        return {k: coerce_config_numerics(v) for k, v in config.items()}
+    if isinstance(config, list):
+        return [coerce_config_numerics(item) for item in config]
+    if isinstance(config, str):
+        # Try int first, then float, else keep string
+        try:
+            return int(config)
+        except ValueError:
             try:
-                # Force int for specific keys
-                if key in _INT_KEYS or "priority" in key.lower():
-                    return int(obj)
-                # Everything else becomes float for precision
-                return float(obj)
-            except (ValueError, OverflowError) as e:
-                logger.error(f"Type coercion failed for {key}={obj}: {e}")
-                return obj  # Return original value
-        
-        return obj
-    
-    return _walk(config)
+                return float(config)
+            except ValueError:
+                return config
+    return config
 
-# ─── Section validators ─────────────────────────────────────────────────────
-
+# =============================================================================
+# SECTION VALIDATORS
+# =============================================================================
 def _validate_top_level(config: Dict, errors: List[ValidationError]):
     """Validate top-level fields."""
+    if "schema_version" not in config:
+        errors.append(ValidationError("schema_version", "Missing schema_version"))
+    elif config["schema_version"] != "4.0":
+        errors.append(ValidationError("schema_version", f"Expected '4.0', got '{config['schema_version']}'", "warning"))
+
     if "name" not in config:
         errors.append(ValidationError("name", "Missing strategy name"))
     elif not isinstance(config["name"], str) or not config["name"].strip():
         errors.append(ValidationError("name", "Strategy name must be a non-empty string"))
 
-    sv = config.get("schema_version")
-    if sv and sv != "3.0":
-        errors.append(ValidationError("schema_version", f"Expected '3.0', got '{sv}'", "warning"))
+    if "id" in config and not isinstance(config["id"], str):
+        errors.append(ValidationError("id", "id must be a string"))
+
+    if "description" in config and not isinstance(config["description"], str):
+        errors.append(ValidationError("description", "description must be a string"))
+
+    if "type" in config and config["type"] not in {
+        "neutral", "directional", "spread", "calendar", "volatility", "gamma_scalp", "custom"
+    }:
+        errors.append(ValidationError("type", f"Unknown strategy type '{config.get('type')}'", "warning"))
+
+    if "enabled" in config and not isinstance(config["enabled"], bool):
+        errors.append(ValidationError("enabled", "enabled must be a boolean"))
 
 
-def _validate_basic(basic: Dict, errors: List[ValidationError]):
-    """Validate basic section."""
-    path = "basic"
-
-    exchange = basic.get("exchange")
-    if not exchange:
-        errors.append(ValidationError(f"{path}.exchange", "Missing exchange"))
-    elif exchange.upper() not in VALID_EXCHANGES:
-        errors.append(ValidationError(f"{path}.exchange",
-            f"Invalid exchange '{exchange}'. Valid: {sorted(VALID_EXCHANGES)}"))
-
-    underlying = basic.get("underlying")
-    if not underlying:
-        errors.append(ValidationError(f"{path}.underlying", "Missing underlying"))
-    elif underlying.upper() not in VALID_UNDERLYINGS:
-        errors.append(ValidationError(f"{path}.underlying",
-            f"Unknown underlying '{underlying}'. Valid: {sorted(VALID_UNDERLYINGS)}", "warning"))
-
-    expiry = basic.get("expiry_mode")
-    if expiry and expiry not in VALID_EXPIRY_MODES:
-        errors.append(ValidationError(f"{path}.expiry_mode",
-            f"Invalid expiry_mode '{expiry}'. Valid: {sorted(VALID_EXPIRY_MODES)}"))
-
-    lots = basic.get("lots")
-    if lots is not None:
-        if not isinstance(lots, (int, float)) or lots < 1:
-            errors.append(ValidationError(f"{path}.lots", "lots must be >= 1"))
-
-
-def _validate_timing(timing: Dict, errors: List[ValidationError]):
-    """Validate timing section."""
-    path = "timing"
-
-    for key in ("entry_time", "exit_time"):
-        val = timing.get(key)
-        if not val:
-            errors.append(ValidationError(f"{path}.{key}", f"Missing {key}"))
-        elif isinstance(val, str):
-            try:
-                parts = val.split(":")
-                h, m = int(parts[0]), int(parts[1])
-                if not (0 <= h <= 23 and 0 <= m <= 59):
-                    raise ValueError
-            except (ValueError, IndexError):
-                errors.append(ValidationError(f"{path}.{key}",
-                    f"Invalid time format '{val}'. Expected HH:MM"))
-
-    # Entry must be before exit
-    et = timing.get("entry_time", "")
-    xt = timing.get("exit_time", "")
-    if et and xt:
-        try:
-            e_parts = et.split(":")
-            x_parts = xt.split(":")
-            if int(e_parts[0]) * 60 + int(e_parts[1]) >= int(x_parts[0]) * 60 + int(x_parts[1]):
-                errors.append(ValidationError(f"{path}",
-                    f"entry_time ({et}) must be before exit_time ({xt})"))
-        except (ValueError, IndexError):
-            pass  # Already caught above
-
-
-def _validate_market_data(md: Dict, errors: List[ValidationError]):
-    """Validate market_data section."""
-    path = "market_data"
-    source = md.get("source", "database")
-    if source not in VALID_MARKET_SOURCES:
-        errors.append(ValidationError(f"{path}.source",
-            f"Invalid source '{source}'. Valid: {sorted(VALID_MARKET_SOURCES)}"))
-
-    db_path = md.get("db_path")
-    if db_path and not Path(db_path).suffix == ".sqlite":
-        errors.append(ValidationError(f"{path}.db_path",
-            "db_path should end in .sqlite", "warning"))
-
-
-def _validate_calculated_params(cp: Dict, errors: List[ValidationError]):
-    """Validate calculated_params section (informational, not strictly required)."""
-    path = "calculated_params"
-    if not isinstance(cp, dict):
-        errors.append(ValidationError(path, "calculated_params must be a dict"))
+def _validate_identity(identity: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(identity, dict):
+        errors.append(ValidationError(prefix, "identity must be an object"))
         return
 
-    for key, val in cp.items():
-        if isinstance(val, dict):
-            if "formula" not in val:
-                errors.append(ValidationError(f"{path}.{key}",
-                    "Each calculated param should have a 'formula' field", "warning"))
+    # exchange
+    exchange = identity.get("exchange")
+    if not exchange:
+        errors.append(ValidationError(f"{prefix}.exchange", "Missing exchange"))
+    elif exchange.upper() not in VALID_EXCHANGES:
+        errors.append(ValidationError(f"{prefix}.exchange", f"Invalid exchange '{exchange}'. Valid: {sorted(VALID_EXCHANGES)}"))
+
+    # underlying
+    underlying = identity.get("underlying")
+    if not underlying:
+        errors.append(ValidationError(f"{prefix}.underlying", "Missing underlying"))
+    elif underlying.upper() not in VALID_UNDERLYINGS:
+        errors.append(ValidationError(f"{prefix}.underlying", f"Unknown underlying '{underlying}'. Valid: {sorted(VALID_UNDERLYINGS)}", "warning"))
+
+    # instrument_type (optional, but if present must be valid)
+    if "instrument_type" in identity and identity["instrument_type"] not in {"OPTIDX", "OPTSTK", "FUTIDX", "FUTSTK", "MCX", "CASH"}:
+        errors.append(ValidationError(f"{prefix}.instrument_type", f"Invalid instrument_type '{identity['instrument_type']}'", "warning"))
+
+    # product_type
+    product = identity.get("product_type")
+    if product and product.upper() not in VALID_PRODUCT_TYPES:
+        errors.append(ValidationError(f"{prefix}.product_type", f"Invalid product_type '{product}'. Valid: {sorted(VALID_PRODUCT_TYPES)}"))
+
+    # order_type
+    order_type = identity.get("order_type")
+    if order_type and order_type.upper() not in VALID_ORDER_TYPES:
+        errors.append(ValidationError(f"{prefix}.order_type", f"Invalid order_type '{order_type}'. Valid: {sorted(VALID_ORDER_TYPES)}"))
+
+    # lots
+    lots = identity.get("lots")
+    if lots is not None:
+        try:
+            lots_val = float(lots)
+            if lots_val < 1:
+                errors.append(ValidationError(f"{prefix}.lots", "lots must be >= 1"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{prefix}.lots", "lots must be a number"))
+
+    # db_file / db_path (optional, but if present check existence)
+    db_file = identity.get("db_file")
+    if db_file and not isinstance(db_file, str):
+        errors.append(ValidationError(f"{prefix}.db_file", "db_file must be a string"))
+
+
+def _validate_timing(timing: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(timing, dict):
+        errors.append(ValidationError(prefix, "timing must be an object"))
+        return
+
+    for key in ("entry_window_start", "entry_window_end", "eod_exit_time"):
+        val = timing.get(key)
+        if not val:
+            errors.append(ValidationError(f"{prefix}.{key}", f"Missing {key}"))
+        elif not _is_valid_time(val):
+            errors.append(ValidationError(f"{prefix}.{key}", f"Invalid time format '{val}'. Expected HH:MM"))
+
+    # Optionally check that entry_start < entry_end
+    start = timing.get("entry_window_start")
+    end = timing.get("entry_window_end")
+    if start and end and _is_valid_time(start) and _is_valid_time(end):
+        if _time_to_minutes(start) >= _time_to_minutes(end):
+            errors.append(ValidationError(prefix, "entry_window_start must be before entry_window_end", "warning"))
+
+
+def _validate_schedule(schedule: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(schedule, dict):
+        errors.append(ValidationError(prefix, "schedule must be an object"))
+        return
+
+    # frequency
+    freq = schedule.get("frequency")
+    if freq and freq not in {"daily", "weekly", "monthly", "event", "manual"}:
+        errors.append(ValidationError(f"{prefix}.frequency", f"Invalid frequency '{freq}'", "warning"))
+
+    # active_days
+    active_days = schedule.get("active_days")
+    if active_days is not None:
+        if not isinstance(active_days, list):
+            errors.append(ValidationError(f"{prefix}.active_days", "active_days must be an array"))
+        else:
+            valid_days = {"mon", "tue", "wed", "thu", "fri", "sat"}
+            for day in active_days:
+                if day not in valid_days:
+                    errors.append(ValidationError(f"{prefix}.active_days", f"Invalid day '{day}'. Valid: {sorted(valid_days)}", "warning"))
+
+    # expiry_mode
+    exp_mode = schedule.get("expiry_mode")
+    if exp_mode and exp_mode not in VALID_EXPIRY_MODES:
+        errors.append(ValidationError(f"{prefix}.expiry_mode", f"Invalid expiry_mode '{exp_mode}'. Valid: {sorted(VALID_EXPIRY_MODES)}"))
+
+    # dte_min / dte_max (optional numeric)
+    for key in ("dte_min", "dte_max", "square_off_before_min", "max_reentries_per_day"):
+        val = schedule.get(key)
+        if val is not None:
+            try:
+                float_val = float(val)
+                if float_val < 0:
+                    errors.append(ValidationError(f"{prefix}.{key}", f"{key} must be >= 0"))
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{prefix}.{key}", f"{key} must be a number"))
+
+    # entry_on_expiry_day (boolean)
+    entry_on_exp = schedule.get("entry_on_expiry_day")
+    if entry_on_exp is not None and not isinstance(entry_on_exp, bool):
+        errors.append(ValidationError(f"{prefix}.entry_on_expiry_day", "entry_on_expiry_day must be a boolean"))
+
+
+def _validate_market_data(md: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(md, dict):
+        errors.append(ValidationError(prefix, "market_data must be an object"))
+        return
+
+    source = md.get("source", "sqlite")
+    if source not in {"sqlite", "database"}:
+        errors.append(ValidationError(f"{prefix}.source", f"Invalid source '{source}'. Valid: sqlite, database"))
+
+    db_file = md.get("db_file")
+    if db_file and not isinstance(db_file, str):
+        errors.append(ValidationError(f"{prefix}.db_file", "db_file must be a string"))
+
+
+def _validate_entry(entry: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(entry, dict):
+        errors.append(ValidationError(prefix, "entry must be an object"))
+        return
+
+    # entry_sequence
+    seq = entry.get("entry_sequence")
+    if seq and seq not in VALID_ENTRY_SEQUENCES:
+        errors.append(ValidationError(f"{prefix}.entry_sequence", f"Invalid entry_sequence '{seq}'. Valid: {sorted(VALID_ENTRY_SEQUENCES)}"))
+
+    # global_conditions
+    global_conds = entry.get("global_conditions")
+    if global_conds is not None:
+        if not isinstance(global_conds, list):
+            errors.append(ValidationError(f"{prefix}.global_conditions", "global_conditions must be an array"))
+        else:
+            for i, cond in enumerate(global_conds):
+                _validate_condition(cond, f"{prefix}.global_conditions[{i}]", errors)
+
+    # legs
+    legs = entry.get("legs")
+    if not legs:
+        errors.append(ValidationError(f"{prefix}.legs", "Missing entry.legs"))
+    elif not isinstance(legs, list):
+        errors.append(ValidationError(f"{prefix}.legs", "legs must be an array"))
+    else:
+        for i, leg in enumerate(legs):
+            _validate_entry_leg(leg, f"{prefix}.legs[{i}]", errors)
+
+
+def _validate_entry_leg(leg: Dict, path: str, errors: List[ValidationError]):
+    if not isinstance(leg, dict):
+        errors.append(ValidationError(path, "leg must be an object"))
+        return
+
+    # tag (required)
+    tag = leg.get("tag")
+    if not tag:
+        errors.append(ValidationError(f"{path}.tag", "Missing leg tag"))
+    elif not isinstance(tag, str):
+        errors.append(ValidationError(f"{path}.tag", "tag must be a string"))
+
+    # instrument (optional, default OPT)
+    instrument = leg.get("instrument", "OPT")
+    if instrument not in VALID_INSTRUMENT_TYPES:
+        errors.append(ValidationError(f"{path}.instrument", f"Invalid instrument '{instrument}'. Valid: {sorted(VALID_INSTRUMENT_TYPES)}"))
+
+    # side (required)
+    side = leg.get("side")
+    if not side:
+        errors.append(ValidationError(f"{path}.side", "Missing side"))
+    elif side not in VALID_SIDES:
+        errors.append(ValidationError(f"{path}.side", f"Invalid side '{side}'. Valid: {sorted(VALID_SIDES)}"))
+
+    # option_type (required if instrument OPT, not allowed if FUT)
+    opt_type = leg.get("option_type")
+    if instrument == "OPT":
+        if not opt_type:
+            errors.append(ValidationError(f"{path}.option_type", "Missing option_type for option leg"))
+        elif opt_type not in VALID_OPTION_TYPES:
+            errors.append(ValidationError(f"{path}.option_type", f"Invalid option_type '{opt_type}'. Valid: {sorted(VALID_OPTION_TYPES)}"))
+    else:  # FUT
+        if opt_type is not None:
+            errors.append(ValidationError(f"{path}.option_type", "option_type must not be present for futures leg"))
+
+    # lots (required)
+    lots = leg.get("lots")
+    if lots is None:
+        errors.append(ValidationError(f"{path}.lots", "Missing lots"))
+    else:
+        try:
+            lots_val = int(lots)
+            if lots_val < 1:
+                errors.append(ValidationError(f"{path}.lots", "lots must be >= 1"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.lots", "lots must be an integer"))
+
+    # order_type (optional)
+    order_type = leg.get("order_type")
+    if order_type and order_type not in VALID_ORDER_TYPES:
+        errors.append(ValidationError(f"{path}.order_type", f"Invalid order_type '{order_type}'. Valid: {sorted(VALID_ORDER_TYPES)}", "warning"))
+
+    # expiry (optional, default strategy_default)
+    expiry = leg.get("expiry")
+    if expiry and expiry not in VALID_EXPIRY_MODES and expiry != "strategy_default":
+        errors.append(ValidationError(f"{path}.expiry", f"Invalid expiry '{expiry}'. Valid: {sorted(VALID_EXPIRY_MODES)}", "warning"))
+
+    # label (optional)
+    label = leg.get("label")
+    if label is not None and not isinstance(label, str):
+        errors.append(ValidationError(f"{path}.label", "label must be a string"))
+
+    # group (optional)
+    group = leg.get("group")
+    if group is not None and not isinstance(group, str):
+        errors.append(ValidationError(f"{path}.group", "group must be a string"))
+
+    # IF conditions (array)
+    if_conds = leg.get("conditions", [])
+    if not isinstance(if_conds, list):
+        errors.append(ValidationError(f"{path}.conditions", "conditions must be an array"))
+    else:
+        for i, cond in enumerate(if_conds):
+            _validate_condition(cond, f"{path}.conditions[{i}]", errors)
+
+    # else_enabled (boolean)
+    else_enabled = leg.get("else_enabled", False)
+    if not isinstance(else_enabled, bool):
+        errors.append(ValidationError(f"{path}.else_enabled", "else_enabled must be a boolean"))
+
+    # else_conditions (array, present only if else_enabled)
+    else_conds = leg.get("else_conditions", [])
+    if else_enabled:
+        if not isinstance(else_conds, list):
+            errors.append(ValidationError(f"{path}.else_conditions", "else_conditions must be an array"))
+        else:
+            for i, cond in enumerate(else_conds):
+                _validate_condition(cond, f"{path}.else_conditions[{i}]", errors)
+
+    # else_action (object, present only if else_enabled)
+    else_action = leg.get("else_action")
+    if else_enabled:
+        if not isinstance(else_action, dict):
+            errors.append(ValidationError(f"{path}.else_action", "else_action must be an object"))
+        else:
+            _validate_leg_execution_config(else_action, f"{path}.else_action", errors, instrument)
+
+    # IF branch execution config is the leg itself (already validated above)
+    # We need to validate that the leg contains the necessary fields for execution.
+    # Those are: side, lots, order_type (already done), plus strike-related fields for options.
+    if instrument == "OPT":
+        _validate_leg_strike_config(leg, f"{path}", errors)
+
+
+def _validate_leg_execution_config(cfg: Dict, path: str, errors: List[ValidationError], instrument: str):
+    """Validate the execution part of a leg (side, lots, strike_mode, etc.)."""
+    # side (required)
+    side = cfg.get("side")
+    if not side:
+        errors.append(ValidationError(f"{path}.side", "Missing side"))
+    elif side not in VALID_SIDES:
+        errors.append(ValidationError(f"{path}.side", f"Invalid side '{side}'. Valid: {sorted(VALID_SIDES)}"))
+
+    # lots (required)
+    lots = cfg.get("lots")
+    if lots is not None:
+        try:
+            lots_val = int(lots)
+            if lots_val < 1:
+                errors.append(ValidationError(f"{path}.lots", "lots must be >= 1"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.lots", "lots must be an integer"))
+
+    # order_type (optional)
+    order_type = cfg.get("order_type")
+    if order_type and order_type not in VALID_ORDER_TYPES:
+        errors.append(ValidationError(f"{path}.order_type", f"Invalid order_type '{order_type}'. Valid: {sorted(VALID_ORDER_TYPES)}", "warning"))
+
+    if instrument == "OPT":
+        _validate_leg_strike_config(cfg, path, errors)
+
+
+def _validate_leg_strike_config(cfg: Dict, path: str, errors: List[ValidationError]):
+    """Validate strike-related fields for an option leg."""
+    # option_type (required)
+    opt_type = cfg.get("option_type")
+    if not opt_type:
+        errors.append(ValidationError(f"{path}.option_type", "Missing option_type"))
+    elif opt_type not in VALID_OPTION_TYPES:
+        errors.append(ValidationError(f"{path}.option_type", f"Invalid option_type '{opt_type}'. Valid: {sorted(VALID_OPTION_TYPES)}"))
+
+    # strike_mode (required)
+    strike_mode = cfg.get("strike_mode")
+    if not strike_mode:
+        errors.append(ValidationError(f"{path}.strike_mode", "Missing strike_mode"))
+    elif strike_mode not in VALID_STRIKE_MODES:
+        errors.append(ValidationError(f"{path}.strike_mode", f"Invalid strike_mode '{strike_mode}'. Valid: {sorted(VALID_STRIKE_MODES)}"))
+
+    # Now validate based on strike_mode
+    if strike_mode == "standard":
+        sel = cfg.get("strike_selection")
+        if not sel:
+            errors.append(ValidationError(f"{path}.strike_selection", "Missing strike_selection for standard mode"))
+        elif sel not in VALID_STRIKE_SELECTIONS:
+            errors.append(ValidationError(f"{path}.strike_selection", f"Unknown strike_selection '{sel}'. Valid subset of {sorted(VALID_STRIKE_SELECTIONS)}", "warning"))
+        # strike_value is optional, but if present should be numeric
+        val = cfg.get("strike_value")
+        if val is not None:
+            try:
+                float(val)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.strike_value", "strike_value must be a number"))
+
+    elif strike_mode == "exact":
+        exact = cfg.get("exact_strike")
+        if exact is None:
+            errors.append(ValidationError(f"{path}.exact_strike", "Missing exact_strike for exact mode"))
+        else:
+            try:
+                float(exact)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.exact_strike", "exact_strike must be a number"))
+        rounding = cfg.get("rounding")
+        if rounding is not None:
+            try:
+                float(rounding)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.rounding", "rounding must be a number"))
+
+    elif strike_mode == "atm_points":
+        offset = cfg.get("atm_offset_points")
+        if offset is None:
+            errors.append(ValidationError(f"{path}.atm_offset_points", "Missing atm_offset_points for atm_points mode"))
+        else:
+            try:
+                float(offset)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.atm_offset_points", "atm_offset_points must be a number"))
+        rounding = cfg.get("rounding")
+        if rounding is not None:
+            try:
+                float(rounding)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.rounding", "rounding must be a number"))
+
+    elif strike_mode == "atm_pct":
+        pct = cfg.get("atm_offset_pct")
+        if pct is None:
+            errors.append(ValidationError(f"{path}.atm_offset_pct", "Missing atm_offset_pct for atm_pct mode"))
+        else:
+            try:
+                float(pct)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.atm_offset_pct", "atm_offset_pct must be a number"))
+        rounding = cfg.get("rounding")
+        if rounding is not None:
+            try:
+                float(rounding)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.rounding", "rounding must be a number"))
+
+    elif strike_mode == "match_leg":
+        match_leg = cfg.get("match_leg")
+        if not match_leg:
+            errors.append(ValidationError(f"{path}.match_leg", "Missing match_leg for match_leg mode"))
+        match_param = cfg.get("match_param")
+        if not match_param:
+            errors.append(ValidationError(f"{path}.match_param", "Missing match_param for match_leg mode"))
+        elif match_param not in {"delta", "abs_delta", "iv", "theta", "vega", "gamma", "ltp", "oi", "volume", "strike", "moneyness"}:
+            errors.append(ValidationError(f"{path}.match_param", f"Invalid match_param '{match_param}'", "warning"))
+        offset = cfg.get("match_offset", 0)
+        mult = cfg.get("match_multiplier", 1)
+        try:
+            float(offset)
+            float(mult)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.match_offset", "match_offset and match_multiplier must be numbers"))
 
 
 def _validate_condition(cond: Dict, path: str, errors: List[ValidationError]):
-    """Validate a single condition dict."""
+    """Validate a single condition dict (could be simple or compound)."""
+    if not isinstance(cond, dict):
+        errors.append(ValidationError(path, "condition must be an object"))
+        return
+
+    # Check if it's a compound condition (has "operator" and "rules")
+    if "operator" in cond and "rules" in cond:
+        # Compound condition
+        op = cond["operator"]
+        if op not in VALID_JOIN_OPERATORS:
+            errors.append(ValidationError(f"{path}.operator", f"Invalid operator '{op}'. Valid: {sorted(VALID_JOIN_OPERATORS)}"))
+        rules = cond["rules"]
+        if not isinstance(rules, list):
+            errors.append(ValidationError(f"{path}.rules", "rules must be an array"))
+        else:
+            for i, rule in enumerate(rules):
+                _validate_condition(rule, f"{path}.rules[{i}]", errors)
+        return
+
+    # Simple condition
     param = cond.get("parameter")
     if not param:
         errors.append(ValidationError(f"{path}.parameter", "Missing parameter"))
-    elif param not in VALID_PARAMETERS and not INDEX_PARAM_PATTERN.match(str(param)):
-        # Allow tag.X.Y parameters (strategy_builder per-leg conditions)
-        tag_param_pattern = re.compile(r"^tag\.[^.]+\.[a-z_]+$")
-        # Allow combined context parameters from builder
-        combined_ctx_params = {
-            "combined_entry_if_true", "combined_entry_else_true", "combined_entry_action_type",
-            "combined_adj_if_true", "combined_adj_else_true", "combined_adj_action_type",
-            "combined_exit_if_true", "combined_exit_else_true", "combined_exit_action_type",
-        }
-        if not tag_param_pattern.match(str(param)) and param not in combined_ctx_params:
-            errors.append(ValidationError(f"{path}.parameter",
-                f"Unknown parameter '{param}'. Valid: {sorted(VALID_PARAMETERS)}", "warning"))
+    elif not _is_valid_parameter(param):
+        errors.append(ValidationError(f"{path}.parameter", f"Unknown parameter '{param}'", "warning"))
 
     comp = cond.get("comparator")
     if not comp:
         errors.append(ValidationError(f"{path}.comparator", "Missing comparator"))
     elif comp not in VALID_COMPARATORS:
-        errors.append(ValidationError(f"{path}.comparator",
-            f"Invalid comparator '{comp}'. Valid: {sorted(VALID_COMPARATORS)}"))
+        errors.append(ValidationError(f"{path}.comparator", f"Invalid comparator '{comp}'. Valid: {sorted(VALID_COMPARATORS)}"))
 
-    if "value" not in cond:
-        errors.append(ValidationError(f"{path}.value", "Missing value"))
+    # value is required for most comparators, except is_true/is_false
+    if comp in ("is_true", "is_false"):
+        if "value" in cond:
+            errors.append(ValidationError(f"{path}.value", f"value should not be present for comparator {comp}", "warning"))
+    else:
+        if "value" not in cond:
+            errors.append(ValidationError(f"{path}.value", "Missing value"))
 
-    # ~= requires tolerance
-    if comp == "~=" and "tolerance" not in cond:
-        errors.append(ValidationError(f"{path}.tolerance",
-            "Comparator '~=' requires 'tolerance' field", "warning"))
-
-    # between requires value to be list of 2
+    # For between/not_between, value must be an array of two numbers
     if comp in ("between", "not_between"):
         val = cond.get("value")
         if not isinstance(val, (list, tuple)) or len(val) != 2:
-            errors.append(ValidationError(f"{path}.value",
-                f"Comparator '{comp}' requires value to be [min, max]"))
-    
-    # Deprecation warning: both_legs_delta with > operator
-    if param == "both_legs_delta":
-        if comp in (">", ">="):
-            errors.append(ValidationError(f"{path}",
-                "Parameter 'both_legs_delta' is deprecated with '>' or '>='. Use 'both_legs_delta_above' instead.",
-                "warning"))
+            errors.append(ValidationError(f"{path}.value", f"Comparator '{comp}' requires value to be [min, max]"))
         else:
-            errors.append(ValidationError(f"{path}",
-                "Parameter 'both_legs_delta' is deprecated. Use 'both_legs_delta_below' for '<' or 'both_legs_delta_above' for '>'.",
-                "warning"))
+            try:
+                float(val[0])
+                float(val[1])
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.value", "Both elements of value must be numbers"))
+
+    # For ~=, tolerance is optional but if present should be number
+    if comp == "~=" and "tolerance" in cond:
+        tol = cond["tolerance"]
+        try:
+            float(tol)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.tolerance", "tolerance must be a number"))
+
+    # join may be present in a list context; if present, must be valid
+    join = cond.get("join")
+    if join and join not in VALID_JOIN_OPERATORS:
+        errors.append(ValidationError(f"{path}.join", f"Invalid join '{join}'. Valid: {sorted(VALID_JOIN_OPERATORS)}"))
 
 
-def _validate_conditions_block(block: Dict, path: str, errors: List[ValidationError]):
-    """Validate a conditions block (may be nested with AND/OR + rules)."""
-    if "rules" in block:
-        operator = block.get("operator", "AND")
-        if operator not in VALID_OPERATORS:
-            errors.append(ValidationError(f"{path}.operator",
-                f"Invalid operator '{operator}'. Valid: {sorted(VALID_OPERATORS)}"))
+def _validate_adjustment(adj: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(adj, dict):
+        errors.append(ValidationError(prefix, "adjustment must be an object"))
+        return
 
-        rules = block["rules"]
-        if not isinstance(rules, list):
-            errors.append(ValidationError(f"{path}.rules", "rules must be an array"))
-            return
-
-        if len(rules) == 0:
-            errors.append(ValidationError(f"{path}.rules",
-                "rules array is empty — conditions may be handled via combined_conditions", "warning"))
-
-        for i, rule in enumerate(rules):
-            if isinstance(rule, dict):
-                # Could be nested conditions block or a leaf condition
-                if "rules" in rule:
-                    _validate_conditions_block(rule, f"{path}.rules[{i}]", errors)
-                else:
-                    _validate_condition(rule, f"{path}.rules[{i}]", errors)
-            else:
-                errors.append(ValidationError(f"{path}.rules[{i}]",
-                    "Each rule must be a dict"))
-    else:
-        # Single condition (no nesting)
-        _validate_condition(block, path, errors)
-
-
-def _validate_entry(entry: Dict, errors: List[ValidationError]):
-    """Validate entry section."""
-    path = "entry"
-
-    rule_type = entry.get("rule_type")
-    if rule_type and rule_type not in VALID_RULE_TYPES:
-        errors.append(ValidationError(f"{path}.rule_type",
-            f"Invalid rule_type '{rule_type}'. Valid: {sorted(VALID_RULE_TYPES)}"))
-
-    conditions = entry.get("conditions")
-    if conditions:
-        _validate_conditions_block(conditions, f"{path}.conditions", errors)
-
-    action = entry.get("action")
-    if not action:
-        errors.append(ValidationError(f"{path}.action", "Missing entry action"))
-    elif isinstance(action, dict):
-        atype = action.get("type")
-        if not atype:
-            errors.append(ValidationError(f"{path}.action.type", "Missing action type"))
-        elif atype not in VALID_ENTRY_ACTIONS:
-            errors.append(ValidationError(f"{path}.action.type",
-                f"Unknown entry action '{atype}'. Valid: {sorted(VALID_ENTRY_ACTIONS)}", "warning"))
-
-
-def _validate_adjustment(adj: Dict, errors: List[ValidationError]):
-    """Validate adjustment section."""
-    path = "adjustment"
-
-    if "enabled" in adj and not isinstance(adj["enabled"], bool):
-        errors.append(ValidationError(f"{path}.enabled", "enabled must be boolean"))
-
-    for num_field in ("check_interval_min", "max_adjustments_per_day", "cooldown_seconds"):
-        val = adj.get(num_field)
-        if val is not None and (not isinstance(val, (int, float)) or val < 0):
-            errors.append(ValidationError(f"{path}.{num_field}", f"{num_field} must be >= 0"))
+    enabled = adj.get("enabled", False)
+    if not isinstance(enabled, bool):
+        errors.append(ValidationError(f"{prefix}.enabled", "enabled must be a boolean"))
 
     rules = adj.get("rules", [])
     if not isinstance(rules, list):
-        errors.append(ValidationError(f"{path}.rules", "rules must be an array"))
+        errors.append(ValidationError(f"{prefix}.rules", "rules must be an array"))
         return
 
     priorities_seen = set()
     for i, rule in enumerate(rules):
-        rpath = f"{path}.rules[{i}]"
-
-        if not isinstance(rule, dict):
-            errors.append(ValidationError(rpath, "Each adjustment rule must be a dict"))
-            continue
-
-        # Priority
-        pri = rule.get("priority")
-        if pri is not None:
-            if pri in priorities_seen:
-                errors.append(ValidationError(f"{rpath}.priority",
-                    f"Duplicate priority {pri}", "warning"))
-            priorities_seen.add(pri)
-
-        # Name
-        if not rule.get("name"):
-            errors.append(ValidationError(f"{rpath}.name", "Adjustment rule missing 'name'", "warning"))
-
-        # Conditions
-        conditions = rule.get("conditions")
-        if conditions:
-            _validate_conditions_block(conditions, f"{rpath}.conditions", errors)
-
-        # Action
-        action = rule.get("action")
-        if action:
-            atype = action.get("type")
-            if atype and atype not in VALID_ADJUSTMENT_ACTIONS:
-                errors.append(ValidationError(f"{rpath}.action.type",
-                    f"Unknown adjustment action '{atype}'", "warning"))
-        else:
-            errors.append(ValidationError(f"{rpath}.action", "Adjustment rule missing 'action'"))
+        _validate_adjustment_rule(rule, f"{prefix}.rules[{i}]", errors, priorities_seen)
 
 
-def _validate_exit(exit_cfg: Dict, errors: List[ValidationError]):
-    """Validate exit section."""
-    path = "exit"
+def _validate_adjustment_rule(rule: Dict, path: str, errors: List[ValidationError], priorities_seen: Set[int]):
+    if not isinstance(rule, dict):
+        errors.append(ValidationError(path, "adjustment rule must be an object"))
+        return
 
-    conditions = exit_cfg.get("conditions")
-    if not conditions:
-        errors.append(ValidationError(f"{path}.conditions", "Missing exit conditions"))
-    elif isinstance(conditions, list):
-        for i, cond in enumerate(conditions):
-            if isinstance(cond, dict):
-                _validate_condition(cond, f"{path}.conditions[{i}]", errors)
+    # name (optional but recommended)
+    name = rule.get("name")
+    if name is not None and not isinstance(name, str):
+        errors.append(ValidationError(f"{path}.name", "name must be a string"))
+
+    # priority
+    pri = rule.get("priority")
+    if pri is None:
+        errors.append(ValidationError(f"{path}.priority", "Missing priority"))
+    else:
+        try:
+            pri_val = int(pri)
+            if pri_val < 1:
+                errors.append(ValidationError(f"{path}.priority", "priority must be >= 1"))
+            if pri_val in priorities_seen:
+                errors.append(ValidationError(f"{path}.priority", f"Duplicate priority {pri_val}", "warning"))
             else:
-                errors.append(ValidationError(f"{path}.conditions[{i}]",
-                    "Each exit condition must be a dict"))
-    elif isinstance(conditions, dict):
-        _validate_conditions_block(conditions, f"{path}.conditions", errors)
+                priorities_seen.add(pri_val)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.priority", "priority must be an integer"))
 
-    action = exit_cfg.get("action")
-    if action and isinstance(action, dict):
-        atype = action.get("type")
-        if atype and atype not in VALID_EXIT_ACTIONS:
-            errors.append(ValidationError(f"{path}.action.type",
-                f"Unknown exit action '{atype}'", "warning"))
+    # max_per_day (optional)
+    max_day = rule.get("max_per_day")
+    if max_day is not None:
+        try:
+            maxd = int(max_day)
+            if maxd < 1:
+                errors.append(ValidationError(f"{path}.max_per_day", "max_per_day must be >= 1"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.max_per_day", "max_per_day must be an integer"))
+
+    # max_total (optional)
+    max_total = rule.get("max_total")
+    if max_total is not None:
+        try:
+            mt = int(max_total)
+            if mt < 1:
+                errors.append(ValidationError(f"{path}.max_total", "max_total must be >= 1", "warning"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.max_total", "max_total must be an integer"))
+
+    # cooldown_sec (optional)
+    cooldown = rule.get("cooldown_sec")
+    if cooldown is not None:
+        try:
+            cd = float(cooldown)
+            if cd < 0:
+                errors.append(ValidationError(f"{path}.cooldown_sec", "cooldown_sec must be >= 0"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.cooldown_sec", "cooldown_sec must be a number"))
+
+    # retriger (optional, bool)
+    retrig = rule.get("retriger")
+    if retrig is not None and not isinstance(retrig, bool):
+        errors.append(ValidationError(f"{path}.retriger", "retriger must be a boolean"))
+
+    # leg_guard (optional) – should be a tag string
+    leg_guard = rule.get("leg_guard")
+    if leg_guard is not None and not isinstance(leg_guard, str):
+        errors.append(ValidationError(f"{path}.leg_guard", "leg_guard must be a string"))
+
+    # conditions (compound or array)
+    conds = rule.get("conditions")
+    if conds is not None:
+        if isinstance(conds, dict):
+            _validate_condition(conds, f"{path}.conditions", errors)
+        elif isinstance(conds, list):
+            for i, c in enumerate(conds):
+                _validate_condition(c, f"{path}.conditions[{i}]", errors)
+        else:
+            errors.append(ValidationError(f"{path}.conditions", "conditions must be an object or array"))
+
+    # action (required)
+    action = rule.get("action")
+    if not action:
+        errors.append(ValidationError(f"{path}.action", "Missing action"))
+    else:
+        _validate_adjustment_action(action, f"{path}.action", errors)
+
+    # else_enabled (bool)
+    else_enabled = rule.get("else_enabled", False)
+    if not isinstance(else_enabled, bool):
+        errors.append(ValidationError(f"{path}.else_enabled", "else_enabled must be a boolean"))
+
+    # else_conditions (optional)
+    else_conds = rule.get("else_conditions")
+    if else_enabled:
+        if else_conds is None:
+            errors.append(ValidationError(f"{path}.else_conditions", "Missing else_conditions when else_enabled is true"))
+        elif isinstance(else_conds, dict):
+            _validate_condition(else_conds, f"{path}.else_conditions", errors)
+        elif isinstance(else_conds, list):
+            for i, c in enumerate(else_conds):
+                _validate_condition(c, f"{path}.else_conditions[{i}]", errors)
+        else:
+            errors.append(ValidationError(f"{path}.else_conditions", "else_conditions must be an object or array"))
+
+    # else_action (optional)
+    else_action = rule.get("else_action")
+    if else_enabled and else_action is None:
+        errors.append(ValidationError(f"{path}.else_action", "Missing else_action when else_enabled is true"))
+    elif else_action is not None:
+        _validate_adjustment_action(else_action, f"{path}.else_action", errors)
 
 
-def _validate_risk(risk: Dict, errors: List[ValidationError]):
-    """Validate risk_management section."""
-    path = "risk_management"
+def _validate_adjustment_action(action: Dict, path: str, errors: List[ValidationError]):
+    if not isinstance(action, dict):
+        errors.append(ValidationError(path, "action must be an object"))
+        return
 
-    for field in ("max_loss_per_day", "max_trades_per_day"):
-        val = risk.get(field)
-        if val is not None and (not isinstance(val, (int, float)) or val < 0):
-            errors.append(ValidationError(f"{path}.{field}", f"{field} must be >= 0"))
+    atype = action.get("type")
+    if not atype:
+        errors.append(ValidationError(f"{path}.type", "Missing action type"))
+    elif atype not in VALID_ADJUSTMENT_ACTIONS:
+        errors.append(ValidationError(f"{path}.type", f"Invalid action type '{atype}'. Valid: {sorted(VALID_ADJUSTMENT_ACTIONS)}"))
 
-    ps = risk.get("position_sizing")
-    if ps and isinstance(ps, dict):
-        ml = ps.get("max_lots")
-        if ml is not None and (not isinstance(ml, (int, float)) or ml < 1):
-            errors.append(ValidationError(f"{path}.position_sizing.max_lots",
-                "max_lots must be >= 1"))
+    # Validate based on type
+    if atype == "close_leg":
+        close_tag = action.get("close_tag")
+        if not close_tag:
+            errors.append(ValidationError(f"{path}.close_tag", "Missing close_tag for close_leg"))
+        elif not isinstance(close_tag, str):
+            errors.append(ValidationError(f"{path}.close_tag", "close_tag must be a string"))
+
+    elif atype == "partial_close_lots":
+        close_tag = action.get("close_tag")
+        if not close_tag:
+            errors.append(ValidationError(f"{path}.close_tag", "Missing close_tag for partial_close_lots"))
+        lots = action.get("lots")
+        if lots is None:
+            errors.append(ValidationError(f"{path}.lots", "Missing lots for partial_close_lots"))
+        else:
+            try:
+                int(lots)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.lots", "lots must be an integer"))
+
+    elif atype == "reduce_by_pct":
+        close_tag = action.get("close_tag")
+        if not close_tag:
+            errors.append(ValidationError(f"{path}.close_tag", "Missing close_tag for reduce_by_pct"))
+        pct = action.get("reduce_pct")
+        if pct is None:
+            errors.append(ValidationError(f"{path}.reduce_pct", "Missing reduce_pct for reduce_by_pct"))
+        else:
+            try:
+                p = float(pct)
+                if not (0 <= p <= 100):
+                    errors.append(ValidationError(f"{path}.reduce_pct", "reduce_pct must be between 0 and 100"))
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.reduce_pct", "reduce_pct must be a number"))
+
+    elif atype == "open_hedge":
+        new_leg = action.get("new_leg")
+        if not new_leg:
+            errors.append(ValidationError(f"{path}.new_leg", "Missing new_leg for open_hedge"))
+        elif not isinstance(new_leg, dict):
+            errors.append(ValidationError(f"{path}.new_leg", "new_leg must be an object"))
+        else:
+            # Validate new_leg as a strike config (it should have side, option_type, strike_mode, etc.)
+            _validate_leg_strike_config(new_leg, f"{path}.new_leg", errors)
+
+    elif atype == "roll_to_next_expiry":
+        leg = action.get("leg")
+        if not leg:
+            errors.append(ValidationError(f"{path}.leg", "Missing leg for roll_to_next_expiry"))
+        target_expiry = action.get("target_expiry")
+        if target_expiry and target_expiry not in {"weekly_next", "monthly_next", "weekly_current"}:
+            errors.append(ValidationError(f"{path}.target_expiry", f"Invalid target_expiry '{target_expiry}'", "warning"))
+        same_strike = action.get("same_strike")
+        if same_strike and same_strike not in {"yes", "atm", "delta"}:
+            errors.append(ValidationError(f"{path}.same_strike", f"Invalid same_strike '{same_strike}'", "warning"))
+
+    elif atype == "convert_to_spread":
+        wing = action.get("wing_leg")
+        if not wing:
+            errors.append(ValidationError(f"{path}.wing_leg", "Missing wing_leg for convert_to_spread"))
+        elif not isinstance(wing, dict):
+            errors.append(ValidationError(f"{path}.wing_leg", "wing_leg must be an object"))
+        else:
+            _validate_leg_strike_config(wing, f"{path}.wing_leg", errors)
+
+    elif atype == "simple_close_open_new":
+        swaps = action.get("leg_swaps")
+        if not swaps:
+            errors.append(ValidationError(f"{path}.leg_swaps", "Missing leg_swaps for simple_close_open_new"))
+        elif not isinstance(swaps, list):
+            errors.append(ValidationError(f"{path}.leg_swaps", "leg_swaps must be an array"))
+        else:
+            for i, swap in enumerate(swaps):
+                _validate_leg_swap(swap, f"{path}.leg_swaps[{i}]", errors)
+
+
+def _validate_leg_swap(swap: Dict, path: str, errors: List[ValidationError]):
+    if not isinstance(swap, dict):
+        errors.append(ValidationError(path, "swap must be an object"))
+        return
+
+    close_tag = swap.get("close_tag")
+    if not close_tag:
+        errors.append(ValidationError(f"{path}.close_tag", "Missing close_tag in swap"))
+    elif not isinstance(close_tag, str):
+        errors.append(ValidationError(f"{path}.close_tag", "close_tag must be a string"))
+
+    new_leg = swap.get("new_leg")
+    if not new_leg:
+        errors.append(ValidationError(f"{path}.new_leg", "Missing new_leg in swap"))
+    elif not isinstance(new_leg, dict):
+        errors.append(ValidationError(f"{path}.new_leg", "new_leg must be an object"))
+    else:
+        _validate_leg_strike_config(new_leg, f"{path}.new_leg", errors)
+
+
+def _validate_exit(exit_cfg: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(exit_cfg, dict):
+        errors.append(ValidationError(prefix, "exit must be an object"))
+        return
+
+    # profit_target
+    pt = exit_cfg.get("profit_target")
+    if pt is not None:
+        if not isinstance(pt, dict):
+            errors.append(ValidationError(f"{prefix}.profit_target", "profit_target must be an object"))
+        else:
+            _validate_profit_target(pt, f"{prefix}.profit_target", errors)
+
+    # stop_loss
+    sl = exit_cfg.get("stop_loss")
+    if sl is not None:
+        if not isinstance(sl, dict):
+            errors.append(ValidationError(f"{prefix}.stop_loss", "stop_loss must be an object"))
+        else:
+            _validate_stop_loss(sl, f"{prefix}.stop_loss", errors)
+
+    # trailing
+    tr = exit_cfg.get("trailing")
+    if tr is not None:
+        if not isinstance(tr, dict):
+            errors.append(ValidationError(f"{prefix}.trailing", "trailing must be an object"))
+        else:
+            _validate_trailing(tr, f"{prefix}.trailing", errors)
+
+    # profit_steps
+    ps = exit_cfg.get("profit_steps")
+    if ps is not None:
+        if not isinstance(ps, dict):
+            errors.append(ValidationError(f"{prefix}.profit_steps", "profit_steps must be an object"))
+        else:
+            _validate_profit_steps(ps, f"{prefix}.profit_steps", errors)
+
+    # risk
+    risk = exit_cfg.get("risk")
+    if risk is not None:
+        if not isinstance(risk, dict):
+            errors.append(ValidationError(f"{prefix}.risk", "risk must be an object"))
+        else:
+            _validate_risk_subsection(risk, f"{prefix}.risk", errors)
+
+    # time
+    time_cfg = exit_cfg.get("time")
+    if time_cfg is not None:
+        if not isinstance(time_cfg, dict):
+            errors.append(ValidationError(f"{prefix}.time", "time must be an object"))
+        else:
+            _validate_time_exit(time_cfg, f"{prefix}.time", errors)
+
+    # combined_conditions
+    combined = exit_cfg.get("combined_conditions")
+    if combined is not None:
+        if not isinstance(combined, dict):
+            errors.append(ValidationError(f"{prefix}.combined_conditions", "combined_conditions must be an object"))
+        else:
+            # It should have operator and rules
+            op = combined.get("operator")
+            if op not in VALID_JOIN_OPERATORS:
+                errors.append(ValidationError(f"{prefix}.combined_conditions.operator", f"Invalid operator '{op}'. Valid: {sorted(VALID_JOIN_OPERATORS)}"))
+            rules = combined.get("rules", [])
+            if not isinstance(rules, list):
+                errors.append(ValidationError(f"{prefix}.combined_conditions.rules", "rules must be an array"))
+            else:
+                for i, rule in enumerate(rules):
+                    _validate_condition(rule, f"{prefix}.combined_conditions.rules[{i}]", errors)
+
+    # leg_rules
+    leg_rules = exit_cfg.get("leg_rules")
+    if leg_rules is not None:
+        if not isinstance(leg_rules, list):
+            errors.append(ValidationError(f"{prefix}.leg_rules", "leg_rules must be an array"))
+        else:
+            for i, rule in enumerate(leg_rules):
+                _validate_leg_exit_rule(rule, f"{prefix}.leg_rules[{i}]", errors)
+
+
+def _validate_profit_target(pt: Dict, path: str, errors: List[ValidationError]):
+    # amount (optional)
+    amt = pt.get("amount")
+    if amt is not None:
+        try:
+            float(amt)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.amount", "amount must be a number"))
+    pct = pt.get("pct")
+    if pct is not None:
+        try:
+            p = float(pct)
+            if p < 0:
+                errors.append(ValidationError(f"{path}.pct", "pct must be >= 0"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.pct", "pct must be a number"))
+    action = pt.get("action")
+    if action and action not in VALID_EXIT_ACTIONS:
+        errors.append(ValidationError(f"{path}.action", f"Invalid action '{action}'. Valid: {sorted(VALID_EXIT_ACTIONS)}"))
+    lots = pt.get("lots")
+    if lots is not None:
+        try:
+            int(lots)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.lots", "lots must be an integer"))
+
+
+def _validate_stop_loss(sl: Dict, path: str, errors: List[ValidationError]):
+    amt = sl.get("amount")
+    if amt is not None:
+        try:
+            float(amt)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.amount", "amount must be a number"))
+    pct = sl.get("pct")
+    if pct is not None:
+        try:
+            p = float(pct)
+            if p < 0:
+                errors.append(ValidationError(f"{path}.pct", "pct must be >= 0"))
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.pct", "pct must be a number"))
+    action = sl.get("action")
+    if action and action not in {"exit_all", "adjust", "partial_50"}:
+        errors.append(ValidationError(f"{path}.action", f"Invalid action '{action}'", "warning"))
+    allow_reentry = sl.get("allow_reentry")
+    if allow_reentry is not None and not isinstance(allow_reentry, bool):
+        errors.append(ValidationError(f"{path}.allow_reentry", "allow_reentry must be a boolean"))
+
+
+def _validate_trailing(tr: Dict, path: str, errors: List[ValidationError]):
+    for key in ("trail_amount", "lock_in_at", "trail_step", "step_trigger"):
+        val = tr.get(key)
+        if val is not None:
+            try:
+                float(val)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.{key}", f"{key} must be a number"))
+
+
+def _validate_profit_steps(ps: Dict, path: str, errors: List[ValidationError]):
+    step_size = ps.get("step_size")
+    if step_size is not None:
+        try:
+            float(step_size)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.step_size", "step_size must be a number"))
+    max_steps = ps.get("max_steps")
+    if max_steps is not None:
+        try:
+            int(max_steps)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.max_steps", "max_steps must be an integer"))
+    action = ps.get("action")
+    if action and action not in {"adj", "trail", "partial"}:
+        errors.append(ValidationError(f"{path}.action", f"Invalid action '{action}'", "warning"))
+
+
+def _validate_risk_subsection(risk: Dict, path: str, errors: List[ValidationError]):
+    # max_loss_per_day
+    loss = risk.get("max_loss_per_day")
+    if loss is not None:
+        try:
+            float(loss)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.max_loss_per_day", "must be a number"))
+    # max_delta
+    md = risk.get("max_delta")
+    if md is not None:
+        try:
+            float(md)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.max_delta", "must be a number"))
+    # delta_breach_action
+    dba = risk.get("delta_breach_action")
+    if dba and dba not in {"hedge", "adjust", "alert"}:
+        errors.append(ValidationError(f"{path}.delta_breach_action", f"Invalid action '{dba}'", "warning"))
+    # max_iv, min_iv
+    for key in ("max_iv", "min_iv"):
+        val = risk.get(key)
+        if val is not None:
+            try:
+                float(val)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{path}.{key}", "must be a number"))
+    # max_lots
+    ml = risk.get("max_lots")
+    if ml is not None:
+        try:
+            int(ml)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.max_lots", "must be an integer"))
+    # breakeven_buffer
+    buf = risk.get("breakeven_buffer")
+    if buf is not None:
+        try:
+            float(buf)
+        except (TypeError, ValueError):
+            errors.append(ValidationError(f"{path}.breakeven_buffer", "must be a number"))
+
+
+def _validate_time_exit(tm: Dict, path: str, errors: List[ValidationError]):
+    exit_time = tm.get("strategy_exit_time")
+    if exit_time and not _is_valid_time(exit_time):
+        errors.append(ValidationError(f"{path}.strategy_exit_time", "Invalid time format. Expected HH:MM"))
+    expiry_action = tm.get("expiry_day_action")
+    if expiry_action and expiry_action not in {"none", "time", "open", "roll"}:
+        errors.append(ValidationError(f"{path}.expiry_day_action", f"Invalid action '{expiry_action}'", "warning"))
+    expiry_time = tm.get("expiry_day_time")
+    if expiry_time and not _is_valid_time(expiry_time):
+        errors.append(ValidationError(f"{path}.expiry_day_time", "Invalid time format. Expected HH:MM"))
+    roll_target = tm.get("roll_target")
+    if roll_target and roll_target not in {"weekly_next", "monthly_next", "custom"}:
+        errors.append(ValidationError(f"{path}.roll_target", f"Invalid roll_target '{roll_target}'", "warning"))
+
+
+def _validate_leg_exit_rule(rule: Dict, path: str, errors: List[ValidationError]):
+    if not isinstance(rule, dict):
+        errors.append(ValidationError(path, "leg_exit_rule must be an object"))
+        return
+
+    ref = rule.get("exit_leg_ref")
+    if not ref:
+        errors.append(ValidationError(f"{path}.exit_leg_ref", "Missing exit_leg_ref"))
+    elif not isinstance(ref, str):
+        errors.append(ValidationError(f"{path}.exit_leg_ref", "exit_leg_ref must be a string"))
+
+    action = rule.get("action")
+    if action and action not in {"close_leg", "close_all", "reduce_50pct", "partial_lots", "roll_next"}:
+        errors.append(ValidationError(f"{path}.action", f"Invalid action '{action}'", "warning"))
+
+    group = rule.get("group")
+    if group is not None and not isinstance(group, str):
+        errors.append(ValidationError(f"{path}.group", "group must be a string"))
+
+    conds = rule.get("conditions", [])
+    if not isinstance(conds, list):
+        errors.append(ValidationError(f"{path}.conditions", "conditions must be an array"))
+    else:
+        for i, cond in enumerate(conds):
+            _validate_condition(cond, f"{path}.conditions[{i}]", errors)
+
+
+def _validate_rms(rms: Dict, errors: List[ValidationError], prefix: str):
+    if not isinstance(rms, dict):
+        errors.append(ValidationError(prefix, "rms must be an object"))
+        return
+    # rms may contain daily and position limits; we can validate numeric fields.
+    daily = rms.get("daily")
+    if daily and isinstance(daily, dict):
+        loss_limit = daily.get("loss_limit")
+        if loss_limit is not None:
+            try:
+                float(loss_limit)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{prefix}.daily.loss_limit", "loss_limit must be a number"))
+        max_trades = daily.get("max_trades")
+        if max_trades is not None:
+            try:
+                int(max_trades)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{prefix}.daily.max_trades", "max_trades must be an integer"))
+
+    position = rms.get("position")
+    if position and isinstance(position, dict):
+        max_lots = position.get("max_lots")
+        if max_lots is not None:
+            try:
+                int(max_lots)
+            except (TypeError, ValueError):
+                errors.append(ValidationError(f"{prefix}.position.max_lots", "max_lots must be an integer"))
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+def _is_valid_time(t: str) -> bool:
+    """Check if string matches HH:MM format (24-hour)."""
+    if not isinstance(t, str):
+        return False
+    parts = t.split(":")
+    if len(parts) != 2:
+        return False
+    try:
+        h = int(parts[0])
+        m = int(parts[1])
+        return 0 <= h <= 23 and 0 <= m <= 59
+    except ValueError:
+        return False
+
+
+def _time_to_minutes(t: str) -> int:
+    h, m = map(int, t.split(":"))
+    return h * 60 + m
+
+
+def _is_valid_parameter(param: str) -> bool:
+    """Check if a parameter name is known or matches a valid pattern."""
+    if param in KNOWN_PARAMETERS:
+        return True
+    if TAG_PARAM_PATTERN.match(param):
+        return True
+    if INDEX_PARAM_PATTERN.match(param):
+        return True
+    return False

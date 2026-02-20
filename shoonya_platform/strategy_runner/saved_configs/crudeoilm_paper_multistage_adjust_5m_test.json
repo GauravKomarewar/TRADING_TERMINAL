@@ -211,8 +211,8 @@
       "scale_enabled": false
     }
   },
-  "status": "RUNNING",
-  "status_updated_at": "2026-02-16T18:00:45.817084",
+  "status": "STOPPED",
+  "status_updated_at": "2026-02-20T07:33:57.215718",
   "identity": {
     "paper_mode": false,
     "test_mode": null
@@ -220,5 +220,5 @@
   "test_mode": null,
   "id": "CRUDEOILM_PAPER_MULTISTAGE_ADJUST_5M_TEST",
   "created_at": "2026-02-19T00:32:42",
-  "updated_at": "2026-02-19T00:32:42"
+  "updated_at": "2026-02-20T07:33:50"
 }

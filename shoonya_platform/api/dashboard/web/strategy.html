@@ -115,7 +115,6 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   display:flex;
   align-items:center;
   gap:8px;
-  flex-wrap: wrap;
 }
 .strat-card-meta { 
   display:flex; 
@@ -123,18 +122,15 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   font-size:11px; 
   color:var(--muted); 
   margin-top:8px;
-  flex-wrap: wrap;
 }
 .strat-card-actions { 
   display:flex; 
   gap:6px; 
   align-items:center; 
-  flex-wrap: wrap;
 }
-.search-box { display:flex; gap:8px; margin-bottom:12px; flex-wrap: wrap; }
+.search-box { display:flex; gap:8px; margin-bottom:12px; }
 .search-box input { 
   flex:1; 
-  min-width: 200px;
   padding:8px; 
   background:rgba(0,0,0,0.2); 
   border:1px solid var(--border); 
@@ -174,7 +170,7 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   border:1px solid var(--border); 
   border-radius:12px; 
   padding:24px; 
-  max-width:600px; 
+  max-width:500px; 
   width:90%;
   max-height:80vh;
   overflow-y:auto;
@@ -200,8 +196,7 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   color:var(--text);
   cursor:pointer;
   font-size:18px;
-  line-height:28px;
-  text-align:center;
+  line-height:1;
 }
 .icon-close:hover {
   background:rgba(255,255,255,0.12);
@@ -242,6 +237,40 @@ textarea.form-control {
   min-height:80px; 
   font-family:inherit; 
   resize:vertical;
+}
+.toggle-switch { 
+  position:relative; 
+  display:inline-block; 
+  width:44px; 
+  height:22px; 
+}
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider { 
+  position:absolute; 
+  cursor:pointer; 
+  top:0; 
+  left:0; 
+  right:0; 
+  bottom:0; 
+  background:rgba(255,255,255,0.1); 
+  transition:0.3s; 
+  border-radius:22px;
+}
+.toggle-slider:before { 
+  position:absolute; 
+  content:""; 
+  height:16px; 
+  width:16px; 
+  left:3px; 
+  bottom:3px; 
+  background:var(--muted); 
+  transition:0.3s; 
+  border-radius:50%;
+}
+input:checked + .toggle-slider { background:var(--success); }
+input:checked + .toggle-slider:before { 
+  transform:translateX(22px); 
+  background:#fff; 
 }
 .empty-state { 
   text-align:center; 
@@ -316,6 +345,7 @@ textarea.form-control {
   background:rgba(255,255,255,0.04); font-weight:700;
 }
 .monitor-tables-stack { margin-top: 8px; }
+
 .badge-mode { font-family: var(--font-mono); font-weight: 700; font-size: 10px; }
 .badge-live { 
   background: linear-gradient(120deg, #fb7185, #f43f5e); 
@@ -330,13 +360,6 @@ textarea.form-control {
 }
 .mode-changing { opacity: 0.5; pointer-events: none; }
 .btn-mode { font-size: 11px; padding: 5px 10px; }
-.details-content { font-family: var(--font-mono); font-size: 11px; }
-.details-section { margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 6px; }
-.details-section-title { font-weight: 700; color: var(--primary); margin-bottom: 8px; }
-.details-row { display: flex; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-.details-row:last-child { border-bottom: none; }
-.details-label { flex: 0 0 150px; color: var(--muted); }
-.details-value { flex: 1; color: var(--text); word-break: break-word; }
 </style>
 </head>
 <body>
@@ -352,7 +375,7 @@ textarea.form-control {
 
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>
-    <button class="tab-btn" onclick="switchTab('monitor', this)">📊 Live Monitor</button>
+    <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>
   </div>
 
   <!-- ====== TAB 1: ALL STRATEGIES ====== -->
@@ -441,12 +464,9 @@ textarea.form-control {
 
 <!-- View Details Modal -->
 <div id="details-modal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header modal-header-row">
-      <span>Strategy Details</span>
-      <button class="icon-close" type="button" onclick="closeModal('details-modal')" aria-label="Close details">&times;</button>
-    </div>
-    <div id="details-content" class="details-content"></div>
+  <div class="modal-content" style="max-width:600px;">
+    <div class="modal-header modal-header-row"><span>Strategy Details</span><button class="icon-close" type="button" onclick="closeModal('details-modal')" aria-label="Close details">&times;</button></div>
+    <div id="details-content" style="font-size:12px;font-family:var(--font-mono);"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('details-modal')">Close</button>
       <button class="btn btn-primary" onclick="editCurrentStrategy()">Edit</button>
@@ -470,7 +490,6 @@ const monitorRenderCache = {
 
 // ====== UTILS ======
 const $ = id => document.getElementById(id);
-
 const toast = (msg, type='success') => {
   const t = document.createElement('div');
   t.className = `toast toast-${type}`;
@@ -487,22 +506,11 @@ const api = async (method, path, body=null) => {
   };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(API_BASE + path, opts);
-  if (!r.ok) {
-    const text = await r.text();
-    throw new Error(text || r.statusText);
-  }
+  if (!r.ok) throw new Error(await r.text());
   return r.json();
 };
 
 const escHtml = str => String(str||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-
-// 🔥 CRITICAL FIX: Slugify function for safe HTML IDs
-function slugify(str) {
-  return String(str || '')
-    .replace(/[^a-zA-Z0-9]/g, '_')  // Replace non-alphanumeric with underscore
-    .replace(/_+/g, '_')             // Collapse multiple underscores
-    .replace(/^_|_$/g, '');          // Remove leading/trailing underscores
-}
 
 function setHtmlIfChanged(id, key, html) {
   if (monitorRenderCache[key] !== html) {
@@ -526,6 +534,7 @@ function switchTab(name, btnEl=null) {
   $(tabMap[name]).classList.add('active');
   
   if (name === 'list') loadStrategies();
+
   if (name === 'monitor') loadLiveMonitor();
 }
 
@@ -580,12 +589,6 @@ function renderStrategies() {
     const enabled = s.enabled !== false;
     const status = s.status || 'IDLE';
     const isRunning = status === 'RUNNING';
-    const mode = s.mode || 'LIVE';
-    const canChangeMode = s.can_change_mode !== false;
-    const modeReason = s.mode_change_reason || '';
-    
-    // 🔥 CRITICAL: Use slugified name for button ID
-    const safeName = slugify(s.name);
     
     return `
       <div class="strat-card">
@@ -593,29 +596,32 @@ function renderStrategies() {
           <div class="strat-card-name">
             <span class="status-dot ${status.toLowerCase()}"></span>
             ${escHtml(s.name)}
-            ${mode === 'LIVE'
-                ? '<span class="badge badge-mode badge-live">⚡ LIVE</span>'
-                : '<span class="badge badge-mode badge-mock">🧪 MOCK</span>'
+            ${
+              s.mode === 'LIVE'
+                ? '<span class="badge badge-mode badge-live" id="mode-badge-' + escHtml(s.name) + '">⚡ LIVE</span>'
+                : '<span class="badge badge-mode badge-mock" id="mode-badge-' + escHtml(s.name) + '">🧪 MOCK</span>'
             }
             ${enabled ? '<span class="badge badge-enabled">Enabled</span>' : '<span class="badge badge-disabled">Disabled</span>'}
             ${status !== 'IDLE' ? `<span class="badge badge-${status.toLowerCase()}">${status}</span>` : ''}
           </div>
           <div class="strat-card-actions">
+            
             <button 
               class="btn btn-secondary btn-sm btn-mode"
-              id="mode-btn-${safeName}"
-              data-strategy-name="${escHtml(s.name)}"
-              onclick="toggleMode('${escHtml(s.name).replace(/'/g, "\\'")}')"
-              ${!canChangeMode ? 'disabled title="' + escHtml(modeReason) + '"' : ''}>
-              ${mode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE'}
+              id="mode-btn-${escHtml(s.name)}"
+              onclick="toggleMode('${escHtml(s.name)}')"
+              ${!s.can_change_mode ? 'disabled title="' + escHtml(s.mode_change_reason || '') + '"' : ''}>
+              ${s.mode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE'}
             </button>
-            ${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name).replace(/'/g, "\\'")}')">▶ Start</button>` : ''}
-            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name).replace(/'/g, "\\'")}')">⏹ Stop</button>` : ''}
-            <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name).replace(/'/g, "\\'")}')">📋 Logs</button>
-            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${escHtml(s.name).replace(/'/g, "\\'")}')">👁 View</button>
-            <button class="btn btn-primary btn-sm" onclick="editStrategy('${escHtml(s.name).replace(/'/g, "\\'")}')">✏️ Edit</button>
-            <button class="btn btn-warning btn-sm" onclick="cloneStrategy('${escHtml(s.name).replace(/'/g, "\\'")}')">📋 Clone</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteStrategy('${escHtml(s.name).replace(/'/g, "\\'")}')">🗑 Delete</button>
+            
+${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name)}')">Start</button>` : ''}
+            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopStrategy('${escHtml(s.name)}')">Stop</button>` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="openLogs('${escHtml(s.name)}')">Logs</button>
+            <button class="btn btn-secondary btn-sm" onclick="viewDetails('${escHtml(s.name)}')">View</button>
+            <button class="btn btn-primary btn-sm" onclick="editStrategy('${escHtml(s.name)}')">Edit</button>
+            <button class="btn btn-secondary btn-sm" onclick="toggleEnabled('${escHtml(s.name)}', ${enabled})">${enabled ? 'Disable' : 'Enable'}</button>
+            <button class="btn btn-warning btn-sm" onclick="cloneStrategy('${escHtml(s.name)}')">Clone</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteStrategy('${escHtml(s.name)}')">Delete</button>
           </div>
         </div>
         <div class="strat-card-meta">
@@ -632,12 +638,8 @@ function renderStrategies() {
 
 function formatDate(dateStr) {
   if (!dateStr) return 'Never';
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  } catch(e) {
-    return 'Invalid date';
-  }
+  const d = new Date(dateStr);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 }
 
 // ====== FILTERS ======
@@ -656,7 +658,7 @@ function filterStrategies() {
 async function startStrategy(name) {
   try {
     await api('POST', `/strategy/${encodeURIComponent(name)}/start-execution`);
-    toast(`Strategy "${name}" started`, 'success');
+    toast(`Strategy "${name}" started`);
     setTimeout(loadStrategies, 1000);
   } catch(e) {
     toast('Failed to start: ' + e.message, 'error');
@@ -666,134 +668,13 @@ async function startStrategy(name) {
 async function stopStrategy(name) {
   try {
     await api('POST', `/strategy/${encodeURIComponent(name)}/stop-execution`);
-    toast(`Strategy "${name}" stopped`, 'success');
+    toast(`Strategy "${name}" stopped`);
     setTimeout(loadStrategies, 1000);
   } catch(e) {
     toast('Failed to stop: ' + e.message, 'error');
   }
 }
 
-// ====== MODE TOGGLE ======
-async function toggleMode(originalName) {
-  // 🔥 CRITICAL: Slugify the name to find the button
-  const safeName = slugify(originalName);
-  const btn = document.getElementById('mode-btn-' + safeName);
-  
-  if (!btn || btn.disabled) {
-    toast('Mode toggle button not found or disabled', 'error');
-    return;
-  }
-
-  // Determine current and new mode from button text
-  const btnText = btn.textContent.trim();
-  const newMode = btnText.includes('LIVE') ? 'LIVE' : 'MOCK';
-  
-  if (!confirm(`Switch "${originalName}" to ${newMode} mode?\n\nNote: Mode can only be changed when strategy has no active positions.`)) {
-    return;
-  }
-
-  try {
-    btn.disabled = true;
-    btn.textContent = 'Switching...';
-
-    // Use original name for API call
-    await api('POST', `/strategy/${encodeURIComponent(originalName)}/mode`, { mode: newMode });
-    toast(`Mode changed to ${newMode}`, 'success');
-    
-    // Reload strategies to reflect changes
-    setTimeout(loadStrategies, 500);
-  } catch (e) {
-    toast('Mode change failed: ' + e.message, 'error');
-    // Reset button
-    loadStrategies();
-  }
-}
-
-// ====== VIEW DETAILS ======
-async function viewDetails(name) {
-  try {
-    const r = await api('GET', `/strategy/${encodeURIComponent(name)}`);
-    currentDetailsStrategy = r;
-    
-    const config = r.config || {};
-    const identity = config.identity || {};
-    const entry = config.entry || {};
-    const exit = config.exit || {};
-    const rms = config.rms || {};
-    
-    let html = '';
-    
-    // Identity Section
-    if (Object.keys(identity).length > 0) {
-      html += `<div class="details-section">
-        <div class="details-section-title">Identity</div>
-        ${Object.entries(identity).map(([k, v]) => `
-          <div class="details-row">
-            <div class="details-label">${escHtml(k)}</div>
-            <div class="details-value">${escHtml(JSON.stringify(v))}</div>
-          </div>
-        `).join('')}
-      </div>`;
-    }
-    
-    // Entry Section
-    if (Object.keys(entry).length > 0) {
-      html += `<div class="details-section">
-        <div class="details-section-title">Entry Rules</div>
-        ${Object.entries(entry).map(([k, v]) => `
-          <div class="details-row">
-            <div class="details-label">${escHtml(k)}</div>
-            <div class="details-value">${escHtml(JSON.stringify(v))}</div>
-          </div>
-        `).join('')}
-      </div>`;
-    }
-    
-    // Exit Section
-    if (Object.keys(exit).length > 0) {
-      html += `<div class="details-section">
-        <div class="details-section-title">Exit Rules</div>
-        ${Object.entries(exit).map(([k, v]) => `
-          <div class="details-row">
-            <div class="details-label">${escHtml(k)}</div>
-            <div class="details-value">${escHtml(JSON.stringify(v))}</div>
-          </div>
-        `).join('')}
-      </div>`;
-    }
-    
-    // RMS Section
-    if (Object.keys(rms).length > 0) {
-      html += `<div class="details-section">
-        <div class="details-section-title">Risk Management</div>
-        ${Object.entries(rms).map(([k, v]) => `
-          <div class="details-row">
-            <div class="details-label">${escHtml(k)}</div>
-            <div class="details-value">${escHtml(JSON.stringify(v))}</div>
-          </div>
-        `).join('')}
-      </div>`;
-    }
-    
-    if (!html) {
-      html = '<div style="color:var(--muted);padding:20px;text-align:center;">No configuration details available</div>';
-    }
-    
-    $('details-content').innerHTML = html;
-    $('details-modal').classList.add('show');
-  } catch(e) {
-    toast('Failed to load details: ' + e.message, 'error');
-  }
-}
-
-function editCurrentStrategy() {
-  if (currentDetailsStrategy) {
-    closeModal('details-modal');
-    editStrategy(currentDetailsStrategy.name);
-  } else {
-    toast('No strategy selected', 'error');
-  }
-}
 
 function editStrategy(name) {
   openBuilderPage(name);
@@ -802,49 +683,14 @@ function editStrategy(name) {
 // ====== CLONE ======
 async function cloneStrategy(name) {
   try {
-    const newName = prompt('Enter cloned strategy name:');
+    const newName = prompt('Enter cloned strategy name');
     if (!newName || !newName.trim()) return;
-    
-    const r = await api('POST', `/strategy/config/${encodeURIComponent(name)}/clone`, { 
-      new_name: newName.trim() 
-    });
-    
-    toast('Strategy cloned as: ' + (r.new_name || newName.trim()), 'success');
+    const r = await api('POST', `/strategy/config/${encodeURIComponent(name)}/clone`, { new_name: newName.trim() });
+    toast('Strategy cloned as: ' + (r.new_name || newName.trim()));
     loadStrategies();
   } catch(e) {
     toast('Failed to clone: ' + e.message, 'error');
   }
-}
-
-// ====== DELETE ======
-async function deleteStrategy(name) {
-  currentDeleteStrategy = name;
-  $('delete-strategy-name').textContent = name;
-  $('delete-modal').classList.add('show');
-}
-
-async function confirmDelete() {
-  if (!currentDeleteStrategy) return;
-  
-  try {
-    await api('DELETE', `/strategy/config/${encodeURIComponent(currentDeleteStrategy)}`);
-    toast('Strategy deleted', 'success');
-    closeModal('delete-modal');
-    currentDeleteStrategy = null;
-    loadStrategies();
-  } catch(e) {
-    toast('Failed to delete: ' + e.message, 'error');
-  }
-}
-
-// ====== ENABLE/DISABLE (STUB) ======
-function toggleEnabled(name, currentlyEnabled) {
-  toast('Enable/disable feature not yet implemented', 'info');
-}
-
-function confirmToggle() {
-  closeModal('toggle-modal');
-  toast('Enable/disable not implemented', 'info');
 }
 
 // ====== RUNNER STATUS ======
@@ -863,11 +709,9 @@ async function refreshStatus() {
     }
   } catch(e) {
     console.error('Status check failed', e);
-    $('runner-status').textContent = 'Error';
   }
 }
 
-// ====== MONITOR HELPERS ======
 function fmt2(n) {
   const v = Number(n || 0);
   return Number.isFinite(v) ? v.toFixed(2) : '0.00';
@@ -898,7 +742,10 @@ function collapseBySymbol(rows) {
   for (const p of items) {
     const key = String(p.symbol || '').trim() || 'UNKNOWN';
     if (!map.has(key)) {
-      map.set(key, {...p, symbol: key});
+      map.set(key, {
+        ...p,
+        symbol: key
+      });
       continue;
     }
     const x = map.get(key);
@@ -913,17 +760,37 @@ function collapseBySymbol(rows) {
 
     if (x.side && p.side && x.side !== p.side) x.side = 'MIXED';
     if (!x.side && p.side) x.side = p.side;
+    if (!x.owner && p.owner) x.owner = p.owner;
+    if (!x.source && (p.source || p.position_source)) x.source = p.source || p.position_source;
+    if (x.exit_price == null && p.exit_price != null) x.exit_price = p.exit_price;
+    if ((x.entry_price ?? x.avg_price) == null && (p.entry_price ?? p.avg_price) != null) {
+      x.entry_price = p.entry_price;
+      x.avg_price = p.avg_price;
+    }
+    if (x.ltp == null && p.ltp != null) x.ltp = p.ltp;
+    if (!x.status && p.status) x.status = p.status;
   }
 
-  return [...map.values()].sort((a, b) => 
-    String(a.symbol || '').localeCompare(String(b.symbol || ''))
-  );
+  const sideRank = (side) => {
+    const s = String(side || '').toUpperCase();
+    if (s === 'SELL') return 0;
+    if (s === 'BUY') return 1;
+    if (s === 'MIXED') return 2;
+    return 3;
+  };
+
+  return [...map.values()].sort((a, b) => {
+    const sym = String(a.symbol || '').localeCompare(String(b.symbol || ''));
+    if (sym !== 0) return sym;
+    const side = sideRank(a.side) - sideRank(b.side);
+    if (side !== 0) return side;
+    return String(a.status || '').localeCompare(String(b.status || ''));
+  });
 }
 
-// 🔥 RESTORED: Exit column added back to monitor table
 function renderMonitorTable(positions, isOrphan=false) {
   if (!positions || !positions.length) {
-    return `<div style="color:var(--muted);font-size:12px;padding:10px;">No ${isOrphan ? 'orphan' : 'strategy-linked'} legs.</div>`;
+    return `<div style="color:var(--muted);font-size:12px;">No ${isOrphan ? 'orphan' : 'strategy-linked'} legs.</div>`;
   }
   return `
     <div class="table-wrap">
@@ -944,6 +811,8 @@ function renderMonitorTable(positions, isOrphan=false) {
           <th>Theta</th>
           <th>Vega</th>
           <th>Status</th>
+          <th>Source</th>
+          <th>Owner</th>
         </tr>
       </thead>
       <tbody>
@@ -963,6 +832,8 @@ function renderMonitorTable(positions, isOrphan=false) {
             <td>${fmt2(p.theta)}</td>
             <td>${fmt2(p.vega)}</td>
             <td>${escHtml(p.status || 'ACTIVE')}</td>
+            <td>${escHtml(p.source || p.position_source || 'BROKER')}</td>
+            <td>${escHtml(p.owner || p.strategy_name || 'ORPHAN')}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -981,28 +852,40 @@ async function loadLiveMonitor() {
       <div class="monitor-card"><div class="monitor-label">Strategy Linked</div><div class="monitor-value">${Number(s.strategy_linked_positions||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Orphan</div><div class="monitor-value">${Number(s.orphan_positions||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Tracked Legs</div><div class="monitor-value">${Number(s.total_strategy_legs_tracked||0)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Closed Legs</div><div class="monitor-value">${Number(s.total_closed_strategy_legs||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio Realized</div><div class="monitor-value" style="color:${Number(s.portfolio_realized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_realized_pnl)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Unrealized</div><div class="monitor-value" style="color:${Number(s.portfolio_unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_unrealized_pnl)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio PnL</div><div class="monitor-value" style="color:${Number(s.portfolio_total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_total_pnl)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio Delta</div><div class="monitor-value">${fmt2(s.portfolio_combined_delta)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Gamma</div><div class="monitor-value">${fmt2(s.portfolio_combined_gamma)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio Theta</div><div class="monitor-value">${fmt2(s.portfolio_combined_theta)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Portfolio Vega</div><div class="monitor-value">${fmt2(s.portfolio_combined_vega)}</div></div>
     `;
     setHtmlIfChanged('monitor-summary', 'summary', summaryHtml);
 
     const groups = r.strategy_groups || [];
+    const sortedGroups = [...groups].sort((a, b) =>
+      String(a.strategy_name || '').localeCompare(String(b.strategy_name || ''))
+    );
     if (!groups.length) {
-      setHtmlIfChanged('monitor-strategy-groups', 'groups', '<div style="color:var(--muted);font-size:12px;padding:10px;">No strategy-linked positions.</div>');
+      setHtmlIfChanged('monitor-strategy-groups', 'groups', '<div style="color:var(--muted);font-size:12px;">No strategy-linked positions.</div>');
     } else {
-      const groupsHtml = groups.map(g => {
-        const allRows = g.all_legs || [];
-        const activeRows = allRows.filter(x => String(x.status || '').toUpperCase() !== 'CLOSED');
-        const closedRows = allRows.filter(x => String(x.status || '').toUpperCase() === 'CLOSED');
+      const groupsHtml = sortedGroups.map(g => {
+        const allRows = g.all_legs || g.positions || [];
+        const activeRowsRaw = (g.active_leg_rows && g.active_leg_rows.length)
+          ? g.active_leg_rows
+          : allRows.filter(x => String(x.status || 'ACTIVE').toUpperCase() !== 'CLOSED');
+        const closedRowsRaw = (g.closed_leg_rows && g.closed_leg_rows.length)
+          ? g.closed_leg_rows
+          : allRows.filter(x => String(x.status || '').toUpperCase() === 'CLOSED');
 
         return `
           <div class="strat-card">
             <div class="strat-card-header">
               <div class="strat-card-name">
                 ${escHtml(g.strategy_name)}
-                ${g.mode === 'LIVE'
+                ${
+                  g.mode === 'LIVE'
                     ? '<span class="badge badge-mode badge-live">⚡ LIVE</span>'
                     : '<span class="badge badge-mode badge-mock">🧪 MOCK</span>'
                 }
@@ -1011,20 +894,21 @@ async function loadLiveMonitor() {
               <div style="font-size:12px;color:${Number(g.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'};">PnL ${fmt2(g.total_pnl)}</div>
             </div>
             <div class="strat-card-meta">
-              <span><strong>Runtime:</strong> ${fmtRuntime(g.runtime_seconds)}</span>
+              <span><strong>Runtime:</strong> ${fmtRuntime(g.runtime_seconds)} ${g.runtime_state === 'RUNNING' ? '(Live)' : (g.runtime_state === 'COMPLETED' ? '(Completed)' : '')}</span>
               <span><strong>Realized:</strong> ${fmt2(g.realized_pnl)}</span>
               <span><strong>Unrealized:</strong> ${fmt2(g.unrealized_pnl)}</span>
-              <span><strong>Active Legs:</strong> ${Number(g.active_legs || 0)}</span>
-              <span><strong>Closed Legs:</strong> ${Number(g.closed_legs || 0)}</span>
+              <span><strong>Active Legs:</strong> ${Number(g.active_legs || activeRowsRaw.length || 0)}</span>
+              <span><strong>Closed Legs:</strong> ${Number(g.closed_legs || closedRowsRaw.length || 0)}</span>
               <span><strong>Delta:</strong> <span class="combined-delta-pill ${deltaClass(g.combined_delta)}">${fmt2(g.combined_delta)}</span></span>
+              <span><strong>Gamma:</strong> ${fmt2(g.combined_gamma)}</span>
+              <span><strong>Theta:</strong> ${fmt2(g.combined_theta)}</span>
+              <span><strong>Vega:</strong> ${fmt2(g.combined_vega)}</span>
             </div>
             <div class="monitor-tables-stack">
               <div class="monitor-subtitle" style="margin-top:10px;">Active Legs</div>
-              ${renderMonitorTable(collapseBySymbol(activeRows))}
-              ${closedRows.length > 0 ? `
-                <div class="monitor-subtitle" style="margin-top:12px;">Closed Legs</div>
-                ${renderMonitorTable(collapseBySymbol(closedRows))}
-              ` : ''}
+              ${renderMonitorTable(collapseBySymbol(activeRowsRaw))}
+              <div class="monitor-subtitle" style="margin-top:12px;">Closed Legs</div>
+              ${renderMonitorTable(collapseBySymbol(closedRowsRaw))}
             </div>
           </div>
         `;
@@ -1036,20 +920,34 @@ async function loadLiveMonitor() {
     const orphansHtml = `
       <div class="strat-card-meta" style="margin-bottom:8px;">
         <span><strong>Legs:</strong> ${Number(oa.leg_count || 0)}</span>
-        <span><strong>PnL:</strong> <span style="color:${Number(oa.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.total_pnl)}</span></span>
         <span><strong>Delta:</strong> ${fmt2(oa.combined_delta)}</span>
+        <span><strong>Gamma:</strong> ${fmt2(oa.combined_gamma)}</span>
+        <span><strong>Theta:</strong> ${fmt2(oa.combined_theta)}</span>
+        <span><strong>Vega:</strong> ${fmt2(oa.combined_vega)}</span>
+        <span><strong>Realized:</strong> <span style="color:${Number(oa.realized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.realized_pnl)}</span></span>
+        <span><strong>Unrealized:</strong> <span style="color:${Number(oa.unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.unrealized_pnl)}</span></span>
+        <span><strong>PnL:</strong> <span style="color:${Number(oa.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(oa.total_pnl)}</span></span>
       </div>
       ${renderMonitorTable(collapseBySymbol(r.orphan_positions || []), true)}
     `;
     setHtmlIfChanged('monitor-orphans', 'orphans', orphansHtml);
   } catch(e) {
-    console.error('Monitor load failed:', e);
     monitorRenderCache.summary = '';
     monitorRenderCache.groups = '';
     monitorRenderCache.orphans = '';
-    $('monitor-summary').innerHTML = '<div style="color:var(--danger);padding:10px;">Failed to load monitor</div>';
+    $('monitor-summary').innerHTML = '';
     $('monitor-strategy-groups').innerHTML = '';
-    $('monitor-orphans').innerHTML = '';
+    $('monitor-orphans').innerHTML = `<div style="color:var(--danger);font-size:12px;">Failed to load live monitor: ${escHtml(e.message)}</div>`;
+  }
+}
+
+async function forceExit(name) {
+  if (!confirm(`Force EXIT all positions for ${name}?`)) return;
+  try {
+    await api('POST', '/system/force-exit', { strategy_name: name });
+    toast('Force exit initiated');
+  } catch(e) {
+    toast('Failed to force exit: ' + e.message, 'error');
   }
 }
 
@@ -1080,7 +978,7 @@ function importStrategy() {
       const text = await file.text();
       const config = JSON.parse(text);
       await api('POST', '/strategy/config/save-all', config);
-      toast('Strategy imported successfully', 'success');
+      toast('Strategy imported');
       loadStrategies();
     } catch(err) {
       toast('Import failed: ' + err.message, 'error');
@@ -1089,13 +987,112 @@ function importStrategy() {
   input.click();
 }
 
+// ====== ENABLE / DISABLE ======
+function toggleEnabled(name, currentlyEnabled) {
+  currentToggleStrategy = { name, enabled: currentlyEnabled };
+  $('toggle-modal-title').textContent = currentlyEnabled ? 'Disable Strategy' : 'Enable Strategy';
+  $('toggle-modal-message').textContent = currentlyEnabled
+    ? `Disable strategy "${name}"? It will stop executing new entries.`
+    : `Enable strategy "${name}"? It will resume normal operation.`;
+  $('toggle-modal-confirm').className = currentlyEnabled
+    ? 'btn btn-danger'
+    : 'btn btn-success';
+  $('toggle-modal-confirm').textContent = currentlyEnabled ? 'Disable' : 'Enable';
+  $('toggle-modal').classList.add('show');
+}
+
+async function confirmToggle() {
+  if (!currentToggleStrategy) return;
+  const { name, enabled } = currentToggleStrategy;
+  closeModal('toggle-modal');
+  try {
+    // Toggle enabled via status endpoint (IDLE = disabled for our purposes)
+    // We persist enabled flag by including it in a save-all call that merges
+    const existing = allStrategies.find(s => s.name === name) || {};
+    await api('POST', `/strategy/config/save-all`, {
+      ...existing,
+      name,
+      enabled: !enabled,
+    });
+    toast(`Strategy "${name}" ${enabled ? 'disabled' : 'enabled'}`);
+    loadStrategies();
+  } catch (e) {
+    toast('Toggle failed: ' + e.message, 'error');
+  }
+  currentToggleStrategy = null;
+}
+
+// ====== DELETE ======
+function deleteStrategy(name) {
+  currentDeleteStrategy = name;
+  $('delete-strategy-name').textContent = name;
+  $('delete-modal').classList.add('show');
+}
+
+async function confirmDelete() {
+  if (!currentDeleteStrategy) return;
+  const name = currentDeleteStrategy;
+  closeModal('delete-modal');
+  try {
+    await api('DELETE', `/strategy/config/${encodeURIComponent(name)}`);
+    toast(`Strategy "${name}" deleted`);
+    loadStrategies();
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'error');
+  }
+  currentDeleteStrategy = null;
+}
+
+// ====== VIEW DETAILS ======
+async function viewDetails(name) {
+  currentDetailsStrategy = name;
+  $('details-content').innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center;">Loading...</div>';
+  $('details-modal').classList.add('show');
+  try {
+    const r = await api('GET', `/strategy/config/${encodeURIComponent(name)}`);
+    const pretty = JSON.stringify(r, null, 2)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    $('details-content').innerHTML = `<pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;line-height:1.6;">${pretty}</pre>`;
+  } catch (e) {
+    $('details-content').innerHTML = `<div style="color:var(--danger);">Failed to load: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function editCurrentStrategy() {
+  if (currentDetailsStrategy) {
+    closeModal('details-modal');
+    openBuilderPage(currentDetailsStrategy);
+  }
+}
+
+// ====== MODE TOGGLE ======
+async function toggleMode(name) {
+  const btn = document.getElementById('mode-btn-' + name);
+  if (!btn || btn.disabled) return;
+
+  const badgeEl = document.getElementById('mode-badge-' + name);
+  const currentMode = (badgeEl && badgeEl.textContent.includes('LIVE')) ? 'LIVE' : 'MOCK';
+  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Switching...';
+
+    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+    toast(`Mode changed to ${newMode}`, 'success');
+    loadStrategies();
+  } catch (e) {
+    toast('Mode change failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
+  }
+}
+
 // ====== INIT ======
 window.addEventListener('load', () => {
   loadStrategies();
   refreshStatus();
   setInterval(refreshStatus, 5000);
-  
-  // Auto-refresh monitor when on that tab
   setInterval(() => {
     const activeTab = document.querySelector('.tab-btn.active');
     if (activeTab && activeTab.textContent.includes('Monitor')) {
@@ -1104,19 +1101,18 @@ window.addEventListener('load', () => {
   }, 3000);
 });
 
-// ESC to close modals
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
   }
 });
 
-// Click outside modal to close
 document.querySelectorAll('.modal').forEach((modalEl) => {
   modalEl.addEventListener('click', (e) => {
     if (e.target === modalEl) modalEl.classList.remove('show');
   });
 });
+
 </script>
 </body>
 </html>

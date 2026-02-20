@@ -29,7 +29,6 @@ import json
 import re
 import threading
 from collections import deque
-import os
 
 from shoonya_platform.api.dashboard.deps import require_dashboard_auth
 from shoonya_platform.api.dashboard.services.broker_service import BrokerService
@@ -45,7 +44,6 @@ from shoonya_platform.api.dashboard.services.option_chain_service import (
 from shoonya_platform.market_data.feeds import index_tokens_subscriber
 from shoonya_platform.strategy_runner.config_schema import validate_config
 
-from shoonya_platform.persistence.audit_strategy import log_audit
 
 def ensure_complete_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg or {}
@@ -89,26 +87,6 @@ logger = logging.getLogger("DASHBOARD.INTENT.API")
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
-def audit_action(action_type: str):
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
-            # Extract client_id and strategy_name from context
-            ctx = kwargs.get("ctx") or (args[0] if args else None)
-            client_id = ctx["client_id"] if ctx else "unknown"
-            strategy_name = kwargs.get("strategy_name") or (args[1] if len(args) > 1 else None)
-            details = {"args": str(args), "kwargs": str(kwargs)}
-            try:
-                result = func(*args, **kwargs)
-                log_audit(client_id, action_type, strategy_name, details, success=True)
-                return result
-            except HTTPException as e:
-                log_audit(client_id, action_type, strategy_name, details, success=False, error=str(e.detail))
-                raise
-            except Exception as e:
-                log_audit(client_id, action_type, strategy_name, details, success=False, error=str(e))
-                raise
-        return wrapper
-    return decorator
 # ==================================================
 # DEPENDENCY FACTORIES (CLIENT-SCOPED)
 # ==================================================
@@ -182,7 +160,6 @@ def get_broker_orders(broker=Depends(get_broker)):
 # ==================================================
 
 @router.post("/system/force-exit")
-@audit_action("FORCE_EXIT")
 def force_exit_strategy(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
@@ -198,7 +175,6 @@ def force_exit_strategy(
     return intent.submit_strategy_intent(req)
 
 @router.post("/orders/cancel/system")
-@audit_action("CANCEL_SYSTEM_ORDER")
 def cancel_system_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
@@ -221,65 +197,6 @@ def cancel_system_order(
     )
 
     return {"accepted": True}
-
-
-# Strategy configuration directory
-STRATEGY_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "strategy_runner" / "saved_configs"
-
-def get_all_strategies():
-    """List all strategy JSON files from saved_configs/"""
-    if not STRATEGY_CONFIG_DIR.exists():
-        return []
-    
-    strategies = []
-    for json_file in STRATEGY_CONFIG_DIR.glob("*.json"):
-        if json_file.name == "STRATEGY_CONFIG_SCHEMA.json":
-            continue  # Skip schema file
-        try:
-            with open(json_file, 'r') as f:
-                config = json.load(f)
-                strategies.append({
-                    "name": json_file.stem,
-                    "filename": json_file.name,
-                    "created": json_file.stat().st_ctime,
-                    "modified": json_file.stat().st_mtime,
-                    "config": config
-                })
-        except Exception as e:
-            logger.warning(f"Failed to read strategy {json_file.name}: {e}")
-    
-    return strategies
-
-def load_strategy_json(name: str):
-    """Load strategy JSON by name"""
-    strategy_file = STRATEGY_CONFIG_DIR / f"{name}.json"
-    if not strategy_file.exists():
-        return None
-    
-    with open(strategy_file, 'r') as f:
-        return json.load(f)
-
-def save_strategy_json(name: str, config: dict):
-    """Save strategy JSON by name — ensures ALL schema fields are present."""
-    STRATEGY_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    strategy_file = STRATEGY_CONFIG_DIR / f"{name}.json"
-
-    # Ensure all v2.0 schema fields are present (even if None)
-    complete = ensure_complete_config(config)
-    # Guarantee name/id are set
-    complete["name"] = complete.get("name") or name
-    complete["id"] = complete.get("id") or name.upper().replace(" ", "_").strip("_")
-
-    import time as _t
-    now = _t.strftime("%Y-%m-%dT%H:%M:%S")
-    if not complete.get("created_at"):
-        complete["created_at"] = now
-    complete["updated_at"] = now
-
-    with open(strategy_file, 'w') as f:
-        json.dump(complete, f, indent=2, default=str)
-
-    return strategy_file
 
 # ==================================================
 # 🔄 STRATEGY RECOVERY & RESUME CONTROLS
@@ -338,7 +255,6 @@ def list_recoverable_strategies(
 
 
 @router.post("/strategy/recover-resume")
-@audit_action("RECOVER")
 def recover_and_resume_strategy(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
@@ -544,7 +460,6 @@ def orphan_positions_summary(
 
 
 @router.post("/orphan-positions/manage")
-@audit_action("ORPHAN_RULE_CREATE")
 def create_orphan_position_rule(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
@@ -693,7 +608,6 @@ def list_orphan_rules(
 
 
 @router.delete("/orphan-positions/rules/{rule_id}")
-@audit_action("ORPHAN_RULE_DELETE")
 def delete_orphan_rule(
     rule_id: str,
     ctx=Depends(require_dashboard_auth),
@@ -743,7 +657,6 @@ def delete_orphan_rule(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/orders/modify/system")
-@audit_action("MODIFY_SYSTEM_ORDER")
 def modify_system_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
@@ -771,7 +684,6 @@ def modify_system_order(
     return {"accepted": True}
 
 @router.post("/orders/cancel/system/all")
-@audit_action("CANCEL_ALL_SYSTEM_ORDERS")
 def cancel_all_system_orders(
     intent: DashboardIntentService = Depends(get_intent),
 ):
@@ -799,7 +711,6 @@ def cancel_all_system_orders(
 # ==================================================
 
 @router.post("/orders/cancel/broker")
-@audit_action("CANCEL_BROKER_ORDER")
 def cancel_broker_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
@@ -818,7 +729,6 @@ def cancel_broker_order(
     return {"accepted": True}
 
 @router.post("/orders/modify/broker")
-@audit_action("MODIFY_BROKER_ORDER")
 def modify_broker_order(
     payload: dict = Body(...),
     intent: DashboardIntentService = Depends(get_intent),
@@ -840,7 +750,6 @@ def modify_broker_order(
     return {"accepted": True}
 
 @router.post("/orders/cancel/broker/all")
-@audit_action("CANCEL_ALL_BROKER_ORDERS")
 def cancel_all_broker_orders(
     intent: DashboardIntentService = Depends(get_intent),
 ):
@@ -890,7 +799,6 @@ def list_available_strategies(ctx=Depends(require_dashboard_auth)):
 
 
 @router.post("/strategy/start")
-@audit_action("LEGACY_START")
 def start_strategy(
     payload: dict = Body(...),
     svc: SupervisorService = Depends(get_supervisor),
@@ -923,7 +831,6 @@ def start_strategy(
 
 
 @router.post("/strategy/stop")
-@audit_action("LEGACY_STOP")
 def stop_strategy(
     payload: dict = Body(...),
     svc: SupervisorService = Depends(get_supervisor),
@@ -945,14 +852,22 @@ def stop_strategy(
 # ==================================================
 # PER-STRATEGY RUNNER CONTROL (Individual Start/Stop)
 # ==================================================
+
 @router.post("/strategy/{strategy_name}/start-execution")
-@audit_action("START")
 def start_strategy_execution(
     strategy_name: str,
     ctx=Depends(require_dashboard_auth)
 ):
     """
     Start a specific strategy by name from saved_configs/
+    
+    Returns:
+        {
+            "success": true,
+            "strategy_name": "NIFTY_DNSS",
+            "message": "Strategy started",
+            "timestamp": "2026-02-12T..."
+        }
     """
     try:
         strategy_key = _slugify(strategy_name)
@@ -976,15 +891,8 @@ def start_strategy_execution(
             )
 
         config = json.loads(strategy_file.read_text(encoding="utf-8"))
+        bot.start_strategy_executor(strategy_name=strategy_key, config=config)
 
-        # 🟢 Attempt to start the strategy
-        try:
-            bot.start_strategy_executor(strategy_name=strategy_key, config=config)
-        except Exception as start_err:
-            logger.error(f"Failed to start strategy {strategy_key}: {start_err}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Strategy start failed: {str(start_err)}")
-
-        # 🟢 Only update status if start succeeded
         config["status"] = "RUNNING"
         config["status_updated_at"] = datetime.now().isoformat()
         strategy_file.write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
@@ -1002,7 +910,6 @@ def start_strategy_execution(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/strategy/{strategy_name}/stop-execution")
-@audit_action("STOP")
 def stop_strategy_execution(
     strategy_name: str,
     ctx=Depends(require_dashboard_auth)
@@ -1119,7 +1026,6 @@ def _get_runtime_running_slugs(ctx: dict) -> set[str]:
 
 
 @router.post("/strategy/config/save")
-@audit_action("SAVE_CONFIG")
 def save_strategy_config(
     payload: dict = Body(...),
     ctx=Depends(require_dashboard_auth),
@@ -1392,7 +1298,6 @@ def get_all_strategies_execution_status(
 
 
 @router.post("/strategy/config/save-all")
-@audit_action("SAVE_ALL_CONFIG")
 def save_strategy_config_all(
     payload: dict = Body(...),
     ctx=Depends(require_dashboard_auth),
@@ -1453,7 +1358,6 @@ def save_strategy_config_all(
 
 
 @router.delete("/strategy/config/{name}")
-@audit_action("DELETE_CONFIG")
 def delete_strategy_config(
     name: str,
     ctx=Depends(require_dashboard_auth),
@@ -1465,22 +1369,12 @@ def delete_strategy_config(
     if not filepath.exists():
         raise HTTPException(404, f"Config '{name}' not found")
 
-    # ✅ Check if running using the actual executor service
-    bot = ctx["bot"]
-    service = bot.strategy_executor_service
-    if slug in service._strategies:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cannot delete running strategy '{name}'"
-        )
-
     filepath.unlink()
     logger.info("Strategy config deleted: %s", name)
     return {"deleted": True, "name": name}
 
 
 @router.post("/strategy/config/{name}/status")
-@audit_action("UPDATE_STATUS")
 def update_strategy_status(
     name: str,
     payload: dict = Body(...),
@@ -1511,7 +1405,6 @@ def update_strategy_status(
 
 
 @router.post("/strategy/config/{name}/rename")
-@audit_action("RENAME")
 def rename_strategy_config(
     name: str,
     payload: dict = Body(...),
@@ -1550,7 +1443,6 @@ def rename_strategy_config(
 
 
 @router.post("/strategy/config/{name}/clone")
-@audit_action("CLONE")
 def clone_strategy_config(
     name: str,
     payload: dict = Body(...),
@@ -1601,7 +1493,6 @@ def clone_strategy_config(
     "/intent/strategy/entry",
     response_model=IntentResponse,
 )
-@audit_action("INTENT_STRATEGY_ENTRY")
 def submit_strategy_entry(
     req: StrategyEntryRequest,
     service: DashboardIntentService = Depends(get_intent),
@@ -1661,7 +1552,6 @@ def dashboard_snapshot(
     response_model=IntentResponse,
     status_code=status.HTTP_200_OK,
 )
-@audit_action("INTENT_GENERIC")
 def submit_generic_intent(
     req: GenericIntentRequest,
     service: DashboardIntentService = Depends(get_intent),
@@ -1681,7 +1571,6 @@ def submit_generic_intent(
     response_model=IntentResponse,
     status_code=status.HTTP_200_OK,
 )
-@audit_action("INTENT_STRATEGY")
 def submit_strategy_intent(
     req: StrategyIntentRequest,
     service: DashboardIntentService = Depends(get_intent),
@@ -1701,7 +1590,6 @@ def submit_strategy_intent(
     response_model=IntentResponse,
     status_code=status.HTTP_200_OK,
 )
-@audit_action("INTENT_ADVANCED")
 def submit_advanced_intent(
     req: AdvancedIntentRequest,
     service: DashboardIntentService = Depends(get_intent),
@@ -1738,7 +1626,6 @@ def submit_advanced_intent(
     response_model=IntentResponse,
     status_code=status.HTTP_200_OK,
 )
-@audit_action("INTENT_BASKET")
 def submit_basket_intent(
     req: BasketIntentRequest,
     service: DashboardIntentService = Depends(get_intent),
@@ -2884,6 +2771,65 @@ class _NoopLoggerManager:
 
 def get_logger_manager():
     return _NoopLoggerManager()
+import os
+
+# Strategy configuration directory
+STRATEGY_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "strategy_runner" / "saved_configs"
+
+def get_all_strategies():
+    """List all strategy JSON files from saved_configs/"""
+    if not STRATEGY_CONFIG_DIR.exists():
+        return []
+    
+    strategies = []
+    for json_file in STRATEGY_CONFIG_DIR.glob("*.json"):
+        if json_file.name == "STRATEGY_CONFIG_SCHEMA.json":
+            continue  # Skip schema file
+        try:
+            with open(json_file, 'r') as f:
+                config = json.load(f)
+                strategies.append({
+                    "name": json_file.stem,
+                    "filename": json_file.name,
+                    "created": json_file.stat().st_ctime,
+                    "modified": json_file.stat().st_mtime,
+                    "config": config
+                })
+        except Exception as e:
+            logger.warning(f"Failed to read strategy {json_file.name}: {e}")
+    
+    return strategies
+
+def load_strategy_json(name: str):
+    """Load strategy JSON by name"""
+    strategy_file = STRATEGY_CONFIG_DIR / f"{name}.json"
+    if not strategy_file.exists():
+        return None
+    
+    with open(strategy_file, 'r') as f:
+        return json.load(f)
+
+def save_strategy_json(name: str, config: dict):
+    """Save strategy JSON by name — ensures ALL schema fields are present."""
+    STRATEGY_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    strategy_file = STRATEGY_CONFIG_DIR / f"{name}.json"
+
+    # Ensure all v2.0 schema fields are present (even if None)
+    complete = ensure_complete_config(config)
+    # Guarantee name/id are set
+    complete["name"] = complete.get("name") or name
+    complete["id"] = complete.get("id") or name.upper().replace(" ", "_").strip("_")
+
+    import time as _t
+    now = _t.strftime("%Y-%m-%dT%H:%M:%S")
+    if not complete.get("created_at"):
+        complete["created_at"] = now
+    complete["updated_at"] = now
+
+    with open(strategy_file, 'w') as f:
+        json.dump(complete, f, indent=2, default=str)
+
+    return strategy_file
 
 # ======================================================================
 # 🎯 STRATEGY LIST
@@ -2996,7 +2942,6 @@ def validate_strategy_config(
 # ======================================================================
 
 @router.post("/strategy/create")
-@audit_action("CREATE")
 def create_new_strategy(
     payload: dict = Body(...),
     ctx=Depends(require_dashboard_auth),
@@ -3054,7 +2999,6 @@ def create_new_strategy(
 # ======================================================================
 
 @router.put("/strategy/{strategy_name}")
-@audit_action("UPDATE")
 def update_strategy(
     strategy_name: str,
     strategy_config: dict = Body(...),
@@ -3100,8 +3044,8 @@ def update_strategy(
 # ======================================================================
 # 🗑️ DELETE STRATEGY
 # ======================================================================
+
 @router.delete("/strategy/{strategy_name}")
-@audit_action("DELETE_STRATEGY")
 def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
     """
     Delete strategy file from saved_configs/
@@ -3117,9 +3061,7 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
         }
     """
     try:
-        # ✅ Use slug to match the actual filename
-        slug = _slugify(strategy_name)
-        strategy_file = STRATEGY_CONFIG_DIR / f"{slug}.json"
+        strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_name}.json"
         
         if not strategy_file.exists():
             raise HTTPException(
@@ -3127,10 +3069,9 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
                 detail=f"Strategy '{strategy_name}' not found"
             )
         
-        # ✅ Check if running using the actual executor service
-        bot = ctx["bot"]
-        service = bot.strategy_executor_service
-        if slug in service._strategies:
+        # Check if running
+        logger_mgr = get_logger_manager()
+        if strategy_name in logger_mgr.loggers:
             raise HTTPException(
                 status_code=409,
                 detail=f"Cannot delete running strategy '{strategy_name}'"
@@ -3138,6 +3079,9 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
         
         # Delete file
         strategy_file.unlink()
+        
+        # Clear any logs if existed
+        logger_mgr.clear_strategy_logs(strategy_name)
         
         return {
             "success": True,
@@ -3151,7 +3095,7 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
     except Exception as e:
         logger.error(f"Error deleting strategy {strategy_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-        
+
 # ======================================================================
 # 🎮 RUNNER CONTROL
 # ======================================================================
@@ -3176,7 +3120,6 @@ def get_runner_singleton(ctx=Depends(require_dashboard_auth)):
     return _runner_instance
 
 @router.post("/runner/start")
-@audit_action("RUNNER_START")
 def start_runner(ctx=Depends(require_dashboard_auth)):
     """
     Start the strategy runner - loads all strategies from saved_configs/
@@ -3232,7 +3175,6 @@ def start_runner(ctx=Depends(require_dashboard_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/runner/stop")
-@audit_action("RUNNER_STOP")
 def stop_runner(ctx=Depends(require_dashboard_auth)):
     """
     Stop the strategy runner
@@ -3616,7 +3558,6 @@ def get_strategy_mode(
 
 
 @router.post("/strategy/{strategy_name}/mode")
-@audit_action("MODE_CHANGE")
 def set_strategy_mode(
     strategy_name: str,
     payload: dict = Body(...),
@@ -3624,135 +3565,145 @@ def set_strategy_mode(
 ):
     """
     Change execution mode for a strategy (LIVE <-> MOCK).
+    
     SAFETY: Only allowed when strategy has NO active positions.
+    
+    Payload:
+        {
+            "mode": "LIVE" | "MOCK"
+        }
     """
     try:
         new_mode = str(payload.get("mode", "")).strip().upper()
+        
         if new_mode not in ("LIVE", "MOCK"):
             raise HTTPException(400, "mode must be 'LIVE' or 'MOCK'")
-
+        
         slug = _slugify(strategy_name)
         config = load_strategy_json(slug)
+        
         if not config:
             raise HTTPException(404, f"Strategy '{strategy_name}' not found")
-
+        
+        # CRITICAL: Check for active positions
         bot = ctx["bot"]
         service = bot.strategy_executor_service
-
-        # 🟢 Acquire per‑strategy lock
-        lock = service.acquire_mode_change_lock(slug)
-        with lock:
-            # 1) Validate (still no positions)
-            allowed, block_reason = service._validate_mode_change_allowed(slug)
-            if not allowed:
-                raise HTTPException(
-                    409,
-                    {
-                        "error": "Cannot change mode with active positions",
-                        "detail": block_reason,
-                        "has_position": True,
-                    }
-                )
-
-            # 2) Determine current mode
-            identity = config.get("identity", {}) or {}
-            paper_mode = bool(
-                config.get("paper_mode") or 
-                identity.get("paper_mode") or 
-                config.get("is_paper")
-            )
-            test_mode = config.get("test_mode") or identity.get("test_mode")
-            previous_mode = "MOCK" if (paper_mode or test_mode) else "LIVE"
-
-            # No change needed
-            if previous_mode == new_mode:
-                return {
-                    "success": True,
-                    "strategy_name": strategy_name,
-                    "previous_mode": previous_mode,
-                    "new_mode": new_mode,
-                    "message": "Mode unchanged (already in requested mode)",
-                    "timestamp": datetime.now().isoformat()
+        
+        # Use executor's validation method
+        allowed, block_reason = service._validate_mode_change_allowed(slug)
+        
+        if not allowed:
+            raise HTTPException(
+                409,
+                {
+                    "error": "Cannot change mode with active positions",
+                    "detail": block_reason,
+                    "has_position": True,
                 }
-
-            # 3) Update config (in‑memory copy)
-            if "identity" not in config:
-                config["identity"] = {}
-
-            if new_mode == "MOCK":
-                config["paper_mode"] = True
-                config["identity"]["paper_mode"] = True
-                config["test_mode"] = "SUCCESS"
-                config["identity"]["test_mode"] = "SUCCESS"
-            else:  # LIVE
-                config["paper_mode"] = False
-                config["identity"]["paper_mode"] = False
-                config["test_mode"] = None
-                config["identity"]["test_mode"] = None
-
-            # 4) Save config (disk write)
-            try:
-                save_strategy_json(slug, config)
-            except Exception as e:
-                logger.error(f"Failed to save config after mode change: {e}")
-                raise HTTPException(status_code=500, detail="Failed to save config")
-
-            # 5) Restart if running
-            needs_restart = slug in service._strategies
-            restart_message = ""
-            if needs_restart:
-                logger.critical(
-                    f"⚠️ MODE CHANGE: {strategy_name} | {previous_mode} -> {new_mode} | "
-                    f"Strategy is running and will be restarted"
-                )
-                try:
-                    # Unregister (stops the strategy)
-                    service.unregister_strategy(slug)
-                    with bot._live_strategies_lock:
-                        bot._live_strategies.pop(slug, None)
-
-                    # Re‑register with new config
-                    strategy_file = STRATEGY_CONFIG_DIR / f"{slug}.json"
-                    service.register_strategy(name=slug, config_path=str(strategy_file))
-                    with bot._live_strategies_lock:
-                        bot._live_strategies[slug] = {
-                            "type": "executor_service",
-                            "config_path": str(strategy_file),
-                            "started_at": time.time(),
-                        }
-                    restart_message = "Strategy restarted with new mode"
-                except Exception as restart_err:
-                    logger.error(f"Failed to restart strategy: {restart_err}")
-                    restart_message = f"Warning: Strategy restart failed - {restart_err}"
-
-            logger.critical(f"✓ MODE CHANGED: {strategy_name} | {previous_mode} -> {new_mode}")
-
-            if bot.telegram_enabled:
-                mode_emoji = "⚡" if new_mode == "LIVE" else "🧪"
-                bot.send_telegram(
-                    f"{mode_emoji} MODE CHANGE\n"
-                    f"━━━━━━━━━━━━━━━━━\n"
-                    f"Strategy: {strategy_name}\n"
-                    f"Previous: {previous_mode}\n"
-                    f"New: {new_mode}\n"
-                    f"━━━━━━━━━━━━━━━━━\n"
-                    f"{restart_message if needs_restart else 'Strategy not running'}"
-                )
-
+            )
+        
+        # Get current mode
+        identity = config.get("identity", {}) or {}
+        paper_mode = bool(
+            config.get("paper_mode") or 
+            identity.get("paper_mode") or 
+            config.get("is_paper")
+        )
+        test_mode = config.get("test_mode") or identity.get("test_mode")
+        
+        previous_mode = "MOCK" if (paper_mode or test_mode) else "LIVE"
+        
+        # No change needed
+        if previous_mode == new_mode:
             return {
                 "success": True,
                 "strategy_name": strategy_name,
                 "previous_mode": previous_mode,
                 "new_mode": new_mode,
-                "was_running": needs_restart,
-                "restart_message": restart_message,
+                "message": "Mode unchanged (already in requested mode)",
                 "timestamp": datetime.now().isoformat()
             }
+        
+        # Update config
+        if "identity" not in config:
+            config["identity"] = {}
+        
+        if new_mode == "MOCK":
+            config["paper_mode"] = True
+            config["identity"]["paper_mode"] = True
+            config["test_mode"] = "SUCCESS"
+            config["identity"]["test_mode"] = "SUCCESS"
+        else:  # LIVE
+            config["paper_mode"] = False
+            config["identity"]["paper_mode"] = False
+            config["test_mode"] = None
+            config["identity"]["test_mode"] = None
+        
+        # Save config
+        save_strategy_json(slug, config)
+        
+        # If strategy is running, need to restart it
+        needs_restart = slug in service._strategies
+        restart_message = ""
+        
+        if needs_restart:
+            logger.critical(
+                f"⚠️ MODE CHANGE: {strategy_name} | {previous_mode} -> {new_mode} | "
+                f"Strategy is running and will be restarted"
+            )
+            
+            try:
+                # Unregister
+                service.unregister_strategy(slug)
+                with bot._live_strategies_lock:
+                    bot._live_strategies.pop(slug, None)
+                
+                # Re-register with new config
+                strategy_file = STRATEGY_CONFIG_DIR / f"{slug}.json"
+                service.register_strategy(name=slug, config_path=str(strategy_file))
+                with bot._live_strategies_lock:
+                    bot._live_strategies[slug] = {
+                        "type": "executor_service",
+                        "config_path": str(strategy_file),
+                        "started_at": time.time(),
+                    }
+                
+                restart_message = "Strategy restarted with new mode"
+            except Exception as restart_err:
+                logger.error(f"Failed to restart strategy: {restart_err}")
+                restart_message = f"Warning: Strategy restart failed - {restart_err}"
+        
+        logger.critical(
+            f"✓ MODE CHANGED: {strategy_name} | {previous_mode} -> {new_mode}"
+        )
+        
+        if bot.telegram_enabled:
+            mode_emoji = "⚡" if new_mode == "LIVE" else "🧪"
+            bot.send_telegram(
+                f"{mode_emoji} MODE CHANGE\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"Strategy: {strategy_name}\n"
+                f"Previous: {previous_mode}\n"
+                f"New: {new_mode}\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"{restart_message if needs_restart else 'Strategy not running'}"
+            )
+        
+        return {
+            "success": True,
+            "strategy_name": strategy_name,
+            "previous_mode": previous_mode,
+            "new_mode": new_mode,
+            "was_running": needs_restart,
+            "restart_message": restart_message,
+            "timestamp": datetime.now().isoformat()
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error setting mode for {strategy_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/strategy/{strategy_name}/positions/active")
 def check_strategy_positions(

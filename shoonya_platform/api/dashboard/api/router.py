@@ -16,8 +16,8 @@
 ## NOTE: sqlite3 & time used only by option-chain endpoint
 # DO NOT MODIFY WITHOUT FULL OMS + CONSUMER RE-AUDIT
 # ======================================================================
-from functools import lru_cache
-from fastapi import APIRouter, Depends, Query, Body, HTTPException, status
+import threading as _threading
+from fastapi import APIRouter, Depends, Query, Body, HTTPException, status, WebSocket
 from typing import List, Optional, Any, Dict
 import logging
 from uuid import uuid4
@@ -29,6 +29,7 @@ import json
 import re
 import threading
 from collections import deque
+import os
 
 from shoonya_platform.api.dashboard.deps import require_dashboard_auth
 from shoonya_platform.api.dashboard.services.broker_service import BrokerService
@@ -83,6 +84,12 @@ DATA_DIR = (
     / "data"
 )
 
+# ✅ BUG-003 FIX: Define STRATEGY_CONFIG_DIR at module level (was previously defined ~2777
+# lines below — after all the route handlers that reference it — causing globals().get()
+# to miss it and silently fall back to a different path, making saved configs invisible).
+STRATEGY_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "strategy_runner" / "saved_configs"
+STRATEGY_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
 logger = logging.getLogger("DASHBOARD.INTENT.API")
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
@@ -105,13 +112,31 @@ def get_intent(ctx=Depends(require_dashboard_auth)):
         parent_client_id=ctx.get("parent_client_id"),
     )
 
-@lru_cache(maxsize=1)
-def get_symbols() -> DashboardSymbolService:
-    return DashboardSymbolService()
+# BUG-027 FIX: Explicit thread-safe singletons instead of lru_cache.
+# lru_cache on no-arg functions caches the SAME instance for ALL clients.
+# In a multi-client deployment this leaks state between clients.
+# Double-checked locking makes the lifecycle explicit and allows future keying by client_id.
+_symbols_service_instance: Optional[DashboardSymbolService] = None
+_symbols_service_lock = _threading.Lock()
 
-@lru_cache(maxsize=1)
+_supervisor_service_instance: Optional[SupervisorService] = None
+_supervisor_service_lock = _threading.Lock()
+
+def get_symbols() -> DashboardSymbolService:
+    global _symbols_service_instance
+    if _symbols_service_instance is None:
+        with _symbols_service_lock:
+            if _symbols_service_instance is None:
+                _symbols_service_instance = DashboardSymbolService()
+    return _symbols_service_instance
+
 def get_supervisor() -> SupervisorService:
-    return SupervisorService()
+    global _supervisor_service_instance
+    if _supervisor_service_instance is None:
+        with _supervisor_service_lock:
+            if _supervisor_service_instance is None:
+                _supervisor_service_instance = SupervisorService()
+    return _supervisor_service_instance
 
 # ==================================================
 # 🔎 SYMBOL DISCOVERY
@@ -281,7 +306,26 @@ def recover_and_resume_strategy(
                 detail="strategy_name and symbol required"
             )
         
-        # Create a recovery intent
+        # BUG-026 FIX: Previously this only submitted an intent that had NO consumer —
+        # the intent lived in the DB forever and recovery never actually happened.
+        # Now we directly call service.handle_recover_resume() which applies the
+        # recovery to the live executor state immediately, AND still emit the intent
+        # for audit trail / replay purposes.
+
+        # 1. Apply recovery directly to the running executor service
+        applied_result = {"status": "service_not_available"}
+        try:
+            bot = ctx["bot"]
+            service = bot.strategy_executor_service
+            applied_result = service.handle_recover_resume({
+                "strategy_name": strategy_name,
+                "symbol": symbol,
+                "resume_monitoring": resume_monitoring,
+            })
+        except Exception as svc_err:
+            logger.error(f"Recovery service call failed: {svc_err}")
+
+        # 2. Also submit intent for audit trail
         intent.submit_raw_intent(
             intent_id=f"RECOVER-{strategy_name}-{symbol}-{int(time.time())}",
             intent_type="STRATEGY_RECOVER_RESUME",
@@ -292,17 +336,18 @@ def recover_and_resume_strategy(
                 "reason": "MANUAL_DASHBOARD_RECOVERY",
             },
         )
-        
+
         logger.warning(
             f"♻️ RECOVERY INTENT: {strategy_name} | symbol={symbol} | monitoring={resume_monitoring}"
         )
-        
+
         return {
             "accepted": True,
             "strategy_name": strategy_name,
             "symbol": symbol,
             "resume_monitoring": resume_monitoring,
-            "message": "Recovery intent submitted - strategy will resume from broker position"
+            "applied": applied_result,
+            "message": "Recovery applied to executor service and intent logged for audit",
         }
         
     except HTTPException:
@@ -341,11 +386,14 @@ def list_orphan_positions(
         # Get all broker positions
         positions = broker.get_positions() or []
         
-        # Get all strategy-owned positions
+        # ✅ BUG-019 FIX: `o.user` is the broker account user — always present for every
+        # order. This made strategy_symbols include ALL symbols, so the orphan list was
+        # always empty. Use o.strategy_name (or o.source == "STRATEGY") to identify
+        # strategy-owned orders.
         orders = system.get_orders(500) or []
         strategy_symbols = set(
-            o.symbol for o in orders 
-            if o.user and o.user not in ["", None]
+            o.symbol for o in orders
+            if getattr(o, "strategy_name", None) or getattr(o, "source", None) == "STRATEGY"
         )
         
         orphan_positions = []
@@ -405,9 +453,10 @@ def orphan_positions_summary(
     try:
         positions = broker.get_positions() or []
         orders = system.get_orders(500) or []
+        # ✅ BUG-019 FIX: Same fix as /orphan-positions — use strategy_name/source, not o.user
         strategy_symbols = set(
-            o.symbol for o in orders 
-            if o.user and o.user not in ["", None]
+            o.symbol for o in orders
+            if getattr(o, "strategy_name", None) or getattr(o, "source", None) == "STRATEGY"
         )
         
         # Collect orphan positions
@@ -992,14 +1041,24 @@ _VALID_SECTIONS = {"identity", "entry", "adjustment", "exit", "rms"}
 
 def _get_strategy_configs_dir() -> Path:
     """
-    Resolve canonical saved_configs directory.
-    Prefer runtime strategy directory when available.
+    ✅ BUG-003 + BUG-021 FIX: Always return the single canonical STRATEGY_CONFIG_DIR.
+    
+    Previously this function silently fell back to _STRATEGY_CONFIGS_DIR when
+    STRATEGY_CONFIG_DIR had no .json files yet — so configs saved via save_all()
+    (which wrote to STRATEGY_CONFIG_DIR) were invisible to list() (which read from
+    _STRATEGY_CONFIGS_DIR). This dual-path caused configs to disappear after save.
+    
+    STRATEGY_CONFIG_DIR is now defined at module top-level (line ~2777) and is
+    always available. Just use it directly.
     """
+    # STRATEGY_CONFIG_DIR is a module-level Path defined below the route handlers.
+    # globals().get() is required because of the late definition order.
     runtime_dir = globals().get("STRATEGY_CONFIG_DIR")
     if isinstance(runtime_dir, Path):
         runtime_dir.mkdir(parents=True, exist_ok=True)
-        if any(runtime_dir.glob("*.json")):
-            return runtime_dir
+        return runtime_dir
+    # Absolute fallback — should never be reached after BUG-003 fix moves the
+    # definition to the top of the file.
     _STRATEGY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
     return _STRATEGY_CONFIGS_DIR
 
@@ -2382,7 +2441,11 @@ def get_live_positions_overview(
             try:
                 getter = getattr(svc, "get_strategy_leg_monitor_snapshot", None)
                 if callable(getter):
-                    leg_snapshot = getter() or {}
+                    result = getter()
+                    if isinstance(result, dict):
+                        leg_snapshot = result
+                    else:
+                        logger.debug("Leg monitor snapshot returned non-dict, ignoring")
             except Exception as snap_err:
                 logger.debug("Could not fetch strategy leg monitor snapshot: %s", snap_err)
 
@@ -2771,10 +2834,6 @@ class _NoopLoggerManager:
 
 def get_logger_manager():
     return _NoopLoggerManager()
-import os
-
-# Strategy configuration directory
-STRATEGY_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "strategy_runner" / "saved_configs"
 
 def get_all_strategies():
     """List all strategy JSON files from saved_configs/"""
@@ -3069,19 +3128,26 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
                 detail=f"Strategy '{strategy_name}' not found"
             )
         
-        # Check if running
-        logger_mgr = get_logger_manager()
-        if strategy_name in logger_mgr.loggers:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Cannot delete running strategy '{strategy_name}'"
-            )
+        # ✅ BUG-005 FIX: logger_mgr.loggers is always {} — it never tracked running strategies.
+        # Check service._strategies which is the authoritative running-strategy registry.
+        try:
+            bot = ctx["bot"]
+            service = bot.strategy_executor_service
+            if strategy_name in service._strategies or _slugify(strategy_name) in service._strategies:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Cannot delete running strategy '{strategy_name}'"
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # If service unavailable, fall through to file delete
         
         # Delete file
         strategy_file.unlink()
         
         # Clear any logs if existed
-        logger_mgr.clear_strategy_logs(strategy_name)
+        get_logger_manager().clear_strategy_logs(strategy_name)
         
         return {
             "success": True,
@@ -3100,24 +3166,27 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
 # 🎮 RUNNER CONTROL
 # ======================================================================
 
-# Global runner instance
-_runner_instance = None
-_runner_lock = threading.Lock()
+# With a client‑scoped dict:
+_runner_instances: Dict[str, Any] = {}
+_runner_instances_lock = threading.Lock()
 
-def get_runner_singleton(ctx=Depends(require_dashboard_auth)):
-    """Get StrategyExecutorService singleton bound to bot."""
-    global _runner_instance
-    if _runner_instance is None:
-        with _runner_lock:
-            if _runner_instance is None:  # Double-checked locking
-                logger.info("Initializing StrategyExecutorService singleton")
-                try:
-                    bot = ctx["bot"]
-                    _runner_instance = bot.strategy_executor_service
-                except Exception as e:
-                    logger.error(f"Failed to initialize runner: {e}")
-                    raise
-    return _runner_instance
+def get_runner_singleton(ctx: dict):
+    """Get StrategyExecutorService singleton for the current client."""
+    global _runner_instances
+    client_id = ctx.get("client_id")
+    if not client_id:
+        raise RuntimeError("No client_id in context")
+    
+    with _runner_instances_lock:
+        if client_id not in _runner_instances:
+            logger.info(f"Initializing StrategyExecutorService for client {client_id}")
+            try:
+                bot = ctx["bot"]
+                _runner_instances[client_id] = bot.strategy_executor_service
+            except Exception as e:
+                logger.error(f"Failed to initialize runner for client {client_id}: {e}")
+                raise
+        return _runner_instances[client_id]
 
 @router.post("/runner/start")
 def start_runner(ctx=Depends(require_dashboard_auth)):
@@ -3326,7 +3395,7 @@ def get_all_runner_logs(
 # ======================================================================
 
 @router.websocket("/runner/logs/stream")
-async def websocket_log_stream(websocket):
+async def websocket_log_stream(websocket: WebSocket):
     """
     WebSocket endpoint for real-time log streaming
     

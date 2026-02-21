@@ -50,6 +50,13 @@ class ExitEngine:
                 cond_objs = [self._dict_to_condition(c) for c in rules]
                 if self.condition_engine.evaluate(cond_objs):
                     return "combined_conditions"
+        elif combined.get("operator") == "AND":
+            # ✅ BUG-011 FIX: AND operator was silently ignored — all conditions must hold
+            rules = combined.get("rules", [])
+            if rules:
+                cond_objs = [self._dict_to_condition(c) for c in rules]
+                if all(self.condition_engine.evaluate([c]) for c in cond_objs):
+                    return "combined_conditions"
 
         # 7. Per-leg exit rules
         leg_rules = self.exit_config.get("leg_rules", [])
@@ -73,7 +80,9 @@ class ExitEngine:
         cfg = self.exit_config.get("stop_loss", {})
         amount = cfg.get("amount")
         pct = cfg.get("pct")
-        if amount and self.state.combined_pnl <= -amount:
+        # ✅ BUG-010 FIX: `if amount` is False when amount=0. Use `is not None` so
+        # a zero stop-loss (lock breakeven) correctly triggers.
+        if amount is not None and self.state.combined_pnl <= -amount:
             return cfg.get("action", "exit_all")
         if pct and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) <= -pct:
             return cfg.get("action", "exit_all")
@@ -112,6 +121,9 @@ class ExitEngine:
         max_steps = cfg.get("max_steps")
         action = cfg.get("action", "adj")
         if not step_size or not max_steps:
+            return None
+        # ✅ BUG-017 FIX: step_size=0 causes ZeroDivisionError — guard explicitly
+        if not step_size:
             return None
 
         current_pnl = self.state.combined_pnl

@@ -152,7 +152,15 @@ class AdjustmentEngine:
             if opt_data is None:
                 raise ValueError(f"Could not resolve option for roll: {leg_tag} -> {new_expiry}")
 
-            new_tag = leg_tag + "_ROLLED"
+            # ✅ BUG-015 FIX: Tag collision on multiple rolls — e.g. "LEG_ROLLED_ROLLED".
+            # Use a numeric counter suffix to guarantee uniqueness.
+            base_tag = leg_tag.split("_ROLLED")[0]  # strip any existing _ROLLED suffix
+            roll_num = 1
+            candidate = f"{base_tag}_ROLLED_{roll_num}"
+            while candidate in self.state.legs:
+                roll_num += 1
+                candidate = f"{base_tag}_ROLLED_{roll_num}"
+            new_tag = candidate
             new_leg = LegState(
                 tag=new_tag,
                 symbol=old_leg.symbol,
@@ -220,13 +228,20 @@ class AdjustmentEngine:
             rounding=leg_cfg.get("rounding")
         )
 
-        # Determine symbol and expiry (use first active leg as reference)
-        symbol = "NIFTY"
+        # ✅ BUG-016 FIX: symbol was hardcoded to "NIFTY" regardless of strategy symbol.
+        # Derive from the first active leg; fall back to any leg in state; final fallback
+        # is None (the market reader will raise a clear error rather than silently trade NIFTY).
+        symbol = None
         expiry = None
         for leg in self.state.legs.values():
             if leg.is_active:
                 symbol = leg.symbol
                 expiry = leg.expiry
+                break
+        if symbol is None:
+            # No active legs — pick symbol from any existing leg for reference
+            for leg in self.state.legs.values():
+                symbol = leg.symbol
                 break
         # If no active leg, use a default expiry (the engine should handle this)
         if expiry is None:

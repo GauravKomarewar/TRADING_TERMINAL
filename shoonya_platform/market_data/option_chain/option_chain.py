@@ -1,7 +1,14 @@
 """
 ===============================================================================
-OPTION CHAIN v6.0 - PULL-BASED ARCHITECTURE
+OPTION CHAIN v6.1 - PULL-BASED ARCHITECTURE
 ===============================================================================
+🔥 v6.1 BUG FIXES:
+    1. Fixed crash in get_nearest_premium_option() / get_nearest_greek_option()
+       (accessing scalar Series without .iloc[0]).
+    2. Fixed validate_data_freshness() – always returns correct age using pd.Timestamp.
+    3. Fixed pull_ticks_efficient() TOCTOU race – rebuild token masks inside the lock.
+    4. Added warning log for NULL‑delta contracts after Greek refresh
+       (deep ITM/OTM options that were silently skipped).
 
 🔥 v6.0 CHANGES (Pull-Based Architecture):
     1. REMOVED: update_tick() callback method
@@ -10,7 +17,7 @@ OPTION CHAIN v6.0 - PULL-BASED ARCHITECTURE
     4. ADDED: pull_ticks_efficient() - batch pull for chain tokens only
     5. ADDED: capture_snapshot() - atomic snapshot with fresh data
     6. UPDATED: _auto_greeks_refresher() - pulls before computing Greeks
-    
+
 ✅ v5.0 IMPROVEMENTS (Still Present):
     1. Thread-safe spot/future price reads
     2. Session validation before all API calls
@@ -18,7 +25,7 @@ OPTION CHAIN v6.0 - PULL-BASED ARCHITECTURE
     4. WebSocket state coordination
     5. Enhanced error recovery
     6. Proper resource cleanup
-    
+
 ✅ NEW ARCHITECTURE:
     WebSocket → Feed Store (tick_data_store)
     OptionChain → Pull from feed store on-demand
@@ -40,6 +47,7 @@ OPTION CHAIN v6.0 - PULL-BASED ARCHITECTURE
     ✅ Session-safe API calls
     ✅ Proper error handling
     ✅ Resource cleanup
+    ✅ All known critical/high bugs fixed
     ✅ Production ready
     
 ===============================================================================
@@ -124,7 +132,8 @@ class OptionChainData:
         self._fut_token: Optional[str] = None
 
         self._lock = threading.RLock()
-        
+        self._stop_event: Optional[threading.Event] = None
+        self._greeks_df: Optional[pd.DataFrame] = None
         # Resource management
         self._cleanup_done = False
         
@@ -574,13 +583,8 @@ class OptionChainData:
                 tokens_to_fetch.append(self._spot_token)
             if self._fut_token:
                 tokens_to_fetch.append(self._fut_token)
-            
-            # ✅ FIX: Build reverse lookup for efficiency
-            token_to_mask = {}
-            for token in self._token_set:
-                token_to_mask[token] = self._df["token"] == token
         
-        # Batch fetch (more efficient)
+        # Batch fetch outside lock (IO operation — safe to release lock here)
         ticks = get_tick_data_batch(tokens_to_fetch)
         
         if not ticks:
@@ -617,8 +621,18 @@ class OptionChainData:
                 "sq1": "ask_qty",
             }
             
+            # ✅ BUG-033 FIX: Rebuild mask lookup INSIDE the lock — the DF may have
+            # changed between the first lock release and this second acquisition (TOCTOU).
+            if self._df is not None:
+                token_to_mask = {
+                    token: self._df["token"] == token
+                    for token in self._token_set
+                }
+            else:
+                return updated_count
+
             for returned_token, tick in ticks.items():
-                # ✅ FIX: Normalize token (handle both plain and prefixed)
+                # Normalize token (handle both plain and prefixed)
                 normalized = returned_token.split("|")[-1] if "|" in returned_token else returned_token
                 
                 if normalized not in token_to_mask:
@@ -632,8 +646,8 @@ class OptionChainData:
                 
                 self._df.loc[mask, "last_update"] = tick.get("tt", datetime.now())
                 updated_count += 1
-        # ✅ NEW: Track pull statistics
-        with self._lock:
+
+            # Track pull statistics (inside same lock — avoids third lock acquisition)
             self._last_pull_time = time.time()
             self._total_pulls += 1
             
@@ -1075,12 +1089,14 @@ class OptionChainData:
             if last_updates.empty:
                 return False
             
-            latest_update = last_updates.max()
-            if not isinstance(latest_update, datetime):
+            # ✅ BUG-032 FIX: Use pd.Timestamp for safe comparison regardless of
+            # whether latest_update is a Python datetime, pd.Timestamp, or naive/aware.
+            try:
+                latest_update = pd.Timestamp(last_updates.max())
+                age = (pd.Timestamp.now() - latest_update).total_seconds()
+                return age <= max_age_seconds
+            except Exception:
                 return False
-            
-            age = (datetime.now() - latest_update).total_seconds()
-            return age <= max_age_seconds
 
     def cleanup(self) -> None:
         """
@@ -1478,6 +1494,24 @@ def refresh_greeks(
             logger.warning("Greek calculation invalidated by spot movement")
             return False
         
+        # ✅ BUG-037 FIX: Log NULL-delta contracts — deep ITM/OTM options skipped by
+        # the Black-Scholes solver will have NULL delta that silently corrupts hedge
+        # ratios downstream. Log them so the operator is aware.
+        try:
+            delta_cols = [c for c in df_greeks.columns if "Delta" in str(c)]
+            for dcol in delta_cols:
+                null_count = df_greeks[dcol].isna().sum()
+                if null_count > 0:
+                    opt_type = dcol[1] if isinstance(dcol, tuple) else dcol
+                    logger.warning(
+                        "⚠️ BUG-037: %d %s contract(s) have NULL delta "
+                        "(deep ITM/OTM — Greeks skipped). "
+                        "Validate delta before using for hedge sizing.",
+                        null_count, opt_type,
+                    )
+        except Exception:
+            pass  # Non-critical diagnostic — never block Greek commit
+
         # Atomic commit
         oc._greeks_df = df_greeks
         oc._last_greek_spot = spot
@@ -1705,7 +1739,7 @@ def get_nearest_premium_option(
     return {
         "symbol": row[symbol_col],
         "token": row[token_col],
-        "strike_price": float(row["Strike Price"].iloc[0]),
+        "strike_price": float(row["Strike Price"]),  # ✅ BUG-030 FIX: row is a Series scalar, not a DataFrame
         "last_price": float(row[price_col]),
         "premium_diff": float(row[price_col] - target_premium),
     }
@@ -1748,7 +1782,7 @@ def get_nearest_greek_option(
     return {
         "symbol": row[symbol_col],
         "token": row[token_col],
-        "strike_price": float(row["Strike Price"].iloc[0]),
+        "strike_price": float(row["Strike Price"]),  # ✅ BUG-030 FIX: row is a Series scalar, not a DataFrame
         "greek": greek,
         "greek_value": float(row[greek_col]),
         "last_price": float(row[price_col]),

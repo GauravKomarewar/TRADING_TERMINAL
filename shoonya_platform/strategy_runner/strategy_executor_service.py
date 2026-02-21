@@ -38,7 +38,7 @@ class StrategyExecutorService:
         self.state_db_path = state_db_path
         self._strategies: Dict[str, Dict] = {}          # name -> config
         self._executors: Dict[str, 'PerStrategyExecutor'] = {}
-        self._engine_states: Dict[str, StrategyState] = {}  # name -> live state
+        self._exec_states: Dict[str, StrategyState] = {}  # name -> live state
         self._lock = threading.RLock()
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -63,7 +63,7 @@ class StrategyExecutorService:
                 state_db_path=self.state_db_path
             )
             self._executors[name] = executor
-            self._engine_states[name] = executor.state
+            self._exec_states[name] = executor.state
             logger.info(f"Registered strategy: {name}")
 
     def unregister_strategy(self, name: str):
@@ -71,7 +71,7 @@ class StrategyExecutorService:
         with self._lock:
             self._executors.pop(name, None)
             self._strategies.pop(name, None)
-            self._engine_states.pop(name, None)
+            self._exec_states.pop(name, None)
             logger.info(f"Strategy unregistered: {name}")
 
     def start(self):
@@ -119,10 +119,103 @@ class StrategyExecutorService:
         return True, ""
 
     def has_position(self, strategy_name: str) -> bool:
-        state = self._engine_states.get(strategy_name)
+        state = self._exec_states.get(strategy_name)
         if not state:
             return False
         return state.any_leg_active
+
+    # BUG-014 FIX: get_strategy_mode() was called by router but never existed in service.
+    # The router used hasattr guard so it silently fell back to "LIVE" for all strategies —
+    # paper-mode strategies appeared as LIVE in the dashboard.
+    def get_strategy_mode(self, strategy_name: str) -> str:
+        """Return 'MOCK' or 'LIVE' based on strategy config paper_mode / test_mode flags."""
+        config = self._strategies.get(strategy_name, {})
+        identity = config.get("identity", {}) or {}
+        paper_mode = bool(
+            config.get("paper_mode")
+            or identity.get("paper_mode")
+            or config.get("is_paper")
+        )
+        test_mode = config.get("test_mode") or identity.get("test_mode")
+        return "MOCK" if (paper_mode or test_mode) else "LIVE"
+
+    # BUG-026 FIX: STRATEGY_RECOVER_RESUME intent was submitted by the dashboard but
+    # had NO consumer anywhere. The intent was stored in DB forever; recovery never happened.
+    def handle_recover_resume(self, payload: dict) -> dict:
+        """
+        Handle a STRATEGY_RECOVER_RESUME intent submitted by the dashboard.
+
+        Sets the strategy state to 'already entered' so the executor monitors
+        exits/adjustments rather than waiting for a fresh entry signal.
+
+        Args:
+            payload: {
+                "strategy_name": str,      # strategy to recover
+                "symbol": str,             # broker symbol with open position
+                "resume_monitoring": bool  # True = skip re-entry, monitor only
+            }
+        """
+        strategy_name = payload.get("strategy_name", "").strip()
+        symbol = payload.get("symbol", "").strip()
+        resume_monitoring = payload.get("resume_monitoring", True)
+
+        if not strategy_name:
+            logger.error("RECOVER_RESUME: strategy_name is required")
+            return {"status": "error", "reason": "strategy_name required"}
+
+        with self._lock:
+            executor = self._executors.get(strategy_name)
+            if executor is None:
+                logger.warning(f"RECOVER_RESUME: strategy '{strategy_name}' not registered; "
+                               f"cannot apply until strategy is loaded via /runner/start")
+                return {"status": "not_registered", "strategy_name": strategy_name}
+
+            state = executor.state
+            if resume_monitoring:
+                # Mark as entered so executor skips fresh ENTRY and monitors exits/adjustments
+                state.entered_today = True
+                if state.entry_time is None:
+                    state.entry_time = datetime.now()
+
+                # If symbol provided and not already tracked, create a placeholder leg
+                # so the exit engine can monitor it until full reconciliation happens
+                if symbol and symbol not in [leg.symbol for leg in state.legs.values()]:
+                    from .state import LegState
+                    from .models import InstrumentType, Side
+                    recovery_tag = f"RECOVERED_{symbol}"
+                    recovery_leg = LegState(
+                        tag=recovery_tag,
+                        symbol=symbol,
+                        trading_symbol=symbol,
+                        instrument=InstrumentType.OPT,
+                        option_type=None,
+                        strike=None,
+                        expiry="UNKNOWN",
+                        side=Side.SELL,   # default; reconciliation will correct this
+                        qty=0,            # qty=0 signals "needs reconciliation"
+                        entry_price=0.0,
+                        ltp=0.0,
+                        is_active=True,
+                    )
+                    state.legs[recovery_tag] = recovery_leg
+                    logger.info(f"RECOVER_RESUME: placeholder leg created for '{symbol}' "
+                                f"in strategy '{strategy_name}'")
+
+                # Persist the recovery state immediately
+                try:
+                    executor.persistence.save(state, str(executor.state_file))
+                    logger.info(f"RECOVER_RESUME: state persisted for '{strategy_name}'")
+                except Exception as e:
+                    logger.error(f"RECOVER_RESUME: state persist failed: {e}")
+
+            logger.warning(f"♻️ RECOVER_RESUME APPLIED | strategy={strategy_name} | "
+                           f"symbol={symbol} | resume_monitoring={resume_monitoring}")
+            return {
+                "status": "resumed",
+                "strategy_name": strategy_name,
+                "symbol": symbol,
+                "resume_monitoring": resume_monitoring,
+            }
 
 
 class PerStrategyExecutor:
@@ -189,6 +282,20 @@ class PerStrategyExecutor:
         actions = self.adjustment_engine.check_and_apply(now)
         for action in actions:
             logger.info(f"Adjustment: {action}")
+
+        # BUG-012 FIX: Run broker reconciliation every 5 minutes to catch drift
+        # between strategy state and live broker positions (e.g. manual broker exits,
+        # partial fills, session restarts). Previously reconcile() compared state
+        # against itself — it never actually contacted the broker.
+        if now.second == 0 and now.minute % 5 == 0:
+            try:
+                broker_view = getattr(self.bot, "broker_view", None)
+                if broker_view is not None:
+                    warnings = self.reconciliation.reconcile_from_broker(broker_view)
+                    if warnings:
+                        logger.warning(f"RECONCILE [{self.name}]: {len(warnings)} mismatch(es) corrected")
+            except Exception as e:
+                logger.error(f"Broker reconciliation failed for {self.name}: {e}")
 
         # Persist state periodically (every minute)
         if now.second == 0:
@@ -261,7 +368,11 @@ class PerStrategyExecutor:
                 order_type = "MARKET"
 
             alert_legs.append({
-                "tradingsymbol": leg.symbol,
+                # ✅ BUG-002 FIX: leg.symbol is the underlying (e.g. "NIFTY"),
+                # NOT the broker trading symbol. Use leg.trading_symbol which must
+                # be set to the resolved contract name (e.g. "NIFTY25FEB26C22000CE")
+                # when the leg is created via entry_engine / scripmaster lookup.
+                "tradingsymbol": leg.trading_symbol or leg.symbol,  # fallback to symbol if not yet resolved
                 "direction": leg.side.value,
                 "qty": leg.qty,
                 "order_type": order_type,

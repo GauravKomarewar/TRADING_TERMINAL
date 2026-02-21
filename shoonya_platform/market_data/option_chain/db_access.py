@@ -43,7 +43,21 @@ class OptionChainDBReader:
     - Safe for concurrent readers
     """
 
+    # ✅ BUG-031 FIX: Guard against the legacy option_chain.db which uses an
+    # incompatible wide-format schema (no `meta` table, no per-contract rows).
+    # If pointed at this file, fail immediately with a clear error rather than
+    # crashing inside read() with "no such table: meta".
+    _FORBIDDEN_NAMES = {"option_chain.db", "option_chain_legacy.db"}
+
     def __init__(self, db_path: str):
+        path = Path(db_path)
+        if path.name.lower() in self._FORBIDDEN_NAMES:
+            raise ValueError(
+                f"OptionChainDBReader: '{path.name}' is the legacy wide-format DB "
+                f"and is incompatible with this reader (no `meta` table). "
+                f"Rename it to 'option_chain_legacy.db' and use the per-symbol DBs "
+                f"(e.g. NFO_NIFTY_17-FEB-2026.sqlite) instead."
+            )
         self.db_path = db_path
 
     # --------------------------------------------------
@@ -67,35 +81,34 @@ class OptionChainDBReader:
             rows: Option-chain rows
         """
 
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
+        # ✅ BUG-034 FIX: Use context manager so connection is always closed,
+        # even if an exception is raised mid-read (e.g. stale snapshot error).
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
 
-        # ----------------------------
-        # META
-        # ----------------------------
-        meta = {
-            r["key"]: r["value"]
-            for r in cur.execute("SELECT key, value FROM meta")
-        }
+            # ----------------------------
+            # META
+            # ----------------------------
+            meta = {
+                r["key"]: r["value"]
+                for r in cur.execute("SELECT key, value FROM meta")
+            }
 
-        snapshot_ts = float(meta.get("snapshot_ts", 0))
-        age = time.time() - snapshot_ts
+            snapshot_ts = float(meta.get("snapshot_ts", 0))
+            age = time.time() - snapshot_ts
 
-        if require_fresh and age > max_age:
-            conn.close()
-            raise RuntimeError(
-                f"Option chain snapshot stale | age={age:.2f}s"
-            )
+            if require_fresh and age > max_age:
+                raise RuntimeError(
+                    f"Option chain snapshot stale | age={age:.2f}s"
+                )
 
-        # ----------------------------
-        # OPTION CHAIN ROWS
-        # ----------------------------
-        rows = cur.execute(
-            "SELECT * FROM option_chain ORDER BY strike"
-        ).fetchall()
-
-        conn.close()
+            # ----------------------------
+            # OPTION CHAIN ROWS
+            # ----------------------------
+            rows = cur.execute(
+                "SELECT * FROM option_chain ORDER BY strike"
+            ).fetchall()
 
         return meta, [dict(r) for r in rows]
 

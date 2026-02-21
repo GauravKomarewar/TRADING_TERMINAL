@@ -28,6 +28,7 @@ class LegState:
     oi: int = 0
     oi_change: int = 0
     volume: int = 0
+    trading_symbol: str = ""      # ✅ BUG-002 FIX: resolved broker tradingsymbol (e.g. "NIFTY25FEB26C22000CE")
 
     @property
     def pnl(self) -> float:
@@ -225,16 +226,26 @@ class StrategyState:
             return 0
         today = datetime.now().date()
         min_days = 999
+        # ✅ BUG-018 FIX: Scripmaster uses "%d-%b-%Y" (e.g. "27-FEB-2025") but state/config
+        # may store ISO "2025-02-27". A ValueError from the wrong format was silently caught,
+        # returning 0, which made is_expiry_day=True and caused premature exits.
+        # Try both formats; skip only if neither parses.
+        _DATE_FORMATS = ["%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y"]
         for leg in self.legs.values():
             if not leg.is_active:
                 continue
-            try:
-                exp_date = datetime.strptime(leg.expiry, "%d-%b-%Y").date()
-                days = (exp_date - today).days
-                if days < min_days:
-                    min_days = days
-            except ValueError:
+            exp_date = None
+            for fmt in _DATE_FORMATS:
+                try:
+                    exp_date = datetime.strptime(leg.expiry, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if exp_date is None:
                 continue
+            days = (exp_date - today).days
+            if days < min_days:
+                min_days = days
         return min_days if min_days != 999 else 0
 
     @property

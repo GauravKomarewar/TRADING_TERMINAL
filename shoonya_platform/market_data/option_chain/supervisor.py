@@ -425,28 +425,33 @@ class OptionChainSupervisor:
         """
         🔥 NEW: Write heartbeat file for external monitoring.
         
-        Format:
-        Line 1: Timestamp
-        Line 2: Number of active chains
-        Line 3: Client login status
-        Line 4: Last snapshot timestamp
-        Line 5: Feed stall count
+        ✅ BUG-038 FIX: Write as JSON instead of bare line-per-field format.
+        The old format was read by line index (lines[0], lines[1]...) which
+        broke silently on any format change.
         """
         try:
-            with open(self._heartbeat_file, 'w') as f:
-                f.write(f"{time.time()}\n")
-                
-                with self._lock:
-                    f.write(f"{len(self._chains)}\n")
-                
-                logged_in = self.api_client.is_logged_in() if self.api_client else False
-                f.write(f"{'logged_in' if logged_in else 'logged_out'}\n")
-                
-                last_snap = self._last_snapshot_ts or 0.0
-                f.write(f"{last_snap}\n")
-                
-                f.write(f"{self._feed_stall_count}\n")
-                
+            import json
+            with self._lock:
+                chain_count = len(self._chains)
+            
+            logged_in = self.api_client.is_logged_in() if self.api_client else False
+            last_snap = self._last_snapshot_ts or 0.0
+
+            heartbeat = {
+                "timestamp": time.time(),
+                "chain_count": chain_count,
+                "login_status": "logged_in" if logged_in else "logged_out",
+                "last_snapshot": last_snap,
+                "stall_count": self._feed_stall_count,
+            }
+
+            # Write atomically via temp file
+            tmp = str(self._heartbeat_file) + ".tmp"
+            with open(tmp, 'w') as f:
+                json.dump(heartbeat, f)
+            import os
+            os.replace(tmp, str(self._heartbeat_file))
+
         except Exception as exc:
             logger.error("Failed to write heartbeat: %s", exc)
 

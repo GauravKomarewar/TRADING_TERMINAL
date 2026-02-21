@@ -265,21 +265,32 @@ def refresh_scriptmaster(force: bool = False) -> None:
         _load_from_disk()
         return
 
-    SCRIPTMASTER.clear()
-    SCRIPTMASTER_UNIVERSAL.clear()
-    EXPIRY_CALENDAR.clear()
+    # ✅ BUG-036 FIX: Download to a temporary dict first.
+    # Only atomically swap into SCRIPTMASTER if ALL exchanges succeed.
+    # Previously, SCRIPTMASTER.clear() was called before any downloads, leaving
+    # the system in a partially cleared state on mid-loop failures.
+    _temp_scriptmaster: Dict[str, Dict[str, Any]] = {}
 
     for exch, url in SCRIPTMASTER_URLS.items():
         zip_path = _download_zip(exch, url)
 
         try:
             df = _extract_txt(zip_path)
-            SCRIPTMASTER[exch] = _normalize(df, exch)
+            _temp_scriptmaster[exch] = _normalize(df, exch)
 
             pd.DataFrame.from_dict(
-                SCRIPTMASTER[exch],
+                _temp_scriptmaster[exch],
                 orient="index"
             ).to_parquet(PROC_DIR / f"{exch}.parquet")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to process {exch} scripmaster: {e}")
+            # Clean up zip on error
+            try:
+                zip_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise  # Re-raise so the atomic swap below is skipped
 
         finally:
             try:
@@ -288,6 +299,12 @@ def refresh_scriptmaster(force: bool = False) -> None:
                 logger.debug(f"🧹 Deleted raw ZIP: {zip_path.name}")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to delete {zip_path}: {e}")
+
+    # ✅ All downloads succeeded — atomically replace live SCRIPTMASTER
+    SCRIPTMASTER.clear()
+    SCRIPTMASTER.update(_temp_scriptmaster)
+    SCRIPTMASTER_UNIVERSAL.clear()
+    EXPIRY_CALENDAR.clear()
 
     _build_universal()
     _build_expiry_calendar()
@@ -322,11 +339,23 @@ def _load_from_disk() -> None:
             continue
         exch = p.stem
         df = pd.read_parquet(p)
-        SCRIPTMASTER[exch] = df.to_dict(orient="index")
+        # Ensure index is string (tokens are strings)
+        df.index = df.index.astype(str)
+        # Convert to dict with explicit string keys for both index and columns
+        data: Dict[str, Dict[str, Any]] = {
+            str(idx): {str(col): val for col, val in row.items()}
+            for idx, row in df.iterrows()
+        }
+        SCRIPTMASTER[exch] = data
 
     if (PROC_DIR / "universal.parquet").exists():
         df = pd.read_parquet(PROC_DIR / "universal.parquet")
-        SCRIPTMASTER_UNIVERSAL.update(df.to_dict(orient="index"))
+        df.index = df.index.astype(str)
+        universal_data: Dict[str, Dict[str, Any]] = {
+            str(idx): {str(col): val for col, val in row.items()}
+            for idx, row in df.iterrows()
+        }
+        SCRIPTMASTER_UNIVERSAL.update(universal_data)
 
     # ✅ ALWAYS rebuild calendar from current rules
     _build_expiry_calendar()

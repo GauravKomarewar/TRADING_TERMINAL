@@ -20,7 +20,7 @@ class StrategyExecutor:
         with open(config_path, 'r') as f:
             self.config = json.load(f)
 
-        self.state_path = state_path or "state.pkl"
+        self.state_path = state_path or "state.json"  # ✅ BUG-006: JSON instead of pkl
         self.state = self._load_or_create_state()
 
         # Initialize market reader
@@ -50,14 +50,26 @@ class StrategyExecutor:
 
     def run(self, interval_sec: int = 1):
         logger.info("Starting strategy executor...")
+        _backoff = 1  # seconds; reset on successful tick
         while True:
             try:
                 self._tick()
                 time.sleep(interval_sec)
+                _backoff = 1  # reset after clean tick
             except KeyboardInterrupt:
                 logger.info("Stopping...")
                 self._save_state()
                 break
+            except Exception as e:
+                # ✅ BUG-007 FIX: Fatal exceptions must NOT crash the run loop.
+                # Log, save state, then back off before retrying.
+                logger.exception(f"Tick error (backing off {_backoff}s): {e}")
+                try:
+                    self._save_state()
+                except Exception:
+                    pass
+                time.sleep(_backoff)
+                _backoff = min(_backoff * 2, 60)  # cap at 60s backoff
 
     def _tick(self):
         now = datetime.now()
@@ -85,7 +97,7 @@ class StrategyExecutor:
                 else:
                     delta = exit_dt - now
                     self.state.minutes_to_exit = int(delta.total_seconds() / 60)
-            except:
+            except Exception:
                 self.state.minutes_to_exit = 0
         else:
             self.state.minutes_to_exit = 0
@@ -101,18 +113,22 @@ class StrategyExecutor:
         if exit_action:
             logger.info(f"Exit triggered: {exit_action}")
             self._execute_exit(exit_action)
+            self._save_state()  # ✅ BUG-022 FIX: Save immediately on significant event
             return
 
         # Check if we should enter today
         if self._should_enter(now):
             self._execute_entry()
+            self._save_state()  # ✅ BUG-022 FIX: Save immediately after entry
 
         # Check adjustments
         actions = self.adjustment_engine.check_and_apply(now)
         for a in actions:
             logger.info(f"Adjustment: {a}")
+        if actions:
+            self._save_state()  # ✅ BUG-022 FIX: Save immediately after any adjustment
 
-        # Save state periodically (every minute)
+        # Periodic save (every minute) as a safety net
         if now.second == 0:
             self._save_state()
 
@@ -170,18 +186,19 @@ class StrategyExecutor:
     def _should_enter(self, now: datetime) -> bool:
         if self.state.entered_today:
             return False
-        # Check schedule
-        entry_start = self.config["timing"]["entry_window_start"]
-        entry_end = self.config["timing"]["entry_window_end"]
+        # ✅ BUG-008 FIX: Use .get() with safe defaults — hard key access raises KeyError if config section absent
+        timing = self.config.get("timing", {})
+        entry_start = timing.get("entry_window_start", "09:15")
+        entry_end = timing.get("entry_window_end", "15:00")
         try:
             start_t = datetime.strptime(entry_start, "%H:%M").time()
             end_t = datetime.strptime(entry_end, "%H:%M").time()
-        except:
+        except Exception:
             return False
         if start_t <= now.time() <= end_t:
             # Also check active days
             day_name = now.strftime("%a").lower()[:3]
-            active_days = self.config["schedule"]["active_days"]
+            active_days = self.config.get("schedule", {}).get("active_days", [])
             if day_name in active_days:
                 return True
         return False

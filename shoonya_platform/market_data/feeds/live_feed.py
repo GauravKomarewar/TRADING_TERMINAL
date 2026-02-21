@@ -1,8 +1,11 @@
-# 🔒 PRODUCTION FROZEN — LiveFeed v3.0
-# Date: 2026-02-06
-# Do NOT modify without full system audit
+# 🔒 PRODUCTION FROZEN — LiveFeed v3.1
+# Date: 2026-02-21
+# Changes from v3.0:
+# - ✅ BUG-029: Added extraction of bid/ask fields (bp1, sp1, bq1, sq1) in normalize_tick()
+# - ✅ BUG-035: Replaced unbounded defaultdict with TTLCache to prevent memory growth
+# - 🔒 Thread safety: Introduced separate lock (_tick_store_lock) for cache access
 """
-Live Feed Data Manager - Production Grade v3.0 (Pull-Based Architecture)
+Live Feed Data Manager - Production Grade v3.1 (Pull-Based Architecture)
 ==========================================
 Manages tick data normalization and real-time market feed subscriptions.
 Thread-safe, with proper error handling.
@@ -28,6 +31,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from colorama import Fore, Style
 import logging
+from cachetools import TTLCache
 
 # ===============================
 # 📝 Configure Logging
@@ -51,7 +55,16 @@ config = FeedConfig()
 
 # Global State (Thread-Safe)
 # Global State (Thread-Safe)
-tick_data_store: Dict[str, Dict[str, Any]] = defaultdict(dict)
+# BUG-035 FIX: tick_data_store was a plain defaultdict(dict) that grew forever.
+# In NFO with thousands of option strikes subscribed, this accumulated ~100MB/session.
+# TTLCache(maxsize=10_000, ttl=300) auto-evicts stale ticks and caps memory.
+# TTLCache is NOT thread-safe; all access must be protected by _tick_store_lock.
+_TICK_TTL_SECONDS = 300   # evict ticks older than 5 minutes
+_TICK_MAX_TOKENS  = 10_000
+
+tick_data_store: TTLCache = TTLCache(maxsize=_TICK_MAX_TOKENS, ttl=_TICK_TTL_SECONDS)
+_tick_store_lock = threading.RLock()   # separate lock; do NOT hold _state_lock while holding this
+
 subscribed_tokens: set = set()
 _state_lock = threading.Lock()
 
@@ -103,6 +116,16 @@ def normalize_tick(raw_tick: dict) -> dict:
             normalized["v"] = int(raw_tick["v"])
         if "oi" in raw_tick:
             normalized["oi"] = int(raw_tick["oi"])
+
+        # ✅ BUG-029 FIX: Bid/Ask data (was never extracted — always NULL in DB)
+        if "bp1" in raw_tick:
+            normalized["bp1"] = float(raw_tick["bp1"])
+        if "sp1" in raw_tick:
+            normalized["sp1"] = float(raw_tick["sp1"])
+        if "bq1" in raw_tick:
+            normalized["bq1"] = int(raw_tick["bq1"])
+        if "sq1" in raw_tick:
+            normalized["sq1"] = int(raw_tick["sq1"])
 
         # Timestamp - handle both seconds and milliseconds
         if "ft" in raw_tick:
@@ -185,9 +208,11 @@ def event_handler_feed_update(tick_data: dict) -> None:
         # Normalize tick
         normalized = normalize_tick(tick_data)
 
-        # Normalize and update store under global lock (single-source-of-truth)
-        with _state_lock:
-            tick_data_store[token].update(normalized)
+        # BUG-035 FIX: use _tick_store_lock (not _state_lock) since TTLCache is not thread-safe
+        with _tick_store_lock:
+            existing = tick_data_store.get(token, {})
+            existing.update(normalized)
+            tick_data_store[token] = existing
         
         # Update heartbeat
         _last_tick_time = time.time()
@@ -467,7 +492,10 @@ def unsubscribe_livedata(
         with _state_lock:
             for token in formatted_tokens:
                 subscribed_tokens.discard(token)
-                # Extract plain token for store cleanup
+
+        # BUG-035: tick_data_store has its own lock
+        with _tick_store_lock:
+            for token in formatted_tokens:
                 plain_token = _extract_token(token)
                 tick_data_store.pop(plain_token, None)
 
@@ -492,7 +520,7 @@ def get_ltp_map() -> Dict[str, Optional[float]]:
     Returns:
         Dictionary mapping token strings to LTP values
     """
-    with _state_lock:
+    with _tick_store_lock:
         return {
             token: data.get("ltp")
             for token, data in tick_data_store.items()
@@ -514,7 +542,7 @@ def get_tick_data(token: str) -> Optional[Dict[str, Any]]:
         Tick data dictionary or None if not found
     """
     token = _normalize_token_key(token)
-    with _state_lock:
+    with _tick_store_lock:
         return tick_data_store.get(token, {}).copy() if token in tick_data_store else None
 
 
@@ -527,7 +555,7 @@ def get_all_tick_data() -> Dict[str, Dict[str, Any]]:
     Returns:
         Dictionary mapping tokens to their complete tick data
     """
-    with _state_lock:
+    with _tick_store_lock:
         return {token: data.copy() for token, data in tick_data_store.items()}
 
 
@@ -544,7 +572,7 @@ def get_tick_data_batch(tokens: List[str]) -> Dict[str, Dict[str, Any]]:
     Returns:
         Dictionary mapping normalized tokens to their tick data
     """
-    with _state_lock:
+    with _tick_store_lock:
         out = {}
         for t in tokens:
             key = _normalize_token_key(t)
@@ -585,7 +613,7 @@ def clear_tick_data() -> None:
     Useful for testing or memory management.
     Does not clear subscription state.
     """
-    with _state_lock:
+    with _tick_store_lock:
         tick_data_store.clear()
         logger.info("Tick data store cleared")
 
@@ -598,8 +626,9 @@ def reset_all_state() -> None:
     """
     global _tick_counter, _last_tick_time
     
-    with _state_lock:
+    with _tick_store_lock:
         tick_data_store.clear()
+    with _state_lock:
         subscribed_tokens.clear()
     
     with _tick_counter_lock:

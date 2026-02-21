@@ -53,6 +53,15 @@ class ConditionEngine:
         def to_bool(x: Any) -> Optional[bool]:
             if isinstance(x, bool):
                 return x
+            # BUG-025 FIX: numeric 0/1 must be accepted as boolean bounds.
+            # Config files often serialize True/False as 0/1 (e.g. JSON).
+            # Without this, BETWEEN bounds stored as numbers returned None → silent False.
+            if isinstance(x, (int, float)) and not isinstance(x, bool):
+                if x == 0:
+                    return False
+                if x == 1:
+                    return True
+                return None  # 2, -1, etc. — ambiguous, reject
             if isinstance(x, str):
                 if x.lower() == 'true':
                     return True

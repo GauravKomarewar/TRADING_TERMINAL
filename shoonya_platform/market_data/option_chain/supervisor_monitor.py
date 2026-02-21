@@ -50,19 +50,17 @@ def read_heartbeat() -> Tuple[bool, Dict[str, Any], str]:
         return False, {}, "Heartbeat file not found"
     
     try:
+        # ✅ BUG-038 FIX: Parse as JSON — previously used fragile line-index parsing
+        # (lines[0], lines[1], ...) which broke on any format change.
+        import json
         with open(HEARTBEAT_FILE, 'r') as f:
-            lines = f.readlines()
+            data = json.load(f)
         
-        if len(lines) < 5:
-            return False, {}, f"Heartbeat file incomplete ({len(lines)} lines)"
-        
-        data = {
-            "timestamp": float(lines[0].strip()),
-            "chain_count": int(lines[1].strip()),
-            "login_status": lines[2].strip(),
-            "last_snapshot": float(lines[3].strip()),
-            "stall_count": int(lines[4].strip()),
-        }
+        # Validate required keys are present
+        required = {"timestamp", "chain_count", "login_status", "last_snapshot", "stall_count"}
+        missing = required - data.keys()
+        if missing:
+            return False, {}, f"Heartbeat missing keys: {missing}"
         
         return True, data, ""
         

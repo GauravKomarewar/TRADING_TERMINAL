@@ -1,4 +1,4 @@
-import pickle
+import json
 from datetime import datetime, date
 from typing import Optional, Dict, Any
 from .state import StrategyState, LegState
@@ -7,15 +7,27 @@ from .models import InstrumentType, OptionType, Side
 class StatePersistence:
     @staticmethod
     def save(state: StrategyState, filepath: str):
-        with open(filepath, 'wb') as f:
-            pickle.dump(state, f)
+        """✅ BUG-006 FIX: Use JSON instead of pickle (pickle allows arbitrary code execution)."""
+        data = StatePersistence.to_dict(state)
+        # Write atomically via a temp file to avoid partial writes on crash
+        tmp = filepath + ".tmp"
+        with open(tmp, 'w') as f:
+            json.dump(data, f, indent=2)
+        import os
+        os.replace(tmp, filepath)
 
     @staticmethod
     def load(filepath: str) -> Optional[StrategyState]:
+        """✅ BUG-006 FIX: Load from JSON instead of pickle."""
         try:
-            with open(filepath, 'rb') as f:
-                return pickle.load(f)
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            return StatePersistence.from_dict(data)
         except FileNotFoundError:
+            return None
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to load state from {filepath}: {e}")
             return None
 
     @staticmethod
@@ -43,7 +55,8 @@ class StatePersistence:
                     "label": leg.label,
                     "oi": leg.oi,
                     "oi_change": leg.oi_change,
-                    "volume": leg.volume
+                    "volume": leg.volume,
+                    "trading_symbol": leg.trading_symbol,  # ✅ BUG-002
                 } for tag, leg in state.legs.items()
             },
             "spot_price": state.spot_price,
@@ -91,7 +104,8 @@ class StatePersistence:
                 label=leg_data.get("label", ""),
                 oi=leg_data.get("oi", 0),
                 oi_change=leg_data.get("oi_change", 0),
-                volume=leg_data.get("volume", 0)
+                volume=leg_data.get("volume", 0),
+                trading_symbol=leg_data.get("trading_symbol", ""),  # ✅ BUG-002
             )
             legs[tag] = leg
 

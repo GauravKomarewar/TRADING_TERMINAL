@@ -80,6 +80,15 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
 .btn-warning { background:var(--warning); color:#000; }
 .btn-secondary { background:rgba(255,255,255,0.1); color:var(--text); border:1px solid var(--border); }
 .btn-sm { padding:4px 10px; font-size:11px; }
+/* Disabled button styling */
+.btn-mode:disabled { opacity:0.4; cursor:not-allowed; pointer-events:none; }
+/* Action buttons wrap on mobile */
+.strat-card-actions { 
+  display:flex; 
+  gap:6px; 
+  align-items:center; 
+  flex-wrap:wrap; 
+}
 .table { width:100%; border-collapse:collapse; font-size:12px; }
 .table thead { background:rgba(0,0,0,0.3); border-bottom:1px solid var(--border); }
 .table th { padding:10px; text-align:left; font-weight:700; color:var(--primary); }
@@ -106,6 +115,8 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   justify-content:space-between; 
   align-items:center; 
   margin-bottom:8px; 
+  flex-wrap:wrap;
+  gap:8px;
 }
 .strat-card-name { 
   font-size:14px; 
@@ -115,6 +126,7 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   display:flex;
   align-items:center;
   gap:8px;
+  flex-wrap:wrap;
 }
 .strat-card-meta { 
   display:flex; 
@@ -122,15 +134,12 @@ main { padding:20px; max-width:1800px; margin:0 auto; }
   font-size:11px; 
   color:var(--muted); 
   margin-top:8px;
+  flex-wrap:wrap;
 }
-.strat-card-actions { 
-  display:flex; 
-  gap:6px; 
-  align-items:center; 
-}
-.search-box { display:flex; gap:8px; margin-bottom:12px; }
+.search-box { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
 .search-box input { 
   flex:1; 
+  min-width:200px;
   padding:8px; 
   background:rgba(0,0,0,0.2); 
   border:1px solid var(--border); 
@@ -534,7 +543,6 @@ function switchTab(name, btnEl=null) {
   $(tabMap[name]).classList.add('active');
   
   if (name === 'list') loadStrategies();
-
   if (name === 'monitor') loadLiveMonitor();
 }
 
@@ -610,7 +618,7 @@ function renderStrategies() {
               class="btn btn-secondary btn-sm btn-mode"
               id="mode-btn-${escHtml(s.name)}"
               onclick="toggleMode('${escHtml(s.name)}')"
-              ${!s.can_change_mode ? 'disabled title="' + escHtml(s.mode_change_reason || '') + '"' : ''}>
+              title="${!s.can_change_mode ? escHtml(s.mode_change_reason || 'Cannot change mode') : ''}">
               ${s.mode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE'}
             </button>
             
@@ -957,7 +965,7 @@ function closeModal(id) {
 }
 
 function openBuilderPage(name = '') {
-  const qs = name ? `?edit=${encodeURIComponent(name)}` : '';
+  const qs = name ? `?name=${encodeURIComponent(name)}` : '';
   window.location.href = `/dashboard/web/strategy_builder.html${qs}`;
 }
 
@@ -1006,8 +1014,6 @@ async function confirmToggle() {
   const { name, enabled } = currentToggleStrategy;
   closeModal('toggle-modal');
   try {
-    // Toggle enabled via status endpoint (IDLE = disabled for our purposes)
-    // We persist enabled flag by including it in a save-all call that merges
     const existing = allStrategies.find(s => s.name === name) || {};
     await api('POST', `/strategy/config/save-all`, {
       ...existing,
@@ -1065,26 +1071,45 @@ function editCurrentStrategy() {
   }
 }
 
-// ====== MODE TOGGLE ======
+// ====== MODE TOGGLE (FIXED) ======
 async function toggleMode(name) {
   const btn = document.getElementById('mode-btn-' + name);
-  if (!btn || btn.disabled) return;
+  if (!btn) return;
 
-  const badgeEl = document.getElementById('mode-badge-' + name);
-  const currentMode = (badgeEl && badgeEl.textContent.includes('LIVE')) ? 'LIVE' : 'MOCK';
-  const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+  btn.disabled = true;
+  const originalText = btn.textContent;
 
   try {
-    btn.disabled = true;
+    // Fetch current mode status
+    const status = await api('GET', `/strategy/${encodeURIComponent(name)}/mode`);
+    if (!status.can_change) {
+      toast(status.reason || 'Mode change not allowed', 'warning');
+      btn.disabled = false;
+      btn.textContent = originalText;
+      return;
+    }
+
+    const currentMode = status.mode;
+    const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
+
     btn.textContent = 'Switching...';
 
     await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+
+    // Update local data immediately to avoid waiting for reload
+    const strategy = allStrategies.find(s => s.name === name);
+    if (strategy) {
+      strategy.mode = newMode;
+      // Also update can_change (should now be the opposite, but we don't know)
+      strategy.can_change_mode = !strategy.can_change_mode; // approximate, but fine for UI
+    }
+    renderStrategies(); // re-render immediately
+
     toast(`Mode changed to ${newMode}`, 'success');
-    loadStrategies();
   } catch (e) {
     toast('Mode change failed: ' + e.message, 'error');
     btn.disabled = false;
-    btn.textContent = currentMode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE';
+    btn.textContent = originalText;
   }
 }
 

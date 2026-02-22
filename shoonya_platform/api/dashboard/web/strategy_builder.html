@@ -764,9 +764,6 @@ function autoSave(){
     sessionStorage.setItem('sb_v4', json);
     sessionStorage.setItem('sb_ts', Date.now());
   } catch(e){
-    // BUG-028 FIX: QuotaExceededError was silently swallowed — user had no idea their
-    // auto-save was failing. Now we warn in the UI. For very large configs we also
-    // try trimming the stored JSON to just identity+entry (the critical parts).
     if(e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'){
       console.warn('sessionStorage quota exceeded — auto-save skipped', e);
       showAlert('⚠️ Auto-save skipped: browser storage full. Use Save button to persist to server.', 'alert-warning');
@@ -777,8 +774,7 @@ function autoSave(){
 }
 setInterval(()=>{if(ST.dirty)autoSave();},30000);
 
-// BUG-001 FIX: saveStrategy() previously only wrote to sessionStorage (browser-only, lost on refresh).
-// It never called the server. Now it POSTs the complete config to /dashboard/strategy/config/save-all.
+// BUG-001 FIX: saveStrategy() now POSTs to server.
 async function saveStrategy(){
   updateJSONPreview();
   const config = buildJSON();
@@ -805,6 +801,262 @@ async function saveStrategy(){
   }catch(e){
     console.error('saveStrategy error:', e);
     showAlert(`❌ Network error: ${e.message}`,'alert-danger');
+  }
+}
+
+/* ========== LOAD EXISTING STRATEGY FROM SERVER ========== */
+async function loadStrategyFromServer(name) {
+  if (!name) return;
+  showAlert(`⏳ Loading strategy "${name}"...`, 'alert-info');
+  try {
+    const resp = await fetch(`/dashboard/strategy/config/${encodeURIComponent(name)}`, { credentials: 'include' });
+    if (!resp.ok) throw new Error(`Failed to load: ${resp.statusText}`);
+    const config = await resp.json();
+
+    // Clear existing form
+    resetForm(true); // silent reset without confirm
+
+    // Populate identity
+    if (config.name) sv('sName', config.name);
+    if (config.id) sv('sId', config.id);
+    if (config.type) sv('sType', config.type);
+    if (config.description) sv('sDesc', config.description);
+
+    // Identity object
+    const ident = config.identity || {};
+    if (ident.exchange) sv('sExchange', ident.exchange);
+    if (ident.underlying) ST.pendingSymbol = ident.underlying;
+    if (ident.product_type) sv('sProductType', ident.product_type);
+    if (ident.order_type) sv('sOrderType', ident.order_type);
+    if (ident.lots) sv('sLots', ident.lots);
+    if (ident.db_file) ST.pendingDbFile = ident.db_file;
+
+    // Schedule
+    const sched = config.schedule || {};
+    if (sched.frequency) sv('schFreq', sched.frequency);
+    if (sched.entry_time) sv('schEntry', sched.entry_time);
+    if (sched.entry_window_end) sv('schEntryEnd', sched.entry_window_end);
+    if (sched.exit_time) sv('schExit', sched.exit_time);
+    if (sched.expiry_mode) sv('schExpiry', sched.expiry_mode);
+    if (sched.dte_min) sv('schDteMin', sched.dte_min);
+    if (sched.dte_max) sv('schDteMax', sched.dte_max);
+    if (sched.square_off_before_min) sv('schSqoff', sched.square_off_before_min);
+    if (sched.max_reentries_per_day) sv('schMaxReentry', sched.max_reentries_per_day);
+    if (sched.entry_on_expiry_day !== undefined) sv('schEntryExpiry', sched.entry_on_expiry_day ? 'yes' : 'no');
+
+    // Active days
+    if (sched.active_days && Array.isArray(sched.active_days)) {
+      document.querySelectorAll('#schDaysBtns .day-btn').forEach(btn => {
+        const day = btn.dataset.day;
+        btn.classList.toggle('active', sched.active_days.includes(day));
+      });
+    }
+
+    // Timing (entry window start/end are in identity section, but also in config.timing)
+    const timing = config.timing || {};
+    if (timing.entry_window_start) sv('schEntry', timing.entry_window_start);
+    if (timing.entry_window_end) sv('schEntryEnd', timing.entry_window_end);
+    if (timing.eod_exit_time) sv('schExit', timing.eod_exit_time);
+
+    // Entry sequence
+    if (config.entry && config.entry.entry_sequence) sv('sEntrySeq', config.entry.entry_sequence);
+
+    // Global entry conditions
+    const entryGlobal = config.entry?.global_conditions || [];
+    entryGlobal.forEach(cond => addCond('entryCombinedList', cond.parameter, cond.comparator, cond.value, cond.value2));
+
+    // Entry legs
+    const entryLegs = config.entry?.legs || [];
+    // Remove default leg
+    document.querySelectorAll('#entryLegs .leg-card').forEach(card => card.remove());
+    ST.cnt.entry = 0;
+    ST.tags = ST.tags.filter(t => t.section !== 'entry');
+    for (const leg of entryLegs) {
+      addEntryLeg(); // creates a new leg card with default values
+      const id = ST.cnt.entry; // after add, this is the new ID
+      const card = $(`lc_entry_${id}`);
+      if (!card) continue;
+
+      // Set fields (use setField to update DOM values)
+      setField(card, 'leg-label', leg.label || leg.tag);
+      setField(card, 'leg-group', leg.group || '');
+      setField(card, 'instrument', leg.instrument || 'OPT');
+      setField(card, 'leg-expiry', leg.expiry || 'strategy_default');
+      setField(card, 'side', leg.side || 'SELL');
+      setField(card, 'opt-type', leg.option_type || 'CE');
+      setField(card, 'lots', leg.lots || 1);
+      setField(card, 'order-type', leg.order_type || '');
+      setField(card, 'strike-mode', leg.strike_mode || 'standard');
+      setField(card, 'strike-sel', leg.strike_selection || 'delta');
+      setField(card, 'strike-val', leg.strike_value || '');
+
+      // Trigger UI updates for side and option type
+      onSide('entry', id, leg.side || 'SELL');
+      if (leg.option_type) {
+        onOptType('entry', id, leg.option_type);
+      }
+
+      // If instrument FUT, trigger instrument change
+      if (leg.instrument === 'FUT') {
+        onInstrumentChange('entry', id, 'FUT');
+      }
+
+      // IF conditions
+      const ifConds = leg.conditions || [];
+      ifConds.forEach(cond => addCond(`cl_entry_if_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+
+      // ELSE
+      if (leg.else_enabled) {
+        const elseCheck = $(`use_else_entry_${id}`);
+        if (elseCheck) {
+          elseCheck.checked = true;
+          onElseToggle('entry', id);
+        }
+        if (leg.else_conditions) {
+          leg.else_conditions.forEach(cond => addCond(`cl_entry_else_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+        }
+        if (leg.else_action) {
+          setField(card, 'else-side', leg.else_action.side || 'SELL');
+          setField(card, 'else-opt-type', leg.else_action.option_type || 'CE');
+          setField(card, 'else-strike-sel', leg.else_action.strike_selection || 'delta');
+          setField(card, 'else-strike-val', leg.else_action.strike_value || '');
+          setField(card, 'else-lots', leg.else_action.lots || 1);
+          setField(card, 'else-order-type', leg.else_action.order_type || '');
+        }
+      }
+    }
+
+    
+    // Adjustment rules (now fully restored)
+    const adjRules = config.adjustment?.rules || [];
+    document.querySelectorAll('#adjLegs .leg-card').forEach(card => card.remove());
+    ST.cnt.adj = 0;
+    ST.tags = ST.tags.filter(t => t.section !== 'adj');
+    for (const rule of adjRules) {
+      addAdjLeg();
+      const id = ST.cnt.adj;
+      const card = $(`lc_adj_${id}`);
+      if (!card) continue;
+
+      setField(card, 'adj-name', rule.name || `Adjustment ${id}`);
+      setField(card, 'adj-priority', rule.priority || id);
+      setField(card, 'adj-maxday', rule.max_per_day || 5);
+      setField(card, 'adj-maxtotal', rule.max_total || '');
+      setField(card, 'adj-cooldown', rule.cooldown_sec || 60);
+      setField(card, 'adj-retriger', rule.retriger ? 'yes' : 'no');
+      setField(card, 'adj-leg-guard', rule.leg_guard || '');
+
+      const ifConds = rule.conditions || [];
+      ifConds.forEach(cond => addCond(`cl_adj_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+
+      const ifAction = rule.action || {};
+      setField(card, 'adj-action-type', ifAction.type || 'close_leg');
+      const actSel = card.querySelector('[data-role="adj-action-type"]');
+      if (actSel) {
+        onAdjActionChange(id, 'if', actSel.value);
+        // Populate the IF action detail with saved data
+        populateAdjActionDetail(card, 'if', ifAction);
+      }
+
+      if (rule.else_enabled) {
+        const elseCheck = $(`use_else_adj_${id}`);
+        if (elseCheck) {
+          elseCheck.checked = true;
+          onElseToggle('adj', id);
+        }
+        if (rule.else_conditions) {
+          rule.else_conditions.forEach(cond => addCond(`cl_adj_else_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+        }
+        if (rule.else_action) {
+          setField(card, 'adj-else-action-type', rule.else_action.type || 'close_leg');
+          const elseActSel = card.querySelector('[data-role="adj-else-action-type"]');
+          if (elseActSel) {
+            onAdjActionChange(id, 'else', elseActSel.value);
+            // Populate the ELSE action detail
+            populateAdjActionDetail(card, 'else', rule.else_action);
+          }
+        }
+      }
+    }
+
+
+    // Exit rules (unchanged, not affecting tags)
+    const exitCfg = config.exit || {};
+    if (exitCfg.profit_target) {
+      if (exitCfg.profit_target.amount) sv('exitTargetAmt', exitCfg.profit_target.amount);
+      if (exitCfg.profit_target.pct) sv('exitTargetPct', exitCfg.profit_target.pct);
+      if (exitCfg.profit_target.action) sv('exitTargetAction', exitCfg.profit_target.action);
+      if (exitCfg.profit_target.lots) sv('exitTargetLots', exitCfg.profit_target.lots);
+    }
+    if (exitCfg.stop_loss) {
+      if (exitCfg.stop_loss.amount) sv('exitSlAmt', exitCfg.stop_loss.amount);
+      if (exitCfg.stop_loss.pct) sv('exitSlPct', exitCfg.stop_loss.pct);
+      if (exitCfg.stop_loss.action) sv('exitSlAction', exitCfg.stop_loss.action);
+      if (exitCfg.stop_loss.allow_reentry) sv('exitSlReentry', exitCfg.stop_loss.allow_reentry ? 'yes' : 'no');
+    }
+    if (exitCfg.trailing) {
+      if (exitCfg.trailing.trail_amount) sv('exitTrailAmt', exitCfg.trailing.trail_amount);
+      if (exitCfg.trailing.lock_in_at) sv('exitLockIn', exitCfg.trailing.lock_in_at);
+      if (exitCfg.trailing.trail_step) sv('exitTrailStep', exitCfg.trailing.trail_step);
+      if (exitCfg.trailing.step_trigger) sv('exitTrailStepTrigger', exitCfg.trailing.step_trigger);
+    }
+    if (exitCfg.profit_steps) {
+      if (exitCfg.profit_steps.step_size) sv('profitStepSize', exitCfg.profit_steps.step_size);
+      if (exitCfg.profit_steps.max_steps) sv('profitStepMax', exitCfg.profit_steps.max_steps);
+      if (exitCfg.profit_steps.action) sv('profitStepAction', exitCfg.profit_steps.action);
+    }
+    if (exitCfg.risk) {
+      if (exitCfg.risk.max_loss_per_day) sv('rMaxLoss', exitCfg.risk.max_loss_per_day);
+      if (exitCfg.risk.max_delta) sv('rMaxDelta', exitCfg.risk.max_delta);
+      if (exitCfg.risk.delta_breach_action) sv('rDeltaAction', exitCfg.risk.delta_breach_action);
+      if (exitCfg.risk.max_iv) sv('rMaxIv', exitCfg.risk.max_iv);
+      if (exitCfg.risk.min_iv) sv('rMinIv', exitCfg.risk.min_iv);
+      if (exitCfg.risk.max_lots) sv('rMaxLots', exitCfg.risk.max_lots);
+      if (exitCfg.risk.breakeven_buffer) sv('rBreakevenBuffer', exitCfg.risk.breakeven_buffer);
+    }
+    if (exitCfg.time) {
+      if (exitCfg.time.strategy_exit_time) sv('exitTime', exitCfg.time.strategy_exit_time);
+      if (exitCfg.time.expiry_day_action) sv('expiryDayAction', exitCfg.time.expiry_day_action);
+      if (exitCfg.time.expiry_day_time) sv('expiryDayTime', exitCfg.time.expiry_day_time);
+      if (exitCfg.time.roll_target) sv('rollTarget', exitCfg.time.roll_target);
+    }
+    const combined = exitCfg.combined_conditions?.rules || [];
+    combined.forEach(cond => addCond('exitCombinedList', cond.parameter, cond.comparator, cond.value, cond.value2));
+
+    const legRules = exitCfg.leg_rules || [];
+    document.querySelectorAll('#exitLegs .leg-card').forEach(card => card.remove());
+    ST.cnt.exit = 0;
+    ST.tags = ST.tags.filter(t => t.section !== 'exit');
+    for (const rule of legRules) {
+      addExitLeg();
+      const id = ST.cnt.exit;
+      const card = $(`lc_exit_${id}`);
+      if (!card) continue;
+      setField(card, 'exit-ref', rule.exit_leg_ref || 'all');
+      setField(card, 'exit-action', rule.action || 'close_leg');
+      setField(card, 'exit-group', rule.group || '');
+      const conds = rule.conditions || [];
+      conds.forEach(cond => addCond(`cl_exit_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+    }
+
+    updateSummaries();
+    showAlert(`✅ Strategy "${name}" loaded successfully`, 'alert-success');
+  } catch (e) {
+    console.error('load error:', e);
+    showAlert(`❌ Load failed: ${e.message}`, 'alert-danger');
+  }
+}
+
+// Helper to set a field value inside a card
+function setField(card, role, value) {
+  if (value === undefined || value === null) return;
+  const el = card.querySelector(`[data-role="${role}"]`);
+  if (el) {
+    if (el.tagName === 'SELECT' || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+      el.value = value;
+    } else {
+      el.textContent = value;
+    }
   }
 }
 
@@ -861,7 +1113,7 @@ function tagOpts(){
 }
 
 /* ========== CONDITIONS ========== */
-function addCond(containerId,pv='',ov='>',vv=''){
+function addCond(containerId,pv='',ov='>',vv='',vv2=''){
   const c=$(containerId);if(!c) return;
   if(c.querySelectorAll('.simple-cond-row').length>0){
     const j=document.createElement('div');j.className='cond-join-indicator';
@@ -872,7 +1124,7 @@ function addCond(containerId,pv='',ov='>',vv=''){
   row.innerHTML=`
     <select class="f-select" data-role="param">${paramOpts(pv)}</select>
     <select class="f-select" data-role="op" onchange="onOpChange(this)">${opOpts(ov)}</select>
-    <div data-role="val-wrap">${isBet?`<div class="val-row"><input class="f-input" data-role="val" placeholder="Min" value="${esc(vv)}"><input class="f-input" data-role="val2" placeholder="Max"></div>`:`<input class="f-input" data-role="val" value="${esc(vv)}" placeholder="Value">`}</div>
+    <div data-role="val-wrap">${isBet?`<div class="val-row"><input class="f-input" data-role="val" placeholder="Min" value="${esc(vv)}"><input class="f-input" data-role="val2" placeholder="Max" value="${esc(vv2)}"></div>`:`<input class="f-input" data-role="val" value="${esc(vv)}" placeholder="Value">`}</div>
     <button class="cond-rm" onclick="removeCond(this)">✕</button>`;
   c.appendChild(row);markDirty();
 }
@@ -1536,7 +1788,16 @@ function onElseToggle(sec,id){
   const enabled=$(`use_else_${sec}_${id}`)?.checked;
   const cc=$(`else_content_${sec}_${id}`);if(cc)cc.style.display=enabled?'block':'none';
   $(`else_box_${sec}_${id}`)?.classList.toggle('active',enabled);
-  const l=$(`elseLbl_${sec}_${id}`);if(l)l.textContent=enabled?'Enabled':'Disabled';markDirty();
+  const l=$(`elseLbl_${sec}_${id}`);if(l)l.textContent=enabled?'Enabled':'Disabled';
+  
+  // ✅ FIX: if enabling else for adjustment rules, populate the action detail
+  if (sec === 'adj' && enabled) {
+    const actSelect = document.querySelector(`#lc_adj_${id} [data-role="adj-else-action-type"]`);
+    if (actSelect) {
+      onAdjActionChange(id, 'else', actSelect.value);
+    }
+  }
+  markDirty();
 }
 function removeLeg(sec,id){
   $(`lc_${sec}_${id}`)?.remove();unregTag(id,sec);updBadge(sec);
@@ -1697,6 +1958,12 @@ async function loadSymbols(){
     const di=items.findIndex(x=>x.symbol==='NIFTY');
     el.innerHTML=items.map((it,i)=>`<option value="${it.symbol}"${i===(di>=0?di:0)?' selected':''}>${esc(it.symbol)}</option>`).join('');
     if(items.length)onSymbolChange();
+    // If we have a pending symbol from loadStrategy, set it now
+    if (ST.pendingSymbol) {
+      el.value = ST.pendingSymbol;
+      onSymbolChange();
+      delete ST.pendingSymbol;
+    }
   }catch(e){
     el.innerHTML='<option value="NIFTY">NIFTY</option>';
     loadDbFiles('NIFTY','NFO',[]);
@@ -1712,6 +1979,18 @@ async function loadDbFiles(sym,exchange,fallback){
   if(!exps.length){try{const r=await fetch(`/dashboard/option-chain/active-expiries?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(sym)}`,{credentials:'include'});if(r.ok){const d=await r.json();exps=Array.isArray(d)?d.filter(Boolean):[];}}catch(e){}}
   el.innerHTML=exps.length?exps.map((exp,i)=>`<option value="${exchange}_${sym}_${exp}.sqlite"${i===0?' selected':''}>${sym} ${exp}</option>`).join(''):`<option value="${exchange}_${sym}_current.sqlite">${sym} current</option>`;
   onDbFileChange();
+  // If we have a pending DB file, set it now
+  if (ST.pendingDbFile) {
+    // Try to find matching option
+    for (let opt of el.options) {
+      if (opt.value === ST.pendingDbFile) {
+        opt.selected = true;
+        break;
+      }
+    }
+    onDbFileChange();
+    delete ST.pendingDbFile;
+  }
 }
 function onDbFileChange(){
   const f=gv('sDbFile');
@@ -1829,13 +2108,13 @@ function exportJSON(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));
   a.download=`${gv('sName')||'strategy'}_v4.json`;a.click();URL.revokeObjectURL(a.href);
 }
-function resetForm(){
-  if(ST.dirty&&!confirm('Unsaved changes. Reset anyway?'))return;
+function resetForm(silent){
+  if(!silent && ST.dirty && !confirm('Unsaved changes. Reset anyway?'))return;
   ['entryLegs','adjLegs','exitLegs','entryCombinedList','exitCombinedList'].forEach(id=>{const e=$(id);if(e)e.innerHTML='';});
   ST.cnt={entry:0,adj:0,exit:0};ST.tags=[];
   sv('sName','');sv('sId','');sv('sDesc','');
   addEntryLeg();['entry','adj','exit'].forEach(updBadge);refreshAdjAvail();updateSummaries();clearDirty();
-  showAlert('Form reset.','alert-info');
+  if(!silent) showAlert('Form reset.','alert-info');
 }
 function closeBuilder(){if(!ST.dirty||confirm('Close without saving?'))window.location.href='/dashboard/web/strategy.html';}
 
@@ -1846,6 +2125,14 @@ async function init(){
   await loadSymbols();
   addEntryLeg();
   refreshAdjAvail();updateSummaries();
+  
+  // Check URL for strategy name to load
+  const urlParams = new URLSearchParams(window.location.search);
+  const strategyName = urlParams.get('name');
+  if (strategyName) {
+    await loadStrategyFromServer(strategyName);
+  }
+  
   switchSec('identity',null);
   // Session restore hint
   try{const ts=sessionStorage.getItem('sb_ts');if(ts&&Date.now()-parseInt(ts)<3600000)showAlert('💾 Auto-save available from last session.','alert-info');}catch(e){}
@@ -1858,6 +2145,117 @@ document.addEventListener('change',e=>{
     const g=$('exitTargetLotsGrp');if(g)g.style.display=e.target.value==='partial_lots'?'block':'none';
   }
 });
+
+// ===== ADDED BY PATCHER: Helper functions for loading adjustment action details =====
+function populateStrikePanel(container, prefix, legConfig) {
+  if (!legConfig) return;
+  const side = container.querySelector(`[data-role="${prefix}-side"]`);
+  if (side) side.value = legConfig.side || 'SELL';
+  const opt = container.querySelector(`[data-role="${prefix}-opt"]`);
+  if (opt) opt.value = legConfig.option_type || 'CE';
+
+  const mode = container.querySelector(`[data-role="${prefix}-stk-mode"]`);
+  if (mode) {
+    mode.value = legConfig.strike_mode || 'standard';
+    onStrikeModeChange(mode, prefix);
+  }
+
+  const lots = container.querySelector(`[data-role="${prefix}-lots"]`);
+  if (lots) lots.value = legConfig.lots || 1;
+  const order = container.querySelector(`[data-role="${prefix}-order"]`);
+  if (order) order.value = legConfig.order_type || '';
+
+  const modeVal = legConfig.strike_mode || 'standard';
+  if (modeVal === 'standard') {
+    const sel = container.querySelector(`[data-role="${prefix}-stk-sel"]`);
+    if (sel) sel.value = legConfig.strike_selection || 'delta';
+    const val = container.querySelector(`[data-role="${prefix}-stk-val"]`);
+    if (val) val.value = legConfig.strike_value || '';
+  } else if (modeVal === 'exact') {
+    const exact = container.querySelector(`[data-role="${prefix}-stk-exact"]`);
+    if (exact) exact.value = legConfig.exact_strike || '';
+    const round = container.querySelector(`[data-role="${prefix}-stk-round"]`);
+    if (round) round.value = legConfig.rounding || 50;
+  } else if (modeVal === 'atm_points') {
+    const pts = container.querySelector(`[data-role="${prefix}-stk-pts"]`);
+    if (pts) pts.value = legConfig.atm_offset_points || 0;
+    const round = container.querySelector(`[data-role="${prefix}-stk-round2"]`);
+    if (round) round.value = legConfig.rounding || 50;
+  } else if (modeVal === 'atm_pct') {
+    const pct = container.querySelector(`[data-role="${prefix}-stk-pct"]`);
+    if (pct) pct.value = legConfig.atm_offset_pct || 0;
+    const round = container.querySelector(`[data-role="${prefix}-stk-round3"]`);
+    if (round) round.value = legConfig.rounding || 50;
+  } else if (modeVal === 'match_leg') {
+    const ref = container.querySelector(`[data-role="${prefix}-ref-leg"]`);
+    if (ref) ref.value = legConfig.match_leg || '';
+    const param = container.querySelector(`[data-role="${prefix}-match-param"]`);
+    if (param) param.value = legConfig.match_param || 'abs_delta';
+    const offset = container.querySelector(`[data-role="${prefix}-match-offset"]`);
+    if (offset) offset.value = legConfig.match_offset || 0;
+    const mult = container.querySelector(`[data-role="${prefix}-match-mult"]`);
+    if (mult) mult.value = legConfig.match_multiplier || 1;
+  }
+}
+
+function populateAdjActionDetail(card, branch, action) {
+  const adjId = card.id.replace('lc_adj_', '');
+  const detailDiv = $(`adj_${branch}_detail_${adjId}`);
+  if (!detailDiv) return;
+
+  const type = action.type;
+  if (type === 'close_leg') {
+    const sel = detailDiv.querySelector('[data-role="close-leg-sel"]');
+    if (sel) sel.value = action.close_tag || '';
+  } else if (type === 'partial_close_lots') {
+    const sel = detailDiv.querySelector('[data-role="partial-leg-sel"]');
+    if (sel) sel.value = action.close_tag || '';
+    const lots = detailDiv.querySelector('[data-role="partial-lots"]');
+    if (lots) lots.value = action.lots || 1;
+    const keep = detailDiv.querySelector('[data-role="partial-keep"]');
+    if (keep) keep.value = action.keep ? 'yes' : 'no';
+  } else if (type === 'reduce_by_pct') {
+    const sel = detailDiv.querySelector('[data-role="reduce-leg-sel"]');
+    if (sel) sel.value = action.close_tag || '';
+    const pct = detailDiv.querySelector('[data-role="reduce-pct"]');
+    if (pct) pct.value = action.reduce_pct || 50;
+  } else if (type === 'open_hedge') {
+    const prefix = `hedge_${adjId}_${branch}`;
+    populateStrikePanel(detailDiv, prefix, action.new_leg);
+  } else if (type === 'roll_to_next_expiry') {
+    const legSel = detailDiv.querySelector('[data-role="roll-leg-sel"]');
+    if (legSel) legSel.value = action.leg || '';
+    const target = detailDiv.querySelector('[data-role="roll-target-expiry"]');
+    if (target) target.value = action.target_expiry || 'weekly_next';
+    const same = detailDiv.querySelector('[data-role="roll-same-strike"]');
+    if (same) same.value = action.same_strike || 'yes';
+  } else if (type === 'convert_to_spread') {
+    const prefix = `spread_${adjId}_${branch}`;
+    populateStrikePanel(detailDiv, prefix, action.wing_leg);
+  } else if (type === 'simple_close_open_new') {
+    const swapsContainer = $(`swaps_${branch}_${adjId}`);
+    if (!swapsContainer) return;
+    swapsContainer.innerHTML = '';
+    if (action.leg_swaps && Array.isArray(action.leg_swaps)) {
+      action.leg_swaps.forEach((swap, idx) => {
+        addSwapCard(adjId, branch);
+        const newCard = swapsContainer.querySelector('.swap-card:last-child');
+        if (newCard) {
+          const prefix = `sc_${adjId}_${branch}_${idx}`;
+          const closeSel = newCard.querySelector('[data-role="swap-close"]');
+          if (closeSel) {
+            closeSel.value = swap.close_tag || '';
+            onSwapCloseChange(closeSel, prefix);
+          }
+          if (swap.new_leg) {
+            populateStrikePanel(newCard, prefix, swap.new_leg);
+          }
+        }
+      });
+    }
+  }
+}
+// ===== END OF ADDED FUNCTIONS =====
 </script>
 </body>
 </html>

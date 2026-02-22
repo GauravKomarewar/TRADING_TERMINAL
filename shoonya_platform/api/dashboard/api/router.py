@@ -1380,6 +1380,19 @@ def save_strategy_config_all(
     # Ensure backward‑compatible fields are present (optional)
     merged = ensure_complete_config(merged)
 
+    # Validate before persisting, so this endpoint cannot bypass schema checks.
+    is_valid, issues = validate_config(merged if isinstance(merged, dict) else {})
+    if not is_valid:
+        errors = [f"{e.path}: {e.message}" for e in issues if e.severity == "error"]
+        warnings = [f"{e.path}: {e.message}" for e in issues if e.severity == "warning"]
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Strategy validation failed",
+                "validation": {"valid": False, "errors": errors, "warnings": warnings},
+            },
+        )
+
     # Write back
     filepath.write_text(json.dumps(merged, indent=2, default=str), encoding="utf-8")
     logger.info("Strategy config saved (all): %s", name)

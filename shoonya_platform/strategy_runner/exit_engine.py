@@ -120,15 +120,12 @@ class ExitEngine:
         step_size = cfg.get("step_size")
         max_steps = cfg.get("max_steps")
         action = cfg.get("action", "adj")
-        if not step_size or not max_steps:
-            return None
-        # ✅ BUG-017 FIX: step_size=0 causes ZeroDivisionError — guard explicitly
         if not step_size:
             return None
 
         current_pnl = self.state.combined_pnl
         step = int(current_pnl // step_size)
-        if step > max_steps:
+        if max_steps is not None and step > max_steps:
             step = max_steps
         if step > self.state.current_profit_step:
             self.state.current_profit_step = step
@@ -178,3 +175,4 @@ class ExitEngine:
             value2=d.get("value2"),
             join=JoinOperator(d["join"]) if d.get("join") else None
         )
+

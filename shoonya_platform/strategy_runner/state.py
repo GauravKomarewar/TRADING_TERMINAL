@@ -105,6 +105,12 @@ class StrategyState:
         return sum(leg.delta for leg in self.legs.values() if leg.is_active)
 
     @property
+    def delta_diff(self) -> float:
+        ce = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.CE), None)
+        pe = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.PE), None)
+        return (ce.delta if ce else 0.0) - (pe.delta if pe else 0.0)
+
+    @property
     def combined_pnl(self) -> float:
         return sum(leg.pnl for leg in self.legs.values() if leg.is_active)
 
@@ -118,6 +124,26 @@ class StrategyState:
                 else:
                     total -= leg.entry_price * leg.qty
         return total
+
+    @property
+    def premium_collected(self) -> float:
+        return self.total_premium
+
+    @property
+    def total_cost_basis(self) -> float:
+        return sum((leg.entry_price * leg.qty) for leg in self.legs.values() if leg.is_active)
+
+    @property
+    def unrealised_pnl(self) -> float:
+        return self.combined_pnl
+
+    @property
+    def realised_pnl(self) -> float:
+        return self.cumulative_daily_pnl
+
+    @property
+    def profit_step(self) -> int:
+        return max(0, int(self.current_profit_step))
 
     @property
     def max_leg_delta(self) -> float:
@@ -149,6 +175,62 @@ class StrategyState:
             return None
         return min(active, key=lambda l: l.pnl).tag
 
+    @property
+    def higher_delta_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return max(active, key=lambda l: l.abs_delta).tag
+
+    @property
+    def lower_delta_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return min(active, key=lambda l: l.abs_delta).tag
+
+    @property
+    def higher_theta_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return max(active, key=lambda l: abs(l.theta)).tag
+
+    @property
+    def lower_theta_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return min(active, key=lambda l: abs(l.theta)).tag
+
+    @property
+    def higher_iv_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return max(active, key=lambda l: l.iv).tag
+
+    @property
+    def lower_iv_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return min(active, key=lambda l: l.iv).tag
+
+    @property
+    def deepest_itm_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return max(active, key=lambda l: l.moneyness).tag
+
+    @property
+    def most_otm_leg(self) -> Optional[str]:
+        active = [leg for leg in self.legs.values() if leg.is_active]
+        if not active:
+            return None
+        return min(active, key=lambda l: l.moneyness).tag
+
     # New computed properties
     @property
     def portfolio_gamma(self) -> float:
@@ -167,6 +249,67 @@ class StrategyState:
         if self.total_premium == 0:
             return 0.0
         return (self.combined_pnl / self.total_premium) * 100
+
+    @property
+    def iv_skew(self) -> float:
+        ce = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.CE), None)
+        pe = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.PE), None)
+        return (pe.iv if pe else 0.0) - (ce.iv if ce else 0.0)
+
+    @property
+    def atm_iv(self) -> float:
+        ivs = [leg.iv for leg in self.legs.values() if leg.is_active and leg.option_type in (OptionType.CE, OptionType.PE)]
+        return (sum(ivs) / len(ivs)) if ivs else 0.0
+
+    @property
+    def ce_iv(self) -> float:
+        leg = next((l for l in self.legs.values() if l.is_active and l.option_type == OptionType.CE), None)
+        return leg.iv if leg else 0.0
+
+    @property
+    def pe_iv(self) -> float:
+        leg = next((l for l in self.legs.values() if l.is_active and l.option_type == OptionType.PE), None)
+        return leg.iv if leg else 0.0
+
+    @property
+    def ce_premium_decay_pct(self) -> float:
+        leg = next((l for l in self.legs.values() if l.is_active and l.option_type == OptionType.CE), None)
+        if not leg or leg.entry_price == 0:
+            return 0.0
+        return ((leg.entry_price - leg.ltp) / leg.entry_price) * 100
+
+    @property
+    def pe_premium_decay_pct(self) -> float:
+        leg = next((l for l in self.legs.values() if l.is_active and l.option_type == OptionType.PE), None)
+        if not leg or leg.entry_price == 0:
+            return 0.0
+        return ((leg.entry_price - leg.ltp) / leg.entry_price) * 100
+
+    @property
+    def total_premium_decay_pct(self) -> float:
+        entry = sum((leg.entry_price * leg.qty) for leg in self.legs.values() if leg.is_active)
+        current = sum((leg.ltp * leg.qty) for leg in self.legs.values() if leg.is_active)
+        if entry == 0:
+            return 0.0
+        return ((entry - current) / entry) * 100
+
+    @property
+    def max_profit_potential(self) -> float:
+        return self.total_premium
+
+    @property
+    def adjustment_count(self) -> int:
+        return int(self.lifetime_adjustments)
+
+    @property
+    def spot_change(self) -> float:
+        return self.spot_price - self.spot_open
+
+    @property
+    def spot_change_pct(self) -> float:
+        if self.spot_open == 0:
+            return 0.0
+        return (self.spot_change / self.spot_open) * 100
 
     @property
     def active_legs_count(self) -> int:

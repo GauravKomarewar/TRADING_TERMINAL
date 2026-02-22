@@ -2048,13 +2048,18 @@ function buildJSON(){
     const elseCondEl=card.querySelector(`#cl_adj_else_${adjId}`);
 
     function buildAction(type,branch){
-      const swapCards=[...card.querySelectorAll('.swap-card')];
-      if(type==='simple_close_open_new') return{type,leg_swaps:swapCards.map((sc,si)=>{const pfx=`sc_${adjId}_${branch}_${si}`;return{close_tag:sc.querySelector('[data-role="swap-close"]')?.value||'',new_leg:extractStrikeConfig(pfx)};})};
-      if(type==='close_leg') return{type,close_tag:card.querySelector('[data-role="close-leg-sel"]')?.value||''};
-      if(type==='partial_close_lots') return{type,close_tag:card.querySelector('[data-role="partial-leg-sel"]')?.value||'',lots:parseInt(card.querySelector('[data-role="partial-lots"]')?.value)||1};
-      if(type==='reduce_by_pct') return{type,close_tag:card.querySelector('[data-role="reduce-leg-sel"]')?.value||'',reduce_pct:parseFloat(card.querySelector('[data-role="reduce-pct"]')?.value)||50};
+      const branchDetail=card.querySelector(`#adj_${branch}_detail_${adjId}`)||card;
+      const q=sel=>branchDetail.querySelector(sel);
+      if(type==='simple_close_open_new'){
+        const swapsRoot=branchDetail.querySelector(`#swaps_${branch}_${adjId}`);
+        const swapCards=swapsRoot?[...swapsRoot.querySelectorAll('.swap-card')]:[];
+        return{type,leg_swaps:swapCards.map((sc,si)=>{const pfx=`sc_${adjId}_${branch}_${si}`;return{close_tag:sc.querySelector('[data-role="swap-close"]')?.value||'',new_leg:extractStrikeConfig(pfx)};})};
+      }
+      if(type==='close_leg') return{type,close_tag:q('[data-role="close-leg-sel"]')?.value||''};
+      if(type==='partial_close_lots') return{type,close_tag:q('[data-role="partial-leg-sel"]')?.value||'',lots:parseInt(q('[data-role="partial-lots"]')?.value)||1};
+      if(type==='reduce_by_pct') return{type,close_tag:q('[data-role="reduce-leg-sel"]')?.value||'',reduce_pct:parseFloat(q('[data-role="reduce-pct"]')?.value)||50};
       if(type==='open_hedge') return{type,new_leg:extractStrikeConfig(`hedge_${adjId}_${branch}`)};
-      if(type==='roll_to_next_expiry') return{type,leg:card.querySelector('[data-role="roll-leg-sel"]')?.value||'',target_expiry:card.querySelector('[data-role="roll-target-expiry"]')?.value||'weekly_next',same_strike:card.querySelector('[data-role="roll-same-strike"]')?.value||'yes'};
+      if(type==='roll_to_next_expiry') return{type,leg:q('[data-role="roll-leg-sel"]')?.value||'',target_expiry:q('[data-role="roll-target-expiry"]')?.value||'weekly_next',same_strike:q('[data-role="roll-same-strike"]')?.value||'yes'};
       if(type==='convert_to_spread') return{type,wing_leg:extractStrikeConfig(`spread_${adjId}_${branch}`)};
       return{type};
     }

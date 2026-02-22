@@ -110,10 +110,10 @@ class StrategyExecutor:
 
         # Check exits first
         exit_action = self.exit_engine.check_exits(now)
-        if exit_action:
+        if exit_action and exit_action != "profit_step_adj":
             logger.info(f"Exit triggered: {exit_action}")
             self._execute_exit(exit_action)
-            self._save_state()  # ✅ BUG-022 FIX: Save immediately on significant event
+            self._save_state()  # Save immediately on significant event
             return
 
         # Check if we should enter today
@@ -236,3 +236,4 @@ class StrategyExecutor:
     def _save_state(self):
         StatePersistence.save(self.state, self.state_path)
         logger.info(f"State saved to {self.state_path}")
+

@@ -560,7 +560,13 @@ def _validate_entry_leg(leg: Dict, path: str, errors: List[ValidationError]):
         _validate_leg_strike_config(leg, f"{path}", errors)
 
 
-def _validate_leg_execution_config(cfg: Dict, path: str, errors: List[ValidationError], instrument: str):
+def _validate_leg_execution_config(
+    cfg: Dict,
+    path: str,
+    errors: List[ValidationError],
+    instrument: str,
+    allow_dynamic_option_types: bool = False,
+):
     """Validate the execution part of a leg (side, lots, strike_mode, etc.)."""
     # side (required)
     side = cfg.get("side")
@@ -585,17 +591,26 @@ def _validate_leg_execution_config(cfg: Dict, path: str, errors: List[Validation
         errors.append(ValidationError(f"{path}.order_type", f"Invalid order_type '{order_type}'. Valid: {sorted(VALID_ORDER_TYPES)}", "warning"))
 
     if instrument == "OPT":
-        _validate_leg_strike_config(cfg, path, errors)
+        _validate_leg_strike_config(cfg, path, errors, allow_dynamic_option_types=allow_dynamic_option_types)
 
 
-def _validate_leg_strike_config(cfg: Dict, path: str, errors: List[ValidationError]):
+def _validate_leg_strike_config(
+    cfg: Dict,
+    path: str,
+    errors: List[ValidationError],
+    allow_dynamic_option_types: bool = False,
+):
     """Validate strike-related fields for an option leg."""
     # option_type (required)
     opt_type = cfg.get("option_type")
     if not opt_type:
         errors.append(ValidationError(f"{path}.option_type", "Missing option_type"))
-    elif opt_type not in VALID_OPTION_TYPES:
-        errors.append(ValidationError(f"{path}.option_type", f"Invalid option_type '{opt_type}'. Valid: {sorted(VALID_OPTION_TYPES)}"))
+    else:
+        valid_option_types = set(VALID_OPTION_TYPES)
+        if allow_dynamic_option_types:
+            valid_option_types.update({"MATCH_CLOSING", "MATCH_OPPOSITE"})
+        if opt_type not in valid_option_types:
+            errors.append(ValidationError(f"{path}.option_type", f"Invalid option_type '{opt_type}'. Valid: {sorted(valid_option_types)}"))
 
     # strike_mode (required)
     strike_mode = cfg.get("strike_mode")
@@ -613,7 +628,7 @@ def _validate_leg_strike_config(cfg: Dict, path: str, errors: List[ValidationErr
             errors.append(ValidationError(f"{path}.strike_selection", f"Unknown strike_selection '{sel}'. Valid subset of {sorted(VALID_STRIKE_SELECTIONS)}", "warning"))
         # strike_value is optional, but if present should be numeric
         val = cfg.get("strike_value")
-        if val is not None:
+        if val is not None and str(val).strip() != "":
             try:
                 float(val)
             except (TypeError, ValueError):
@@ -936,7 +951,7 @@ def _validate_adjustment_action(action: Dict, path: str, errors: List[Validation
             errors.append(ValidationError(f"{path}.new_leg", "new_leg must be an object"))
         else:
             # Validate new_leg as a strike config (it should have side, option_type, strike_mode, etc.)
-            _validate_leg_strike_config(new_leg, f"{path}.new_leg", errors)
+            _validate_leg_strike_config(new_leg, f"{path}.new_leg", errors, allow_dynamic_option_types=True)
 
     elif atype == "roll_to_next_expiry":
         leg = action.get("leg")
@@ -956,7 +971,7 @@ def _validate_adjustment_action(action: Dict, path: str, errors: List[Validation
         elif not isinstance(wing, dict):
             errors.append(ValidationError(f"{path}.wing_leg", "wing_leg must be an object"))
         else:
-            _validate_leg_strike_config(wing, f"{path}.wing_leg", errors)
+            _validate_leg_strike_config(wing, f"{path}.wing_leg", errors, allow_dynamic_option_types=True)
 
     elif atype == "simple_close_open_new":
         swaps = action.get("leg_swaps")
@@ -986,7 +1001,7 @@ def _validate_leg_swap(swap: Dict, path: str, errors: List[ValidationError]):
     elif not isinstance(new_leg, dict):
         errors.append(ValidationError(f"{path}.new_leg", "new_leg must be an object"))
     else:
-        _validate_leg_strike_config(new_leg, f"{path}.new_leg", errors)
+        _validate_leg_strike_config(new_leg, f"{path}.new_leg", errors, allow_dynamic_option_types=True)
 
 
 def _validate_exit(exit_cfg: Dict, errors: List[ValidationError], prefix: str):

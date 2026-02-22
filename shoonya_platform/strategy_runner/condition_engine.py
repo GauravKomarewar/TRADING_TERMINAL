@@ -83,6 +83,8 @@ class ConditionEngine:
         val1_is_bool = isinstance(val1, bool)
         param_is_time = isinstance(param_value, str) and ':' in param_value
         val1_is_time = isinstance(val1, str) and ':' in str(val1)
+        param_is_str = isinstance(param_value, str)
+        val1_is_str = isinstance(val1, str)
 
         # -------- BOOLEAN BRANCH --------
         if param_is_bool or val1_is_bool:
@@ -200,6 +202,29 @@ class ConditionEngine:
             else:
                 raise ValueError(f"Unsupported comparator for time: {comp}")
 
+        # -------- STRING BRANCH --------
+        if param_is_str or val1_is_str:
+            pv = str(param_value)
+            v1 = str(val1)
+            if comp == Comparator.EQ:
+                return pv == v1
+            elif comp == Comparator.NEQ:
+                return pv != v1
+            elif comp == Comparator.IS_TRUE:
+                return bool(pv) is True
+            elif comp == Comparator.IS_FALSE:
+                return bool(pv) is False
+            elif comp in (Comparator.GT, Comparator.GTE, Comparator.LT, Comparator.LTE):
+                if comp == Comparator.GT:
+                    return pv > v1
+                if comp == Comparator.GTE:
+                    return pv >= v1
+                if comp == Comparator.LT:
+                    return pv < v1
+                return pv <= v1
+            logger.warning(f"Unsupported string comparator {comp} for values: {pv} vs {v1}")
+            return False
+
         # -------- NUMERIC BRANCH (default) --------
         pv = to_numeric(param_value)
         v1 = to_numeric(val1)
@@ -315,25 +340,75 @@ class ConditionEngine:
             return self.state.net_delta
         elif param == "combined_pnl":
             return self.state.combined_pnl
+        elif param == "combined_pnl_pct":
+            return self.state.combined_pnl_pct
+        elif param == "delta_diff":
+            return self.state.delta_diff
+        elif param == "unrealised_pnl":
+            return self.state.unrealised_pnl
+        elif param == "realised_pnl":
+            return self.state.realised_pnl
+        elif param == "profit_step":
+            return self.state.profit_step
+        elif param == "premium_collected":
+            return self.state.premium_collected
+        elif param == "total_cost_basis":
+            return self.state.total_cost_basis
+        elif param == "ce_premium_decay_pct":
+            return self.state.ce_premium_decay_pct
+        elif param == "pe_premium_decay_pct":
+            return self.state.pe_premium_decay_pct
+        elif param == "total_premium_decay_pct":
+            return self.state.total_premium_decay_pct
+        elif param == "max_profit_potential":
+            return self.state.max_profit_potential
+        elif param == "iv_skew":
+            return self.state.iv_skew
+        elif param == "atm_iv":
+            return self.state.atm_iv
+        elif param == "adjustment_count":
+            return self.state.adjustment_count
+        elif param == "all_legs_active":
+            return self.state.all_legs_active
         elif param == "total_premium":
             return self.state.total_premium
         elif param == "max_leg_delta":
             return self.state.max_leg_delta
         elif param == "min_leg_delta":
             return self.state.min_leg_delta
+        elif param == "any_leg_delta_above":
+            return self.state.max_leg_delta
+        elif param == "all_legs_delta_below":
+            return self.state.max_leg_delta
+        elif param == "higher_delta_leg":
+            return self.state.higher_delta_leg or ""
+        elif param == "lower_delta_leg":
+            return self.state.lower_delta_leg or ""
         elif param == "most_profitable_leg":
             return self.state.most_profitable_leg
         elif param == "least_profitable_leg":
             return self.state.least_profitable_leg
+        elif param == "spot_change":
+            return self.state.spot_change
+        elif param == "spot_change_pct":
+            return self.state.spot_change_pct
+        elif param == "ce_iv":
+            return self.state.ce_iv
+        elif param == "pe_iv":
+            return self.state.pe_iv
         elif param == "adj_count_today":
             return self.state.adjustments_today
         elif param.startswith("index_"):
-            parts = param.split('_', 2)
+            parts = param.split('_')
             if len(parts) >= 3:
-                idx = parts[1]
-                attr = parts[2]
-                key = f"{idx}_{attr}"
-                return self.state.index_data.get(key, 0.0)
+                idx = "_".join(parts[1:-1]).upper()
+                attr = parts[-1]
+                idx_map = self.state.index_data.get(idx)
+                if isinstance(idx_map, dict):
+                    return idx_map.get(attr, 0.0)
+                legacy_key = f"{idx}_{attr}"
+                if legacy_key in self.state.index_data:
+                    return self.state.index_data.get(legacy_key, 0.0)
             return 0.0
         elif param.startswith("tag."):
             match = re.match(r"tag\.([^.]+)\.(.+)", param)

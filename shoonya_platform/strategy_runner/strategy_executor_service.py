@@ -270,7 +270,7 @@ class PerStrategyExecutor:
 
         # Check exits first
         exit_action = self.exit_engine.check_exits(now)
-        if exit_action:
+        if exit_action and exit_action != "profit_step_adj":
             self._execute_exit(exit_action, source=exit_action)
             return
 

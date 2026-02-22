@@ -39,6 +39,8 @@ MATCH_PARAM_TO_SQL = {
     "oi": "oi",
     "volume": "volume",
     "strike": "strike",
+    # Proxy mapping; exact moneyness matching is handled in resolve_strike().
+    "moneyness": "strike",
 }
 
 
@@ -510,11 +512,41 @@ class MarketReader:
                 if opt_data is None:
                     raise ValueError(f"No option found for delta={target}")
                 strike = opt_data["strike"]
+            elif sel == "theta":
+                target = float(val) if val else 0.0
+                opt_data = self.find_option_by_criteria(opt_type, "theta", target, tolerance=5.0, expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for theta={target}")
+                strike = opt_data["strike"]
+            elif sel == "vega":
+                target = float(val) if val else 0.0
+                opt_data = self.find_option_by_criteria(opt_type, "vega", target, tolerance=5.0, expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for vega={target}")
+                strike = opt_data["strike"]
+            elif sel == "gamma":
+                target = float(val) if val else 0.0
+                opt_data = self.find_option_by_criteria(opt_type, "gamma", target, tolerance=5.0, expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for gamma={target}")
+                strike = opt_data["strike"]
             elif sel == "premium":
                 target = float(val) if val else 50
                 opt_data = self.find_option_by_premium(opt_type, target, expiry=expiry)
                 if opt_data is None:
                     raise ValueError(f"No option found for premium={target}")
+                strike = opt_data["strike"]
+            elif sel == "oi":
+                target = float(val) if val else 0.0
+                opt_data = self.find_option_by_criteria(opt_type, "oi", target, tolerance=max(1000.0, target * 0.25), expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for oi={target}")
+                strike = opt_data["strike"]
+            elif sel == "volume":
+                target = float(val) if val else 0.0
+                opt_data = self.find_option_by_criteria(opt_type, "volume", target, tolerance=max(1000.0, target * 0.25), expiry=expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for volume={target}")
                 strike = opt_data["strike"]
             elif sel == "iv":
                 target = float(val) if val else 15.0
@@ -522,10 +554,35 @@ class MarketReader:
                 if opt_data is None:
                     raise ValueError(f"No option found for IV={target}")
                 strike = opt_data["strike"]
+            elif sel == "otm_pct":
+                target_pct = float(val) if val else 0.5
+                if opt_type == OptionType.CE:
+                    strike = atm * (1 + target_pct / 100.0)
+                else:
+                    strike = atm * (1 - target_pct / 100.0)
+                step = self._get_strike_step(expiry)
+                strike = round(strike / step) * step
+            elif sel == "exact_strike":
+                if val is None or str(val).strip() == "":
+                    raise ValueError("exact_strike selection requires strike_value")
+                strike = float(val)
+            elif sel == "atm_points":
+                points = float(val) if val else 0.0
+                strike = atm + points
+                step = self._get_strike_step(expiry)
+                strike = round(strike / step) * step
+            elif sel == "atm_pct":
+                pct = float(val) if val else 0.0
+                strike = atm * (1 + pct / 100.0)
+                step = self._get_strike_step(expiry)
+                strike = round(strike / step) * step
+            elif sel in ("max_pain", "pcr_inflection"):
+                # Placeholder until chain-wide analytics are wired.
+                strike = atm
             else:
                 raise ValueError(f"Unsupported standard selection: {sel}")
 
-            if sel not in ["delta", "premium", "iv"]:
+            if sel not in ["delta", "theta", "vega", "gamma", "premium", "oi", "volume", "iv"]:
                 # For simple strike selections, get option data now
                 opt_data = self.get_option_at_strike(strike, opt_type, expiry)
                 if opt_data is None:
@@ -566,6 +623,18 @@ class MarketReader:
             match_param = config.match_param
             if match_param is None:
                 raise ValueError("Match leg mode requires 'match_param'")
+            if match_param == "moneyness":
+                if reference_leg_state.strike is None:
+                    raise ValueError("Reference leg has no strike for moneyness matching")
+                offset = reference_leg_state.strike - atm
+                strike = atm + offset
+                step = self._get_strike_step(expiry)
+                strike = round(strike / step) * step
+                opt_data = self.get_option_at_strike(strike, opt_type, expiry)
+                if opt_data is None:
+                    raise ValueError(f"No option found for moneyness-preserved strike {strike}")
+                assert opt_data is not None
+                return strike, opt_data
             if not hasattr(reference_leg_state, match_param):
                 raise ValueError(
                     f"Reference leg has no attribute '{match_param}'. "

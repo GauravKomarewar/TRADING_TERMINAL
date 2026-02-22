@@ -76,12 +76,12 @@ class AdjustmentEngine:
         action_type = action_cfg["type"]
 
         if action_type == "close_leg":
-            close_tag = action_cfg.get("close_tag")
+            close_tag = self._resolve_close_tag(action_cfg.get("close_tag"))
             if close_tag and close_tag in self.state.legs:
                 self.state.legs[close_tag].is_active = False
 
         elif action_type == "partial_close_lots":
-            close_tag = action_cfg.get("close_tag")
+            close_tag = self._resolve_close_tag(action_cfg.get("close_tag"))
             lots_to_close = action_cfg.get("lots", 1)
             if close_tag and close_tag in self.state.legs:
                 leg = self.state.legs[close_tag]
@@ -90,7 +90,7 @@ class AdjustmentEngine:
                     leg.is_active = False
 
         elif action_type == "reduce_by_pct":
-            close_tag = action_cfg.get("close_tag")
+            close_tag = self._resolve_close_tag(action_cfg.get("close_tag"))
             pct = action_cfg.get("reduce_pct", 50) / 100.0
             if close_tag and close_tag in self.state.legs:
                 leg = self.state.legs[close_tag]
@@ -104,7 +104,7 @@ class AdjustmentEngine:
             self._open_new_leg(new_leg_cfg)
 
         elif action_type == "roll_to_next_expiry":
-            leg_tag = action_cfg.get("leg")
+            leg_tag = self._resolve_close_tag(action_cfg.get("leg"))
             target_expiry = action_cfg.get("target_expiry", "weekly_next")
             same_strike = action_cfg.get("same_strike", "yes")
             if leg_tag not in self.state.legs:
@@ -187,17 +187,18 @@ class AdjustmentEngine:
         elif action_type == "simple_close_open_new":
             swaps = action_cfg.get("leg_swaps", [])
             for swap in swaps:
-                close_tag = swap.get("close_tag")
+                close_tag = self._resolve_close_tag(swap.get("close_tag"))
                 new_leg_cfg = swap.get("new_leg", {})
+                closing_leg = self.state.legs.get(close_tag) if close_tag else None
                 if close_tag and close_tag in self.state.legs:
                     self.state.legs[close_tag].is_active = False
-                self._open_new_leg(new_leg_cfg)
+                self._open_new_leg(new_leg_cfg, closing_leg=closing_leg)
 
-    def _open_new_leg(self, leg_cfg: Dict[str, Any]):
+    def _open_new_leg(self, leg_cfg: Dict[str, Any], closing_leg: Optional[LegState] = None):
         """Open a new leg based on strike config (from action)."""
         # Extract basic fields
         side = Side(leg_cfg.get("side", "BUY"))
-        opt_type = OptionType(leg_cfg.get("option_type", "CE"))
+        opt_type = self._resolve_option_type(leg_cfg.get("option_type", "CE"), closing_leg)
         lots = int(leg_cfg.get("lots", 1))
         order_type_str = leg_cfg.get("order_type")
         order_type = OrderType(order_type_str) if order_type_str else None
@@ -250,7 +251,9 @@ class AdjustmentEngine:
         # For match_leg, we may need a reference leg
         reference_leg = None
         if mode == StrikeMode.MATCH_LEG and strike_cfg.match_leg:
-            reference_leg = self.state.legs.get(strike_cfg.match_leg)
+            ref_tag = self._resolve_close_tag(strike_cfg.match_leg)
+            if ref_tag:
+                reference_leg = self.state.legs.get(ref_tag)
 
         strike, opt_data = self.market.resolve_strike(
             strike_cfg, symbol, expiry=expiry, reference_leg_state=reference_leg
@@ -283,6 +286,44 @@ class AdjustmentEngine:
             iv=opt_data.get("iv", 0.0)
         )
         self.state.legs[tag] = leg
+
+    def _resolve_close_tag(self, close_tag: Optional[str]) -> Optional[str]:
+        if not close_tag:
+            return None
+        if close_tag in self.state.legs and self.state.legs[close_tag].is_active:
+            return close_tag
+        dynamic_map = {
+            "HIGHER_DELTA_LEG": self.state.higher_delta_leg,
+            "LOWER_DELTA_LEG": self.state.lower_delta_leg,
+            "MOST_PROFITABLE_LEG": self.state.most_profitable_leg,
+            "LEAST_PROFITABLE_LEG": self.state.least_profitable_leg,
+            "HIGHER_THETA_LEG": self.state.higher_theta_leg,
+            "LOWER_THETA_LEG": self.state.lower_theta_leg,
+            "HIGHER_IV_LEG": self.state.higher_iv_leg,
+            "LOWER_IV_LEG": self.state.lower_iv_leg,
+            "DEEPEST_ITM_LEG": self.state.deepest_itm_leg,
+            "MOST_OTM_LEG": self.state.most_otm_leg,
+        }
+        return dynamic_map.get(close_tag)
+
+    def _resolve_option_type(self, raw_option_type: str, closing_leg: Optional[LegState]) -> OptionType:
+        if raw_option_type == "MATCH_CLOSING":
+            if closing_leg and closing_leg.option_type:
+                return closing_leg.option_type
+            tag = self.state.higher_delta_leg
+            if tag and tag in self.state.legs and self.state.legs[tag].option_type:
+                return self.state.legs[tag].option_type  # type: ignore[return-value]
+            return OptionType.CE
+        if raw_option_type == "MATCH_OPPOSITE":
+            if closing_leg and closing_leg.option_type == OptionType.CE:
+                return OptionType.PE
+            if closing_leg and closing_leg.option_type == OptionType.PE:
+                return OptionType.CE
+            tag = self.state.higher_delta_leg
+            if tag and tag in self.state.legs and self.state.legs[tag].option_type == OptionType.CE:
+                return OptionType.PE
+            return OptionType.PE
+        return OptionType(raw_option_type)
 
     def _resolve_next_expiry(self, target_expiry: str, current_expiry: str) -> str:
         """

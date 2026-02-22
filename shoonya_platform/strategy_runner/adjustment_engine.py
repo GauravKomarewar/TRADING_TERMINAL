@@ -320,8 +320,12 @@ class AdjustmentEngine:
             if closing_leg and closing_leg.option_type == OptionType.PE:
                 return OptionType.CE
             tag = self.state.higher_delta_leg
-            if tag and tag in self.state.legs and self.state.legs[tag].option_type == OptionType.CE:
-                return OptionType.PE
+            if tag and tag in self.state.legs:
+                ref_opt = self.state.legs[tag].option_type
+                if ref_opt == OptionType.CE:
+                    return OptionType.PE
+                if ref_opt == OptionType.PE:
+                    return OptionType.CE
             return OptionType.PE
         return OptionType(raw_option_type)
 

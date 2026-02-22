@@ -422,6 +422,12 @@ class ConditionEngine:
                         return leg.pnl_pct
                     elif metric == "abs_delta":
                         return leg.abs_delta
+                    elif metric == "is_itm":
+                        if leg.strike is None or leg.option_type is None:
+                            return False
+                        if leg.option_type.value == "CE":
+                            return self.state.spot_price > leg.strike
+                        return self.state.spot_price < leg.strike
                     elif hasattr(leg, metric):
                         return getattr(leg, metric)
             return 0.0

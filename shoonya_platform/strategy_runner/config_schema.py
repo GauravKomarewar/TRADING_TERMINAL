@@ -147,7 +147,9 @@ KNOWN_PARAMETERS = {
 }
 
 # Tag parameters are dynamic; they are validated by pattern.
-TAG_PARAM_PATTERN = re.compile(r"^tag\.[^.]+\.(?:delta|abs_delta|gamma|theta|vega|iv|pnl|pnl_pct|ltp|oi|volume|strike|is_active|moneyness)$")
+TAG_PARAM_PATTERN = re.compile(
+    r"^tag\.[^.]+\.(?:delta|abs_delta|gamma|abs_gamma|theta|abs_theta|vega|abs_vega|iv|pnl|pnl_pct|ltp|oi|oi_change|volume|strike|is_active|is_itm|moneyness)$"
+)
 INDEX_PARAM_PATTERN = re.compile(r"^index_[A-Za-z0-9]+_(?:ltp|pc|change|change_pct|open|high|low|close)$")
 
 # =============================================================================
@@ -689,7 +691,7 @@ def _validate_leg_strike_config(
         match_param = cfg.get("match_param")
         if not match_param:
             errors.append(ValidationError(f"{path}.match_param", "Missing match_param for match_leg mode"))
-        elif match_param not in {"delta", "abs_delta", "iv", "theta", "vega", "gamma", "ltp", "oi", "volume", "strike", "moneyness"}:
+        elif match_param not in {"delta", "abs_delta", "iv", "theta", "abs_theta", "vega", "gamma", "ltp", "oi", "volume", "strike", "moneyness"}:
             errors.append(ValidationError(f"{path}.match_param", f"Invalid match_param '{match_param}'", "warning"))
         offset = cfg.get("match_offset", 0)
         mult = cfg.get("match_multiplier", 1)

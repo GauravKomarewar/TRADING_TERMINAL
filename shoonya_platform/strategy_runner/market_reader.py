@@ -33,6 +33,7 @@ MATCH_PARAM_TO_SQL = {
     "abs_delta": "ABS(delta)",
     "gamma": "gamma",
     "theta": "theta",
+    "abs_theta": "ABS(theta)",
     "vega": "vega",
     "iv": "iv",
     "ltp": "ltp",
@@ -577,8 +578,9 @@ class MarketReader:
                 step = self._get_strike_step(expiry)
                 strike = round(strike / step) * step
             elif sel in ("max_pain", "pcr_inflection"):
-                # Placeholder until chain-wide analytics are wired.
-                strike = atm
+                strike = self.get_max_pain_strike(expiry) if sel == "max_pain" else self.get_pcr_inflection_strike(expiry)
+                if strike <= 0:
+                    strike = atm
             else:
                 raise ValueError(f"Unsupported standard selection: {sel}")
 
@@ -638,7 +640,7 @@ class MarketReader:
             if not hasattr(reference_leg_state, match_param):
                 raise ValueError(
                     f"Reference leg has no attribute '{match_param}'. "
-                    f"Available: delta, abs_delta, iv, theta, vega, gamma, pnl, pnl_pct, ltp, strike"
+                    f"Available: delta, abs_delta, iv, theta, abs_theta, vega, gamma, pnl, pnl_pct, ltp, strike"
                 )
             attr_value = getattr(reference_leg_state, match_param)
             target = attr_value * config.match_multiplier + config.match_offset
@@ -660,6 +662,100 @@ class MarketReader:
         assert isinstance(strike, (int, float)), "Strike must be numeric"
         assert opt_data is not None, "Internal error: opt_data not assigned"
         return strike, opt_data
+
+    def get_max_pain_strike(self, expiry: Optional[str] = None) -> float:
+        """
+        Compute max-pain strike (minimum aggregate option writer payout at expiry).
+        """
+        self._check_freshness(expiry)
+        conn = self._get_connection(expiry)
+        if not conn:
+            return 0.0
+        assert conn is not None
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT strike, option_type, oi
+                FROM option_chain
+                WHERE strike IS NOT NULL AND option_type IN ('CE','PE')
+                """
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return 0.0
+
+            strikes: List[float] = sorted({float(r["strike"]) for r in rows if r["strike"] is not None})
+            ce_oi: Dict[float, float] = {}
+            pe_oi: Dict[float, float] = {}
+            for r in rows:
+                k = float(r["strike"])
+                oi = float(r["oi"] or 0.0)
+                if r["option_type"] == "CE":
+                    ce_oi[k] = ce_oi.get(k, 0.0) + oi
+                else:
+                    pe_oi[k] = pe_oi.get(k, 0.0) + oi
+
+            best_strike = 0.0
+            best_pain = float("inf")
+            for s in strikes:
+                pain = 0.0
+                for k, oi in ce_oi.items():
+                    pain += max(0.0, s - k) * oi
+                for k, oi in pe_oi.items():
+                    pain += max(0.0, k - s) * oi
+                if pain < best_pain:
+                    best_pain = pain
+                    best_strike = s
+            return best_strike
+        except Exception as e:
+            logger.error(f"get_max_pain_strike error: {e}")
+            return 0.0
+
+    def get_pcr_inflection_strike(self, expiry: Optional[str] = None) -> float:
+        """
+        Find strike where PCR (PE_OI / CE_OI) is closest to 1, preferring near-ATM.
+        """
+        self._check_freshness(expiry)
+        conn = self._get_connection(expiry)
+        if not conn:
+            return 0.0
+        assert conn is not None
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT strike,
+                       SUM(CASE WHEN option_type='CE' THEN COALESCE(oi,0) ELSE 0 END) AS ce_oi,
+                       SUM(CASE WHEN option_type='PE' THEN COALESCE(oi,0) ELSE 0 END) AS pe_oi
+                FROM option_chain
+                WHERE strike IS NOT NULL
+                GROUP BY strike
+                """
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return 0.0
+            atm = self.get_atm_strike(expiry)
+            best_strike = 0.0
+            best_score = float("inf")
+            for r in rows:
+                strike = float(r["strike"])
+                ce_oi = float(r["ce_oi"] or 0.0)
+                pe_oi = float(r["pe_oi"] or 0.0)
+                if ce_oi <= 0:
+                    continue
+                pcr = pe_oi / ce_oi
+                score = abs(pcr - 1.0) + (abs(strike - atm) / max(1.0, atm))
+                if score < best_score:
+                    best_score = score
+                    best_strike = strike
+            if best_strike > 0:
+                return best_strike
+            return atm
+        except Exception as e:
+            logger.error(f"get_pcr_inflection_strike error: {e}")
+            return 0.0
 
     def resolve_expiry_mode(self, mode: str) -> str:
         """

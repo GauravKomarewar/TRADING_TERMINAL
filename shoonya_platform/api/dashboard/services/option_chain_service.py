@@ -4,6 +4,8 @@ from typing import List
 import time
 import sqlite3
 from typing import Dict, Any, Optional
+import logging
+logger = logging.getLogger(__name__)
 
 from shoonya_platform.market_data.option_chain.db_access import OptionChainDBReader
 
@@ -109,8 +111,16 @@ def get_active_expiries(exchange: str, symbol: str) -> List[str]:
         expiries.append(expiry)
 
     # Sort nearest → farthest
+    # BUG-H2 FIX: wrap strptime in a safe helper so a single malformed
+    # filename does not crash the entire sort (and thus the API endpoint).
+    # Malformed entries sort to the end (datetime.max) so they're visible
+    # but don't break valid results.
     def parse_expiry(e: str) -> datetime:
-        return datetime.strptime(e, "%d-%b-%Y")
+        try:
+            return datetime.strptime(e, "%d-%b-%Y")
+        except ValueError:
+            logger.warning("option_chain_service: unrecognised expiry format %r — skipping sort", e)
+            return datetime.max
 
     expiries = sorted(set(expiries), key=parse_expiry)
     return expiries

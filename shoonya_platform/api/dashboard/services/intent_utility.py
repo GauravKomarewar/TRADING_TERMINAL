@@ -88,10 +88,13 @@ class DashboardIntentService:
 
         # --------------------------------------------------
         # 🔒 CANONICAL PAYLOAD (DO NOT DOWNGRADE)
+        # BUG-L2 FIX: always use .value on enum fields so the stored payload
+        # contains plain strings, not enum objects.  The enums inherit from str
+        # so json.dumps works today, but non-str base enums would silently break.
         # --------------------------------------------------
         payload = {
             # ---- Instrument ----
-            "exchange": req.exchange,
+            "exchange": req.exchange.value,
             "symbol": req.symbol,
 
             # ---- Execution ----
@@ -101,8 +104,8 @@ class DashboardIntentService:
             # ---- Order ----
             "side": req.side.value,
             "qty": int(req.qty),
-            "product": req.product,
-            "order_type": req.order_type,
+            "product": req.product.value,
+            "order_type": req.order_type.value,
             "price": float(req.price) if req.price is not None else None,
 
             # ---- Triggered execution ----
@@ -204,60 +207,65 @@ class DashboardIntentService:
                 timeout=5,
                 isolation_level=None,
             )
-            cur = conn.cursor()
+            # BUG-C3 FIX: conn.close() MUST be in a finally block.
+            # Any exception between connect() and close() previously leaked the
+            # file handle, eventually exhausting the SQLite pool under load.
+            try:
+                cur = conn.cursor()
 
-            # --------------------------------------------------
-            # 🔒 ENSURE TABLE EXISTS (IDEMPOTENT)
-            # --------------------------------------------------
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS control_intents (
-                    id TEXT PRIMARY KEY,
+                # --------------------------------------------------
+                # 🔒 ENSURE TABLE EXISTS (IDEMPOTENT)
+                # --------------------------------------------------
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS control_intents (
+                        id TEXT PRIMARY KEY,
 
-                    client_id TEXT NOT NULL,
-                    parent_client_id TEXT,
+                        client_id TEXT NOT NULL,
+                        parent_client_id TEXT,
 
-                    type TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                        type TEXT NOT NULL,
+                        payload TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
                 )
-                """
-            )
 
-            # --------------------------------------------------
-            # 🧾 INSERT CONTROL INTENT (CLIENT-SCOPED)
-            # --------------------------------------------------
-            cur.execute(
-                """
-                INSERT INTO control_intents
-                (
-                    id,
-                    client_id,
-                    parent_client_id,
-                    type,
-                    payload,
-                    source,
-                    status,
-                    created_at
+                # --------------------------------------------------
+                # 🧾 INSERT CONTROL INTENT (CLIENT-SCOPED)
+                # --------------------------------------------------
+                cur.execute(
+                    """
+                    INSERT INTO control_intents
+                    (
+                        id,
+                        client_id,
+                        parent_client_id,
+                        type,
+                        payload,
+                        source,
+                        status,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        intent_id,
+                        self.client_id,
+                        self.parent_client_id,
+                        intent_type,
+                        json.dumps(payload, separators=(",", ":")),
+                        "DASHBOARD",
+                        "PENDING",
+                        datetime.utcnow().isoformat(),
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    intent_id,
-                    self.client_id,
-                    self.parent_client_id,
-                    intent_type,
-                    json.dumps(payload, separators=(",", ":")),
-                    "DASHBOARD",
-                    "PENDING",
-                    datetime.utcnow().isoformat(),
-                ),
-            )
 
-            conn.commit()
-            conn.close()
+                conn.commit()
+            finally:
+                conn.close()
 
         except Exception:
             logger.exception("❌ DASHBOARD INTENT INSERT FAILED")

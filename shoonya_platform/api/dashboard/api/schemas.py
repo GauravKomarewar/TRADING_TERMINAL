@@ -216,8 +216,17 @@ class StrategyEntryRequest(BaseModel):
         
     @model_validator(mode="after")
     def normalize_cooldown(self):
+        # BUG-L1 FIX: int() raises a bare TypeError/ValueError with no context
+        # if the value is non-numeric (e.g. "auto", None).  Wrap with a clear
+        # ValueError so Pydantic surfaces a useful validation message.
         if "cooldown_seconds" in self.params:
-            self.cooldown_seconds = int(self.params["cooldown_seconds"])
+            raw = self.params["cooldown_seconds"]
+            try:
+                self.cooldown_seconds = int(raw)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"params.cooldown_seconds must be an integer, got {raw!r}"
+                )
         return self
 
     @model_validator(mode="after")

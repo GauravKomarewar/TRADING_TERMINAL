@@ -51,3 +51,21 @@ async def require_dashboard_auth(
         **session,
         "bot": get_global_bot(),
     }
+
+
+def verify_dashboard_token(token: Optional[str] = None) -> dict:
+    """
+    Verify a session token passed as a query parameter (for WebSocket connections).
+    Raises HTTPException if invalid.
+    Returns session dict on success.
+    """
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    session = active_sessions.get(token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    created_at = int(session.get("created_at", 0))
+    if created_at <= 0 or (int(time.time()) - created_at) > SESSION_TTL_SEC:
+        active_sessions.pop(token, None)
+        raise HTTPException(status_code=401, detail="Session expired")
+    return session

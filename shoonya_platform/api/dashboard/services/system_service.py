@@ -7,7 +7,8 @@ from typing import Optional
 
 from shoonya_platform.persistence.repository import OrderRepository
 from shoonya_platform.core.config import Config
-
+import logging
+logger = logging.getLogger(__name__)
 # --------------------------------------------------
 # SYSTEM-WIDE (NON CLIENT-SCOPED) FILES
 # --------------------------------------------------
@@ -68,12 +69,16 @@ class SystemTruthService:
     # RISK STATE (CLIENT-SCOPED)
     # ==================================================
     def get_risk_state(self) -> Optional[dict]:
-        # Risk manager saves to {base}_{client_id}.json
-        base = self.config.risk_state_file.rstrip('.json')
+        # BUG-H1 FIX: str.rstrip(chars) strips individual characters, NOT a
+        # suffix string. e.g. "nifty_risk.json".rstrip('.json') would strip
+        # 'n','k','s','i','r' etc. from the right — mangling the base path.
+        # Use Path.with_suffix('') to strip exactly ".json".
+        risk_file = self.config.risk_state_file
+        base = str(Path(risk_file).with_suffix(""))
         path = Path(f"{base}_{self.client_id}.json")
         if not path.exists():
             # Fallback to base path for backward compat
-            path = Path(self.config.risk_state_file)
+            path = Path(risk_file)
         if not path.exists():
             return None
         try:
@@ -89,10 +94,22 @@ class SystemTruthService:
         if not OPTION_DATA_HEARTBEAT.exists():
             return None
 
-        with open(OPTION_DATA_HEARTBEAT) as f:
-            ts = float(f.readline().strip())
-            chains = int(f.readline().strip())
-            login = f.readline().strip()
+        # BUG-H3 FIX: Heartbeat file can be empty or partially written if the
+        # supervisor crashed mid-write.  raw float()/int() raises ValueError in
+        # that case and crashes the entire /home/status snapshot endpoint (polled
+        # every 2 s by the dashboard).  Return None on any read/parse failure so
+        # the UI shows "heartbeat unavailable" instead of a 500 error.
+        try:
+            with open(OPTION_DATA_HEARTBEAT) as f:
+                ts_raw = f.readline().strip()
+                chains_raw = f.readline().strip()
+                login = f.readline().strip()
+
+            ts = float(ts_raw)
+            chains = int(chains_raw)
+        except (OSError, ValueError) as exc:
+            logger.warning("Could not read option-data heartbeat: %s", exc)
+            return None
 
         return {
             "timestamp": ts,

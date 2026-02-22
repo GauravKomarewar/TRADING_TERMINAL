@@ -163,11 +163,11 @@ def create_dashboard_app() -> FastAPI:
 
     # --------------------------------------------------
     # 🔒 DASHBOARD API ROUTES (PROTECTED)
+    # Auth is declared per-handler via ctx=Depends(require_dashboard_auth).
+    # DO NOT add a router-level dependency here — it would cause double auth
+    # on every request (BUG-C1 fix).
     # --------------------------------------------------
-    app.include_router(
-        dashboard_router,
-        dependencies=[Depends(require_dashboard_auth)],
-    )
+    app.include_router(dashboard_router)
     logger.info("✅ Dashboard API router mounted")
 
     # --------------------------------------------------

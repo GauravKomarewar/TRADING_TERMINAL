@@ -16,7 +16,7 @@
 ## NOTE: sqlite3 & time used only by option-chain endpoint
 # DO NOT MODIFY WITHOUT FULL OMS + CONSUMER RE-AUDIT
 # ======================================================================
-import threading as _threading
+import threading  # used for _symbols_service_lock, _supervisor_service_lock, _runner_instances_lock
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status, WebSocket
 from typing import List, Optional, Any, Dict
 import logging
@@ -27,7 +27,6 @@ import sqlite3
 import time
 import json
 import re
-import threading
 from collections import deque
 import os
 
@@ -117,10 +116,10 @@ def get_intent(ctx=Depends(require_dashboard_auth)):
 # In a multi-client deployment this leaks state between clients.
 # Double-checked locking makes the lifecycle explicit and allows future keying by client_id.
 _symbols_service_instance: Optional[DashboardSymbolService] = None
-_symbols_service_lock = _threading.Lock()
+_symbols_service_lock = threading.Lock()
 
 _supervisor_service_instance: Optional[SupervisorService] = None
-_supervisor_service_lock = _threading.Lock()
+_supervisor_service_lock = threading.Lock()
 
 def get_symbols() -> DashboardSymbolService:
     global _symbols_service_instance
@@ -1041,26 +1040,14 @@ _VALID_SECTIONS = {"identity", "entry", "adjustment", "exit", "rms"}
 
 def _get_strategy_configs_dir() -> Path:
     """
-    ✅ BUG-003 + BUG-021 FIX: Always return the single canonical STRATEGY_CONFIG_DIR.
-    
-    Previously this function silently fell back to _STRATEGY_CONFIGS_DIR when
-    STRATEGY_CONFIG_DIR had no .json files yet — so configs saved via save_all()
-    (which wrote to STRATEGY_CONFIG_DIR) were invisible to list() (which read from
-    _STRATEGY_CONFIGS_DIR). This dual-path caused configs to disappear after save.
-    
-    STRATEGY_CONFIG_DIR is now defined at module top-level (line ~2777) and is
-    always available. Just use it directly.
+    ✅ BUG-M2 FIX: STRATEGY_CONFIG_DIR is now defined at module top-level and
+    is always available.  The old globals().get() pattern + fallback to
+    _STRATEGY_CONFIGS_DIR was left over from when STRATEGY_CONFIG_DIR was
+    defined 2700+ lines below the route handlers (BUG-003).  That late-definition
+    is gone; use the module constant directly.
     """
-    # STRATEGY_CONFIG_DIR is a module-level Path defined below the route handlers.
-    # globals().get() is required because of the late definition order.
-    runtime_dir = globals().get("STRATEGY_CONFIG_DIR")
-    if isinstance(runtime_dir, Path):
-        runtime_dir.mkdir(parents=True, exist_ok=True)
-        return runtime_dir
-    # Absolute fallback — should never be reached after BUG-003 fix moves the
-    # definition to the top of the file.
-    _STRATEGY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
-    return _STRATEGY_CONFIGS_DIR
+    STRATEGY_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    return STRATEGY_CONFIG_DIR
 
 def _slugify(name: str) -> str:
     """Convert strategy name to safe filename slug."""
@@ -1334,6 +1321,12 @@ def get_all_strategies_execution_status(
         pending_intents = sum(s["intent_count"] for s in strategies_execution)
         active_positions_total = sum(len(positions_by_strategy.get(s["name"], [])) for s in strategies_execution)
 
+        # BUG-M4 FIX: `key=lambda x: x["status"] == "IDLE"` is a fragile
+        # boolean sort — True > False in Python so IDLE (True=1) sorted last,
+        # which was the intent ("Running first").  But it breaks silently if
+        # someone adds a new status or changes the comparison.  Use an explicit
+        # priority map instead.
+        _STATUS_ORDER = {"RUNNING": 0, "PAUSED": 1, "STOPPED": 2, "IDLE": 3, "UNKNOWN": 4}
         return {
             "timestamp": datetime.now().isoformat(),
             "audit": {
@@ -1347,7 +1340,7 @@ def get_all_strategies_execution_status(
                 "active_positions_total": active_positions_total,
                 "has_hidden_strategies": any(s["is_hidden"] for s in strategies_execution),
             },
-            "strategies": sorted(strategies_execution, key=lambda x: x["status"] == "IDLE"),  # Running first
+            "strategies": sorted(strategies_execution, key=lambda x: _STATUS_ORDER.get(x["status"], 99)),
             "control_intents": control_intents,  # Full intent queue
         }
 
@@ -1376,7 +1369,8 @@ def save_strategy_config_all(
         strat_id = _slugify(name).upper()
 
     slug = _slugify(name)
-    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+    # BUG-M1 FIX: use canonical helper, not _STRATEGY_CONFIGS_DIR directly
+    filepath = _get_strategy_configs_dir() / f"{slug}.json"
 
     # Load existing or create new
     existing = {}
@@ -1423,7 +1417,7 @@ def delete_strategy_config(
 ):
     """Delete a saved strategy config by name."""
     slug = _slugify(name)
-    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+    filepath = _get_strategy_configs_dir() / f"{slug}.json"
 
     if not filepath.exists():
         raise HTTPException(404, f"Config '{name}' not found")
@@ -1446,7 +1440,7 @@ def update_strategy_status(
         raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
 
     slug = _slugify(name)
-    filepath = _STRATEGY_CONFIGS_DIR / f"{slug}.json"
+    filepath = _get_strategy_configs_dir() / f"{slug}.json"
 
     if not filepath.exists():
         raise HTTPException(404, f"Config '{name}' not found")
@@ -3166,8 +3160,14 @@ def delete_strategy(strategy_name: str, ctx=Depends(require_dashboard_auth)):
 # 🎮 RUNNER CONTROL
 # ======================================================================
 
-# With a client‑scoped dict:
-_runner_instances: Dict[str, Any] = {}
+# BUG-M3 FIX: plain dict grows forever in multi-client deployments — each
+# client_id entry holds a StrategyExecutorService (with market data subs,
+# position state, etc.) that is never released.
+# WeakValueDictionary lets entries be GC'd as soon as the service object
+# has no other strong references (e.g. after a client session expires and
+# the bot shuts down its executor).
+from weakref import WeakValueDictionary
+_runner_instances: WeakValueDictionary = WeakValueDictionary()
 _runner_instances_lock = threading.Lock()
 
 def get_runner_singleton(ctx: dict):
@@ -3393,21 +3393,26 @@ def get_all_runner_logs(
 # ======================================================================
 # 🔌 WEBSOCKET - LOG STREAMING (OPTIONAL - FUTURE)
 # ======================================================================
-
 @router.websocket("/runner/logs/stream")
-async def websocket_log_stream(websocket: WebSocket):
+async def websocket_log_stream(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None, description="Dashboard auth token (pass as ?token=...)"),
+):
     """
-    WebSocket endpoint for real-time log streaming
-    
-    Connect to: ws://localhost:8000/dashboard/runner/logs/stream
-    
-    Receives:
-        - Real-time log events as JSON objects
-        - One per line in strategy logs
-        - Format: {"strategy": "...", "level": "...", "message": "..."}
-    
-    Note: This is optional - frontend can also poll /runner/logs endpoint
+    WebSocket endpoint for real-time log streaming.
+    Auth: pass session token as query param ?token=<value>
+
+    Connect to: ws://localhost:8000/dashboard/runner/logs/stream?token=<token>
     """
+    # BUG-C2 FIX: authenticate before accepting the WebSocket connection.
+    # Cookies are not forwarded on WS upgrades in most browsers/clients,
+    # so we require the token as a query parameter instead.
+    from shoonya_platform.api.dashboard.deps import verify_dashboard_token
+    try:
+        verify_dashboard_token(token)
+    except Exception:
+        await websocket.close(code=4401)  # 4xxx = application-level close codes
+        return
     await websocket.accept()
     try:
         import asyncio
@@ -3448,7 +3453,6 @@ async def websocket_log_stream(websocket: WebSocket):
     
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-
 
 # ======================================================================
 # FILE-BASED LOG VIEW (REAL RUNTIME LOGS)

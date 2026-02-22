@@ -1347,19 +1347,13 @@ def get_all_strategies_execution_status(
     except Exception as e:
         logger.exception("Failed to get strategy execution status")
         raise HTTPException(status_code=500, detail=str(e))
-
+        
 
 @router.post("/strategy/config/save-all")
 def save_strategy_config_all(
     payload: dict = Body(...),
     ctx=Depends(require_dashboard_auth),
 ):
-    """Save a complete strategy config (all sections at once).
-
-    Schema v2.0 — stores identity/entry/adjustment/exit/rms plus
-    description, tags, schema_version.  Files are self-contained JSON
-    in strategies/saved_configs/ and can be edited directly on disk.
-    """
     name = payload.get("name", "").strip()
     strat_id = payload.get("id", "").strip()
 
@@ -1369,10 +1363,9 @@ def save_strategy_config_all(
         strat_id = _slugify(name).upper()
 
     slug = _slugify(name)
-    # BUG-M1 FIX: use canonical helper, not _STRATEGY_CONFIGS_DIR directly
     filepath = _get_strategy_configs_dir() / f"{slug}.json"
 
-    # Load existing or create new
+    # Load existing (if any)
     existing = {}
     if filepath.exists():
         try:
@@ -1380,31 +1373,15 @@ def save_strategy_config_all(
         except Exception:
             existing = {}
 
-    existing["schema_version"] = "2.0"
-    existing["name"] = name
-    existing["id"] = strat_id
-    existing["description"] = payload.get("description", existing.get("description", ""))
-    existing["tags"] = payload.get("tags", existing.get("tags", []))
+    # Merge the entire payload, preserving all keys
+    # (but keep existing values for fields not present in payload)
+    merged = {**existing, **payload}
 
-    for section in _VALID_SECTIONS:
-        if section in payload and isinstance(payload[section], dict):
-            existing[section] = payload[section]
+    # Ensure backward‑compatible fields are present (optional)
+    merged = ensure_complete_config(merged)
 
-    # Copy root-level fields that are not sections
-    for key in ("enabled", "strategy_type", "status"):
-        if key in payload:
-            existing[key] = payload[key]
-
-    now = time.strftime("%Y-%m-%dT%H:%M:%S")
-    if "created_at" not in existing:
-        existing["created_at"] = now
-    existing["updated_at"] = now
-    existing.setdefault("status", "IDLE")
-
-    # Ensure ALL v2.0 schema fields are present (even if None)
-    existing = ensure_complete_config(existing)
-
-    filepath.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
+    # Write back
+    filepath.write_text(json.dumps(merged, indent=2, default=str), encoding="utf-8")
     logger.info("Strategy config saved (all): %s", name)
 
     return {"saved": True, "name": name, "id": strat_id, "file": slug + ".json"}

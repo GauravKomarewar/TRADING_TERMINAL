@@ -337,7 +337,7 @@ class PerStrategyExecutor:
         try:
             start_t = datetime.strptime(entry_start, "%H:%M").time()
             end_t = datetime.strptime(entry_end, "%H:%M").time()
-        except:
+        except ValueError:
             return False
         return start_t <= now.time() <= end_t
 

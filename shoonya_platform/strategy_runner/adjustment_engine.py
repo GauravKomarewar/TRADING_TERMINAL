@@ -24,7 +24,7 @@ class AdjustmentEngine:
     def check_and_apply(self, current_time: datetime) -> List[str]:
         actions_taken = []
         for rule in self.rules_config:
-            if not self._check_guards(rule):
+            if not self._check_guards(rule, current_time):
                 continue
 
             if_conds = rule.get("conditions", [])
@@ -50,10 +50,11 @@ class AdjustmentEngine:
 
         return actions_taken
 
-    def _check_guards(self, rule: Dict[str, Any]) -> bool:
+    def _check_guards(self, rule: Dict[str, Any], current_time: Optional[datetime] = None) -> bool:
         cooldown = rule.get("cooldown_sec", 0)
+        now = current_time or datetime.now()
         if cooldown > 0 and self.state.last_adjustment_time:
-            if (datetime.now() - self.state.last_adjustment_time).total_seconds() < cooldown:
+            if (now - self.state.last_adjustment_time).total_seconds() < cooldown:
                 return False
 
         max_day = rule.get("max_per_day")

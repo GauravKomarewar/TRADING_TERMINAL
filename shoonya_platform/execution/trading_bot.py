@@ -776,8 +776,8 @@ class ShoonyaBot:
                                     f"🔄 Service will auto-restart in 5 seconds\n"
                                     f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}"
                                 )
-                            except:
-                                pass
+                            except Exception as notify_error:
+                                logger.error(f"Failed to send critical restart alert: {notify_error}")
                         time.sleep(5)
                         # Force process exit - systemd will restart us
                         os._exit(1)
@@ -2232,7 +2232,8 @@ class ShoonyaBot:
             try:
                 positions = self.broker_view.get_positions()
                 active_pos = sum(1 for p in positions if int(p.get('netqty', 0)) != 0)
-            except:
+            except Exception as position_error:
+                logger.warning(f"Could not fetch positions for heartbeat: {position_error}")
                 active_pos = 0
             
             # 3️⃣ Send compact heartbeat
@@ -2279,8 +2280,8 @@ class ShoonyaBot:
             try:
                 limits = self.broker_view.get_limits()
                 session_valid = limits is not None and isinstance(limits, dict)
-            except:
-                pass
+            except Exception as limits_error:
+                logger.warning(f"Could not fetch limits for status report: {limits_error}")
                         
             # Format message
             message = f"📊 <b>BOT STATUS REPORT</b>\n"

@@ -48,5 +48,12 @@ class TestConditionEngine(unittest.TestCase):
         # true OR false => true
         self.assertTrue(self.engine.evaluate([c1, c2]))
 
+    def test_is_true_is_false_without_value(self):
+        self.state.legs = {}
+        c_false = Condition(parameter="any_leg_active", comparator=Comparator.IS_FALSE, value=None)
+        c_true = Condition(parameter="all_legs_active", comparator=Comparator.IS_TRUE, value=None)
+        self.assertTrue(self.engine.evaluate([c_false]))
+        self.assertTrue(self.engine.evaluate([c_true]))
+
 if __name__ == '__main__':
     unittest.main()

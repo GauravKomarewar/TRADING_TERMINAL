@@ -150,7 +150,13 @@ class EntryEngine:
                 gamma=opt_data.get("gamma", 0.0),
                 theta=opt_data.get("theta", 0.0),
                 vega=opt_data.get("vega", 0.0),
-                iv=opt_data.get("iv", 0.0)
+                iv=opt_data.get("iv", 0.0),
+                trading_symbol=(
+                    opt_data.get("trading_symbol")
+                    or opt_data.get("tsym")
+                    or opt_data.get("symbol")
+                    or ""
+                ),
             )
             return leg
 

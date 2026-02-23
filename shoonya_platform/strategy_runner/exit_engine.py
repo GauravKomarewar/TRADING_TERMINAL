@@ -12,11 +12,13 @@ class ExitEngine:
         self.state = state
         self.condition_engine = ConditionEngine(state)
         self.exit_config = {}
+        self.last_triggered_leg_rule: Optional[Dict[str, Any]] = None
 
     def load_config(self, exit_config: Dict[str, Any]):
         self.exit_config = exit_config
 
     def check_exits(self, current_time: datetime) -> Optional[str]:
+        self.last_triggered_leg_rule = None
         # 1. Profit target
         action = self._check_profit_target()
         if action:
@@ -62,6 +64,7 @@ class ExitEngine:
         leg_rules = self.exit_config.get("leg_rules", [])
         for rule in leg_rules:
             if self._check_leg_rule(rule):
+                self.last_triggered_leg_rule = rule
                 return f"leg_rule_{rule.get('action')}"
 
         return None

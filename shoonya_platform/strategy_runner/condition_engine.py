@@ -89,6 +89,12 @@ class ConditionEngine:
         # -------- BOOLEAN BRANCH --------
         if param_is_bool or val1_is_bool:
             pv = to_bool(param_value)
+            # is_true / is_false do not require a value operand from config.
+            if comp == Comparator.IS_TRUE:
+                return pv is True
+            if comp == Comparator.IS_FALSE:
+                return pv is False
+
             v1 = to_bool(val1)
             if pv is None or v1 is None:
                 logger.warning(f"Cannot compare boolean with non-boolean: {param_value} vs {val1}")
@@ -126,10 +132,6 @@ class ConditionEngine:
                     return False
                 low, high = (v1, v2) if v1 <= v2 else (v2, v1)
                 return not (low <= pv <= high)
-            elif comp == Comparator.IS_TRUE:
-                return pv is True
-            elif comp == Comparator.IS_FALSE:
-                return pv is False
             elif comp in (Comparator.CROSSES_ABOVE, Comparator.CROSSES_BELOW):
                 prev = self.state.prev_values.get(cond.parameter)
                 self.state.prev_values[cond.parameter] = pv

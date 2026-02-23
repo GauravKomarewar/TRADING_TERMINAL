@@ -10,6 +10,7 @@ import logging
 import sqlite3
 import threading
 import time
+import copy
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -475,9 +476,23 @@ class PerStrategyExecutor:
             self._execute_entry()
 
         # Check adjustments
+        pre_adjustment_legs = copy.deepcopy(self.state.legs)
+        pre_adjustments_today = self.state.adjustments_today
+        pre_lifetime_adjustments = self.state.lifetime_adjustments
+        pre_last_adjustment_time = self.state.last_adjustment_time
         actions = self.adjustment_engine.check_and_apply(now)
         for action in actions:
             logger.info(f"Adjustment: {action}")
+        if actions:
+            if not self._dispatch_adjustment_orders(pre_adjustment_legs):
+                # Roll back local state if broker rejected adjustment orders.
+                self.state.legs = pre_adjustment_legs
+                self.state.adjustments_today = pre_adjustments_today
+                self.state.lifetime_adjustments = pre_lifetime_adjustments
+                self.state.last_adjustment_time = pre_last_adjustment_time
+                logger.error(f"Adjustment rollback applied for {self.name}")
+            else:
+                self.persistence.save(self.state, str(self.state_file))
 
         # BUG-012 FIX: Run broker reconciliation every 5 minutes to catch drift
         # between strategy state and live broker positions (e.g. manual broker exits,
@@ -535,7 +550,16 @@ class PerStrategyExecutor:
             end_t = datetime.strptime(entry_end, "%H:%M").time()
         except ValueError:
             return False
-        return start_t <= now.time() <= end_t
+        if not (start_t <= now.time() <= end_t):
+            return False
+
+        # Respect configured trading days from schedule.
+        active_days = self.config.get("schedule", {}).get("active_days", [])
+        if active_days:
+            day_name = now.strftime("%a").lower()[:3]
+            if day_name not in [str(d).lower()[:3] for d in active_days]:
+                return False
+        return True
 
     def _execute_entry(self):
         """Run entry engine and send orders via bot."""
@@ -621,12 +645,224 @@ class PerStrategyExecutor:
             else:
                 self.state.entered_today = True
             logger.info(f"Exit executed for {self.name}")
+        elif action.startswith("leg_rule_"):
+            self._execute_leg_rule_exit(action)
         elif action == "partial_50":
             # Close 50% of each leg (simplified)
             for leg in self.state.legs.values():
                 if leg.is_active:
                     leg.qty = leg.qty // 2
             logger.info(f"Partial 50% exit for {self.name}")
+
+    def _execute_leg_rule_exit(self, action: str):
+        """Execute per-leg exit actions configured in exit.leg_rules."""
+        rule = self.exit_engine.last_triggered_leg_rule or {}
+        rule_action = str(rule.get("action") or action.replace("leg_rule_", "")).strip().lower()
+        targets = self._resolve_leg_rule_targets(rule)
+        if not targets:
+            logger.warning(f"Leg-rule exit had no active targets: {self.name} action={rule_action}")
+            return
+
+        if rule_action == "close_all":
+            self._execute_exit("exit_all", source="leg_rule_close_all")
+            return
+
+        close_qty_map: Dict[str, int] = {}
+        if rule_action == "close_leg":
+            close_qty_map = {leg.tag: int(leg.qty) for leg in targets}
+        elif rule_action == "reduce_50pct":
+            close_qty_map = {leg.tag: max(0, int(leg.qty // 2)) for leg in targets}
+        elif rule_action == "partial_lots":
+            lots = int(rule.get("lots") or rule.get("qty") or 1)
+            close_qty_map = {leg.tag: max(0, min(int(leg.qty), lots)) for leg in targets}
+        elif rule_action == "roll_next":
+            # Roll selected legs to next expiry at same strike/side.
+            alert_legs: List[Dict[str, Any]] = []
+            updates: List[Tuple[LegState, str, float, float, str]] = []
+            for leg in targets:
+                if leg.qty <= 0:
+                    continue
+                close_payload = self._build_alert_leg(
+                    leg=leg,
+                    direction="BUY" if leg.side.value == "SELL" else "SELL",
+                    qty=int(leg.qty),
+                )
+                alert_legs.append(close_payload)
+
+                if leg.option_type is None or leg.strike is None:
+                    continue
+                try:
+                    new_expiry = self.market.get_next_expiry(leg.expiry, "weekly_next")
+                    opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, new_expiry) or {}
+                except Exception as e:
+                    logger.error(f"Roll-next lookup failed for {leg.tag}: {e}")
+                    continue
+
+                open_payload = self._build_alert_leg(
+                    leg=leg,
+                    direction=leg.side.value,
+                    qty=int(leg.qty),
+                    tradingsymbol_override=(
+                        opt_data.get("trading_symbol")
+                        or opt_data.get("tsym")
+                        or opt_data.get("symbol")
+                        or leg.trading_symbol
+                        or leg.symbol
+                    ),
+                    price_override=float(opt_data.get("ltp", leg.ltp) or leg.ltp),
+                )
+                alert_legs.append(open_payload)
+
+                updates.append((
+                    leg,
+                    new_expiry,
+                    float(opt_data.get("ltp", leg.entry_price) or leg.entry_price),
+                    float(opt_data.get("ltp", leg.ltp) or leg.ltp),
+                    str(open_payload.get("tradingsymbol") or leg.trading_symbol),
+                ))
+
+            if alert_legs:
+                result = self._submit_alert(execution_type="ADJUSTMENT", legs=alert_legs)
+                if str((result or {}).get("status", "")).upper() not in ("FAILED", "BLOCKED"):
+                    for leg, new_expiry, new_entry, new_ltp, tsym in updates:
+                        leg.expiry = new_expiry
+                        leg.entry_price = new_entry
+                        leg.ltp = new_ltp
+                        if tsym:
+                            leg.trading_symbol = tsym
+            return
+        else:
+            logger.warning(f"Unsupported leg rule action '{rule_action}' in strategy {self.name}")
+            return
+
+        alert_legs = []
+        reductions: List[Tuple[LegState, int]] = []
+        for leg in targets:
+            qty = int(close_qty_map.get(leg.tag, 0))
+            if qty <= 0:
+                continue
+            alert_legs.append(
+                self._build_alert_leg(
+                    leg=leg,
+                    direction="BUY" if leg.side.value == "SELL" else "SELL",
+                    qty=qty,
+                )
+            )
+            reductions.append((leg, qty))
+
+        if alert_legs:
+            result = self._submit_alert(execution_type="EXIT", legs=alert_legs)
+            if str((result or {}).get("status", "")).upper() not in ("FAILED", "BLOCKED"):
+                for leg, qty in reductions:
+                    leg.qty = max(0, int(leg.qty) - qty)
+                    if leg.qty == 0:
+                        leg.is_active = False
+
+    def _resolve_leg_rule_targets(self, rule: Dict[str, Any]) -> List[LegState]:
+        ref = rule.get("exit_leg_ref", "all")
+        group = rule.get("group")
+        if ref == "all":
+            return [leg for leg in self.state.legs.values() if leg.is_active]
+        if ref == "group" and group:
+            return [leg for leg in self.state.legs.values() if leg.is_active and leg.group == group]
+        leg = self.state.legs.get(ref)
+        if leg and leg.is_active:
+            return [leg]
+        return []
+
+    def _dispatch_adjustment_orders(self, before_legs: Dict[str, LegState]) -> bool:
+        """
+        Translate state transitions from adjustment engine into broker orders.
+        Returns False when broker rejects the adjustment payload.
+        """
+        tags = sorted(set(before_legs.keys()) | set(self.state.legs.keys()))
+        legs_payload: List[Dict[str, Any]] = []
+
+        for tag in tags:
+            before = before_legs.get(tag)
+            after = self.state.legs.get(tag)
+            before_qty = int(before.qty) if (before and before.is_active) else 0
+            after_qty = int(after.qty) if (after and after.is_active) else 0
+            delta = after_qty - before_qty
+
+            if delta < 0:
+                ref = before or after
+                if ref is None:
+                    continue
+                legs_payload.append(
+                    self._build_alert_leg(
+                        leg=ref,
+                        direction="BUY" if ref.side.value == "SELL" else "SELL",
+                        qty=abs(delta),
+                    )
+                )
+            elif delta > 0:
+                if after is None:
+                    continue
+                legs_payload.append(
+                    self._build_alert_leg(
+                        leg=after,
+                        direction=after.side.value,
+                        qty=delta,
+                    )
+                )
+
+        if not legs_payload:
+            return True
+        result = self._submit_alert(execution_type="ADJUSTMENT", legs=legs_payload)
+        status = str((result or {}).get("status", "")).upper()
+        return status not in ("FAILED", "BLOCKED")
+
+    def _build_alert_leg(
+        self,
+        leg: LegState,
+        direction: str,
+        qty: int,
+        tradingsymbol_override: Optional[str] = None,
+        price_override: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        identity = self.config.get("identity", {})
+        default_order_type = str(identity.get("order_type", "MARKET")).upper()
+        order_type = "LIMIT" if default_order_type == "LIMIT" else "MARKET"
+        if price_override is not None:
+            price = float(price_override)
+        else:
+            price = float(leg.ltp) if order_type == "LIMIT" else 0.0
+
+        tradingsymbol = tradingsymbol_override or leg.trading_symbol or leg.symbol
+        if tradingsymbol == leg.symbol and leg.instrument == InstrumentType.OPT and leg.strike is not None and leg.option_type is not None:
+            try:
+                opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, leg.expiry) or {}
+                resolved = opt_data.get("trading_symbol") or opt_data.get("tsym") or opt_data.get("symbol")
+                if resolved:
+                    tradingsymbol = str(resolved)
+                    leg.trading_symbol = tradingsymbol
+            except Exception:
+                pass
+
+        return {
+            "tradingsymbol": tradingsymbol,
+            "direction": str(direction).upper(),
+            "qty": int(qty),
+            "order_type": order_type,
+            "price": price,
+            "product_type": identity.get("product_type", "NRML"),
+        }
+
+    def _submit_alert(self, execution_type: str, legs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        identity = self.config.get("identity", {})
+        alert = {
+            "secret_key": self._resolve_webhook_secret(),
+            "execution_type": execution_type,
+            "strategy_name": self.name,
+            "exchange": identity.get("exchange", "NFO"),
+            "legs": legs,
+            "test_mode": self._resolve_test_mode(),
+        }
+        result = self.bot.process_alert(alert)
+        if isinstance(result, dict) and str(result.get("status", "")).upper() in ("FAILED", "BLOCKED"):
+            logger.error(f"{execution_type} order rejected for {self.name}: {result}")
+        return result if isinstance(result, dict) else {}
 
     def _resolve_webhook_secret(self) -> str:
         """Get webhook secret from bot config or env."""

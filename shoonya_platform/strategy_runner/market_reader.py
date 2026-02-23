@@ -346,7 +346,37 @@ class MarketReader:
                 LIMIT 1
             """, (option_type.upper(), target_delta, tolerance, target_delta))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if row:
+                return dict(row)
+
+            # Fallback: if strict tolerance has no hit, choose nearest available
+            # non-null delta. This keeps strategy entry/adjustment alive on sparse
+            # chains (common in commodities) instead of failing every tick.
+            cur.execute(
+                """
+                SELECT * FROM option_chain
+                WHERE option_type = ?
+                  AND delta IS NOT NULL
+                  AND ltp > 0
+                ORDER BY ABS(ABS(delta) - ?) ASC
+                LIMIT 1
+                """,
+                (option_type.upper(), target_delta),
+            )
+            row = cur.fetchone()
+            if row:
+                best = dict(row)
+                logger.warning(
+                    "Delta target %.4f not found within tolerance %.4f for %s; "
+                    "using nearest strike=%s delta=%s",
+                    target_delta,
+                    tolerance,
+                    option_type.upper(),
+                    best.get("strike"),
+                    best.get("delta"),
+                )
+                return best
+            return None
         except Exception as e:
             logger.error(f"find_option_by_delta error: {e}")
             return None

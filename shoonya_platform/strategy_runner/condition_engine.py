@@ -327,6 +327,8 @@ class ConditionEngine:
         # Direct attributes + properties
         if param == "spot_price":
             return self.state.spot_price
+        elif param == "spot_ltp":
+            return self.state.spot_price
         elif param == "spot_open":
             return self.state.spot_open
         elif param == "atm_strike":
@@ -399,10 +401,18 @@ class ConditionEngine:
         elif param == "adj_count_today":
             return self.state.adjustments_today
         elif param.startswith("index_"):
-            parts = param.split('_')
-            if len(parts) >= 3:
-                idx = "_".join(parts[1:-1]).upper()
-                attr = parts[-1]
+            payload = param[len("index_"):]
+            attr = None
+            idx = None
+            for suffix in ("change_pct", "ltp", "pc", "change", "open", "high", "low", "close"):
+                token = f"_{suffix}"
+                if payload.endswith(token):
+                    idx = payload[: -len(token)].upper()
+                    attr = suffix
+                    break
+            if idx and attr:
+                if attr == "pc":
+                    attr = "change_pct"
                 idx_map = self.state.index_data.get(idx)
                 if isinstance(idx_map, dict):
                     return idx_map.get(attr, 0.0)
@@ -440,3 +450,17 @@ class ConditionEngine:
             if leg.option_type and leg.option_type.value == opt_type:
                 return leg
         return None
+
+def evaluate_condition(condition_dict: Dict[str, Any], state: StrategyState) -> bool:
+    """
+    Backward-compatible helper for legacy modules/tests that evaluate one condition dict.
+    """
+    engine = ConditionEngine(state)
+    cond = Condition(
+        parameter=condition_dict["parameter"],
+        comparator=Comparator(condition_dict["comparator"]),
+        value=condition_dict.get("value"),
+        value2=condition_dict.get("value2"),
+        join=JoinOperator(condition_dict["join"]) if condition_dict.get("join") else None,
+    )
+    return engine.evaluate([cond])

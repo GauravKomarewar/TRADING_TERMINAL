@@ -995,11 +995,31 @@ class MockMarketReader(MarketReader):
         expiry: Optional[str] = None,
         reference_leg_state=None,
     ) -> Tuple[float, Dict[str, Any]]:
-        # Simplified resolve – just return ATM for standard atm, otherwise default
-        if config.mode == StrikeMode.STANDARD and config.strike_selection == "atm":
-            strike = self._atm
+        if config.mode == StrikeMode.STANDARD:
+            sel = (config.strike_selection or "atm").lower()
+            if sel == "atm":
+                strike = self._atm
+            elif sel.startswith("atm+") or sel.startswith("atm-"):
+                m = re.match(r"atm([+-]\d+)", sel)
+                step = float(config.rounding or 50)
+                off = int(m.group(1)) if m else 0
+                strike = self._atm + (off * step)
+            else:
+                strike = self._atm
+        elif config.mode == StrikeMode.EXACT:
+            strike = float(config.exact_strike if config.exact_strike is not None else self._atm)
+            if config.rounding:
+                strike = round(strike / config.rounding) * config.rounding
+        elif config.mode == StrikeMode.ATM_POINTS:
+            strike = self._atm + float(config.atm_offset_points or 0)
+            if config.rounding:
+                strike = round(strike / config.rounding) * config.rounding
+        elif config.mode == StrikeMode.ATM_PCT:
+            strike = self._atm * (1 + float(config.atm_offset_pct or 0.0) / 100.0)
+            if config.rounding:
+                strike = round(strike / config.rounding) * config.rounding
         else:
-            strike = 25000.0
+            strike = self._atm
         opt_data = self.get_option_at_strike(strike, config.option_type)
         assert opt_data is not None
         return strike, opt_data

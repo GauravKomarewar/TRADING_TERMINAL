@@ -99,10 +99,18 @@ class StrategyState:
     current_profit_step: int = -1
     last_date: Optional[date] = None
     entered_today: bool = False
+    _net_delta_override: Optional[float] = None
+    _combined_pnl_override: Optional[float] = None
 
     @property
     def net_delta(self) -> float:
+        if self._net_delta_override is not None:
+            return self._net_delta_override
         return sum(leg.delta for leg in self.legs.values() if leg.is_active)
+
+    @net_delta.setter
+    def net_delta(self, value: float):
+        self._net_delta_override = float(value)
 
     @property
     def delta_diff(self) -> float:
@@ -112,7 +120,13 @@ class StrategyState:
 
     @property
     def combined_pnl(self) -> float:
+        if self._combined_pnl_override is not None:
+            return self._combined_pnl_override
         return sum(leg.pnl for leg in self.legs.values() if leg.is_active)
+
+    @combined_pnl.setter
+    def combined_pnl(self, value: float):
+        self._combined_pnl_override = float(value)
 
     @property
     def total_premium(self) -> float:
@@ -400,3 +414,19 @@ class StrategyState:
         """Return 'morning' if before 12:00, else 'afternoon'."""
         now = datetime.now()
         return "morning" if now.hour < 12 else "afternoon"
+
+    def set_index_ticks(self, ticks: Dict[str, Dict[str, float]]):
+        """
+        Compatibility helper for legacy tests/adapters.
+        Accepts broker-style keys and normalizes to index_data metrics used by conditions.
+        """
+        normalized: Dict[str, Dict[str, float]] = {}
+        for symbol, data in (ticks or {}).items():
+            key = str(symbol).upper()
+            row = dict(data or {})
+            if "change_pct" not in row and "pc" in row:
+                row["change_pct"] = row["pc"]
+            if "change" not in row and "c" in row:
+                row["change"] = row["c"]
+            normalized[key] = row
+        self.index_data.update(normalized)

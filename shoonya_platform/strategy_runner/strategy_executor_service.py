@@ -7,8 +7,10 @@ Implements the same interface as the old service, but uses the new engine.
 
 import json
 import logging
+import sqlite3
 import threading
 import time
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -27,6 +29,115 @@ from .persistence import StatePersistence
 
 logger = logging.getLogger("STRATEGY_EXECUTOR_SERVICE")
 
+
+@dataclass
+class ExecutionState:
+    """
+    Backward-compatible execution snapshot used by dashboard/runtime recovery paths.
+    """
+    strategy_name: str
+    run_id: str
+    has_position: bool = False
+    entry_timestamp: float = 0.0
+
+    ce_symbol: Optional[str] = None
+    ce_side: Optional[str] = None
+    ce_qty: int = 0
+    ce_entry_price: float = 0.0
+    ce_strike: float = 0.0
+    ce_delta: float = 0.0
+
+    pe_symbol: Optional[str] = None
+    pe_side: Optional[str] = None
+    pe_qty: int = 0
+    pe_entry_price: float = 0.0
+    pe_strike: float = 0.0
+    pe_delta: float = 0.0
+
+    updated_at: float = 0.0
+
+
+class StateManager:
+    """
+    Minimal SQLite-backed state store for legacy strategy lifecycle compatibility.
+    """
+
+    def __init__(self, db_path: str):
+        self.db_path = str(db_path)
+        self._init_db()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, timeout=5)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self):
+        conn = self._connect()
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS execution_states (
+                    strategy_name TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def save(self, state: ExecutionState):
+        state.updated_at = time.time()
+        payload = json.dumps(asdict(state), default=str)
+        conn = self._connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO execution_states(strategy_name, payload, updated_at)
+                VALUES(?, ?, ?)
+                ON CONFLICT(strategy_name) DO UPDATE SET
+                    payload=excluded.payload,
+                    updated_at=excluded.updated_at
+                """,
+                (state.strategy_name, payload, state.updated_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def load(self, strategy_name: str) -> Optional[ExecutionState]:
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT payload FROM execution_states WHERE strategy_name = ?",
+                (strategy_name,),
+            ).fetchone()
+            if not row:
+                return None
+            data = json.loads(row["payload"])
+            return ExecutionState(**data)
+        finally:
+            conn.close()
+
+    def delete(self, strategy_name: str):
+        conn = self._connect()
+        try:
+            conn.execute("DELETE FROM execution_states WHERE strategy_name = ?", (strategy_name,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def list_all(self) -> List[str]:
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT strategy_name FROM execution_states ORDER BY strategy_name"
+            ).fetchall()
+            return [r["strategy_name"] for r in rows]
+        finally:
+            conn.close()
+
 class StrategyExecutorService:
     """
     Service that manages multiple strategies using the Universal Engine.
@@ -36,9 +147,11 @@ class StrategyExecutorService:
     def __init__(self, bot, state_db_path: str):
         self.bot = bot
         self.state_db_path = state_db_path
+        self.state_mgr = StateManager(state_db_path)
         self._strategies: Dict[str, Dict] = {}          # name -> config
         self._executors: Dict[str, 'PerStrategyExecutor'] = {}
         self._exec_states: Dict[str, StrategyState] = {}  # name -> live state
+        self._engine_states = self._exec_states  # legacy alias expected by dashboard/tests
         self._lock = threading.RLock()
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -216,6 +329,89 @@ class StrategyExecutorService:
                 "symbol": symbol,
                 "resume_monitoring": resume_monitoring,
             }
+
+    @staticmethod
+    def _adjustment_roll_leg(
+        svc,
+        name: str,
+        exec_state: ExecutionState,
+        engine_state: Any,
+        leg: str,
+        config: Dict[str, Any],
+        reader: Any,
+        qty: int,
+    ) -> bool:
+        """
+        Legacy roll helper used by hardening tests and old adjustment flow.
+        """
+        leg_key = leg.strip().upper()
+        if leg_key not in ("CE", "PE"):
+            return False
+
+        prefix = leg_key.lower()
+        opposite = "pe" if prefix == "ce" else "ce"
+        cur_symbol = getattr(exec_state, f"{prefix}_symbol", None)
+        side = getattr(exec_state, f"{prefix}_side", None) or "SELL"
+        raw_delta = getattr(engine_state, f"{opposite}_delta", 0.3)
+        try:
+            target_abs_delta = abs(float(raw_delta))
+        except (TypeError, ValueError):
+            target_abs_delta = 0.3
+
+        candidate = reader.find_option_by_delta(
+            option_type=leg_key,
+            target_delta=target_abs_delta,
+            tolerance=0.1,
+        )
+        if not candidate:
+            logger.error("Roll failed for %s: no candidate by delta %.4f", name, target_abs_delta)
+            return False
+
+        new_symbol = candidate.get("trading_symbol") or candidate.get("symbol")
+        if not new_symbol:
+            return False
+        if cur_symbol and new_symbol == cur_symbol:
+            return True
+
+        exchange = ((config or {}).get("basic", {}) or {}).get("exchange", "NFO")
+        alert = {
+            "execution_type": "ADJUSTMENT",
+            "strategy_name": name,
+            "exchange": exchange,
+            "legs": [
+                {
+                    "tradingsymbol": cur_symbol,
+                    "direction": "BUY" if str(side).upper() == "SELL" else "SELL",
+                    "qty": int(qty),
+                    "order_type": "MARKET",
+                    "price": 0.0,
+                    "product_type": "NRML",
+                },
+                {
+                    "tradingsymbol": new_symbol,
+                    "direction": str(side).upper(),
+                    "qty": int(qty),
+                    "order_type": "MARKET",
+                    "price": 0.0,
+                    "product_type": "NRML",
+                },
+            ],
+        }
+        result = svc.bot.process_alert(alert)
+        if isinstance(result, dict) and result.get("status") in ("FAILED", "blocked"):
+            return False
+
+        setattr(exec_state, f"{prefix}_symbol", new_symbol)
+        setattr(exec_state, f"{prefix}_strike", float(candidate.get("strike", 0.0) or 0.0))
+        setattr(exec_state, f"{prefix}_qty", int(qty))
+        if candidate.get("ltp") is not None:
+            setattr(exec_state, f"{prefix}_entry_price", float(candidate.get("ltp") or 0.0))
+
+        try:
+            svc.state_mgr.save(exec_state)
+        except Exception as e:
+            logger.warning("Roll state persist failed for %s: %s", name, e)
+        return True
 
 
 class PerStrategyExecutor:

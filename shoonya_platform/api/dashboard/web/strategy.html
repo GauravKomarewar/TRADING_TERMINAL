@@ -708,7 +708,7 @@ async function refreshStatus() {
     const indicator = $('runner-indicator');
     const status = $('runner-status');
     
-    if (r.runner_active && r.strategies_active > 0) {
+    if (r.runner_active && r.is_running && r.strategies_active > 0) {
       indicator.classList.add('online');
       status.textContent = `${r.strategies_active} active`;
     } else {

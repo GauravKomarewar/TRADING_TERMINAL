@@ -940,6 +940,9 @@ def start_strategy_execution(
 
         config = json.loads(strategy_file.read_text(encoding="utf-8"))
         bot.start_strategy_executor(strategy_name=strategy_key, config=config)
+        if not getattr(service, "_running", False):
+            logger.warning("Strategy runner loop was stopped; restarting runner service")
+            service.start()
 
         config["status"] = "RUNNING"
         config["status_updated_at"] = datetime.now().isoformat()
@@ -1069,6 +1072,27 @@ def _get_runtime_running_slugs(ctx: dict) -> set[str]:
         return set(list(getattr(svc, "_strategies", {}).keys()))
     except Exception:
         return set()
+
+
+def _state_has_position_compat(state: Any) -> bool:
+    """
+    Backward/forward compatibility:
+    - Legacy ExecutionState => has_position
+    - Universal StrategyState => any_leg_active / legs
+    """
+    if state is None:
+        return False
+    try:
+        if hasattr(state, "has_position"):
+            return bool(getattr(state, "has_position"))
+        if hasattr(state, "any_leg_active"):
+            return bool(getattr(state, "any_leg_active"))
+        legs = getattr(state, "legs", None)
+        if isinstance(legs, dict):
+            return any(bool(getattr(l, "is_active", False)) for l in legs.values())
+    except Exception:
+        return False
+    return False
 
 
 @router.post("/strategy/config/save")
@@ -2335,7 +2359,7 @@ def get_live_positions_overview(
 
             for strat_name, state in exec_states.items():
                 try:
-                    if not getattr(state, "has_position", False):
+                    if not _state_has_position_compat(state):
                         continue
                     cfg = strategy_cfgs.get(strat_name, {})
                     is_paper = False
@@ -3589,15 +3613,32 @@ def get_strategy_mode(
             service = bot.strategy_executor_service
             exec_state = service._exec_states.get(slug)
             
-            if exec_state and exec_state.has_position:
+            if _state_has_position_compat(exec_state):
                 can_change = False
                 reason = "Strategy has active positions - close all positions before changing mode"
-                position_details = {
-                    "ce_symbol": exec_state.ce_symbol,
-                    "pe_symbol": exec_state.pe_symbol,
-                    "ce_qty": exec_state.ce_qty,
-                    "pe_qty": exec_state.pe_qty,
-                }
+                position_details = {"state_type": type(exec_state).__name__}
+                if hasattr(exec_state, "ce_symbol"):
+                    position_details.update({
+                        "ce_symbol": getattr(exec_state, "ce_symbol", ""),
+                        "pe_symbol": getattr(exec_state, "pe_symbol", ""),
+                        "ce_qty": getattr(exec_state, "ce_qty", 0),
+                        "pe_qty": getattr(exec_state, "pe_qty", 0),
+                    })
+                elif hasattr(exec_state, "legs"):
+                    try:
+                        active_legs = [
+                            {
+                                "tag": getattr(leg, "tag", ""),
+                                "symbol": getattr(leg, "trading_symbol", None) or getattr(leg, "symbol", ""),
+                                "qty": getattr(leg, "qty", 0),
+                                "side": getattr(getattr(leg, "side", None), "value", getattr(leg, "side", "")),
+                            }
+                            for leg in (getattr(exec_state, "legs", {}) or {}).values()
+                            if bool(getattr(leg, "is_active", False))
+                        ]
+                        position_details["active_legs"] = active_legs
+                    except Exception:
+                        pass
         except Exception as e:
             logger.warning(f"Could not check positions for {strategy_name}: {e}")
         
@@ -3791,24 +3832,44 @@ def check_strategy_positions(
                 "timestamp": datetime.now().isoformat()
             }
         
-        if not exec_state.has_position:
+        if not _state_has_position_compat(exec_state):
             return {
                 "strategy_name": strategy_name,
                 "has_position": False,
                 "timestamp": datetime.now().isoformat()
             }
-        
-        position_age = time.time() - exec_state.entry_timestamp if exec_state.entry_timestamp > 0 else 0
-        
+
+        if hasattr(exec_state, "entry_timestamp"):
+            position_age = time.time() - exec_state.entry_timestamp if exec_state.entry_timestamp > 0 else 0
+            return {
+                "strategy_name": strategy_name,
+                "has_position": True,
+                "ce_symbol": getattr(exec_state, "ce_symbol", ""),
+                "pe_symbol": getattr(exec_state, "pe_symbol", ""),
+                "ce_qty": getattr(exec_state, "ce_qty", 0),
+                "pe_qty": getattr(exec_state, "pe_qty", 0),
+                "entry_time": datetime.fromtimestamp(exec_state.entry_timestamp).isoformat() if exec_state.entry_timestamp > 0 else None,
+                "position_age_seconds": int(position_age),
+                "timestamp": datetime.now().isoformat()
+            }
+
+        legs = getattr(exec_state, "legs", {}) or {}
+        active_legs = [
+            {
+                "tag": getattr(leg, "tag", ""),
+                "symbol": getattr(leg, "trading_symbol", None) or getattr(leg, "symbol", ""),
+                "qty": getattr(leg, "qty", 0),
+                "side": getattr(getattr(leg, "side", None), "value", getattr(leg, "side", "")),
+            }
+            for leg in legs.values()
+            if bool(getattr(leg, "is_active", False))
+        ]
+        entry_time_obj = getattr(exec_state, "entry_time", None)
         return {
             "strategy_name": strategy_name,
             "has_position": True,
-            "ce_symbol": exec_state.ce_symbol,
-            "pe_symbol": exec_state.pe_symbol,
-            "ce_qty": exec_state.ce_qty,
-            "pe_qty": exec_state.pe_qty,
-            "entry_time": datetime.fromtimestamp(exec_state.entry_timestamp).isoformat() if exec_state.entry_timestamp > 0 else None,
-            "position_age_seconds": int(position_age),
+            "active_legs": active_legs,
+            "entry_time": entry_time_obj.isoformat() if entry_time_obj else None,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:

@@ -137,6 +137,46 @@ def test_leg_rule_close_leg_executes_and_updates_state():
         assert ex.state.legs["L1"].qty == 0
 
 
+def test_exit_all_in_paper_mode_routes_via_process_alert_exit():
+    cfg = _base_config()
+    cfg["paper_mode"] = True
+    cfg["identity"]["paper_mode"] = True
+    cfg["test_mode"] = "SUCCESS"
+    cfg["identity"]["test_mode"] = "SUCCESS"
+    bot = _DummyBot()
+    with tempfile.TemporaryDirectory() as td, patch(
+        "shoonya_platform.strategy_runner.strategy_executor_service.MarketReader",
+        _TestMarketReader,
+    ):
+        ex = PerStrategyExecutor("svc_exit_mock", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.state.entered_today = True
+        ex.state.legs["L1"] = _mk_leg("L1", Side.SELL, qty=1)
+        ex._execute_exit("exit_all", source="eod_exit")
+
+        exit_alerts = [a for a in bot.alerts if a.get("execution_type") == "EXIT"]
+        assert len(exit_alerts) == 1
+        assert exit_alerts[0]["test_mode"] == "SUCCESS"
+        assert ex.state.legs["L1"].is_active is False
+
+
+def test_exit_all_in_live_mode_routes_via_request_exit():
+    cfg = _base_config()
+    bot = _DummyBot()
+    with tempfile.TemporaryDirectory() as td, patch(
+        "shoonya_platform.strategy_runner.strategy_executor_service.MarketReader",
+        _TestMarketReader,
+    ):
+        ex = PerStrategyExecutor("svc_exit_live", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.state.entered_today = True
+        ex.state.legs["L1"] = _mk_leg("L1", Side.SELL, qty=1)
+        ex._execute_exit("exit_all", source="eod_exit")
+
+        req_exit = [a for a in bot.alerts if a.get("execution_type") == "REQUEST_EXIT"]
+        assert len(req_exit) == 1
+        assert req_exit[0]["strategy_name"] == "svc_exit_live"
+        assert ex.state.legs["L1"].is_active is False
+
+
 def test_strategy_leg_monitor_snapshot_exposes_live_leg_metrics():
     bot = _DummyBot()
     with tempfile.TemporaryDirectory() as td:
@@ -184,3 +224,35 @@ def test_strategy_leg_monitor_snapshot_exposes_live_leg_metrics():
         assert active_rows[0]["symbol"] == "L_ACTIVE_TSYM"
         assert float(active_rows[0]["ltp"]) == 95.0
         assert float(active_rows[0]["delta"]) == -0.31
+
+
+def test_strategy_leg_monitor_snapshot_tracks_closed_leg_transition():
+    bot = _DummyBot()
+    with tempfile.TemporaryDirectory() as td:
+        svc = StrategyExecutorService(bot=bot, state_db_path=str(Path(td) / "state.sqlite"))
+        cfg = _base_config()
+        state = StrategyState(
+            legs={"L1": _mk_leg("L1", Side.SELL, qty=1, strike=25100.0)},
+            entered_today=True,
+            entry_time=datetime.now(),
+        )
+
+        svc._strategies["demo"] = cfg
+        svc._exec_states["demo"] = state
+        svc._executors["demo"] = type("Exec", (), {"state": state})()
+
+        first = svc.get_strategy_leg_monitor_snapshot()["demo"]
+        assert first["active_legs"] == 1
+        assert first["closed_legs"] == 0
+
+        leg = state.legs["L1"]
+        leg.is_active = False
+        leg.qty = 0
+        leg.ltp = 90.0
+
+        second = svc.get_strategy_leg_monitor_snapshot()["demo"]
+        assert second["active_legs"] == 0
+        assert second["closed_legs"] == 1
+        closed_rows = [r for r in second["legs"] if r["status"] == "CLOSED"]
+        assert len(closed_rows) == 1
+        assert closed_rows[0]["closed_at"] is not None

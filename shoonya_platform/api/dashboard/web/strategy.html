@@ -907,6 +907,9 @@ async function loadLiveMonitor() {
               <span><strong>Unrealized:</strong> ${fmt2(g.unrealized_pnl)}</span>
               <span><strong>Active Legs:</strong> ${Number(g.active_legs || activeRowsRaw.length || 0)}</span>
               <span><strong>Closed Legs:</strong> ${Number(g.closed_legs || closedRowsRaw.length || 0)}</span>
+              <span><strong>Adj Today:</strong> ${Number(g.adjustments_today || 0)}</span>
+              <span><strong>Adj Lifetime:</strong> ${Number(g.lifetime_adjustments || 0)}</span>
+              <span><strong>Last Adj:</strong> ${g.last_adjustment_time ? escHtml(g.last_adjustment_time) : '-'}</span>
               <span><strong>Delta:</strong> <span class="combined-delta-pill ${deltaClass(g.combined_delta)}">${fmt2(g.combined_delta)}</span></span>
               <span><strong>Gamma:</strong> ${fmt2(g.combined_gamma)}</span>
               <span><strong>Theta:</strong> ${fmt2(g.combined_theta)}</span>

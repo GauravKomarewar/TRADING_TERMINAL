@@ -2457,6 +2457,9 @@ def get_live_positions_overview(
                     "strategy_name": strat,
                     "mode": strategy_modes.get(strat, "LIVE"),
                     "active": strat in active_strategies,
+                    "adjustments_today": 0,
+                    "lifetime_adjustments": 0,
+                    "last_adjustment_time": None,
                     "leg_count": 0,
                     "total_qty": 0,
                     "total_pnl": 0.0,
@@ -2490,6 +2493,9 @@ def get_live_positions_overview(
                     "strategy_name": strat,
                     "mode": strategy_modes.get(strat, "LIVE"),
                     "active": strat in active_strategies,
+                    "adjustments_today": 0,
+                    "lifetime_adjustments": 0,
+                    "last_adjustment_time": None,
                     "leg_count": 0,
                     "total_qty": 0,
                     "total_pnl": 0.0,
@@ -2515,6 +2521,9 @@ def get_live_positions_overview(
             group["closed_legs"] = int((snap or {}).get("closed_legs", 0) or 0)
             group["realized_pnl"] = float((snap or {}).get("realized_pnl", group.get("realized_pnl", 0.0)) or 0.0)
             group["unrealized_pnl"] = float((snap or {}).get("unrealized_pnl", group.get("unrealized_pnl", 0.0)) or 0.0)
+            group["adjustments_today"] = int((snap or {}).get("adjustments_today", group.get("adjustments_today", 0)) or 0)
+            group["lifetime_adjustments"] = int((snap or {}).get("lifetime_adjustments", group.get("lifetime_adjustments", 0)) or 0)
+            group["last_adjustment_time"] = (snap or {}).get("last_adjustment_time", group.get("last_adjustment_time"))
             group["total_pnl"] = float(group["realized_pnl"] + group["unrealized_pnl"])
             active_legs = list(group["active_leg_rows"])
             if active_legs:

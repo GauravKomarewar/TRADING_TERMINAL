@@ -159,6 +159,7 @@ class StrategyExecutorService:
         self._stop_event = threading.Event()
         self._mode_change_dict_lock = threading.Lock()
         self._mode_change_lock: Dict[str, threading.Lock] = {}
+        self._monitor_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     def register_strategy(self, name: str, config_path: str):
         """Register a strategy with the service."""
@@ -178,6 +179,7 @@ class StrategyExecutorService:
             )
             self._executors[name] = executor
             self._exec_states[name] = executor.state
+            self._monitor_cache[name] = {}
             logger.info(f"Registered strategy: {name}")
 
     def unregister_strategy(self, name: str):
@@ -186,6 +188,7 @@ class StrategyExecutorService:
             self._executors.pop(name, None)
             self._strategies.pop(name, None)
             self._exec_states.pop(name, None)
+            self._monitor_cache.pop(name, None)
             logger.info(f"Strategy unregistered: {name}")
 
     def start(self):
@@ -272,10 +275,8 @@ class StrategyExecutorService:
                 config = self._strategies.get(strategy_name, {}) or {}
                 identity = config.get("identity", {}) or {}
                 mode = "MOCK" if self._is_paper_mode(config) else "LIVE"
-                legs_payload: List[Dict[str, Any]] = []
-                active_legs = 0
-                closed_legs = 0
-                unrealized_pnl = 0.0
+                cache = self._monitor_cache.setdefault(strategy_name, {})
+                seen_keys: set[str] = set()
 
                 for leg in (getattr(state, "legs", {}) or {}).values():
                     side_val = getattr(getattr(leg, "side", None), "value", getattr(leg, "side", ""))
@@ -293,13 +294,27 @@ class StrategyExecutorService:
                     if not symbol:
                         continue
 
-                    if is_active:
-                        active_legs += 1
-                        unrealized_pnl += unrealized
-                    else:
-                        closed_legs += 1
+                    tag = str(getattr(leg, "tag", "") or symbol)
+                    leg_key = f"{tag}::{symbol}"
+                    seen_keys.add(leg_key)
 
-                    legs_payload.append({
+                    row = cache.get(leg_key)
+                    if row is None:
+                        row = {
+                            "strategy_name": strategy_name,
+                            "opened_at": now_iso,
+                            "closed_at": None,
+                            "source": "ENTRY" if tag.startswith("LEG@") else "ADJUSTMENT",
+                            "realized_pnl": 0.0,
+                        }
+                        cache[leg_key] = row
+
+                    was_active = str(row.get("status", "")).upper() == "ACTIVE"
+                    if was_active and not is_active and row.get("closed_at") is None:
+                        row["closed_at"] = now_iso
+                        row["realized_pnl"] = float(row.get("realized_pnl", 0) or 0) + float(leg_pnl)
+
+                    row.update({
                         "strategy_name": strategy_name,
                         "exchange": identity.get("exchange", ""),
                         "symbol": symbol,
@@ -309,27 +324,47 @@ class StrategyExecutorService:
                         "exit_price": None,
                         "ltp": float(getattr(leg, "ltp", 0) or 0),
                         "status": status,
-                        "source": "EXECUTOR_STATE",
-                        "realized_pnl": 0.0,
-                        "unrealized_pnl": unrealized,
-                        "total_pnl": unrealized,
+                        "unrealized_pnl": (unrealized if is_active else 0.0),
                         "delta": float(getattr(leg, "delta", 0) or 0),
                         "gamma": float(getattr(leg, "gamma", 0) or 0),
                         "theta": float(getattr(leg, "theta", 0) or 0),
                         "vega": float(getattr(leg, "vega", 0) or 0),
-                        "opened_at": (getattr(state, "entry_time", None).isoformat() if getattr(state, "entry_time", None) else ""),
-                        "closed_at": None if is_active else now_iso,
+                        "opened_at": row.get("opened_at") or (getattr(state, "entry_time", None).isoformat() if getattr(state, "entry_time", None) else now_iso),
+                        "closed_at": None if is_active else (row.get("closed_at") or now_iso),
                         "updated_at": now_iso,
                         "mode": mode,
                     })
+                    row["total_pnl"] = float(row.get("realized_pnl", 0) or 0) + float(row.get("unrealized_pnl", 0) or 0)
+                    if is_active:
+                        row["closed_at"] = None
 
+                # Keep cached closed legs for lifecycle visibility; drop stale never-seen rows.
+                for k in list(cache.keys()):
+                    if k in seen_keys:
+                        continue
+                    stale = cache.get(k) or {}
+                    if str(stale.get("status", "")).upper() != "CLOSED":
+                        cache.pop(k, None)
+
+                legs_payload: List[Dict[str, Any]] = list(cache.values())
+                active_legs = len([r for r in legs_payload if str(r.get("status", "")).upper() == "ACTIVE"])
+                closed_legs = len([r for r in legs_payload if str(r.get("status", "")).upper() == "CLOSED"])
+                unrealized_pnl = sum(float(r.get("unrealized_pnl", 0) or 0) for r in legs_payload if str(r.get("status", "")).upper() == "ACTIVE")
+                realized_leg_pnl = sum(float(r.get("realized_pnl", 0) or 0) for r in legs_payload if str(r.get("status", "")).upper() == "CLOSED")
                 realized_pnl = float(getattr(state, "cumulative_daily_pnl", 0) or 0.0)
                 snapshot[strategy_name] = {
                     "mode": mode,
                     "active_legs": active_legs,
                     "closed_legs": closed_legs,
-                    "realized_pnl": realized_pnl,
+                    "realized_pnl": float(realized_pnl + realized_leg_pnl),
                     "unrealized_pnl": float(unrealized_pnl),
+                    "adjustments_today": int(getattr(state, "adjustments_today", 0) or 0),
+                    "lifetime_adjustments": int(getattr(state, "lifetime_adjustments", 0) or 0),
+                    "last_adjustment_time": (
+                        getattr(state, "last_adjustment_time", None).isoformat()
+                        if getattr(state, "last_adjustment_time", None)
+                        else None
+                    ),
                     "legs": legs_payload,
                 }
         return snapshot
@@ -705,13 +740,32 @@ class PerStrategyExecutor:
     def _execute_exit(self, action: str, source: str = "unknown"):
         """Execute exit via bot."""
         if action.startswith("exit_all"):
-            self.bot.request_exit(
-                scope="strategy",
-                strategy_name=self.name,
-                product_type="ALL",
-                reason=source,
-                source="STRATEGY_EXECUTOR"
-            )
+            # In paper mode, route through process_alert(EXIT) so mock runs
+            # exercise the same alert pipeline (including test_mode handling).
+            if self._resolve_test_mode():
+                active_legs = [leg for leg in self.state.legs.values() if leg.is_active and int(leg.qty) > 0]
+                if active_legs:
+                    alert_legs = [
+                        self._build_alert_leg(
+                            leg=leg,
+                            direction="BUY" if leg.side.value == "SELL" else "SELL",
+                            qty=int(leg.qty),
+                        )
+                        for leg in active_legs
+                    ]
+                    result = self._submit_alert(execution_type="EXIT", legs=alert_legs)
+                    status = str((result or {}).get("status", "")).upper()
+                    if status in ("FAILED", "BLOCKED"):
+                        logger.error(f"Exit rejected for {self.name}: {result}")
+                        return
+            else:
+                self.bot.request_exit(
+                    scope="strategy",
+                    strategy_name=self.name,
+                    product_type="ALL",
+                    reason=source,
+                    source="STRATEGY_EXECUTOR"
+                )
             # Mark all legs inactive
             for leg in self.state.legs.values():
                 leg.is_active = False

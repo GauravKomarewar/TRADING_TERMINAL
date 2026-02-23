@@ -2857,7 +2857,7 @@ def get_all_strategies():
         if json_file.name == "STRATEGY_CONFIG_SCHEMA.json":
             continue  # Skip schema file
         try:
-            with open(json_file, 'r') as f:
+            with open(json_file, 'r', encoding='utf-8-sig') as f:
                 config = json.load(f)
                 strategies.append({
                     "name": json_file.stem,
@@ -2877,7 +2877,7 @@ def load_strategy_json(name: str):
     if not strategy_file.exists():
         return None
     
-    with open(strategy_file, 'r') as f:
+    with open(strategy_file, 'r', encoding='utf-8-sig') as f:
         return json.load(f)
 
 def save_strategy_json(name: str, config: dict):
@@ -2897,7 +2897,7 @@ def save_strategy_json(name: str, config: dict):
         complete["created_at"] = now
     complete["updated_at"] = now
 
-    with open(strategy_file, 'w') as f:
+    with open(strategy_file, 'w', encoding='utf-8') as f:
         json.dump(complete, f, indent=2, default=str)
 
     return strategy_file

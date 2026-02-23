@@ -238,20 +238,101 @@ class StrategyExecutorService:
             return False
         return state.any_leg_active
 
+    def _is_paper_mode(self, config: Dict[str, Any]) -> bool:
+        identity = config.get("identity", {}) or {}
+        return bool(
+            config.get("paper_mode")
+            or identity.get("paper_mode")
+            or config.get("is_paper")
+            or config.get("test_mode")
+            or identity.get("test_mode")
+        )
+
     # BUG-014 FIX: get_strategy_mode() was called by router but never existed in service.
     # The router used hasattr guard so it silently fell back to "LIVE" for all strategies —
     # paper-mode strategies appeared as LIVE in the dashboard.
     def get_strategy_mode(self, strategy_name: str) -> str:
         """Return 'MOCK' or 'LIVE' based on strategy config paper_mode / test_mode flags."""
         config = self._strategies.get(strategy_name, {})
-        identity = config.get("identity", {}) or {}
-        paper_mode = bool(
-            config.get("paper_mode")
-            or identity.get("paper_mode")
-            or config.get("is_paper")
-        )
-        test_mode = config.get("test_mode") or identity.get("test_mode")
-        return "MOCK" if (paper_mode or test_mode) else "LIVE"
+        return "MOCK" if self._is_paper_mode(config) else "LIVE"
+
+    def get_strategy_leg_monitor_snapshot(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Build monitor-ready leg snapshot from current executor state.
+        """
+        snapshot: Dict[str, Dict[str, Any]] = {}
+        now_iso = datetime.now().isoformat()
+        with self._lock:
+            names = list(self._exec_states.keys())
+            for strategy_name in names:
+                state = self._exec_states.get(strategy_name)
+                if state is None:
+                    continue
+
+                config = self._strategies.get(strategy_name, {}) or {}
+                identity = config.get("identity", {}) or {}
+                mode = "MOCK" if self._is_paper_mode(config) else "LIVE"
+                legs_payload: List[Dict[str, Any]] = []
+                active_legs = 0
+                closed_legs = 0
+                unrealized_pnl = 0.0
+
+                for leg in (getattr(state, "legs", {}) or {}).values():
+                    side_val = getattr(getattr(leg, "side", None), "value", getattr(leg, "side", ""))
+                    side = str(side_val or "").upper()
+                    qty = int(getattr(leg, "qty", 0) or 0)
+                    is_active = bool(getattr(leg, "is_active", False)) and qty > 0
+                    status = "ACTIVE" if is_active else "CLOSED"
+                    leg_pnl = float(getattr(leg, "pnl", 0) or 0)
+                    unrealized = leg_pnl if is_active else 0.0
+                    symbol = str(
+                        getattr(leg, "trading_symbol", None)
+                        or getattr(leg, "symbol", "")
+                        or ""
+                    ).strip()
+                    if not symbol:
+                        continue
+
+                    if is_active:
+                        active_legs += 1
+                        unrealized_pnl += unrealized
+                    else:
+                        closed_legs += 1
+
+                    legs_payload.append({
+                        "strategy_name": strategy_name,
+                        "exchange": identity.get("exchange", ""),
+                        "symbol": symbol,
+                        "side": side,
+                        "qty": max(0, qty),
+                        "entry_price": float(getattr(leg, "entry_price", 0) or 0),
+                        "exit_price": None,
+                        "ltp": float(getattr(leg, "ltp", 0) or 0),
+                        "status": status,
+                        "source": "EXECUTOR_STATE",
+                        "realized_pnl": 0.0,
+                        "unrealized_pnl": unrealized,
+                        "total_pnl": unrealized,
+                        "delta": float(getattr(leg, "delta", 0) or 0),
+                        "gamma": float(getattr(leg, "gamma", 0) or 0),
+                        "theta": float(getattr(leg, "theta", 0) or 0),
+                        "vega": float(getattr(leg, "vega", 0) or 0),
+                        "opened_at": (getattr(state, "entry_time", None).isoformat() if getattr(state, "entry_time", None) else ""),
+                        "closed_at": None if is_active else now_iso,
+                        "updated_at": now_iso,
+                        "mode": mode,
+                    })
+
+                realized_pnl = float(getattr(state, "cumulative_daily_pnl", 0) or 0.0)
+                snapshot[strategy_name] = {
+                    "mode": mode,
+                    "active_legs": active_legs,
+                    "closed_legs": closed_legs,
+                    "realized_pnl": realized_pnl,
+                    "unrealized_pnl": float(unrealized_pnl),
+                    "legs": legs_payload,
+                }
+        return snapshot
 
     # BUG-026 FIX: STRATEGY_RECOVER_RESUME intent was submitted by the dashboard but
     # had NO consumer anywhere. The intent was stored in DB forever; recovery never happened.

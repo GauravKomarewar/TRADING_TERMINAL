@@ -938,11 +938,32 @@ def start_strategy_execution(
                 detail=f"Strategy config not found: {strategy_key}.json"
             )
 
+        # Explicit start from UI should begin a fresh runtime cycle.
+        # Remove stale persisted executor state that can block re-entry
+        # (e.g. entered_today=True after previous run/restart).
+        try:
+            sf = _strategy_state_file(service, strategy_key)
+            if sf.exists():
+                sf.unlink()
+                logger.info("Cleared stale strategy state file: %s", sf)
+        except Exception as se:
+            logger.warning("Could not clear state file for %s: %s", strategy_key, se)
+
         config = json.loads(strategy_file.read_text(encoding="utf-8"))
         bot.start_strategy_executor(strategy_name=strategy_key, config=config)
+        if strategy_key not in service._strategies:
+            logger.warning(
+                "start-execution: strategy not registered via bot path, using direct register fallback | %s",
+                strategy_key,
+            )
+            service.register_strategy(name=strategy_key, config_path=str(strategy_file))
+
         if not getattr(service, "_running", False):
             logger.warning("Strategy runner loop was stopped; restarting runner service")
             service.start()
+
+        if strategy_key not in service._strategies:
+            raise RuntimeError(f"Strategy '{strategy_key}' was not registered in executor service")
 
         config["status"] = "RUNNING"
         config["status_updated_at"] = datetime.now().isoformat()
@@ -995,6 +1016,15 @@ def stop_strategy_execution(
             service.state_mgr.delete(strategy_key)
         except Exception as se:
             logger.warning(f"Could not clear persisted state for {strategy_key}: {se}")
+
+        # 2b) Clear per-strategy runtime state snapshot (PerStrategyExecutor *.pkl).
+        try:
+            sf = _strategy_state_file(service, strategy_key)
+            if sf.exists():
+                sf.unlink()
+                logger.info("Cleared runtime state snapshot for %s: %s", strategy_key, sf)
+        except Exception as se:
+            logger.warning(f"Could not clear runtime state snapshot for {strategy_key}: {se}")
 
         # 3) Always mark config STOPPED so UI reflects latest action
         try:
@@ -1072,27 +1102,6 @@ def _get_runtime_running_slugs(ctx: dict) -> set[str]:
         return set(list(getattr(svc, "_strategies", {}).keys()))
     except Exception:
         return set()
-
-
-def _state_has_position_compat(state: Any) -> bool:
-    """
-    Backward/forward compatibility:
-    - Legacy ExecutionState => has_position
-    - Universal StrategyState => any_leg_active / legs
-    """
-    if state is None:
-        return False
-    try:
-        if hasattr(state, "has_position"):
-            return bool(getattr(state, "has_position"))
-        if hasattr(state, "any_leg_active"):
-            return bool(getattr(state, "any_leg_active"))
-        legs = getattr(state, "legs", None)
-        if isinstance(legs, dict):
-            return any(bool(getattr(l, "is_active", False)) for l in legs.values())
-    except Exception:
-        return False
-    return False
 
 
 @router.post("/strategy/config/save")
@@ -2349,102 +2358,78 @@ def get_live_positions_overview(
             classified.append(item)
             seen_symbol_owner.add((symbol, owner_type))
 
-        # Add virtual paper-mode positions from strategy executor state.
-        # These are not present in broker positions but should be visible in monitor.
+        # Add virtual executor-state positions.
+        # These may not be present in broker positions yet (or in MOCK mode),
+        # but should still be visible in monitor.
         svc = getattr(bot, "strategy_executor_service", None)
         if svc is not None:
             exec_states = dict(getattr(svc, "_exec_states", {}) or {})
-            engine_states = dict(getattr(svc, "_engine_states", {}) or {})
             strategy_cfgs = dict(getattr(svc, "_strategies", {}) or {})
 
             for strat_name, state in exec_states.items():
                 try:
-                    if not _state_has_position_compat(state):
+                    if not bool(getattr(state, "any_leg_active", False)):
                         continue
                     cfg = strategy_cfgs.get(strat_name, {})
-                    is_paper = False
+                    mode = "LIVE"
                     try:
-                        is_paper = bool(getattr(svc, "_is_paper_mode")(cfg))
+                        mode = "MOCK" if bool(getattr(svc, "_is_paper_mode")(cfg)) else "LIVE"
                     except Exception:
-                        is_paper = bool(cfg.get("paper_mode"))
-                    if not is_paper:
-                        continue
+                        identity_cfg = cfg.get("identity", {}) or {}
+                        mode = "MOCK" if bool(cfg.get("paper_mode") or identity_cfg.get("paper_mode") or cfg.get("test_mode") or identity_cfg.get("test_mode")) else "LIVE"
 
-                    eng = engine_states.get(strat_name)
                     owner_type = "strategy_active" if strat_name in active_strategies else "strategy_inactive"
                     now_iso = datetime.now().isoformat()
-
-                    def _add_leg(
-                        symbol: str,
-                        qty: int,
-                        side: str,
-                        entry_price: float,
-                        ltp: float,
-                        pnl: float,
-                        delta: float,
-                        gamma: float,
-                        theta: float,
-                        vega: float,
-                    ) -> None:
-                        symbol = str(symbol or "").strip()
-                        if not symbol or int(qty or 0) <= 0:
-                            return
+                    for leg in (getattr(state, "legs", {}) or {}).values():
+                        if not bool(getattr(leg, "is_active", False)):
+                            continue
+                        symbol = str(
+                            getattr(leg, "trading_symbol", None)
+                            or getattr(leg, "symbol", "")
+                        ).strip()
+                        qty = int(getattr(leg, "qty", 0) or 0)
+                        if not symbol or qty <= 0:
+                            continue
                         key = (symbol, owner_type)
                         if key in seen_symbol_owner:
-                            return
+                            continue
                         seen_symbol_owner.add(key)
+
+                        side_val = getattr(getattr(leg, "side", None), "value", getattr(leg, "side", ""))
+                        side_s = str(side_val or "").upper()
+                        delta = float(getattr(leg, "delta", 0) or 0)
+                        gamma = float(getattr(leg, "gamma", 0) or 0)
+                        theta = float(getattr(leg, "theta", 0) or 0)
+                        vega = float(getattr(leg, "vega", 0) or 0)
+                        upnl = float(getattr(leg, "pnl", 0) or 0)
 
                         classified.append({
                             "symbol": symbol,
-                            "exchange": cfg.get("basic", {}).get("exchange", ""),
-                            "qty": int(qty),
-                            "side": str(side or "").upper(),
-                            "netqty": int(qty if str(side or "").upper() == "BUY" else -qty),
-                            "position_source": "PAPER",
-                            "avg_price": float(entry_price or 0),
-                            "ltp": float(ltp or 0),
+                            "exchange": (cfg.get("identity", {}) or {}).get("exchange", ""),
+                            "qty": qty,
+                            "side": side_s,
+                            "netqty": int(qty if side_s == "BUY" else -qty),
+                            "position_source": "PAPER" if mode == "MOCK" else "EXECUTOR_STATE",
+                            "avg_price": float(getattr(leg, "entry_price", 0) or 0),
+                            "ltp": float(getattr(leg, "ltp", 0) or 0),
                             "realized_pnl": 0.0,
-                            "unrealized_pnl": float(pnl or 0),
-                            "total_pnl": float(pnl or 0),
-                            "delta": float(delta or 0),
-                            "gamma": float(gamma or 0),
-                            "theta": float(theta or 0),
-                            "vega": float(vega or 0),
+                            "unrealized_pnl": upnl,
+                            "total_pnl": upnl,
+                            "delta": delta,
+                            "gamma": gamma,
+                            "theta": theta,
+                            "vega": vega,
                             "strategy_name": strat_name,
                             "owner_type": owner_type,
                             "updated_at": now_iso,
                         })
-
-                    _add_leg(
-                        symbol=getattr(state, "ce_symbol", ""),
-                        qty=int(getattr(state, "ce_qty", 0) or 0),
-                        side=str(getattr(state, "ce_side", "") or ""),
-                        entry_price=float(getattr(state, "ce_entry_price", 0) or 0),
-                        ltp=float(getattr(eng, "ce_ltp", 0) if eng else 0),
-                        pnl=float(getattr(eng, "ce_pnl", 0) if eng else 0),
-                        delta=float(getattr(eng, "ce_delta", 0) if eng else 0),
-                        gamma=float(getattr(eng, "ce_gamma", 0) if eng else 0),
-                        theta=float(getattr(eng, "ce_theta", 0) if eng else 0),
-                        vega=float(getattr(eng, "ce_vega", 0) if eng else 0),
-                    )
-                    _add_leg(
-                        symbol=getattr(state, "pe_symbol", ""),
-                        qty=int(getattr(state, "pe_qty", 0) or 0),
-                        side=str(getattr(state, "pe_side", "") or ""),
-                        entry_price=float(getattr(state, "pe_entry_price", 0) or 0),
-                        ltp=float(getattr(eng, "pe_ltp", 0) if eng else 0),
-                        pnl=float(getattr(eng, "pe_pnl", 0) if eng else 0),
-                        delta=float(getattr(eng, "pe_delta", 0) if eng else 0),
-                        gamma=float(getattr(eng, "pe_gamma", 0) if eng else 0),
-                        theta=float(getattr(eng, "pe_theta", 0) if eng else 0),
-                        vega=float(getattr(eng, "pe_vega", 0) if eng else 0),
-                    )
                 except Exception as leg_err:
                     logger.debug("Skipping paper leg mapping for %s: %s", strat_name, leg_err)
 
         strategy_positions = [p for p in classified if p["owner_type"] != "orphan"]
         orphan_positions = [p for p in classified if p["owner_type"] == "orphan"]
         leg_snapshot: dict[str, Any] = {}
+        strategy_modes: dict[str, str] = {}
         if svc is not None:
             try:
                 getter = getattr(svc, "get_strategy_leg_monitor_snapshot", None)
@@ -2456,6 +2441,13 @@ def get_live_positions_overview(
                         logger.debug("Leg monitor snapshot returned non-dict, ignoring")
             except Exception as snap_err:
                 logger.debug("Could not fetch strategy leg monitor snapshot: %s", snap_err)
+            try:
+                mode_getter = getattr(svc, "get_strategy_mode", None)
+                if callable(mode_getter):
+                    for strat in set(list(getattr(svc, "_strategies", {}).keys()) + list((leg_snapshot or {}).keys())):
+                        strategy_modes[strat] = str(mode_getter(strat) or "LIVE").upper()
+            except Exception as mode_err:
+                logger.debug("Could not fetch strategy modes for monitor: %s", mode_err)
 
         by_strategy: dict[str, dict[str, Any]] = {}
         for p in strategy_positions:
@@ -2463,6 +2455,7 @@ def get_live_positions_overview(
             if strat not in by_strategy:
                 by_strategy[strat] = {
                     "strategy_name": strat,
+                    "mode": strategy_modes.get(strat, "LIVE"),
                     "active": strat in active_strategies,
                     "leg_count": 0,
                     "total_qty": 0,
@@ -2495,6 +2488,7 @@ def get_live_positions_overview(
             if strat not in by_strategy:
                 by_strategy[strat] = {
                     "strategy_name": strat,
+                    "mode": strategy_modes.get(strat, "LIVE"),
                     "active": strat in active_strategies,
                     "leg_count": 0,
                     "total_qty": 0,
@@ -2603,6 +2597,7 @@ def get_live_positions_overview(
                     "updated_at": p.get("updated_at") or "",
                 })
             group["all_legs"] = fallback_legs
+            group["mode"] = group.get("mode") or strategy_modes.get(group.get("strategy_name") or "", "LIVE")
             group["active_leg_rows"] = [l for l in fallback_legs if str(l.get("status", "")).upper() == "ACTIVE"]
             group["closed_leg_rows"] = [l for l in fallback_legs if str(l.get("status", "")).upper() == "CLOSED"]
             group["runtime_seconds"] = 0
@@ -3184,6 +3179,12 @@ from weakref import WeakValueDictionary
 _runner_instances: WeakValueDictionary = WeakValueDictionary()
 _runner_instances_lock = threading.Lock()
 
+def _strategy_state_file(service: Any, strategy_key: str) -> Path:
+    """Resolve per-strategy runtime state file used by PerStrategyExecutor."""
+    state_db_path = getattr(service, "state_db_path", "") or ""
+    base_dir = Path(state_db_path).parent if state_db_path else Path(".")
+    return base_dir / f"{strategy_key}_state.pkl"
+
 def get_runner_singleton(ctx: dict):
     """Get StrategyExecutorService singleton for the current client."""
     global _runner_instances
@@ -3613,32 +3614,23 @@ def get_strategy_mode(
             service = bot.strategy_executor_service
             exec_state = service._exec_states.get(slug)
             
-            if _state_has_position_compat(exec_state):
+            if bool(getattr(exec_state, "any_leg_active", False)):
                 can_change = False
                 reason = "Strategy has active positions - close all positions before changing mode"
-                position_details = {"state_type": type(exec_state).__name__}
-                if hasattr(exec_state, "ce_symbol"):
-                    position_details.update({
-                        "ce_symbol": getattr(exec_state, "ce_symbol", ""),
-                        "pe_symbol": getattr(exec_state, "pe_symbol", ""),
-                        "ce_qty": getattr(exec_state, "ce_qty", 0),
-                        "pe_qty": getattr(exec_state, "pe_qty", 0),
-                    })
-                elif hasattr(exec_state, "legs"):
-                    try:
-                        active_legs = [
-                            {
-                                "tag": getattr(leg, "tag", ""),
-                                "symbol": getattr(leg, "trading_symbol", None) or getattr(leg, "symbol", ""),
-                                "qty": getattr(leg, "qty", 0),
-                                "side": getattr(getattr(leg, "side", None), "value", getattr(leg, "side", "")),
-                            }
-                            for leg in (getattr(exec_state, "legs", {}) or {}).values()
-                            if bool(getattr(leg, "is_active", False))
-                        ]
-                        position_details["active_legs"] = active_legs
-                    except Exception:
-                        pass
+                active_legs = [
+                    {
+                        "tag": getattr(leg, "tag", ""),
+                        "symbol": getattr(leg, "trading_symbol", None) or getattr(leg, "symbol", ""),
+                        "qty": getattr(leg, "qty", 0),
+                        "side": getattr(getattr(leg, "side", None), "value", getattr(leg, "side", "")),
+                    }
+                    for leg in (getattr(exec_state, "legs", {}) or {}).values()
+                    if bool(getattr(leg, "is_active", False))
+                ]
+                position_details = {
+                    "state_type": type(exec_state).__name__,
+                    "active_legs": active_legs,
+                }
         except Exception as e:
             logger.warning(f"Could not check positions for {strategy_name}: {e}")
         
@@ -3832,24 +3824,10 @@ def check_strategy_positions(
                 "timestamp": datetime.now().isoformat()
             }
         
-        if not _state_has_position_compat(exec_state):
+        if not bool(getattr(exec_state, "any_leg_active", False)):
             return {
                 "strategy_name": strategy_name,
                 "has_position": False,
-                "timestamp": datetime.now().isoformat()
-            }
-
-        if hasattr(exec_state, "entry_timestamp"):
-            position_age = time.time() - exec_state.entry_timestamp if exec_state.entry_timestamp > 0 else 0
-            return {
-                "strategy_name": strategy_name,
-                "has_position": True,
-                "ce_symbol": getattr(exec_state, "ce_symbol", ""),
-                "pe_symbol": getattr(exec_state, "pe_symbol", ""),
-                "ce_qty": getattr(exec_state, "ce_qty", 0),
-                "pe_qty": getattr(exec_state, "pe_qty", 0),
-                "entry_time": datetime.fromtimestamp(exec_state.entry_timestamp).isoformat() if exec_state.entry_timestamp > 0 else None,
-                "position_age_seconds": int(position_age),
                 "timestamp": datetime.now().isoformat()
             }
 

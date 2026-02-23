@@ -687,34 +687,20 @@ class PerStrategyExecutor:
         if not new_legs:
             return
 
-        # Get default order type from identity
         identity = self.config.get("identity", {})
-        default_order_type = identity.get("order_type", "MARKET")
         product_type = identity.get("product_type", "NRML")
 
-        # Convert each LegState to an alert leg
+        # Convert each LegState to an alert leg. Leg qty is tracked in lots internally;
+        # alert payload qty must be broker contract quantity.
         alert_legs = []
         for leg in new_legs:
-            # Determine order type and price
-            if default_order_type == "LIMIT":
-                price = leg.ltp  # use current LTP as limit price
-                order_type = "LIMIT"
-            else:
-                price = 0.0
-                order_type = "MARKET"
-
-            alert_legs.append({
-                # ✅ BUG-002 FIX: leg.symbol is the underlying (e.g. "NIFTY"),
-                # NOT the broker trading symbol. Use leg.trading_symbol which must
-                # be set to the resolved contract name (e.g. "NIFTY25FEB26C22000CE")
-                # when the leg is created via entry_engine / scripmaster lookup.
-                "tradingsymbol": leg.trading_symbol or leg.symbol,  # fallback to symbol if not yet resolved
-                "direction": leg.side.value,
-                "qty": leg.qty,
-                "order_type": order_type,
-                "price": price,
-                "product_type": product_type,
-            })
+            payload = self._build_alert_leg(
+                leg=leg,
+                direction=leg.side.value,
+                qty=int(leg.qty),
+            )
+            payload["product_type"] = product_type
+            alert_legs.append(payload)
 
         alert = {
             "secret_key": self._resolve_webhook_secret(),
@@ -978,11 +964,32 @@ class PerStrategyExecutor:
         return {
             "tradingsymbol": tradingsymbol,
             "direction": str(direction).upper(),
-            "qty": int(qty),
+            "qty": self._lots_to_order_qty(int(qty), leg),
             "order_type": order_type,
             "price": price,
             "product_type": identity.get("product_type", "NRML"),
         }
+
+    def _lots_to_order_qty(self, lots: int, leg: Optional[LegState] = None) -> int:
+        """
+        Convert lots (internal state unit) to broker order quantity (contract units).
+        """
+        try:
+            normalized_lots = max(0, int(lots))
+        except (TypeError, ValueError):
+            normalized_lots = 0
+        if normalized_lots == 0:
+            return 0
+
+        lot_size = 1
+        expiry = getattr(leg, "expiry", None) if leg is not None else None
+        try:
+            resolved = int(self.market.get_lot_size(expiry))
+            if resolved > 0:
+                lot_size = resolved
+        except Exception:
+            lot_size = 1
+        return normalized_lots * lot_size
 
     def _submit_alert(self, execution_type: str, legs: List[Dict[str, Any]]) -> Dict[str, Any]:
         identity = self.config.get("identity", {})

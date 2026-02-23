@@ -633,7 +633,7 @@ ${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('$
           </div>
         </div>
         <div class="strat-card-meta">
-          <span><strong>Type:</strong> ${escHtml(s.strategy_type||'N/A')}</span>
+          <span><strong>Type:</strong> ${escHtml(s.strategy_type||s.type||'N/A')}</span>
           <span><strong>Symbol:</strong> ${escHtml(s.identity?.underlying||s.basic?.underlying||'N/A')}</span>
           <span><strong>Exchange:</strong> ${escHtml(s.identity?.exchange||s.basic?.exchange||'N/A')}</span>
           <span><strong>Updated:</strong> ${formatDate(s.updated_at)}</span>

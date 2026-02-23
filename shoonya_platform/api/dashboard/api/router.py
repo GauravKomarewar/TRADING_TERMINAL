@@ -1180,7 +1180,7 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
         if f.name == "STRATEGY_CONFIG_SCHEMA.json":
             continue
         try:
-            data = json.loads(f.read_text(encoding="utf-8"))
+            data = json.loads(f.read_text(encoding="utf-8-sig"))
             slug = f.stem
             file_status = str(data.get("status", "IDLE") or "IDLE").upper()
             effective_status = "RUNNING" if slug in runtime_running else ("IDLE" if file_status == "RUNNING" else file_status)
@@ -1201,6 +1201,8 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
                 "schema_version": data.get("schema_version", "1.0"),
                 "name": data.get("name", f.stem),
                 "id": data.get("id", f.stem),
+                "type": data.get("type"),
+                "strategy_type": data.get("strategy_type") or data.get("type"),
                 "description": data.get("description", ""),
                 "tags": data.get("tags", []),
                 "file": f.name,

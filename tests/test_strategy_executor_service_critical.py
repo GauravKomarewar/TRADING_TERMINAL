@@ -89,6 +89,7 @@ def test_adjustment_dispatch_sends_broker_orders():
         _TestMarketReader,
     ):
         ex = PerStrategyExecutor("svc_adj", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.market.get_lot_size = lambda expiry=None: 10
         ex.state.entered_today = True
         ex.state.legs["L1"] = _mk_leg("L1", Side.SELL, qty=1)
 
@@ -106,6 +107,7 @@ def test_adjustment_dispatch_sends_broker_orders():
         assert len(legs) == 2
         directions = {l["direction"] for l in legs}
         assert directions == {"BUY", "SELL"}
+        assert {int(l["qty"]) for l in legs} == {10}
 
 
 def test_leg_rule_close_leg_executes_and_updates_state():
@@ -149,6 +151,7 @@ def test_exit_all_in_paper_mode_routes_via_process_alert_exit():
         _TestMarketReader,
     ):
         ex = PerStrategyExecutor("svc_exit_mock", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.market.get_lot_size = lambda expiry=None: 10
         ex.state.entered_today = True
         ex.state.legs["L1"] = _mk_leg("L1", Side.SELL, qty=1)
         ex._execute_exit("exit_all", source="eod_exit")
@@ -156,6 +159,7 @@ def test_exit_all_in_paper_mode_routes_via_process_alert_exit():
         exit_alerts = [a for a in bot.alerts if a.get("execution_type") == "EXIT"]
         assert len(exit_alerts) == 1
         assert exit_alerts[0]["test_mode"] == "SUCCESS"
+        assert int(exit_alerts[0]["legs"][0]["qty"]) == 10
         assert ex.state.legs["L1"].is_active is False
 
 
@@ -256,3 +260,38 @@ def test_strategy_leg_monitor_snapshot_tracks_closed_leg_transition():
         closed_rows = [r for r in second["legs"] if r["status"] == "CLOSED"]
         assert len(closed_rows) == 1
         assert closed_rows[0]["closed_at"] is not None
+
+
+def test_build_alert_leg_converts_lots_to_contract_quantity():
+    cfg = _base_config()
+    bot = _DummyBot()
+    with tempfile.TemporaryDirectory() as td, patch(
+        "shoonya_platform.strategy_runner.strategy_executor_service.MarketReader",
+        _TestMarketReader,
+    ):
+        ex = PerStrategyExecutor("svc_lots_qty", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.market.get_lot_size = lambda expiry=None: 10
+        leg = _mk_leg("L1", Side.SELL, qty=2)
+
+        payload = ex._build_alert_leg(leg=leg, direction="SELL", qty=leg.qty)
+        assert payload["qty"] == 20
+
+
+def test_execute_entry_uses_contract_quantity_for_alert_legs():
+    cfg = _base_config()
+    cfg["entry"] = {"global_conditions": [], "legs": []}
+    bot = _DummyBot()
+    with tempfile.TemporaryDirectory() as td, patch(
+        "shoonya_platform.strategy_runner.strategy_executor_service.MarketReader",
+        _TestMarketReader,
+    ):
+        ex = PerStrategyExecutor("svc_entry_qty", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.market.get_lot_size = lambda expiry=None: 10
+        ex.entry_engine.process_entry = lambda *_args, **_kwargs: [_mk_leg("L1", Side.SELL, qty=1)]
+
+        ex._execute_entry()
+
+        assert len(bot.alerts) == 1
+        alert = bot.alerts[0]
+        assert alert["execution_type"] == "ENTRY"
+        assert alert["legs"][0]["qty"] == 10

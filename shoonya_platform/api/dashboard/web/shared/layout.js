@@ -199,13 +199,28 @@
        ──────────────────────────────────────────────────── */
     let tickerData = {};   // symbol → { ltp, pc }
 
+    function toFiniteOrNull(v) {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    function normalizeTick(raw, previous) {
+        const prev = previous || {};
+        const next = { ...prev };
+        const ltp = toFiniteOrNull(raw && raw.ltp);
+        const pc = toFiniteOrNull(raw && raw.pc);
+        if (ltp != null) next.ltp = ltp;
+        if (pc != null) next.pc = pc;
+        return next;
+    }
+
     // Update all chip instances for a given symbol (both copies)
     function updateChip(symbol, data) {
         const chips = document.querySelectorAll(`.ticker-chip[data-symbol="${symbol}"]`);
         if (!chips.length) return;
 
-        const ltp = data && data.ltp != null ? data.ltp : null;
-        const pc  = data && data.pc  != null ? data.pc  : null;
+        const ltp = toFiniteOrNull(data && data.ltp);
+        const pc = toFiniteOrNull(data && data.pc);
 
         chips.forEach(chip => {
             const ltpEl = chip.querySelector('.ticker-ltp');
@@ -221,10 +236,10 @@
                 return;
             }
 
-            const cls = pc >= 0 ? 'up' : 'down';
+            const cls = (pc == null || pc >= 0) ? 'up' : 'down';
             const arrow = pc >= 0 ? '▲' : '▼';
             const ltpStr = ltp >= 1000 ? ltp.toLocaleString('en-IN', {maximumFractionDigits:2}) : ltp.toFixed(2);
-            const pctStr = Math.abs(pc).toFixed(2);
+            const pctStr = pc == null ? '0.00' : Math.abs(pc).toFixed(2);
 
             ltpEl.textContent = ltpStr;
             ltpEl.className = 'ticker-ltp ' + cls;
@@ -248,10 +263,9 @@
                 if (!data) return;
                 const indices = data.indices || {};
                 ALL_SYMBOLS.forEach(s => {
-                    if (indices[s]) {
-                        tickerData[s] = indices[s];
-                        updateChip(s, indices[s]);
-                    }
+                    if (!indices[s]) return;
+                    tickerData[s] = normalizeTick(indices[s], tickerData[s]);
+                    updateChip(s, tickerData[s]);
                 });
             })
             .catch(() => {}); // fail silently

@@ -741,7 +741,7 @@ const DYNAMIC_LEG_TAGS=[
 ];
 
 /* ========== STATE ========== */
-const ST={cnt:{entry:0,adj:0,exit:0},tags:[],symMap:{},dirty:false};
+const ST={cnt:{entry:0,adj:0,exit:0},tags:[],symMap:{},dirty:false,preserve:{}};
 
 /* ========== UTILS ========== */
 const $=id=>document.getElementById(id);
@@ -824,6 +824,13 @@ async function loadStrategyFromServer(name) {
 
     // Identity object
     const ident = config.identity || {};
+    ST.preserve = {
+      paper_mode: config.paper_mode,
+      test_mode: config.test_mode,
+      instrument_type: ident.instrument_type,
+      identity_paper_mode: ident.paper_mode,
+      identity_test_mode: ident.test_mode
+    };
     if (ident.exchange) sv('sExchange', ident.exchange);
     if (ident.underlying) ST.pendingSymbol = ident.underlying;
     if (ident.product_type) sv('sProductType', ident.product_type);
@@ -2079,10 +2086,10 @@ function buildJSON(){
   });
 
   const sym=gv('sSymbol');const dbFile=gv('sDbFile');
-  return{
+  const out={
     schema_version:'4.0',name:gv('sName')||'Unnamed',id:gv('sId')||'UNNAMED',
     description:gv('sDesc'),type:gv('sType'),enabled:true,status:'IDLE',
-    identity:{exchange:gv('sExchange')||'NFO',underlying:sym,instrument_type:'OPTIDX',product_type:gv('sProductType'),order_type:gv('sOrderType'),lots:parseInt(gv('sLots'))||1,db_file:dbFile,db_path:`shoonya_platform/market_data/option_chain/data/${dbFile}`},
+    identity:{exchange:gv('sExchange')||'NFO',underlying:sym,instrument_type:ST.preserve.instrument_type||'OPTIDX',product_type:gv('sProductType'),order_type:gv('sOrderType'),lots:parseInt(gv('sLots'))||1,db_file:dbFile,db_path:`shoonya_platform/market_data/option_chain/data/${dbFile}`},
     timing:{entry_window_start:gv('schEntry'),entry_window_end:gv('schEntryEnd'),eod_exit_time:gv('schExit')},
     market_data:{source:'sqlite',db_file:dbFile},
     entry:{
@@ -2104,6 +2111,11 @@ function buildJSON(){
     schedule:{frequency:gv('schFreq'),active_days:getActiveDays(),entry_time:gv('schEntry'),entry_window_end:gv('schEntryEnd'),exit_time:gv('schExit'),expiry_mode:gv('schExpiry'),dte_min:parseInt(gv('schDteMin'))||null,dte_max:parseInt(gv('schDteMax'))||null,square_off_before_min:parseInt(gv('schSqoff'))||null,entry_on_expiry_day:gv('schEntryExpiry')==='yes',max_reentries_per_day:parseInt(gv('schMaxReentry'))||1},
     meta:{schema_version:'4.0',created_at:new Date().toISOString()}
   };
+  if(typeof ST.preserve.paper_mode!=='undefined') out.paper_mode=!!ST.preserve.paper_mode;
+  if(typeof ST.preserve.test_mode!=='undefined') out.test_mode=ST.preserve.test_mode;
+  if(typeof ST.preserve.identity_paper_mode!=='undefined') out.identity.paper_mode=!!ST.preserve.identity_paper_mode;
+  if(typeof ST.preserve.identity_test_mode!=='undefined') out.identity.test_mode=ST.preserve.identity_test_mode;
+  return out;
 }
 function updateJSONPreview(){const el=$('jsonOutput');if(!el)return;try{el.textContent=JSON.stringify(buildJSON(),null,2);}catch(e){}}
 
@@ -2117,6 +2129,7 @@ function resetForm(silent){
   if(!silent && ST.dirty && !confirm('Unsaved changes. Reset anyway?'))return;
   ['entryLegs','adjLegs','exitLegs','entryCombinedList','exitCombinedList'].forEach(id=>{const e=$(id);if(e)e.innerHTML='';});
   ST.cnt={entry:0,adj:0,exit:0};ST.tags=[];
+  ST.preserve={};
   sv('sName','');sv('sId','');sv('sDesc','');
   addEntryLeg();['entry','adj','exit'].forEach(updBadge);refreshAdjAvail();updateSummaries();clearDirty();
   if(!silent) showAlert('Form reset.','alert-info');

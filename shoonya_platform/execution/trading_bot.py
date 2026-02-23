@@ -1607,8 +1607,10 @@ class ShoonyaBot:
                 # -------------------------------------------------
                 # 🔒 Fetch positions ONCE before the loop for EXIT legs
                 # (prevents per-leg API calls and race conditions between legs)
+                # In test_mode, do not gate exits by broker positions because
+                # mock runs may not have real broker netqty state.
                 exit_positions_cache = None
-                if execution_type == "EXIT":
+                if execution_type == "EXIT" and not parsed.test_mode:
                     try:
                         self.broker_view.invalidate_cache("positions")
                         exit_positions_cache = self.broker_view.get_positions(force_refresh=True) or []
@@ -1618,7 +1620,7 @@ class ShoonyaBot:
                 for leg in parsed.legs:
                     orig_direction = leg.direction
 
-                    if execution_type == "EXIT":
+                    if execution_type == "EXIT" and not parsed.test_mode:
                         # -------------------------------------------------
                         # 🔒 BROKER-TRUTH EXIT DIRECTION (from cached snapshot)
                         # -------------------------------------------------

@@ -22,6 +22,12 @@ class TestHardeningCriticalPaths(unittest.TestCase):
         self.assertIn("now = current_time or datetime.now()", text)
         self.assertIn("(now - self.state.last_adjustment_time).total_seconds()", text)
 
+    def test_test_mode_exit_does_not_require_broker_netqty(self):
+        text = Path("shoonya_platform/execution/trading_bot.py").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertIn("if execution_type == \"EXIT\" and not parsed.test_mode:", text)
+
 
 if __name__ == "__main__":
     unittest.main()

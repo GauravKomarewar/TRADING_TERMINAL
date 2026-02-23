@@ -181,6 +181,56 @@ def test_exit_all_in_live_mode_routes_via_request_exit():
         assert ex.state.legs["L1"].is_active is False
 
 
+def test_combined_conditions_exit_maps_to_exit_all_and_completes_cycle():
+    cfg = _base_config()
+    cfg["paper_mode"] = True
+    cfg["identity"]["paper_mode"] = True
+    cfg["test_mode"] = "SUCCESS"
+    cfg["identity"]["test_mode"] = "SUCCESS"
+    bot = _DummyBot()
+    with tempfile.TemporaryDirectory() as td, patch(
+        "shoonya_platform.strategy_runner.strategy_executor_service.MarketReader",
+        _TestMarketReader,
+    ):
+        ex = PerStrategyExecutor("svc_combined_exit", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.state.entered_today = True
+        ex.state.legs["L1"] = _mk_leg("L1", Side.SELL, qty=1)
+        ex._execute_exit("combined_conditions", source="combined_conditions")
+
+        exit_alerts = [a for a in bot.alerts if a.get("execution_type") == "EXIT"]
+        assert len(exit_alerts) == 1
+        assert ex.state.legs["L1"].is_active is False
+        assert ex.cycle_completed is True
+
+
+def test_no_position_exit_failure_is_treated_as_closed_cycle():
+    class _NoPositionBot(_DummyBot):
+        def process_alert(self, alert):
+            self.alerts.append(alert)
+            return {
+                "status": "FAILED",
+                "legs": [{"status": "FAILED", "message": "EXIT SKIPPED NO POSITION"}],
+            }
+
+    cfg = _base_config()
+    cfg["paper_mode"] = True
+    cfg["identity"]["paper_mode"] = True
+    cfg["test_mode"] = "SUCCESS"
+    cfg["identity"]["test_mode"] = "SUCCESS"
+    bot = _NoPositionBot()
+    with tempfile.TemporaryDirectory() as td, patch(
+        "shoonya_platform.strategy_runner.strategy_executor_service.MarketReader",
+        _TestMarketReader,
+    ):
+        ex = PerStrategyExecutor("svc_no_pos_exit", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.state.entered_today = True
+        ex.state.legs["L1"] = _mk_leg("L1", Side.SELL, qty=1)
+        ex._execute_exit("exit_all", source="eod_exit")
+
+        assert ex.state.legs["L1"].is_active is False
+        assert ex.cycle_completed is True
+
+
 def test_strategy_leg_monitor_snapshot_exposes_live_leg_metrics():
     bot = _DummyBot()
     with tempfile.TemporaryDirectory() as td:

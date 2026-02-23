@@ -214,13 +214,22 @@ class StrategyExecutorService:
         while self._running and not self._stop_event.is_set():
             with self._lock:
                 names = list(self._executors.keys())
+            completed_names: List[str] = []
             for name in names:
                 executor = self._executors.get(name)
                 if executor:
                     try:
                         executor.process_tick()
+                        if getattr(executor, "cycle_completed", False) and not executor.state.any_leg_active:
+                            completed_names.append(name)
                     except Exception as e:
                         logger.exception(f"Error processing strategy {name}: {e}")
+            for name in completed_names:
+                try:
+                    self.unregister_strategy(name)
+                    logger.info(f"Strategy cycle completed and auto-stopped: {name}")
+                except Exception as e:
+                    logger.error(f"Failed to auto-stop completed strategy {name}: {e}")
             time.sleep(2)  # same as old service
 
     def acquire_mode_change_lock(self, strategy_name: str) -> threading.Lock:
@@ -565,6 +574,7 @@ class PerStrategyExecutor:
 
         # Daily reset tracking
         self._last_date = datetime.now().date()
+        self.cycle_completed = False
 
     def process_tick(self):
         """Called by the service loop each tick."""
@@ -614,7 +624,7 @@ class PerStrategyExecutor:
         # between strategy state and live broker positions (e.g. manual broker exits,
         # partial fills, session restarts). Previously reconcile() compared state
         # against itself — it never actually contacted the broker.
-        if now.second == 0 and now.minute % 5 == 0:
+        if now.second == 0 and now.minute % 5 == 0 and not self._resolve_test_mode():
             try:
                 broker_view = getattr(self.bot, "broker_view", None)
                 if broker_view is not None:
@@ -721,10 +731,14 @@ class PerStrategyExecutor:
             self.state.legs[leg.tag] = leg
         self.state.entered_today = True
         self.state.entry_time = datetime.now()
+        self.cycle_completed = False
         logger.info(f"Entry executed for {self.name}")
 
     def _execute_exit(self, action: str, source: str = "unknown"):
         """Execute exit via bot."""
+        if action == "combined_conditions":
+            action = "exit_all"
+
         if action.startswith("exit_all"):
             # In paper mode, route through process_alert(EXIT) so mock runs
             # exercise the same alert pipeline (including test_mode handling).
@@ -741,7 +755,9 @@ class PerStrategyExecutor:
                     ]
                     result = self._submit_alert(execution_type="EXIT", legs=alert_legs)
                     status = str((result or {}).get("status", "")).upper()
-                    if status in ("FAILED", "BLOCKED"):
+                    # When broker already has no open qty for a leg, executor should
+                    # treat that as effectively closed to avoid infinite exit retries.
+                    if status in ("FAILED", "BLOCKED") and not self._is_no_position_exit_result(result):
                         logger.error(f"Exit rejected for {self.name}: {result}")
                         return
             else:
@@ -765,6 +781,7 @@ class PerStrategyExecutor:
                     self.state.entered_today = True
             else:
                 self.state.entered_today = True
+                self.cycle_completed = True
             logger.info(f"Exit executed for {self.name}")
         elif action.startswith("leg_rule_"):
             self._execute_leg_rule_exit(action)
@@ -774,6 +791,27 @@ class PerStrategyExecutor:
                 if leg.is_active:
                     leg.qty = leg.qty // 2
             logger.info(f"Partial 50% exit for {self.name}")
+
+    @staticmethod
+    def _is_no_position_exit_result(result: Dict[str, Any]) -> bool:
+        """Return True when all failed exits are benign 'no position' outcomes."""
+        if not isinstance(result, dict):
+            return False
+        legs = result.get("legs")
+        if not isinstance(legs, list) or not legs:
+            return False
+        saw_failed = False
+        for leg in legs:
+            if not isinstance(leg, dict):
+                return False
+            leg_status = str(leg.get("status", "")).upper()
+            if leg_status not in ("FAILED", "BLOCKED"):
+                continue
+            saw_failed = True
+            msg = str(leg.get("message", "") or "").upper()
+            if "NO POSITION" not in msg and "POSITION NOT FOUND" not in msg:
+                return False
+        return saw_failed
 
     def _execute_leg_rule_exit(self, action: str):
         """Execute per-leg exit actions configured in exit.leg_rules."""

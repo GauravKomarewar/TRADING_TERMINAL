@@ -1721,13 +1721,23 @@ class ShoonyaBot:
                         "timestamp": datetime.now().isoformat(),
                     }
 
-                status = (
-                    "INTENTS_REGISTERED"
-                    if success_count == expected_legs
-                    else "PARTIALLY_REGISTERED"
-                    if success_count > 0
-                    else "FAILED"
-                )
+                if (
+                    execution_type == "EXIT"
+                    and not parsed.test_mode
+                    and expected_legs > 0
+                    and attempted == 0
+                ):
+                    # All requested exits were skipped because broker had no open qty.
+                    # This is a benign terminal outcome, not an execution failure.
+                    status = "NO_POSITION"
+                else:
+                    status = (
+                        "INTENTS_REGISTERED"
+                        if success_count == expected_legs
+                        else "PARTIALLY_REGISTERED"
+                        if success_count > 0
+                        else "FAILED"
+                    )
 
                 return {
                     "status": status,
@@ -1821,8 +1831,13 @@ class ShoonyaBot:
             config_dir.mkdir(parents=True, exist_ok=True)
 
             config_path = config_dir / f"{slug}.json"
-            with open(config_path, 'w', encoding='utf-8') as f:
+            tmp_path = config_dir / f"{slug}.json.tmp"
+            with open(tmp_path, 'w', encoding='utf-8', newline='\n') as f:
                 json.dump(config, f, indent=2)
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, config_path)
 
             logger.info(f"Config saved: {config_path}")
 

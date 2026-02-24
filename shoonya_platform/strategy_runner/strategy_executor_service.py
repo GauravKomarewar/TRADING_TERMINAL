@@ -524,7 +524,7 @@ class StrategyExecutorService:
             ],
         }
         result = svc.bot.process_alert(alert)
-        if isinstance(result, dict) and result.get("status") in ("FAILED", "blocked"):
+        if isinstance(result, dict) and str(result.get("status", "")).strip().upper() in ("FAILED", "BLOCKED", "ERROR"):
             return False
 
         setattr(exec_state, f"{prefix}_symbol", new_symbol)
@@ -722,7 +722,7 @@ class PerStrategyExecutor:
         }
 
         result = self.bot.process_alert(alert)
-        if result.get("status") in ("FAILED", "blocked"):
+        if self._is_failure_status((result or {}).get("status")):
             logger.error(f"Entry failed: {result}")
             return
 
@@ -757,7 +757,7 @@ class PerStrategyExecutor:
                     status = str((result or {}).get("status", "")).upper()
                     # When broker already has no open qty for a leg, executor should
                     # treat that as effectively closed to avoid infinite exit retries.
-                    if status in ("FAILED", "BLOCKED") and not self._is_no_position_exit_result(result):
+                    if self._is_failure_status(status) and not self._is_no_position_exit_result(result):
                         logger.error(f"Exit rejected for {self.name}: {result}")
                         return
             else:
@@ -882,7 +882,7 @@ class PerStrategyExecutor:
 
             if alert_legs:
                 result = self._submit_alert(execution_type="ADJUSTMENT", legs=alert_legs)
-                if str((result or {}).get("status", "")).upper() not in ("FAILED", "BLOCKED"):
+                if not self._is_failure_status((result or {}).get("status")):
                     for leg, new_expiry, new_entry, new_ltp, tsym in updates:
                         leg.expiry = new_expiry
                         leg.entry_price = new_entry
@@ -911,7 +911,7 @@ class PerStrategyExecutor:
 
         if alert_legs:
             result = self._submit_alert(execution_type="EXIT", legs=alert_legs)
-            if str((result or {}).get("status", "")).upper() not in ("FAILED", "BLOCKED"):
+            if not self._is_failure_status((result or {}).get("status")):
                 for leg, qty in reductions:
                     leg.qty = max(0, int(leg.qty) - qty)
                     if leg.qty == 0:
@@ -969,8 +969,7 @@ class PerStrategyExecutor:
         if not legs_payload:
             return True
         result = self._submit_alert(execution_type="ADJUSTMENT", legs=legs_payload)
-        status = str((result or {}).get("status", "")).upper()
-        return status not in ("FAILED", "BLOCKED")
+        return not self._is_failure_status((result or {}).get("status"))
 
     def _build_alert_leg(
         self,
@@ -1040,9 +1039,14 @@ class PerStrategyExecutor:
             "test_mode": self._resolve_test_mode(),
         }
         result = self.bot.process_alert(alert)
-        if isinstance(result, dict) and str(result.get("status", "")).upper() in ("FAILED", "BLOCKED"):
+        if isinstance(result, dict) and self._is_failure_status(result.get("status")):
             logger.error(f"{execution_type} order rejected for {self.name}: {result}")
         return result if isinstance(result, dict) else {}
+
+    @staticmethod
+    def _is_failure_status(status: Any) -> bool:
+        normalized = str(status or "").strip().upper()
+        return normalized in ("FAILED", "BLOCKED", "ERROR")
 
     def _resolve_webhook_secret(self) -> str:
         """Get webhook secret from bot config or env."""

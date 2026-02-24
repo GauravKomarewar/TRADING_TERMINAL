@@ -146,7 +146,7 @@ class GenericControlIntentConsumer:
             result = self.bot.process_alert(alert_payload)
             status = result.get("status", "")
 
-            if status in ("COMPLETED SUCCESSFULLY", "PARTIALLY COMPLETED", "INTENTS_REGISTERED", "PARTIALLY_REGISTERED"):
+            if status in ("COMPLETED SUCCESSFULLY", "PARTIALLY COMPLETED", "INTENTS_REGISTERED", "PARTIALLY_REGISTERED", "NO_POSITION"):
                 logger.info(
                     "✅ BASKET ORDER ACCEPTED | intent=%s | leg=%d | symbol=%s | status=%s",
                     intent_id,

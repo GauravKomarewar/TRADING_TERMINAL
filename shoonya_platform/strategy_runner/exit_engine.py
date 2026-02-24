@@ -17,6 +17,22 @@ class ExitEngine:
     def load_config(self, exit_config: Dict[str, Any]):
         self.exit_config = exit_config
 
+    @staticmethod
+    def _to_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return None
+            try:
+                return float(s)
+            except ValueError:
+                return None
+        return None
+
     def check_exits(self, current_time: datetime) -> Optional[str]:
         self.last_triggered_leg_rule = None
         # 1. Profit target
@@ -71,34 +87,34 @@ class ExitEngine:
 
     def _check_profit_target(self) -> Optional[str]:
         cfg = self.exit_config.get("profit_target", {})
-        amount = cfg.get("amount")
-        pct = cfg.get("pct")
-        if amount and self.state.combined_pnl >= amount:
+        amount = self._to_float(cfg.get("amount"))
+        pct = self._to_float(cfg.get("pct"))
+        if amount is not None and self.state.combined_pnl >= amount:
             return cfg.get("action", "exit_all")
-        if pct and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) >= pct:
+        if pct is not None and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) >= pct:
             return cfg.get("action", "exit_all")
         return None
 
     def _check_stop_loss(self) -> Optional[str]:
         cfg = self.exit_config.get("stop_loss", {})
-        amount = cfg.get("amount")
-        pct = cfg.get("pct")
+        amount = self._to_float(cfg.get("amount"))
+        pct = self._to_float(cfg.get("pct"))
         # ✅ BUG-010 FIX: `if amount` is False when amount=0. Use `is not None` so
         # a zero stop-loss (lock breakeven) correctly triggers.
         if amount is not None and self.state.combined_pnl <= -amount:
             return cfg.get("action", "exit_all")
-        if pct and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) <= -pct:
+        if pct is not None and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) <= -pct:
             return cfg.get("action", "exit_all")
         return None
 
     def _check_trailing_stop(self) -> Optional[str]:
         cfg = self.exit_config.get("trailing", {})
-        trail_amt = cfg.get("trail_amount")
-        lock_in = cfg.get("lock_in_at")
-        step = cfg.get("trail_step")
-        step_trigger = cfg.get("step_trigger")
+        trail_amt = self._to_float(cfg.get("trail_amount"))
+        lock_in = self._to_float(cfg.get("lock_in_at"))
+        step = self._to_float(cfg.get("trail_step"))
+        step_trigger = self._to_float(cfg.get("step_trigger"))
 
-        if not trail_amt:
+        if trail_amt is None:
             return None
 
         current_pnl = self.state.combined_pnl
@@ -120,16 +136,16 @@ class ExitEngine:
 
     def _check_profit_steps(self) -> Optional[str]:
         cfg = self.exit_config.get("profit_steps", {})
-        step_size = cfg.get("step_size")
-        max_steps = cfg.get("max_steps")
+        step_size = self._to_float(cfg.get("step_size"))
+        max_steps = self._to_float(cfg.get("max_steps"))
         action = cfg.get("action", "adj")
-        if not step_size:
+        if step_size is None or step_size <= 0:
             return None
 
         current_pnl = self.state.combined_pnl
         step = int(current_pnl // step_size)
-        if max_steps is not None and step > max_steps:
-            step = max_steps
+        if max_steps is not None and step > int(max_steps):
+            step = int(max_steps)
         if step > self.state.current_profit_step:
             self.state.current_profit_step = step
             return f"profit_step_{action}"

@@ -205,7 +205,12 @@ class ConditionEngine:
                 raise ValueError(f"Unsupported comparator for time: {comp}")
 
         # -------- STRING BRANCH --------
-        if param_is_str or val1_is_str:
+        # Only use lexical string comparison when values are genuinely non-numeric.
+        # This prevents numeric thresholds serialized as strings (e.g. "300")
+        # from being compared lexically against numeric params (e.g. 6.0).
+        if (param_is_str or val1_is_str) and not (
+            to_numeric(param_value) is not None and to_numeric(val1) is not None
+        ):
             pv = str(param_value)
             v1 = str(val1)
             if comp == Comparator.EQ:

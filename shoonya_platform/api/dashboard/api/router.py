@@ -967,7 +967,7 @@ def start_strategy_execution(
 
         config["status"] = "RUNNING"
         config["status_updated_at"] = datetime.now().isoformat()
-        strategy_file.write_text(json.dumps(config, indent=2, default=str), encoding="utf-8")
+        _write_json_file(strategy_file, config)
 
         return {
             "success": True,
@@ -1033,10 +1033,7 @@ def stop_strategy_execution(
                 cfg = json.loads(strategy_file.read_text(encoding="utf-8"))
                 cfg["status"] = "STOPPED"
                 cfg["status_updated_at"] = datetime.now().isoformat()
-                strategy_file.write_text(
-                    json.dumps(cfg, indent=2, default=str),
-                    encoding="utf-8",
-                )
+                _write_json_file(strategy_file, cfg)
         except Exception as se:
             logger.warning(f"Could not update status for {strategy_key}: {se}")
 
@@ -1081,6 +1078,23 @@ def _get_strategy_configs_dir() -> Path:
     """
     STRATEGY_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     return STRATEGY_CONFIG_DIR
+
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    """Atomically replace a file to avoid partial/empty reads."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    with open(tmp_path, "w", encoding=encoding, newline="\n") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+
+def _write_json_file(path: Path, payload: Dict[str, Any], encoding: str = "utf-8") -> None:
+    _atomic_write_text(
+        path,
+        json.dumps(payload, indent=2, default=str) + "\n",
+        encoding=encoding,
+    )
 
 def _slugify(name: str) -> str:
     """Convert strategy name to safe filename slug."""
@@ -1140,7 +1154,7 @@ def save_strategy_config(
     existing[section] = config
     existing["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    filepath.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
+    _write_json_file(filepath, existing)
     logger.info("Strategy config saved: %s / %s", name, section)
 
     return {"saved": True, "name": name, "section": section, "file": slug + ".json"}
@@ -1429,7 +1443,7 @@ def save_strategy_config_all(
         )
 
     # Write back
-    filepath.write_text(json.dumps(merged, indent=2, default=str), encoding="utf-8")
+    _write_json_file(filepath, merged)
     logger.info("Strategy config saved (all): %s", name)
 
     return {"saved": True, "name": name, "id": strat_id, "file": slug + ".json"}
@@ -1477,7 +1491,7 @@ def update_strategy_status(
 
     data["status"] = new_status
     data["status_updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-    filepath.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    _write_json_file(filepath, data)
 
     return {"updated": True, "name": name, "status": new_status}
 
@@ -1512,7 +1526,7 @@ def rename_strategy_config(
     data["id"] = new_name.upper().replace(" ", "_").strip("_")
     data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    new_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    _write_json_file(new_path, data)
     if old_slug != new_slug and old_path.exists():
         old_path.unlink()
 
@@ -1562,7 +1576,7 @@ def clone_strategy_config(
         if isinstance(data.get("entry"), dict):
             data["entry"]["underlying"] = new_underlying
 
-    dst_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    _write_json_file(dst_path, data)
     logger.info("Strategy config cloned: %s -> %s", name, new_name)
     return {"cloned": True, "source": name, "new_name": new_name, "file": dst_slug + ".json"}
 
@@ -2899,8 +2913,7 @@ def save_strategy_json(name: str, config: dict):
         complete["created_at"] = now
     complete["updated_at"] = now
 
-    with open(strategy_file, 'w', encoding='utf-8') as f:
-        json.dump(complete, f, indent=2, default=str)
+    _write_json_file(strategy_file, complete)
 
     return strategy_file
 

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Disk-backed ScriptMaster Loader (Production Grade) 
 =========================================================
 #NOTE:
@@ -27,6 +27,7 @@ from __future__ import annotations
 import io
 import zipfile
 import json
+import threading
 from shoonya_platform.logging.logger_config import get_component_logger
 import requests
 import re
@@ -90,6 +91,7 @@ SCRIPTMASTER: Dict[str, Dict[str, Dict[str, Any]]] = {}
 SCRIPTMASTER_UNIVERSAL: Dict[str, Dict[str, Any]] = {}
 EXPIRY_CALENDAR: Dict[str, Dict[str, Dict[str, list[str]]]] = {}
 _LAST_REFRESH_DATE: Optional[str] = None
+_SCRIPTMASTER_LOCK = threading.RLock()
 
 # =============================================================================
 # INTERNAL HELPERS
@@ -111,7 +113,7 @@ def _should_refresh() -> bool:
 
 
 def _download_zip(exchange: str, url: str) -> Path:
-    logger.info(f"⬇️ Downloading {exchange} scripmaster")
+    logger.info(f"â¬‡ï¸ Downloading {exchange} scripmaster")
     resp = requests.get(url, timeout=30)
     resp.raise_for_status()
 
@@ -135,13 +137,13 @@ def _extract_underlying(tradingsymbol: str, symbol: Optional[str] = None) -> Opt
 
     ts = tradingsymbol.upper()
 
-    # 1️⃣ Trust Symbol column if it is a prefix
+    # 1ï¸âƒ£ Trust Symbol column if it is a prefix
     if symbol:
         sym = symbol.upper()
         if ts.startswith(sym):
             return sym
 
-    # 2️⃣ Fallback (rare / defensive)
+    # 2ï¸âƒ£ Fallback (rare / defensive)
     ts = re.sub(r"(CE|PE|FUT|F)$", "", ts)
     ts = re.sub(
         r"\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{0,2}",
@@ -219,7 +221,7 @@ def _build_universal() -> None:
 
 
 def _build_expiry_calendar() -> None:
-    EXPIRY_CALENDAR.clear()
+    new_calendar: Dict[str, Dict[str, Dict[str, list[str]]]] = {}
 
     for exchange, data in SCRIPTMASTER.items():
         for rec in data.values():
@@ -240,18 +242,21 @@ def _build_expiry_calendar() -> None:
             else:
                 continue
 
-            EXPIRY_CALENDAR \
+            new_calendar \
                 .setdefault(exchange, {}) \
                 .setdefault(key, {"FUTURE": [], "OPTION": []}) \
                 [bucket].append(expiry)
 
-    for exch in EXPIRY_CALENDAR:
-        for sym in EXPIRY_CALENDAR[exch]:
+    for exch, bucket in new_calendar.items():
+        for sym, kind_map in bucket.items():
             for k in ("FUTURE", "OPTION"):
-                EXPIRY_CALENDAR[exch][sym][k] = sorted(
-                    set(EXPIRY_CALENDAR[exch][sym][k]),
+                kind_map[k] = sorted(
+                    set(kind_map[k]),
                     key=lambda x: pd.to_datetime(x, errors="coerce")
                 )
+
+    EXPIRY_CALENDAR.clear()
+    EXPIRY_CALENDAR.update(new_calendar)
 
 # =============================================================================
 # PUBLIC API
@@ -261,11 +266,11 @@ def refresh_scriptmaster(force: bool = False) -> None:
     global _LAST_REFRESH_DATE
 
     if not force and not _should_refresh():
-        logger.info("📦 Loading ScriptMaster from disk")
+        logger.info("ðŸ“¦ Loading ScriptMaster from disk")
         _load_from_disk()
         return
 
-    # ✅ BUG-036 FIX: Download to a temporary dict first.
+    # âœ… BUG-036 FIX: Download to a temporary dict first.
     # Only atomically swap into SCRIPTMASTER if ALL exchanges succeed.
     # Previously, SCRIPTMASTER.clear() was called before any downloads, leaving
     # the system in a partially cleared state on mid-loop failures.
@@ -284,7 +289,7 @@ def refresh_scriptmaster(force: bool = False) -> None:
             ).to_parquet(PROC_DIR / f"{exch}.parquet")
 
         except Exception as e:
-            logger.error(f"❌ Failed to process {exch} scripmaster: {e}")
+            logger.error(f"âŒ Failed to process {exch} scripmaster: {e}")
             # Clean up zip on error
             try:
                 zip_path.unlink(missing_ok=True)
@@ -294,71 +299,73 @@ def refresh_scriptmaster(force: bool = False) -> None:
 
         finally:
             try:
-                # 🔥 DELETE ZIP — no longer needed
+                # ðŸ”¥ DELETE ZIP â€” no longer needed
                 zip_path.unlink(missing_ok=True)
-                logger.debug(f"🧹 Deleted raw ZIP: {zip_path.name}")
+                logger.debug(f"ðŸ§¹ Deleted raw ZIP: {zip_path.name}")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to delete {zip_path}: {e}")
+                logger.warning(f"âš ï¸ Failed to delete {zip_path}: {e}")
 
-    # ✅ All downloads succeeded — atomically replace live SCRIPTMASTER
-    SCRIPTMASTER.clear()
-    SCRIPTMASTER.update(_temp_scriptmaster)
-    SCRIPTMASTER_UNIVERSAL.clear()
-    EXPIRY_CALENDAR.clear()
+    # âœ… All downloads succeeded â€” atomically replace live SCRIPTMASTER
+    with _SCRIPTMASTER_LOCK:
+        SCRIPTMASTER.clear()
+        SCRIPTMASTER.update(_temp_scriptmaster)
+        SCRIPTMASTER_UNIVERSAL.clear()
+        EXPIRY_CALENDAR.clear()
 
-    _build_universal()
-    _build_expiry_calendar()
+        _build_universal()
+        _build_expiry_calendar()
 
-    pd.DataFrame.from_dict(
-        SCRIPTMASTER_UNIVERSAL,
-        orient="index"
-    ).to_parquet(PROC_DIR / "universal.parquet")
+        pd.DataFrame.from_dict(
+            SCRIPTMASTER_UNIVERSAL,
+            orient="index"
+        ).to_parquet(PROC_DIR / "universal.parquet")
 
-    (
-        pd.DataFrame
-        .from_dict(EXPIRY_CALENDAR, orient="index")
-        .to_json(PROC_DIR / "expiry_calendar.json", indent=2)
-    )
+        (
+            pd.DataFrame
+            .from_dict(EXPIRY_CALENDAR, orient="index")
+            .to_json(PROC_DIR / "expiry_calendar.json", indent=2)
+        )
 
-    META_FILE.write_text(json.dumps({
-        "date": _today_ist(),
-        "version": SCRIPTMASTER_VERSION,
-    }, indent=2))
+        META_FILE.write_text(json.dumps({
+            "date": _today_ist(),
+            "version": SCRIPTMASTER_VERSION,
+        }, indent=2))
 
-    _LAST_REFRESH_DATE = _today_ist()
-    logger.info("🎯 ScriptMaster refreshed & cached")
+        _LAST_REFRESH_DATE = _today_ist()
+    logger.info("ðŸŽ¯ ScriptMaster refreshed & cached")
 
 
 def _load_from_disk() -> None:
-    SCRIPTMASTER.clear()
-    SCRIPTMASTER_UNIVERSAL.clear()
-    EXPIRY_CALENDAR.clear()
+    with _SCRIPTMASTER_LOCK:
+        SCRIPTMASTER.clear()
+        SCRIPTMASTER_UNIVERSAL.clear()
+        EXPIRY_CALENDAR.clear()
 
-    for p in PROC_DIR.glob("*.parquet"):
-        if p.name == "universal.parquet":
-            continue
-        exch = p.stem
-        df = pd.read_parquet(p)
-        # Ensure index is string (tokens are strings)
-        df.index = df.index.astype(str)
-        # Convert to dict with explicit string keys for both index and columns
-        data: Dict[str, Dict[str, Any]] = {
-            str(idx): {str(col): val for col, val in row.items()}
-            for idx, row in df.iterrows()
-        }
-        SCRIPTMASTER[exch] = data
+        for p in PROC_DIR.glob("*.parquet"):
+            if p.name == "universal.parquet":
+                continue
+            exch = p.stem
+            df = pd.read_parquet(p)
+            # Ensure index is string (tokens are strings)
+            df.index = df.index.astype(str)
+            # Convert to dict with explicit string keys for both index and columns
+            data: Dict[str, Dict[str, Any]] = {
+                str(idx): {str(col): val for col, val in row.items()}
+                for idx, row in df.iterrows()
+            }
+            SCRIPTMASTER[exch] = data
 
-    if (PROC_DIR / "universal.parquet").exists():
-        df = pd.read_parquet(PROC_DIR / "universal.parquet")
-        df.index = df.index.astype(str)
-        universal_data: Dict[str, Dict[str, Any]] = {
-            str(idx): {str(col): val for col, val in row.items()}
-            for idx, row in df.iterrows()
-        }
-        SCRIPTMASTER_UNIVERSAL.update(universal_data)
+        if (PROC_DIR / "universal.parquet").exists():
+            df = pd.read_parquet(PROC_DIR / "universal.parquet")
+            df.index = df.index.astype(str)
+            universal_data: Dict[str, Dict[str, Any]] = {
+                str(idx): {str(col): val for col, val in row.items()}
+                for idx, row in df.iterrows()
+            }
+            SCRIPTMASTER_UNIVERSAL.update(universal_data)
 
-    # ✅ ALWAYS rebuild calendar from current rules
-    _build_expiry_calendar()
+    # âœ… ALWAYS rebuild calendar from current rules
+        _build_expiry_calendar()
 
 # =============================================================================
 # QUERY HELPERS 
@@ -366,41 +373,32 @@ def _load_from_disk() -> None:
 def universal_symbol_search(symbol: str, exchange: str):
     symbol = symbol.upper()
     exchange = exchange.upper()
-
-    # 1️⃣ Direct Symbol match
-    rows = [
-        r for r in SCRIPTMASTER.get(exchange, {}).values()
-        if r["Symbol"] == symbol
-    ]
-    if rows:
+    with _SCRIPTMASTER_LOCK:
+        rows = [
+            r for r in SCRIPTMASTER.get(exchange, {}).values()
+            if r["Symbol"] == symbol
+        ]
+        if rows:
+            return rows
+        rows = [
+            r for r in SCRIPTMASTER.get(exchange, {}).values()
+            if r.get("Underlying") == symbol
+        ]
         return rows
-
-    # 2️⃣ Underlying fallback (BFO-safe)
-    rows = [
-        r for r in SCRIPTMASTER.get(exchange, {}).values()
-        if r.get("Underlying") == symbol
-    ]
-    return rows
-
 def get_expiry_calendar(exchange: str, symbol: str, kind: str) -> list[str]:
     exch = exchange.upper()
     sym = symbol.upper()
-
-    bucket = EXPIRY_CALENDAR.get(exch, {})
-
-    if sym in bucket:
-        expiries = bucket[sym].get(kind.upper(), [])
-    else:
-        # fallback search
-        expiries = []
-        for k, v in bucket.items():
-            if k == sym:
-                expiries = v.get(kind.upper(), [])
-                break
-
+    with _SCRIPTMASTER_LOCK:
+        bucket = EXPIRY_CALENDAR.get(exch, {})
+        if sym in bucket:
+            expiries = bucket[sym].get(kind.upper(), [])
+        else:
+            expiries = []
+            for k, v in bucket.items():
+                if k == sym:
+                    expiries = v.get(kind.upper(), [])
+                    break
     return sorted(expiries, key=lambda x: pd.to_datetime(x, errors="coerce"))
-
-
 def options_expiry(symbol: str, exchange: str, result: Optional[int] = None):
     expiries = get_expiry_calendar(exchange, symbol, "OPTION")
     if not expiries:
@@ -418,36 +416,31 @@ def fut_expiry(symbol: str, exchange: str, result: Optional[int] = None):
 def get_future(symbol: str, exchange: str, result: Optional[int] = None):
     symbol, exchange = symbol.upper(), exchange.upper()
     insts = FUTURE_INSTRUMENTS.get(exchange, set())
-
-    rows = [
-        r for r in SCRIPTMASTER.get(exchange, {}).values()
-        if (
-            (r["Symbol"] == symbol or r.get("Underlying") == symbol)
-            and r["Instrument"] in insts
-            and r["Expiry"]
-        )
-    ]
-
+    with _SCRIPTMASTER_LOCK:
+        rows = [
+            r for r in SCRIPTMASTER.get(exchange, {}).values()
+            if (
+                (r["Symbol"] == symbol or r.get("Underlying") == symbol)
+                and r["Instrument"] in insts
+                and r["Expiry"]
+            )
+        ]
     if not rows:
         return {} if result is not None else pd.DataFrame()
-
     df = pd.DataFrame(rows)
     df["_dt"] = pd.to_datetime(df["Expiry"], format="%d-%b-%Y", errors="coerce")
     df = df.sort_values("_dt").drop(columns="_dt").reset_index(drop=True)
-
     return df.iloc[result].to_dict() if result is not None else df
-
-
 def get_stock_detail(symbol: str, exchange: str, instrument_type: str):
     symbol = symbol.upper()
-    for r in SCRIPTMASTER.get(exchange, {}).values():
-        if (
-            (r["Symbol"] == symbol or r.get("Underlying") == symbol)
-            and r["Instrument"] == instrument_type
-        ):
-            return r
+    with _SCRIPTMASTER_LOCK:
+        for r in SCRIPTMASTER.get(exchange, {}).values():
+            if (
+                (r["Symbol"] == symbol or r.get("Underlying") == symbol)
+                and r["Instrument"] == instrument_type
+            ):
+                return r
     return {}
-
 def get_tokens(
     *,
     exchange: Optional[str] = None,
@@ -461,50 +454,36 @@ def get_tokens(
 ) -> list[str]:
     """
     Search ScriptMaster across ALL exchanges and return matching tokens.
-
     All filters are AND-ed if provided.
-
     Returns:
-        List[str] → matching Token(s)
+        List[str] -> matching Token(s)
     """
-
     results = []
-
-    for key, rec in SCRIPTMASTER_UNIVERSAL.items():
-        exch, token = key.split("|", 1)
-
-        if exchange and rec.get("Exchange") != exchange.upper():
-            continue
-
-        if tradingsymbol and rec.get("TradingSymbol") != tradingsymbol.upper():
-            continue
-
-        if symbol and rec.get("Symbol") != symbol.upper():
-            continue
-
-        if underlying and rec.get("Underlying") != underlying.upper():
-            continue
-
-        if instrument and rec.get("Instrument") != instrument.upper():
-            continue
-
-        if expiry and rec.get("Expiry") != expiry:
-            continue
-
-        if option_type and rec.get("OptionType") != option_type.upper():
-            continue
-
-        if strike_price is not None:
-            try:
-                if float(rec.get("StrikePrice") or 0) != float(strike_price):
-                    continue
-            except Exception:
+    with _SCRIPTMASTER_LOCK:
+        for key, rec in SCRIPTMASTER_UNIVERSAL.items():
+            exch, token = key.split("|", 1)
+            if exchange and rec.get("Exchange") != exchange.upper():
                 continue
-
-        results.append(token)
-
+            if tradingsymbol and rec.get("TradingSymbol") != tradingsymbol.upper():
+                continue
+            if symbol and rec.get("Symbol") != symbol.upper():
+                continue
+            if underlying and rec.get("Underlying") != underlying.upper():
+                continue
+            if instrument and rec.get("Instrument") != instrument.upper():
+                continue
+            if expiry and rec.get("Expiry") != expiry:
+                continue
+            if option_type and rec.get("OptionType") != option_type.upper():
+                continue
+            if strike_price is not None:
+                try:
+                    if float(rec.get("StrikePrice") or 0) != float(strike_price):
+                        continue
+                except Exception:
+                    continue
+            results.append(token)
     return results
-
 def requires_limit_order(
     *,
     exchange: str,
@@ -513,47 +492,37 @@ def requires_limit_order(
 ) -> bool:
     """
     Canonical Shoonya order-type rule (PRODUCTION FROZEN):
-
     LIMIT order is REQUIRED ONLY for:
     - Stock Options      (OPTSTK)  [NFO / BFO]
     - MCX Options        (OPTFUT)  [MCX]
-
     LIMIT or MARKET is ALLOWED for:
     - Index Options      (OPTIDX)
     - All Futures
     - Cash / Equity
-
     Resolution priority:
-    1️⃣ token (authoritative)
-    2️⃣ tradingsymbol fallback
+    1) token (authoritative)
+    2) tradingsymbol fallback
     """
-
     exchange = exchange.upper()
     rec = None
-
-    # -------------------------------------------------
-    # 1️⃣ Resolve via token (most reliable)
-    # -------------------------------------------------
-    if token:
-        rec = SCRIPTMASTER_UNIVERSAL.get(f"{exchange}|{token}")
-
-    # -------------------------------------------------
-    # 2️⃣ Resolve via tradingsymbol (fallback)
-    # -------------------------------------------------
-    if rec is None and tradingsymbol:
-        ts = tradingsymbol.upper()
-        for r in SCRIPTMASTER.get(exchange, {}).values():
-            if r.get("TradingSymbol") == ts:
-                rec = r
-                break
-
+    with _SCRIPTMASTER_LOCK:
+        if token:
+            rec = SCRIPTMASTER_UNIVERSAL.get(f"{exchange}|{token}")
+        if rec is None and tradingsymbol:
+            ts = tradingsymbol.upper()
+            for r in SCRIPTMASTER.get(exchange, {}).values():
+                if r.get("TradingSymbol") == ts:
+                    rec = r
+                    break
     if not rec:
-        # Defensive default → allow MARKET
         return False
-
+    instrument = rec.get("Instrument")
+    if instrument in {"OPTSTK", "OPTFUT"}:
+        return True
+    return False
     instrument = rec.get("Instrument")
 
-    # 🔒 LIMIT ONLY cases
+    # ðŸ”’ LIMIT ONLY cases
     if instrument in {"OPTSTK", "OPTFUT"}:
         return True
 
@@ -567,3 +536,5 @@ if __name__ == "__main__":
     from shoonya_platform.logging.logger_config import setup_application_logging
     setup_application_logging()
     refresh_scriptmaster(force=True)
+
+

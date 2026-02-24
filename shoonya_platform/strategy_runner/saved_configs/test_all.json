@@ -1,33 +1,33 @@
 {
   "schema_version": "4.0",
-  "name": "nifty adjust verify test v1",
-  "id": "NIFTY_ADJUST_VERIFY_TEST_V1",
-  "description": "Paper test for NIFTY adjustment flow with overlap-validation backoff.",
+  "name": "CRUDEOILM_TEST_ALL",
+  "id": "CRUDEOILM_TEST_ALL",
+  "description": "Runtime adjustment test: staged 30s rules, delta-neutral branch, and forced 5-minute exit.",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "STOPPED",
   "paper_mode": true,
   "test_mode": "SUCCESS",
   "identity": {
-    "exchange": "NFO",
-    "underlying": "NIFTY",
-    "instrument_type": "OPTIDX",
+    "exchange": "MCX",
+    "underlying": "CRUDEOILM",
+    "instrument_type": "MCX",
     "product_type": "NRML",
     "order_type": "MARKET",
     "lots": 1,
-    "db_file": "NFO_NIFTY_24-FEB-2026.sqlite",
-    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_24-FEB-2026.sqlite",
+    "db_file": "MCX_CRUDEOILM_17-MAR-2026.sqlite",
+    "db_path": "shoonya_platform/market_data/option_chain/data/MCX_CRUDEOILM_17-MAR-2026.sqlite",
     "paper_mode": true,
     "test_mode": "SUCCESS"
   },
   "timing": {
-    "entry_window_start": "09:18",
-    "entry_window_end": "15:10",
-    "eod_exit_time": "15:28"
+    "entry_window_start": "09:00",
+    "entry_window_end": "23:00",
+    "eod_exit_time": "23:30"
   },
   "market_data": {
     "source": "sqlite",
-    "db_file": "NFO_NIFTY_24-FEB-2026.sqlite"
+    "db_file": "MCX_CRUDEOILM_17-MAR-2026.sqlite"
   },
   "entry": {
     "entry_sequence": "parallel",
@@ -44,11 +44,11 @@
         "lots": 1,
         "order_type": "MARKET",
         "strike_mode": "standard",
-        "strike_selection": "atm",
-        "strike_value": "",
+        "strike_selection": "delta",
+        "strike_value": "0.30",
         "conditions": [],
         "else_enabled": false,
-        "else_conditions": [],
+        "else_conditions": null,
         "else_action": null
       },
       {
@@ -62,50 +62,41 @@
         "lots": 1,
         "order_type": "MARKET",
         "strike_mode": "standard",
-        "strike_selection": "atm",
-        "strike_value": "",
+        "strike_selection": "delta",
+        "strike_value": "0.30",
         "conditions": [],
         "else_enabled": false,
-        "else_conditions": [],
+        "else_conditions": null,
         "else_action": null
       }
     ]
   },
   "adjustment": {
     "enabled": true,
-    "validation_retry_cooldown_sec": 30,
-    "validation_alert_cooldown_sec": 30,
     "rules": [
       {
-        "name": "N1_Swap_CE_TimeWindow",
+        "name": "A1_30s_MostProfitable_ToDiffStrike",
         "priority": 1,
-        "max_per_day": 50,
-        "max_total": null,
+        "max_per_day": 1,
+        "max_total": 1,
         "cooldown_sec": 30,
-        "retriger": true,
+        "retriger": false,
         "leg_guard": "",
         "conditions": [
           {
             "parameter": "time_in_position_sec",
             "comparator": ">=",
             "value": "30"
-          },
-          {
-            "parameter": "time_in_position_sec",
-            "comparator": "<=",
-            "value": "59",
-            "join": "AND"
           }
         ],
         "action": {
           "type": "simple_close_open_new",
           "leg_swaps": [
             {
-              "close_tag": "LEG@1_CE",
+              "close_tag": "MOST_PROFITABLE_LEG",
               "new_leg": {
-                "tag": "A1_REENTRY_CE",
                 "side": "SELL",
-                "option_type": "CE",
+                "option_type": "MATCH_CLOSING",
                 "lots": 1,
                 "order_type": "MARKET",
                 "strike_mode": "standard",
@@ -120,9 +111,9 @@
         "else_action": null
       },
       {
-        "name": "N2_PartialClose_PE_BetweenWindow",
+        "name": "A2_60s_DeltaNeutral_NiftyStyle",
         "priority": 2,
-        "max_per_day": 50,
+        "max_per_day": 2,
         "max_total": null,
         "cooldown_sec": 30,
         "retriger": true,
@@ -134,113 +125,146 @@
             "value": "60"
           },
           {
-            "parameter": "time_in_position_sec",
-            "comparator": "<=",
-            "value": "89",
+            "parameter": "net_delta",
+            "comparator": ">=",
+            "value": "0.2",
+            "join": "AND"
+          },
+          {
+            "parameter": "all_legs_delta_below",
+            "comparator": "<",
+            "value": "0.65",
             "join": "AND"
           }
         ],
         "action": {
-          "type": "partial_close_lots",
-          "close_tag": "LEG@2_PE",
-          "lots": 1
+          "type": "simple_close_open_new",
+          "leg_swaps": [
+            {
+              "close_tag": "LOWER_DELTA_LEG",
+              "new_leg": {
+                "side": "SELL",
+                "option_type": "MATCH_CLOSING",
+                "lots": 1,
+                "order_type": "MARKET",
+                "strike_mode": "match_leg",
+                "strike_selection": "match_leg_param",
+                "match_leg": "HIGHER_DELTA_LEG",
+                "match_param": "abs_delta",
+                "match_offset": 0,
+                "match_multiplier": 1
+              }
+            }
+          ]
         },
-        "else_enabled": false,
-        "else_conditions": [],
-        "else_action": null
+        "else_enabled": true,
+        "else_conditions": [
+          {
+            "parameter": "time_in_position_sec",
+            "comparator": ">=",
+            "value": "60"
+          },
+          {
+            "parameter": "net_delta",
+            "comparator": ">=",
+            "value": "0.2",
+            "join": "AND"
+          },
+          {
+            "parameter": "any_leg_delta_above",
+            "comparator": ">=",
+            "value": "0.65",
+            "join": "AND"
+          }
+        ],
+        "else_action": {
+          "type": "simple_close_open_new",
+          "leg_swaps": [
+            {
+              "close_tag": "HIGHER_DELTA_LEG",
+              "new_leg": {
+                "side": "SELL",
+                "option_type": "MATCH_CLOSING",
+                "lots": 1,
+                "order_type": "MARKET",
+                "strike_mode": "match_leg",
+                "strike_selection": "match_leg_param",
+                "match_leg": "LOWER_DELTA_LEG",
+                "match_param": "abs_delta",
+                "match_offset": 0,
+                "match_multiplier": 1
+              }
+            }
+          ]
+        }
       },
       {
-        "name": "N3_Open_PE_Hedge_Window",
+        "name": "A3_90s_Adjust_CE_OneByOne",
         "priority": 3,
-        "max_per_day": 50,
-        "max_total": null,
+        "max_per_day": 1,
+        "max_total": 1,
         "cooldown_sec": 30,
-        "retriger": true,
+        "retriger": false,
         "leg_guard": "",
         "conditions": [
           {
             "parameter": "time_in_position_sec",
             "comparator": ">=",
             "value": "90"
-          },
-          {
-            "parameter": "time_in_position_sec",
-            "comparator": "<=",
-            "value": "119",
-            "join": "AND"
           }
         ],
         "action": {
-          "type": "open_hedge",
-          "new_leg": {
-            "tag": "A3_HEDGE_PE",
-            "side": "BUY",
-            "option_type": "PE",
-            "lots": 1,
-            "order_type": "MARKET",
-            "strike_mode": "standard",
-            "strike_selection": "atm",
-            "strike_value": ""
-          }
+          "type": "simple_close_open_new",
+          "leg_swaps": [
+            {
+              "close_tag": "LEG@1_CE",
+              "new_leg": {
+                "side": "SELL",
+                "option_type": "CE",
+                "lots": 1,
+                "order_type": "MARKET",
+                "strike_mode": "standard",
+                "strike_selection": "atm+2",
+                "strike_value": ""
+              }
+            }
+          ]
         },
         "else_enabled": false,
         "else_conditions": [],
         "else_action": null
       },
       {
-        "name": "N4_Reduce_Hedge_Window",
+        "name": "A4_120s_Adjust_PE_OneByOne",
         "priority": 4,
-        "max_per_day": 50,
-        "max_total": null,
+        "max_per_day": 1,
+        "max_total": 1,
         "cooldown_sec": 30,
-        "retriger": true,
+        "retriger": false,
         "leg_guard": "",
         "conditions": [
           {
             "parameter": "time_in_position_sec",
             "comparator": ">=",
             "value": "120"
-          },
-          {
-            "parameter": "time_in_position_sec",
-            "comparator": "<=",
-            "value": "149",
-            "join": "AND"
           }
         ],
         "action": {
-          "type": "reduce_by_pct",
-          "close_tag": "A3_HEDGE_PE",
-          "reduce_pct": 50
-        },
-        "else_enabled": false,
-        "else_conditions": [],
-        "else_action": null
-      },
-      {
-        "name": "N5_Close_ReentryCE_Window",
-        "priority": 5,
-        "max_per_day": 50,
-        "max_total": null,
-        "cooldown_sec": 30,
-        "retriger": true,
-        "leg_guard": "",
-        "conditions": [
-          {
-            "parameter": "time_in_position_sec",
-            "comparator": ">=",
-            "value": "150"
-          },
-          {
-            "parameter": "time_in_position_sec",
-            "comparator": "<=",
-            "value": "179",
-            "join": "AND"
-          }
-        ],
-        "action": {
-          "type": "close_leg",
-          "close_tag": "A1_REENTRY_CE"
+          "type": "simple_close_open_new",
+          "leg_swaps": [
+            {
+              "close_tag": "LEG@2_PE",
+              "new_leg": {
+                "side": "SELL",
+                "option_type": "PE",
+                "lots": 1,
+                "order_type": "MARKET",
+                "strike_mode": "standard",
+                "strike_selection": "atm-2",
+                "strike_value": ""
+              }
+            }
+          ]
         },
         "else_enabled": false,
         "else_conditions": [],
@@ -282,7 +306,7 @@
       "breakeven_buffer": null
     },
     "time": {
-      "strategy_exit_time": "15:28",
+      "strategy_exit_time": "23:30",
       "expiry_day_action": "none",
       "expiry_day_time": "09:15",
       "roll_target": "weekly_next"
@@ -308,10 +332,10 @@
       "thu",
       "fri"
     ],
-    "entry_time": "09:18",
-    "entry_window_end": "15:10",
-    "exit_time": "15:28",
-    "expiry_mode": "weekly_next",
+    "entry_time": "09:00",
+    "entry_window_end": "23:00",
+    "exit_time": "23:30",
+    "expiry_mode": "custom",
     "dte_min": null,
     "dte_max": null,
     "square_off_before_min": null,
@@ -320,7 +344,6 @@
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-02-24T00:00:00Z"
-  },
-  "status_updated_at": "2026-02-24T14:35:34.829450"
+    "created_at": "2026-02-24T00:00:00.000Z"
+  }
 }

@@ -918,9 +918,18 @@ def start_strategy_execution(
         }
     """
     try:
-        strategy_key = _slugify(strategy_name)
+        requested_key = _slugify(strategy_name)
         bot = ctx["bot"]
         service = bot.strategy_executor_service
+        strategy_file = _resolve_strategy_config_file(strategy_name)
+
+        if not strategy_file:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Strategy config not found for '{strategy_name}'"
+            )
+
+        strategy_key = strategy_file.stem
 
         if strategy_key in service._strategies:
             logger.info(f"Strategy {strategy_key} already running")
@@ -930,13 +939,6 @@ def start_strategy_execution(
                 "message": "Strategy already running",
                 "timestamp": datetime.now().isoformat()
             }
-
-        strategy_file = STRATEGY_CONFIG_DIR / f"{strategy_key}.json"
-        if not strategy_file.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Strategy config not found: {strategy_key}.json"
-            )
 
         # Explicit start from UI should begin a fresh runtime cycle.
         # Remove stale persisted executor state that can block re-entry
@@ -972,6 +974,7 @@ def start_strategy_execution(
         return {
             "success": True,
             "strategy_name": strategy_key,
+            "requested_strategy_name": requested_key,
             "message": f"Strategy {strategy_key} started",
             "timestamp": datetime.now().isoformat()
         }
@@ -998,10 +1001,12 @@ def stop_strategy_execution(
         }
     """
     try:
-        strategy_key = _slugify(strategy_name)
+        requested_key = _slugify(strategy_name)
         bot = ctx["bot"]
         service = bot.strategy_executor_service
-        logger.info(f"Stop requested for strategy: {strategy_key}")
+        strategy_file = _resolve_strategy_config_file(strategy_name)
+        strategy_key = strategy_file.stem if strategy_file else requested_key
+        logger.info(f"Stop requested for strategy: {strategy_key} (requested={requested_key})")
 
         was_running_in_memory = strategy_key in service._strategies
 
@@ -1045,6 +1050,7 @@ def stop_strategy_execution(
         return {
             "success": True,
             "strategy_name": strategy_key,
+            "requested_strategy_name": requested_key,
             "message": f"Strategy {strategy_key} stopped",
             "in_memory_running": was_running_in_memory,
             "timestamp": datetime.now().isoformat(),
@@ -1101,6 +1107,31 @@ def _slugify(name: str) -> str:
     s = name.strip().lower()
     s = re.sub(r'[^a-z0-9]+', '_', s)
     return s.strip('_') or 'unnamed'
+
+
+def _resolve_strategy_config_file(strategy_name: str) -> Optional[Path]:
+    """
+    Resolve config by filename slug OR config metadata (id/name).
+    """
+    requested_slug = _slugify(strategy_name)
+    direct = STRATEGY_CONFIG_DIR / f"{requested_slug}.json"
+    if direct.exists():
+        return direct
+
+    for path in sorted(STRATEGY_CONFIG_DIR.glob("*.json")):
+        if path.name == "STRATEGY_CONFIG_SCHEMA.json":
+            continue
+        try:
+            cfg = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+
+        file_slug = _slugify(path.stem)
+        id_slug = _slugify(str(cfg.get("id", ""))) if cfg.get("id") is not None else ""
+        name_slug = _slugify(str(cfg.get("name", ""))) if cfg.get("name") is not None else ""
+        if requested_slug in {file_slug, id_slug, name_slug}:
+            return path
+    return None
 
 
 def _get_runtime_running_slugs(ctx: dict) -> set[str]:

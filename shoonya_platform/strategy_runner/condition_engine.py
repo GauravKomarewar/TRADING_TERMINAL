@@ -317,10 +317,9 @@ class ConditionEngine:
             idx = self.state.index_data.get("INDIAVIX", {})
             return idx.get("ltp", 0.0)
         if param == "pcr":
-            # Placeholder – implement via market reader if needed
-            return 0.0
+            return self.state.pcr
         if param == "pcr_volume":
-            return 0.0
+            return self.state.pcr_volume
 
         # Legacy CE/PE parameter handling
         if param.startswith("ce_") or param.startswith("pe_"):
@@ -471,3 +470,4 @@ def evaluate_condition(condition_dict: Dict[str, Any], state: StrategyState) -> 
         join=JoinOperator(condition_dict["join"]) if condition_dict.get("join") else None,
     )
     return engine.evaluate([cond])
+

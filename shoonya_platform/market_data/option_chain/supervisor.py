@@ -30,7 +30,7 @@
 #   ✅ Fixed: Safe DB operations
 # ======================================================================
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 import time
 import threading
 import logging
@@ -84,6 +84,14 @@ HEARTBEAT_INTERVAL = 5           # seconds
 # Chain retry
 MAX_CHAIN_RETRY_ATTEMPTS = 3
 CHAIN_RETRY_BASE_DELAY = 2       # seconds
+
+# Staleness checks should only run while the exchange session is active.
+# Times are interpreted in server local time (IST on EC2 deployment).
+EXCHANGE_MARKET_HOURS: Dict[str, Tuple[dtime, dtime]] = {
+    "NFO": (dtime(9, 15), dtime(15, 30)),
+    "BFO": (dtime(9, 15), dtime(15, 30)),
+    "MCX": (dtime(9, 0), dtime(23, 30)),
+}
 
 # Default instruments traded most
 DEFAULT_INSTRUMENTS = [
@@ -222,6 +230,24 @@ class OptionChainSupervisor:
         _ = exchange  # Reserved for future exchange-specific rules.
         key = str(symbol or "").strip().upper()
         return max(1, int(self._symbol_expiry_overrides.get(key, self._default_expiries)))
+
+    def _is_market_session_active(self, exchange: str) -> bool:
+        """
+        Return True only when the given exchange is in active trading hours.
+        """
+        exch = str(exchange or "").upper()
+        session = EXCHANGE_MARKET_HOURS.get(exch)
+        if not session:
+            # Unknown exchanges keep legacy behavior (check staleness always).
+            return True
+
+        now = datetime.now()
+        if now.weekday() >= 5:
+            return False
+
+        start_t, end_t = session
+        now_t = now.time()
+        return start_t <= now_t <= end_t
 
     # --------------------------------------------------
     # BOOTSTRAP (MARKET OPEN)
@@ -544,10 +570,13 @@ class OptionChainSupervisor:
                 )
                 return False
             
-            # Check data freshness (30 seconds)
-            if not oc.validate_data_freshness(max_age_seconds=30):
-                logger.warning("⚠️ Chain %s has stale data", key)
-                return False
+            # Check snapshot staleness only during market session.
+            # Outside session, unchanged prices are expected.
+            exchange = key.split(":", 1)[0] if ":" in key else ""
+            if self._is_market_session_active(exchange):
+                if not oc.validate_data_freshness(max_age_seconds=30):
+                    logger.warning("⚠️ Chain %s has stale data", key)
+                    return False
             
             return True
             

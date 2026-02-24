@@ -78,6 +78,14 @@ class StrategyState:
     fut_ltp: float = 0.0
     # index_data: key = symbol (e.g., "INDIAVIX"), value = dict of metrics (ltp, change, etc.)
     index_data: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    # Chain-level analytics (refreshed by executor from option-chain DB)
+    pcr: float = 0.0
+    pcr_volume: float = 0.0
+    max_pain_strike: float = 0.0
+    total_oi_ce: float = 0.0
+    total_oi_pe: float = 0.0
+    oi_buildup_ce: float = 0.0
+    oi_buildup_pe: float = 0.0
 
     adjustments_today: int = 0
     total_trades_today: int = 0
@@ -117,6 +125,11 @@ class StrategyState:
         ce = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.CE), None)
         pe = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.PE), None)
         return (ce.delta if ce else 0.0) - (pe.delta if pe else 0.0)
+
+    @property
+    def portfolio_delta(self) -> float:
+        # Alias retained for strategy-builder compatibility.
+        return self.net_delta
 
     @property
     def combined_pnl(self) -> float:
@@ -375,6 +388,12 @@ class StrategyState:
     @property
     def spot_vs_lower_be(self) -> float:
         return self.spot_price - self.breakeven_lower
+
+    @property
+    def spot_vs_max_pain(self) -> float:
+        if self.max_pain_strike == 0:
+            return 0.0
+        return self.spot_price - self.max_pain_strike
 
     @property
     def days_to_expiry(self) -> int:

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .models import StrikeConfig, OptionType, StrikeMode
+from scripts.scriptmaster import get_future, universal_symbol_search
 
 logger = logging.getLogger(__name__)
 
@@ -271,16 +272,45 @@ class MarketReader:
     def get_lot_size(self, expiry: Optional[str] = None) -> int:
         conn = self._get_connection(expiry)
         if not conn:
-            return 1
-        assert conn is not None
+            conn_lot = None
+        else:
+            conn_lot = conn
+        if conn_lot:
+            assert conn_lot is not None
+            try:
+                cur = conn_lot.cursor()
+                cur.execute("SELECT lot_size FROM option_chain WHERE lot_size IS NOT NULL LIMIT 1")
+                row = cur.fetchone()
+                if row and row["lot_size"]:
+                    return int(row["lot_size"])
+            except Exception:
+                pass
+
+        # Fallback to ScriptMaster (authoritative contract metadata).
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT lot_size FROM option_chain WHERE lot_size IS NOT NULL LIMIT 1")
-            row = cur.fetchone()
-            if row and row["lot_size"]:
-                return int(row["lot_size"])
+            fut = get_future(self.symbol, self.exchange, result=0)
+            if isinstance(fut, dict):
+                lot = fut.get("LotSize")
+                if lot:
+                    return int(lot)
         except Exception:
             pass
+
+        try:
+            rows = universal_symbol_search(self.symbol, self.exchange) or []
+            if expiry:
+                rows = sorted(
+                    rows,
+                    key=lambda r: 0 if str(r.get("Expiry", "")).strip().upper() == str(expiry).strip().upper() else 1,
+                )
+            for rec in rows:
+                lot = rec.get("LotSize")
+                if lot:
+                    return int(lot)
+        except Exception:
+            pass
+
+        # Final static fallback for safety.
         from shoonya_platform.strategy_runner.config_schema import LOT_SIZES
         return LOT_SIZES.get(self.symbol, 1)
 
@@ -786,6 +816,82 @@ class MarketReader:
         except Exception as e:
             logger.error(f"get_pcr_inflection_strike error: {e}")
             return 0.0
+
+    def get_chain_metrics(self, expiry: Optional[str] = None) -> Dict[str, float]:
+        """
+        Return chain-level aggregate metrics used by strategy conditions.
+        """
+        self._check_freshness(expiry)
+        conn = self._get_connection(expiry)
+        if not conn:
+            return {
+                "pcr": 0.0,
+                "pcr_volume": 0.0,
+                "total_oi_ce": 0.0,
+                "total_oi_pe": 0.0,
+                "oi_buildup_ce": 0.0,
+                "oi_buildup_pe": 0.0,
+                "max_pain_strike": 0.0,
+            }
+        assert conn is not None
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT
+                  SUM(CASE WHEN option_type='CE' THEN COALESCE(oi,0) ELSE 0 END) AS ce_oi,
+                  SUM(CASE WHEN option_type='PE' THEN COALESCE(oi,0) ELSE 0 END) AS pe_oi,
+                  SUM(CASE WHEN option_type='CE' THEN COALESCE(volume,0) ELSE 0 END) AS ce_vol,
+                  SUM(CASE WHEN option_type='PE' THEN COALESCE(volume,0) ELSE 0 END) AS pe_vol,
+                  SUM(CASE WHEN option_type='CE' THEN COALESCE(oi_change,0) ELSE 0 END) AS ce_oi_change,
+                  SUM(CASE WHEN option_type='PE' THEN COALESCE(oi_change,0) ELSE 0 END) AS pe_oi_change
+                FROM option_chain
+                """
+            )
+            row = cur.fetchone()
+            if not row:
+                return {
+                    "pcr": 0.0,
+                    "pcr_volume": 0.0,
+                    "total_oi_ce": 0.0,
+                    "total_oi_pe": 0.0,
+                    "oi_buildup_ce": 0.0,
+                    "oi_buildup_pe": 0.0,
+                    "max_pain_strike": 0.0,
+                }
+
+            ce_oi = float(row["ce_oi"] or 0.0)
+            pe_oi = float(row["pe_oi"] or 0.0)
+            ce_vol = float(row["ce_vol"] or 0.0)
+            pe_vol = float(row["pe_vol"] or 0.0)
+            ce_oi_change = float(row["ce_oi_change"] or 0.0)
+            pe_oi_change = float(row["pe_oi_change"] or 0.0)
+
+            pcr = (pe_oi / ce_oi) if ce_oi > 0 else 0.0
+            pcr_volume = (pe_vol / ce_vol) if ce_vol > 0 else 0.0
+            oi_buildup_ce = (ce_oi_change / ce_oi * 100.0) if ce_oi > 0 else 0.0
+            oi_buildup_pe = (pe_oi_change / pe_oi * 100.0) if pe_oi > 0 else 0.0
+
+            return {
+                "pcr": pcr,
+                "pcr_volume": pcr_volume,
+                "total_oi_ce": ce_oi,
+                "total_oi_pe": pe_oi,
+                "oi_buildup_ce": oi_buildup_ce,
+                "oi_buildup_pe": oi_buildup_pe,
+                "max_pain_strike": self.get_max_pain_strike(expiry),
+            }
+        except Exception as e:
+            logger.error(f"get_chain_metrics error: {e}")
+            return {
+                "pcr": 0.0,
+                "pcr_volume": 0.0,
+                "total_oi_ce": 0.0,
+                "total_oi_pe": 0.0,
+                "oi_buildup_ce": 0.0,
+                "oi_buildup_pe": 0.0,
+                "max_pain_strike": 0.0,
+            }
 
     def resolve_expiry_mode(self, mode: str) -> str:
         """

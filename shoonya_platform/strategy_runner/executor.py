@@ -43,7 +43,10 @@ class StrategyExecutor:
         self.entry_engine = EntryEngine(self.state, self.market)
         self.adjustment_engine = AdjustmentEngine(self.state, self.market)
         self.exit_engine = ExitEngine(self.state)
-        self.reconciliation = BrokerReconciliation(self.state)
+        self.reconciliation = BrokerReconciliation(
+            self.state,
+            lot_size_resolver=self.market.get_lot_size,
+        )
 
         # Load rules
         self.adjustment_engine.load_rules(self.config.get("adjustment", {}).get("rules", []))
@@ -194,9 +197,20 @@ class StrategyExecutor:
 
     def _update_market_data(self):
         """Update spot, ATM, futures and per‑leg LTP & greeks."""
+        self.state.current_time = datetime.now()
         self.state.spot_price = self.market.get_spot_price(self._cycle_expiry_date)
+        if not self.state.spot_open and self.state.spot_price:
+            self.state.spot_open = self.state.spot_price
         self.state.atm_strike = self.market.get_atm_strike(self._cycle_expiry_date)
         self.state.fut_ltp = self.market.get_fut_ltp(self._cycle_expiry_date)
+        chain_metrics = self.market.get_chain_metrics(self._cycle_expiry_date)
+        self.state.pcr = float(chain_metrics.get("pcr", 0.0) or 0.0)
+        self.state.pcr_volume = float(chain_metrics.get("pcr_volume", 0.0) or 0.0)
+        self.state.max_pain_strike = float(chain_metrics.get("max_pain_strike", 0.0) or 0.0)
+        self.state.total_oi_ce = float(chain_metrics.get("total_oi_ce", 0.0) or 0.0)
+        self.state.total_oi_pe = float(chain_metrics.get("total_oi_pe", 0.0) or 0.0)
+        self.state.oi_buildup_ce = float(chain_metrics.get("oi_buildup_ce", 0.0) or 0.0)
+        self.state.oi_buildup_pe = float(chain_metrics.get("oi_buildup_pe", 0.0) or 0.0)
 
         # Update each active leg
         for leg in self.state.legs.values():

@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from .state import StrategyState, LegState
 from .models import InstrumentType, OptionType, Side
 import logging
@@ -7,8 +7,13 @@ logger = logging.getLogger(__name__)
 
 
 class BrokerReconciliation:
-    def __init__(self, state: StrategyState):
+    def __init__(
+        self,
+        state: StrategyState,
+        lot_size_resolver: Optional[Callable[[Optional[str]], int]] = None,
+    ):
         self.state = state
+        self._lot_size_resolver = lot_size_resolver
 
     def reconcile(self, broker_positions: List[Dict[str, Any]]) -> List[str]:
         """
@@ -46,11 +51,7 @@ class BrokerReconciliation:
 
     def reconcile_from_broker(self, broker_view) -> List[str]:
         """
-        BUG-012 FIX: Reconcile strategy state against LIVE broker positions.
-
-        The original reconcile() compared state against itself (positions with 'tag' fields
-        that came from the state). This method fetches REAL broker positions via BrokerView
-        and maps them to state legs by trading_symbol / symbol match.
+        Reconcile strategy state against live broker positions.
 
         Args:
             broker_view: BrokerView instance (bot.broker_view)
@@ -67,8 +68,6 @@ class BrokerReconciliation:
             logger.error(f"BrokerReconciliation.reconcile_from_broker: fetch failed: {e}")
             return warnings
 
-        # Build a map of broker symbol → net qty for fast lookup
-        # Shoonya position fields: tsym=trading_symbol, netqty=net quantity
         broker_netqty: Dict[str, int] = {}
         for pos in broker_positions:
             tsym = pos.get("tsym", "")
@@ -76,38 +75,35 @@ class BrokerReconciliation:
             if tsym:
                 broker_netqty[tsym] = broker_netqty.get(tsym, 0) + net
 
-        # Check each active state leg against broker truth
         for tag, leg in list(self.state.legs.items()):
             if not leg.is_active:
                 continue
 
-            # Try trading_symbol first (the broker contract symbol), then symbol
             sym = getattr(leg, "trading_symbol", None) or leg.symbol
             if not sym:
-                warnings.append(f"Leg {tag}: no symbol — cannot reconcile")
+                warnings.append(f"Leg {tag}: no symbol - cannot reconcile")
                 continue
 
             net = broker_netqty.get(sym, 0)
 
             if net == 0:
-                # State says active, broker says flat — position is gone
                 warnings.append(
-                    f"Leg {tag} ({sym}): state=ACTIVE but broker netqty=0 → marking inactive"
+                    f"Leg {tag} ({sym}): state=ACTIVE but broker netqty=0 -> marking inactive"
                 )
                 logger.warning(f"RECONCILE | {tag} ({sym}) | state says active but broker is flat")
                 leg.is_active = False
             else:
-                # Position exists — sync qty from broker truth
                 broker_qty = abs(net)
-                if leg.qty != broker_qty:
+                broker_lots = self._contracts_to_lots(broker_qty, leg.expiry)
+                if leg.qty != broker_lots:
                     warnings.append(
-                        f"Leg {tag} ({sym}): state qty={leg.qty} but broker qty={broker_qty} → syncing"
+                        f"Leg {tag} ({sym}): state lots={leg.qty} but broker lots={broker_lots} (netqty={broker_qty}) -> syncing"
                     )
-                    logger.info(f"RECONCILE | {tag} ({sym}) | qty state={leg.qty} → broker={broker_qty}")
-                    leg.qty = broker_qty
+                    logger.info(
+                        f"RECONCILE | {tag} ({sym}) | lots state={leg.qty} -> broker_lots={broker_lots} (netqty={broker_qty})"
+                    )
+                    leg.qty = broker_lots
 
-        # Detect broker positions that have no corresponding active state leg
-        # (orphan positions this strategy should know about)
         tracked_symbols = {
             (getattr(leg, "trading_symbol", None) or leg.symbol)
             for leg in self.state.legs.values()
@@ -115,7 +111,6 @@ class BrokerReconciliation:
         }
         for sym, net in broker_netqty.items():
             if net != 0 and sym not in tracked_symbols:
-                # Only warn — do NOT auto-create legs; that requires knowing expiry/strike/side
                 warnings.append(
                     f"Broker has untracked position: {sym} netqty={net} "
                     f"(use /strategy/recover-resume to adopt it)"
@@ -128,6 +123,36 @@ class BrokerReconciliation:
             logger.debug("RECONCILE: state and broker are in sync")
 
         return warnings
+
+    def _contracts_to_lots(self, broker_qty: int, expiry: Optional[str]) -> int:
+        if broker_qty <= 0:
+            return 0
+
+        lot_size = 1
+        if self._lot_size_resolver:
+            try:
+                resolved = int(self._lot_size_resolver(expiry))
+                if resolved > 0:
+                    lot_size = resolved
+            except Exception:
+                lot_size = 1
+
+        if lot_size <= 1:
+            return broker_qty
+
+        lots = broker_qty // lot_size
+        if lots == 0:
+            return 1
+
+        if broker_qty % lot_size != 0:
+            logger.warning(
+                "RECONCILE | broker qty %s not multiple of lot_size %s (expiry=%s), flooring to %s lots",
+                broker_qty,
+                lot_size,
+                expiry,
+                lots,
+            )
+        return lots
 
     def _reconstruct_leg(self, pos: Dict[str, Any]):
         leg = LegState(
@@ -145,6 +170,6 @@ class BrokerReconciliation:
             label=pos.get("label", ""),
             oi=pos.get("oi", 0),
             oi_change=pos.get("oi_change", 0),
-            volume=pos.get("volume", 0)
+            volume=pos.get("volume", 0),
         )
         self.state.legs[leg.tag] = leg

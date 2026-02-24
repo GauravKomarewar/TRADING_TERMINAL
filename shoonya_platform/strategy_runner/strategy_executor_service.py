@@ -28,6 +28,7 @@ from .adjustment_engine import AdjustmentEngine
 from .exit_engine import ExitEngine
 from .reconciliation import BrokerReconciliation
 from .persistence import StatePersistence
+from scripts.scriptmaster import requires_limit_order
 
 logger = logging.getLogger("STRATEGY_EXECUTOR_SERVICE")
 
@@ -597,6 +598,13 @@ class StrategyExecutorService:
             return True
 
         exchange = ((config or {}).get("basic", {}) or {}).get("exchange", "NFO")
+        try:
+            lot_size = int(reader.get_lot_size())
+            if lot_size <= 0:
+                lot_size = 1
+        except Exception:
+            lot_size = 1
+        order_qty = int(qty) * lot_size
         alert = {
             "execution_type": "ADJUSTMENT",
             "strategy_name": name,
@@ -605,7 +613,7 @@ class StrategyExecutorService:
                 {
                     "tradingsymbol": cur_symbol,
                     "direction": "BUY" if str(side).upper() == "SELL" else "SELL",
-                    "qty": int(qty),
+                    "qty": order_qty,
                     "order_type": "MARKET",
                     "price": 0.0,
                     "product_type": "NRML",
@@ -613,7 +621,7 @@ class StrategyExecutorService:
                 {
                     "tradingsymbol": new_symbol,
                     "direction": str(side).upper(),
-                    "qty": int(qty),
+                    "qty": order_qty,
                     "order_type": "MARKET",
                     "price": 0.0,
                     "product_type": "NRML",
@@ -667,7 +675,10 @@ class PerStrategyExecutor:
         self.exit_engine = ExitEngine(self.state)
         self.exit_engine.load_config(config.get("exit", {}))
         self.adjustment_engine.load_rules(config.get("adjustment", {}).get("rules", []))
-        self.reconciliation = BrokerReconciliation(self.state)
+        self.reconciliation = BrokerReconciliation(
+            self.state,
+            lot_size_resolver=self.market.get_lot_size,
+        )
 
         self.state_file = state_file
 
@@ -771,6 +782,9 @@ class PerStrategyExecutor:
             self._last_date = now.date()
             logger.info(f"Daily counters reset for {self.name}")
 
+        self.state.current_time = now
+        self._update_time_context(now)
+
         # Update market data (including leg data)
         self._update_market_data()
 
@@ -835,12 +849,44 @@ class PerStrategyExecutor:
         if now.second == 0:
             self.persistence.save(self.state, str(self.state_file))
 
+    def _update_time_context(self, now: datetime) -> None:
+        """Refresh runtime time fields consumed by condition parameters."""
+        exit_time_str = (
+            (self.config.get("exit", {}) or {})
+            .get("time", {})
+            .get("strategy_exit_time")
+        )
+        if not exit_time_str:
+            self.state.minutes_to_exit = 0
+            return
+        try:
+            exit_t = datetime.strptime(str(exit_time_str), "%H:%M").time()
+            exit_dt = datetime.combine(now.date(), exit_t)
+            if now >= exit_dt:
+                self.state.minutes_to_exit = 0
+            else:
+                self.state.minutes_to_exit = max(
+                    0, int((exit_dt - now).total_seconds() / 60)
+                )
+        except Exception:
+            self.state.minutes_to_exit = 0
+
     def _update_market_data(self):
         """Refresh spot, ATM, and per‑leg data."""
         # Keep strategy-level reads pinned to one concrete expiry for full run.
         self.state.spot_price = self.market.get_spot_price(self._cycle_expiry_date)
+        if not self.state.spot_open and self.state.spot_price:
+            self.state.spot_open = self.state.spot_price
         self.state.atm_strike = self.market.get_atm_strike(self._cycle_expiry_date)
         self.state.fut_ltp = self.market.get_fut_ltp(self._cycle_expiry_date)
+        chain_metrics = self.market.get_chain_metrics(self._cycle_expiry_date)
+        self.state.pcr = float(chain_metrics.get("pcr", 0.0) or 0.0)
+        self.state.pcr_volume = float(chain_metrics.get("pcr_volume", 0.0) or 0.0)
+        self.state.max_pain_strike = float(chain_metrics.get("max_pain_strike", 0.0) or 0.0)
+        self.state.total_oi_ce = float(chain_metrics.get("total_oi_ce", 0.0) or 0.0)
+        self.state.total_oi_pe = float(chain_metrics.get("total_oi_pe", 0.0) or 0.0)
+        self.state.oi_buildup_ce = float(chain_metrics.get("oi_buildup_ce", 0.0) or 0.0)
+        self.state.oi_buildup_pe = float(chain_metrics.get("oi_buildup_pe", 0.0) or 0.0)
         # Update each active leg
         for leg in self.state.legs.values():
             if not leg.is_active:
@@ -1233,12 +1279,21 @@ class PerStrategyExecutor:
         identity = self.config.get("identity", {})
         default_order_type = str(identity.get("order_type", "MARKET")).upper()
         order_type = "LIMIT" if default_order_type == "LIMIT" else "MARKET"
+        exchange = str(identity.get("exchange", "NFO")).upper()
+
+        tradingsymbol = tradingsymbol_override or leg.trading_symbol or leg.symbol
+        # ScriptMaster rule: certain instruments (OPTSTK/OPTFUT) must use LIMIT.
+        try:
+            if requires_limit_order(exchange=exchange, tradingsymbol=tradingsymbol):
+                order_type = "LIMIT"
+        except Exception:
+            pass
+
         if price_override is not None:
             price = float(price_override)
         else:
             price = float(leg.ltp) if order_type == "LIMIT" else 0.0
 
-        tradingsymbol = tradingsymbol_override or leg.trading_symbol or leg.symbol
         if tradingsymbol == leg.symbol and leg.instrument == InstrumentType.OPT and leg.strike is not None and leg.option_type is not None:
             try:
                 opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, leg.expiry) or {}

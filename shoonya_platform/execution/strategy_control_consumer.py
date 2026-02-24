@@ -430,30 +430,56 @@ class StrategyControlConsumer:
         """
         try:
             # Slugify strategy name (same as frontend)
-            slug = strategy_name.strip().lower()
-            slug = re.sub(r'[^a-z0-9]+', '_', slug)
-            slug = slug.strip('_') or 'unnamed'
-            
-            config_path = (
+            requested_slug = strategy_name.strip().lower()
+            requested_slug = re.sub(r'[^a-z0-9]+', '_', requested_slug)
+            requested_slug = requested_slug.strip('_') or 'unnamed'
+
+            config_dir = (
                 Path(__file__).resolve().parents[2]
                 / "shoonya_platform"
                 / "strategy_runner"
                 / "saved_configs"
-                / f"{slug}.json"
             )
-            
-            if not config_path.exists():
-                logger.warning(f"⚠️ Config not found: {config_path}")
-                return None
-            
-            # ✅ Return dashboard schema as-is (executor expects nested structure)
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            logger.info(
-                f"✅ Loaded strategy config: {strategy_name} | "
-                f"basic={config.get('basic', {})}"
+
+            direct_path = config_dir / f"{requested_slug}.json"
+            if direct_path.exists():
+                config = json.loads(direct_path.read_text(encoding="utf-8-sig"))
+                logger.info(
+                    "✅ Loaded strategy config by filename | requested=%s | file=%s",
+                    strategy_name,
+                    direct_path.name,
+                )
+                return config
+
+            # Fallback: match by config "id"/"name" in saved files.
+            for path in sorted(config_dir.glob("*.json")):
+                if path.name == "STRATEGY_CONFIG_SCHEMA.json":
+                    continue
+                try:
+                    cfg = json.loads(path.read_text(encoding="utf-8-sig"))
+                except Exception:
+                    continue
+
+                file_slug = re.sub(r'[^a-z0-9]+', '_', path.stem.strip().lower()).strip('_') or "unnamed"
+                id_slug = re.sub(r'[^a-z0-9]+', '_', str(cfg.get("id", "")).strip().lower()).strip('_')
+                name_slug = re.sub(r'[^a-z0-9]+', '_', str(cfg.get("name", "")).strip().lower()).strip('_')
+
+                if requested_slug in {file_slug, id_slug, name_slug}:
+                    logger.info(
+                        "✅ Loaded strategy config by metadata | requested=%s | file=%s | id=%s | name=%s",
+                        strategy_name,
+                        path.name,
+                        cfg.get("id"),
+                        cfg.get("name"),
+                    )
+                    return cfg
+
+            logger.warning(
+                "⚠️ Strategy config not found after filename+metadata lookup | requested=%s | expected_slug=%s",
+                strategy_name,
+                requested_slug,
             )
-            
-            return config
+            return None
             
         except Exception as e:
             logger.exception(f"❌ Failed to load strategy config: {strategy_name}")

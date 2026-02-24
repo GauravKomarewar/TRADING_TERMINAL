@@ -64,6 +64,7 @@ This script is idempotent and production-safe.
 
 import shutil
 import subprocess
+import os
 from pathlib import Path
 
 
@@ -92,9 +93,19 @@ def remove_pycache(root: Path):
     """
     print("🧹 Removing __pycache__ directories...")
     count = 0
-    for path in root.rglob("__pycache__"):
-        shutil.rmtree(path, ignore_errors=True)
-        count += 1
+    for dirpath, dirnames, _ in os.walk(root, topdown=True, onerror=lambda _: None):
+        if "__pycache__" not in dirnames:
+            continue
+
+        pycache_path = Path(dirpath) / "__pycache__"
+        try:
+            shutil.rmtree(pycache_path, ignore_errors=True)
+            count += 1
+        except Exception:
+            pass
+
+        # Avoid descending into a directory we just removed.
+        dirnames[:] = [name for name in dirnames if name != "__pycache__"]
     print(f"✅ Removed {count} __pycache__ directories")
 
 
@@ -105,12 +116,17 @@ def remove_pyc_files(root: Path):
     """
     print("🧹 Removing .pyc files...")
     count = 0
-    for path in root.rglob("*.pyc"):
-        try:
-            path.unlink()
-            count += 1
-        except Exception:
-            pass
+    for dirpath, _, filenames in os.walk(root, topdown=True, onerror=lambda _: None):
+        for filename in filenames:
+            if not filename.endswith(".pyc"):
+                continue
+
+            path = Path(dirpath) / filename
+            try:
+                path.unlink()
+                count += 1
+            except Exception:
+                pass
     print(f"✅ Removed {count} .pyc files")
 
 

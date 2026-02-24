@@ -1,11 +1,11 @@
 {
   "schema_version": "4.0",
-  "name": "crudeoilm check",
-  "id": "CRUDEOILM_CHECK",
-  "description": "Mock stress test: short strangle + 30s adjustment cycle, full MCX window, forced 5-minute exit.",
+  "name": "crudeoilm adjust verify test v1",
+  "id": "CRUDEOILM_ADJUST_VERIFY_TEST_V1",
+  "description": "Mock validation strategy for clean adjustment testing with stricter cadence and close-vs-new verification.",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "STOPPED",
   "paper_mode": true,
   "test_mode": "SUCCESS",
   "identity": {
@@ -14,7 +14,7 @@
     "instrument_type": "MCX",
     "product_type": "NRML",
     "order_type": "MARKET",
-    "lots": 1,
+    "lots": 2,
     "db_file": "MCX_CRUDEOILM_17-MAR-2026.sqlite",
     "db_path": "shoonya_platform/market_data/option_chain/data/MCX_CRUDEOILM_17-MAR-2026.sqlite",
     "paper_mode": true,
@@ -22,7 +22,7 @@
   },
   "timing": {
     "entry_window_start": "09:00",
-    "entry_window_end": "23:25",
+    "entry_window_end": "23:20",
     "eod_exit_time": "23:29"
   },
   "market_data": {
@@ -41,7 +41,7 @@
         "side": "SELL",
         "option_type": "CE",
         "expiry": "strategy_default",
-        "lots": 1,
+        "lots": 2,
         "order_type": "MARKET",
         "strike_mode": "standard",
         "strike_selection": "delta",
@@ -59,7 +59,7 @@
         "side": "SELL",
         "option_type": "PE",
         "expiry": "strategy_default",
-        "lots": 1,
+        "lots": 2,
         "order_type": "MARKET",
         "strike_mode": "standard",
         "strike_selection": "delta",
@@ -75,17 +75,17 @@
     "enabled": true,
     "rules": [
       {
-        "name": "A1_Delta_Imbalance_HighLeg",
+        "name": "A1_CloseHigher_ReopenLowerDelta",
         "priority": 1,
-        "max_per_day": 40,
+        "max_per_day": 8,
         "max_total": null,
-        "cooldown_sec": 30,
+        "cooldown_sec": 45,
         "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
             "comparator": ">=",
-            "value": "30",
+            "value": "45",
             "parameter": "time_in_position_sec"
           }
         ],
@@ -97,14 +97,11 @@
               "new_leg": {
                 "side": "SELL",
                 "option_type": "MATCH_CLOSING",
-                "lots": 1,
+                "lots": 2,
                 "order_type": "MARKET",
-                "strike_mode": "match_leg",
-                "strike_selection": "match_leg_param",
-                "match_leg": "LOWER_DELTA_LEG",
-                "match_param": "abs_delta",
-                "match_offset": 0,
-                "match_multiplier": 1
+                "strike_mode": "standard",
+                "strike_selection": "delta",
+                "strike_value": "0.15"
               }
             }
           ]
@@ -114,17 +111,17 @@
         "else_action": null
       },
       {
-        "name": "A2_Premium_Trigger_LowLeg",
+        "name": "A2_CloseLower_ReopenLowerDelta",
         "priority": 2,
-        "max_per_day": 40,
+        "max_per_day": 8,
         "max_total": null,
-        "cooldown_sec": 30,
+        "cooldown_sec": 60,
         "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
             "comparator": ">=",
-            "value": "60",
+            "value": "120",
             "parameter": "time_in_position_sec"
           }
         ],
@@ -136,50 +133,11 @@
               "new_leg": {
                 "side": "SELL",
                 "option_type": "MATCH_CLOSING",
-                "lots": 1,
-                "order_type": "MARKET",
-                "strike_mode": "match_leg",
-                "strike_selection": "match_leg_param",
-                "match_leg": "HIGHER_DELTA_LEG",
-                "match_param": "abs_delta",
-                "match_offset": 0,
-                "match_multiplier": 1
-              }
-            }
-          ]
-        },
-        "else_enabled": false,
-        "else_conditions": [],
-        "else_action": null
-      },
-      {
-        "name": "A3_Strategy_NetDelta_Recenter",
-        "priority": 3,
-        "max_per_day": 40,
-        "max_total": null,
-        "cooldown_sec": 30,
-        "retriger": true,
-        "leg_guard": "",
-        "conditions": [
-          {
-            "comparator": ">=",
-            "value": "90",
-            "parameter": "time_in_position_sec"
-          }
-        ],
-        "action": {
-          "type": "simple_close_open_new",
-          "leg_swaps": [
-            {
-              "close_tag": "HIGHER_DELTA_LEG",
-              "new_leg": {
-                "side": "SELL",
-                "option_type": "MATCH_CLOSING",
-                "lots": 1,
+                "lots": 2,
                 "order_type": "MARKET",
                 "strike_mode": "standard",
                 "strike_selection": "delta",
-                "strike_value": "0.30"
+                "strike_value": "0.15"
               }
             }
           ]
@@ -195,7 +153,7 @@
       "amount": null,
       "pct": null,
       "action": "exit_all",
-      "lots": 1
+      "lots": 2
     },
     "stop_loss": {
       "amount": null,
@@ -234,7 +192,7 @@
       "rules": [
         {
           "comparator": ">=",
-          "value": "300",
+          "value": "360",
           "parameter": "time_in_position_sec"
         }
       ]
@@ -251,7 +209,7 @@
       "fri"
     ],
     "entry_time": "09:00",
-    "entry_window_end": "23:25",
+    "entry_window_end": "23:20",
     "exit_time": "23:29",
     "expiry_mode": "weekly_current",
     "dte_min": null,
@@ -262,9 +220,9 @@
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-02-23T09:48:57.246Z"
+    "created_at": "2026-02-24T00:00:00Z"
   },
-  "created_at": "2026-02-23T15:17:52",
-  "updated_at": "2026-02-23T15:17:52",
-  "status_updated_at": "2026-02-23T16:18:07.888521"
+  "created_at": "2026-02-24T00:00:00",
+  "updated_at": "2026-02-24T00:00:00",
+  "status_updated_at": "2026-02-24T00:00:00"
 }

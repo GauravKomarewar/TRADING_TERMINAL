@@ -936,6 +936,8 @@ class PerStrategyExecutor:
         """
         tags = sorted(set(before_legs.keys()) | set(self.state.legs.keys()))
         legs_payload: List[Dict[str, Any]] = []
+        close_by_symbol: Dict[str, int] = {}
+        open_by_symbol: Dict[str, int] = {}
 
         for tag in tags:
             before = before_legs.get(tag)
@@ -948,26 +950,54 @@ class PerStrategyExecutor:
                 ref = before or after
                 if ref is None:
                     continue
-                legs_payload.append(
-                    self._build_alert_leg(
-                        leg=ref,
-                        direction="BUY" if ref.side.value == "SELL" else "SELL",
-                        qty=abs(delta),
-                    )
+                payload = self._build_alert_leg(
+                    leg=ref,
+                    direction="BUY" if ref.side.value == "SELL" else "SELL",
+                    qty=abs(delta),
                 )
+                legs_payload.append(payload)
+                sym = str(payload.get("tradingsymbol") or "").strip()
+                if sym:
+                    close_by_symbol[sym] = close_by_symbol.get(sym, 0) + int(payload.get("qty", 0) or 0)
             elif delta > 0:
                 if after is None:
                     continue
-                legs_payload.append(
-                    self._build_alert_leg(
-                        leg=after,
-                        direction=after.side.value,
-                        qty=delta,
-                    )
+                payload = self._build_alert_leg(
+                    leg=after,
+                    direction=after.side.value,
+                    qty=delta,
                 )
+                legs_payload.append(payload)
+                sym = str(payload.get("tradingsymbol") or "").strip()
+                if sym:
+                    open_by_symbol[sym] = open_by_symbol.get(sym, 0) + int(payload.get("qty", 0) or 0)
 
         if not legs_payload:
             return True
+
+        # Safety guard: do not allow adjustment payload that closes and opens
+        # the same symbol in the same cycle (usually a bad roll resolution).
+        overlap = sorted(set(close_by_symbol.keys()) & set(open_by_symbol.keys()))
+        if overlap:
+            details = ", ".join(
+                f"{sym}(close={close_by_symbol.get(sym, 0)},open={open_by_symbol.get(sym, 0)})"
+                for sym in overlap
+            )
+            err = (
+                f"Adjustment validation failed for {self.name}: "
+                f"close/open resolved to same symbol(s): {details}"
+            )
+            logger.error(err)
+            try:
+                if getattr(self.bot, "telegram_enabled", False) and getattr(self.bot, "telegram", None):
+                    self.bot.telegram.send_error_message(
+                        title="ADJUSTMENT VALIDATION ERROR",
+                        error=f"{self.name} | {details}",
+                    )
+            except Exception as notify_err:
+                logger.warning(f"Failed to send adjustment validation alert: {notify_err}")
+            return False
+
         result = self._submit_alert(execution_type="ADJUSTMENT", legs=legs_payload)
         return not self._is_failure_status((result or {}).get("status"))
 

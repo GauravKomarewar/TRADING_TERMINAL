@@ -1,6 +1,7 @@
 import time
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 from .state import StrategyState, LegState
@@ -14,6 +15,10 @@ from .reconciliation import BrokerReconciliation
 from .persistence import StatePersistence
 
 logger = logging.getLogger(__name__)
+
+_DB_FILE_EXPIRY_RE = re.compile(
+    r"^[A-Za-z0-9]+_[A-Za-z0-9]+_(\d{2}-[A-Za-z]{3}-\d{4})\.sqlite$"
+)
 
 class StrategyExecutor:
     def __init__(self, config_path: str, state_path: Optional[str] = None):
@@ -30,6 +35,8 @@ class StrategyExecutor:
             symbol=identity["underlying"],
             max_stale_seconds=30
         )
+        self._fixed_expiry_date = self._extract_expiry_from_db_file()
+        self._cycle_expiry_date = self._resolve_cycle_expiry()
 
         # Initialize engines
         self.condition_engine = ConditionEngine(self.state)
@@ -41,6 +48,59 @@ class StrategyExecutor:
         # Load rules
         self.adjustment_engine.load_rules(self.config.get("adjustment", {}).get("rules", []))
         self.exit_engine.load_config(self.config.get("exit", {}))
+
+    def _extract_expiry_from_db_file(self) -> Optional[str]:
+        identity = self.config.get("identity", {}) or {}
+        market_data = self.config.get("market_data", {}) or {}
+        db_file = str(identity.get("db_file") or market_data.get("db_file") or "").strip()
+        if not db_file:
+            return None
+        match = _DB_FILE_EXPIRY_RE.match(db_file)
+        if not match:
+            logger.warning(
+                "Could not parse expiry from db_file '%s'; falling back to schedule.expiry_mode",
+                db_file,
+            )
+            return None
+        return match.group(1)
+
+    def _resolve_cycle_expiry(self) -> str:
+        schedule_mode = str(
+            (self.config.get("schedule", {}) or {}).get("expiry_mode", "weekly_current")
+        ).strip() or "weekly_current"
+        if schedule_mode == "custom":
+            if self._fixed_expiry_date:
+                logger.info(
+                    "Using custom db_file expiry: %s",
+                    self._fixed_expiry_date,
+                )
+                return self._fixed_expiry_date
+            logger.warning(
+                "schedule.expiry_mode=custom but db_file expiry is missing/invalid; falling back to weekly_current"
+            )
+            schedule_mode = "weekly_current"
+
+        try:
+            resolved = self.market.resolve_expiry_mode(schedule_mode)
+            logger.info(
+                "Resolved cycle expiry: %s (mode=%s)",
+                resolved,
+                schedule_mode,
+            )
+            if self._fixed_expiry_date and schedule_mode != "custom":
+                logger.info(
+                    "Ignoring db_file expiry because mode=%s is dynamic (db_file=%s)",
+                    schedule_mode,
+                    self._fixed_expiry_date,
+                )
+            return resolved
+        except Exception as e:
+            logger.error(
+                "Failed to resolve cycle expiry with mode=%s: %s; using weekly_current",
+                schedule_mode,
+                e,
+            )
+            return self.market.resolve_expiry_mode("weekly_current")
 
     def _load_or_create_state(self) -> StrategyState:
         state = StatePersistence.load(self.state_path)
@@ -134,9 +194,9 @@ class StrategyExecutor:
 
     def _update_market_data(self):
         """Update spot, ATM, futures and per‑leg LTP & greeks."""
-        self.state.spot_price = self.market.get_spot_price()
-        self.state.atm_strike = self.market.get_atm_strike()
-        self.state.fut_ltp = self.market.get_fut_ltp()
+        self.state.spot_price = self.market.get_spot_price(self._cycle_expiry_date)
+        self.state.atm_strike = self.market.get_atm_strike(self._cycle_expiry_date)
+        self.state.fut_ltp = self.market.get_fut_ltp(self._cycle_expiry_date)
 
         # Update each active leg
         for leg in self.state.legs.values():
@@ -206,7 +266,7 @@ class StrategyExecutor:
     def _execute_entry(self):
         logger.info("Executing entry...")
         symbol = self.config["identity"]["underlying"]
-        default_expiry = self.config["schedule"]["expiry_mode"]
+        default_expiry = self._cycle_expiry_date
         new_legs = self.entry_engine.process_entry(
             self.config["entry"], symbol, default_expiry
         )

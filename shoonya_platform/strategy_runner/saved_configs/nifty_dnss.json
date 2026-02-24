@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "IDLE",
+  "status": "STOPPED",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -13,8 +13,8 @@
     "product_type": "NRML",
     "order_type": "MARKET",
     "lots": 1,
-    "db_file": "NFO_NIFTY_24-FEB-2026.sqlite",
-    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_24-FEB-2026.sqlite"
+    "db_file": "NFO_NIFTY_02-MAR-2026.sqlite",
+    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_02-MAR-2026.sqlite"
   },
   "timing": {
     "entry_window_start": "09:18",
@@ -23,7 +23,7 @@
   },
   "market_data": {
     "source": "sqlite",
-    "db_file": "NFO_NIFTY_24-FEB-2026.sqlite"
+    "db_file": "NFO_NIFTY_02-MAR-2026.sqlite"
   },
   "entry": {
     "entry_sequence": "parallel",
@@ -114,18 +114,6 @@
                 "match_offset": 0,
                 "match_multiplier": 1
               }
-            },
-            {
-              "close_tag": "HIGHER_DELTA_LEG",
-              "new_leg": {
-                "side": "SELL",
-                "option_type": "CE",
-                "lots": 1,
-                "order_type": "",
-                "strike_mode": "standard",
-                "strike_selection": "atm",
-                "strike_value": ""
-              }
             }
           ]
         },
@@ -153,7 +141,7 @@
           "type": "simple_close_open_new",
           "leg_swaps": [
             {
-              "close_tag": "LOWER_DELTA_LEG",
+              "close_tag": "HIGHER_DELTA_LEG",
               "new_leg": {
                 "side": "SELL",
                 "option_type": "MATCH_CLOSING",
@@ -165,18 +153,6 @@
                 "match_param": "abs_delta",
                 "match_offset": 0,
                 "match_multiplier": 1
-              }
-            },
-            {
-              "close_tag": "HIGHER_DELTA_LEG",
-              "new_leg": {
-                "side": "SELL",
-                "option_type": "CE",
-                "lots": 1,
-                "order_type": "",
-                "strike_mode": "standard",
-                "strike_selection": "atm",
-                "strike_value": ""
               }
             }
           ]
@@ -241,7 +217,7 @@
     "entry_time": "09:18",
     "entry_window_end": "15:10",
     "exit_time": "15:28",
-    "expiry_mode": "weekly_current",
+    "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
     "square_off_before_min": null,
@@ -250,6 +226,7 @@
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-02-22T15:01:24.918Z"
-  }
+    "created_at": "2026-02-24T09:32:01.921Z"
+  },
+  "status_updated_at": "2026-02-24T15:18:16.960897"
 }

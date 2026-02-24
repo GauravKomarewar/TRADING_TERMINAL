@@ -11,6 +11,7 @@ import sqlite3
 import threading
 import time
 import copy
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,6 +30,10 @@ from .reconciliation import BrokerReconciliation
 from .persistence import StatePersistence
 
 logger = logging.getLogger("STRATEGY_EXECUTOR_SERVICE")
+
+_DB_FILE_EXPIRY_RE = re.compile(
+    r"^[A-Za-z0-9]+_[A-Za-z0-9]+_(\d{2}-[A-Za-z]{3}-\d{4})\.sqlite$"
+)
 
 
 @dataclass
@@ -65,9 +70,11 @@ class StateManager:
 
     def __init__(self, db_path: str):
         self.db_path = str(db_path)
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path, timeout=5)
         conn.row_factory = sqlite3.Row
         return conn
@@ -650,6 +657,8 @@ class PerStrategyExecutor:
         exchange = identity.get("exchange", "NFO")
         symbol = identity.get("underlying", "NIFTY")
         self.market = MarketReader(exchange, symbol, max_stale_seconds=30)
+        self._fixed_expiry_date = self._extract_expiry_from_db_file(config)
+        self._cycle_expiry_date = self._resolve_cycle_expiry(config)
 
         # Engines
         self.condition_engine = ConditionEngine(self.state)
@@ -678,6 +687,77 @@ class PerStrategyExecutor:
         self._adjustment_block_reason: str = ""
         self._adjustment_block_announced: bool = False
         self._last_adjustment_validation_alert_at: Optional[datetime] = None
+
+    def _extract_expiry_from_db_file(self, config: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract concrete expiry date from configured DB filename, if present.
+        Example: NFO_NIFTY_02-MAR-2026.sqlite -> 02-MAR-2026
+        """
+        identity = config.get("identity", {}) or {}
+        market_data = config.get("market_data", {}) or {}
+        db_file = str(identity.get("db_file") or market_data.get("db_file") or "").strip()
+        if not db_file:
+            return None
+        match = _DB_FILE_EXPIRY_RE.match(db_file)
+        if not match:
+            logger.warning(
+                "Could not parse expiry from db_file '%s' for strategy %s; falling back to schedule.expiry_mode",
+                db_file,
+                self.name,
+            )
+            return None
+        return match.group(1)
+
+    def _resolve_cycle_expiry(self, config: Dict[str, Any]) -> str:
+        """
+        Resolve one concrete expiry for this strategy run and keep it fixed.
+        Rules:
+          1) If schedule.expiry_mode == custom -> use db_file-derived expiry
+          2) Otherwise resolve schedule.expiry_mode dynamically from available DBs
+             and lock that resolved date for the full cycle.
+        """
+        schedule_mode = str(
+            (config.get("schedule", {}) or {}).get("expiry_mode", "weekly_current")
+        ).strip() or "weekly_current"
+
+        if schedule_mode == "custom":
+            if self._fixed_expiry_date:
+                logger.info(
+                    "Using custom db_file expiry for %s: %s",
+                    self.name,
+                    self._fixed_expiry_date,
+                )
+                return self._fixed_expiry_date
+            logger.warning(
+                "schedule.expiry_mode=custom but db_file expiry is missing/invalid for %s; falling back to weekly_current",
+                self.name,
+            )
+            schedule_mode = "weekly_current"
+
+        try:
+            resolved = self.market.resolve_expiry_mode(schedule_mode)
+            logger.info(
+                "Resolved cycle expiry for %s: %s (mode=%s)",
+                self.name,
+                resolved,
+                schedule_mode,
+            )
+            if self._fixed_expiry_date and schedule_mode != "custom":
+                logger.info(
+                    "Ignoring db_file expiry for %s because mode=%s is dynamic (db_file=%s)",
+                    self.name,
+                    schedule_mode,
+                    self._fixed_expiry_date,
+                )
+            return resolved
+        except Exception as e:
+            logger.error(
+                "Failed to resolve cycle expiry for %s with mode=%s: %s; using weekly_current",
+                self.name,
+                schedule_mode,
+                e,
+            )
+            return self.market.resolve_expiry_mode("weekly_current")
 
     def process_tick(self):
         """Called by the service loop each tick."""
@@ -757,9 +837,10 @@ class PerStrategyExecutor:
 
     def _update_market_data(self):
         """Refresh spot, ATM, and per‑leg data."""
-        self.state.spot_price = self.market.get_spot_price()
-        self.state.atm_strike = self.market.get_atm_strike()
-        self.state.fut_ltp = self.market.get_fut_ltp()
+        # Keep strategy-level reads pinned to one concrete expiry for full run.
+        self.state.spot_price = self.market.get_spot_price(self._cycle_expiry_date)
+        self.state.atm_strike = self.market.get_atm_strike(self._cycle_expiry_date)
+        self.state.fut_ltp = self.market.get_fut_ltp(self._cycle_expiry_date)
         # Update each active leg
         for leg in self.state.legs.values():
             if not leg.is_active:
@@ -807,7 +888,7 @@ class PerStrategyExecutor:
     def _execute_entry(self):
         """Run entry engine and send orders via bot."""
         symbol = self.config["identity"]["underlying"]
-        default_expiry = self.config["schedule"]["expiry_mode"]
+        default_expiry = self._cycle_expiry_date
         new_legs = self.entry_engine.process_entry(
             self.config["entry"], symbol, default_expiry
         )

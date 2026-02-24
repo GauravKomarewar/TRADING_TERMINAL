@@ -837,6 +837,20 @@ class MarketReader:
             # If none future, return the latest (last of the year)
             return expiries[-1][1]
 
+        elif mode == "weekly_auto":
+            # Rule:
+            # - if nearest expiry day is today -> use next expiry
+            # - otherwise -> use nearest expiry
+            current = self.resolve_expiry_mode("weekly_current")
+            cur_date = datetime.strptime(current, "%d-%b-%Y").date()
+            if cur_date != today:
+                return current
+            for exp_date, exp_str in expiries:
+                if exp_date > cur_date:
+                    return exp_str
+            # Wrap if only one expiry exists
+            return expiries[0][1]
+
         elif mode == "weekly_next":
             # Find the first expiry after the current weekly (which we take as the first future expiry)
             current = self.resolve_expiry_mode("weekly_current")  # recursive but safe

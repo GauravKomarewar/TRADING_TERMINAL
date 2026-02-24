@@ -229,6 +229,14 @@ button,input,select,textarea{font-family:var(--sans);}
 .fc-node-sell .fc-node-leg-body{background:rgba(240,82,82,.04);border:1px solid rgba(240,82,82,.13);border-top:none;}
 .fc-node-buy  .fc-node-leg-body{background:rgba(24,201,122,.04);border:1px solid rgba(24,201,122,.13);border-top:none;}
 .fc-node-adj{background:rgba(240,160,48,.08);border:1px solid rgba(240,160,48,.28);color:var(--warning);}
+.fc-adj-rule{min-width:260px;max-width:360px;padding:0;text-align:left;overflow:hidden}
+.fc-adj-head{padding:7px 10px;background:rgba(240,160,48,.14);border-bottom:1px solid rgba(240,160,48,.25);font-size:10.5px;font-weight:700;color:var(--warning)}
+.fc-adj-body{padding:8px 10px;display:flex;flex-direction:column;gap:7px}
+.fc-adj-branch{font-size:10px;line-height:1.45;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 7px;color:var(--text)}
+.fc-adj-branch b{color:var(--warning)}
+.fc-adj-branch-else b{color:var(--danger)}
+.fc-adj-cond{color:var(--sub)}
+.fc-adj-act{color:var(--orange);font-weight:600}
 .fc-node-monitor{background:rgba(61,142,240,.06);border:1px solid rgba(61,142,240,.22);color:var(--primary);}
 .fc-node-exit{background:rgba(240,82,82,.08);border:1px solid rgba(240,82,82,.28);color:var(--danger);}
 .fc-node-end{background:rgba(22,30,46,.7);border:1px solid var(--sub);color:var(--sub);}
@@ -365,6 +373,7 @@ button,input,select,textarea{font-family:var(--sans);}
     <div class="f-row c4">
       <div class="f-group"><label class="f-label">Default Expiry Mode</label>
         <select class="f-select" id="schExpiry">
+          <option value="weekly_auto">Weekly Auto (closest, next on expiry day)</option>
           <option value="weekly_current">Weekly Current</option><option value="weekly_next">Weekly Next</option>
           <option value="monthly_current">Monthly Current</option><option value="monthly_next">Monthly Next</option>
           <option value="custom">Custom</option>
@@ -837,6 +846,34 @@ async function loadStrategyFromServer(name) {
     if (ident.order_type) sv('sOrderType', ident.order_type);
     if (ident.lots) sv('sLots', ident.lots);
     if (ident.db_file) ST.pendingDbFile = ident.db_file;
+    // Apply symbol/db immediately when loading an existing strategy.
+    // Previously these were only applied in loadSymbols(), which already ran before this.
+    if (ident.underlying) {
+      const symEl = $('sSymbol');
+      if (symEl) symEl.value = ident.underlying;
+      await onSymbolChange();
+    }
+    if (ident.db_file) {
+      const dbEl = $('sDbFile');
+      let found = false;
+      if (dbEl) {
+        for (const opt of dbEl.options) {
+          if (opt.value === ident.db_file) {
+            dbEl.value = ident.db_file;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          const injected = document.createElement('option');
+          injected.value = ident.db_file;
+          injected.textContent = `${ident.db_file} (saved, not currently active)`;
+          dbEl.appendChild(injected);
+          dbEl.value = ident.db_file;
+        }
+      }
+      onDbFileChange();
+    }
 
     // Schedule
     const sched = config.schedule || {};
@@ -870,7 +907,7 @@ async function loadStrategyFromServer(name) {
 
     // Global entry conditions
     const entryGlobal = config.entry?.global_conditions || [];
-    entryGlobal.forEach(cond => addCond('entryCombinedList', cond.parameter, cond.comparator, cond.value, cond.value2));
+    entryGlobal.forEach(cond => addCond('entryCombinedList', cond.parameter, cond.comparator, cond.value, cond.value2, cond.join));
 
     // Entry legs
     const entryLegs = config.entry?.legs || [];
@@ -910,7 +947,7 @@ async function loadStrategyFromServer(name) {
 
       // IF conditions
       const ifConds = leg.conditions || [];
-      ifConds.forEach(cond => addCond(`cl_entry_if_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+      ifConds.forEach(cond => addCond(`cl_entry_if_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2, cond.join));
 
       // ELSE
       if (leg.else_enabled) {
@@ -920,7 +957,7 @@ async function loadStrategyFromServer(name) {
           onElseToggle('entry', id);
         }
         if (leg.else_conditions) {
-          leg.else_conditions.forEach(cond => addCond(`cl_entry_else_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+          leg.else_conditions.forEach(cond => addCond(`cl_entry_else_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2, cond.join));
         }
         if (leg.else_action) {
           setField(card, 'else-side', leg.else_action.side || 'SELL');
@@ -954,7 +991,7 @@ async function loadStrategyFromServer(name) {
       setField(card, 'adj-leg-guard', rule.leg_guard || '');
 
       const ifConds = rule.conditions || [];
-      ifConds.forEach(cond => addCond(`cl_adj_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+      ifConds.forEach(cond => addCond(`cl_adj_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2, cond.join));
 
       const ifAction = rule.action || {};
       setField(card, 'adj-action-type', ifAction.type || 'close_leg');
@@ -972,7 +1009,7 @@ async function loadStrategyFromServer(name) {
           onElseToggle('adj', id);
         }
         if (rule.else_conditions) {
-          rule.else_conditions.forEach(cond => addCond(`cl_adj_else_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+          rule.else_conditions.forEach(cond => addCond(`cl_adj_else_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2, cond.join));
         }
         if (rule.else_action) {
           setField(card, 'adj-else-action-type', rule.else_action.type || 'close_leg');
@@ -1028,7 +1065,7 @@ async function loadStrategyFromServer(name) {
       if (exitCfg.time.roll_target) sv('rollTarget', exitCfg.time.roll_target);
     }
     const combined = exitCfg.combined_conditions?.rules || [];
-    combined.forEach(cond => addCond('exitCombinedList', cond.parameter, cond.comparator, cond.value, cond.value2));
+    combined.forEach(cond => addCond('exitCombinedList', cond.parameter, cond.comparator, cond.value, cond.value2, cond.join));
 
     const legRules = exitCfg.leg_rules || [];
     document.querySelectorAll('#exitLegs .leg-card').forEach(card => card.remove());
@@ -1043,7 +1080,7 @@ async function loadStrategyFromServer(name) {
       setField(card, 'exit-action', rule.action || 'close_leg');
       setField(card, 'exit-group', rule.group || '');
       const conds = rule.conditions || [];
-      conds.forEach(cond => addCond(`cl_exit_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2));
+      conds.forEach(cond => addCond(`cl_exit_${id}`, cond.parameter, cond.comparator, cond.value, cond.value2, cond.join));
     }
 
     updateSummaries();
@@ -1120,11 +1157,13 @@ function tagOpts(){
 }
 
 /* ========== CONDITIONS ========== */
-function addCond(containerId,pv='',ov='>',vv='',vv2=''){
+function addCond(containerId,pv='',ov='>',vv='',vv2='',jv='AND'){
   const c=$(containerId);if(!c) return;
   if(c.querySelectorAll('.simple-cond-row').length>0){
     const j=document.createElement('div');j.className='cond-join-indicator';
-    j.innerHTML=`<span class="join-badge" onclick="toggleJoin(this)" data-join="AND">AND</span>`;c.appendChild(j);
+    const joinVal=(jv==='OR'?'OR':'AND');
+    const joinColor=joinVal==='OR'?'var(--accent)':'var(--warning)';
+    j.innerHTML=`<span class="join-badge" onclick="toggleJoin(this)" data-join="${joinVal}" style="color:${joinColor};">${joinVal}</span>`;c.appendChild(j);
   }
   const isBet=ov==='between'||ov==='not_between';
   const row=document.createElement('div');row.className='simple-cond-row';
@@ -1829,6 +1868,7 @@ function refreshAdjAvail(){const n=$('adjLockMsg');if(n)n.style.display=hasEntry
 function updateSummaries(){
   const ecs=[...document.querySelectorAll('#entryLegs .leg-card')];
   $('entrySummary').textContent=ecs.length?ecs.map(card=>{
+    const id=card.id.replace('lc_entry_','');
     const tag=card.querySelector('.leg-tag')?.textContent||'?';
     const inst=card.querySelector('[data-role="instrument"]')?.value||'OPT';
     const side=card.querySelector('[data-role="side"]')?.value||card.querySelector('[data-role="fut-side"]')?.value||'SELL';
@@ -1837,18 +1877,28 @@ function updateSummaries(){
     const lots=card.querySelector('[data-role="lots"]')?.value||'1';
     const expiry=card.querySelector('[data-role="leg-expiry"]')?.value||'default';
     const grp=card.querySelector('[data-role="leg-group"]')?.value||'';
-    const conds=card.querySelectorAll('.simple-cond-row').length;
-    return`${tag}: ${side}${opt?' '+opt:''} @ ${stk} × ${lots} lot${lots>1?'s':''} [${inst}${expiry!=='strategy_default'?' '+expiry:''}]${grp?' ['+grp+']':''} | ${conds} cond(s)`;
+    const ifConds=card.querySelectorAll(`#cl_entry_if_${id} .simple-cond-row`).length;
+    const hasElse=!!card.querySelector(`#use_else_entry_${id}`)?.checked;
+    const elseConds=hasElse?card.querySelectorAll(`#cl_entry_else_${id} .simple-cond-row`).length:0;
+    const condTxt=hasElse?`IF ${ifConds} + ELSE ${elseConds}`:`IF ${ifConds}`;
+    return`${tag}: ${side}${opt?' '+opt:''} @ ${stk} × ${lots} lot${lots>1?'s':''} [${inst}${expiry!=='strategy_default'?' '+expiry:''}]${grp?' ['+grp+']':''} | ${condTxt} cond(s)`;
   }).join('\n'):'No entry legs yet.';
 
   const acs=[...document.querySelectorAll('#adjLegs .leg-card')];
   $('adjSummary').textContent=acs.length?acs.map(card=>{
+    const id=card.id.replace('lc_adj_','');
     const tag=card.querySelector('.leg-tag')?.textContent||'?';
     const act=card.querySelector('[data-role="adj-action-type"]')?.value||'close_leg';
-    const conds=card.querySelectorAll('.simple-cond-row').length;
+    const ifConds=card.querySelectorAll(`#cl_adj_${id} .simple-cond-row`).length;
+    const hasElse=!!card.querySelector(`#use_else_adj_${id}`)?.checked;
+    const elseConds=hasElse?card.querySelectorAll(`#cl_adj_else_${id} .simple-cond-row`).length:0;
+    const elseAct=hasElse?(card.querySelector('[data-role="adj-else-action-type"]')?.value||'close_leg'):'';
     const retrig=card.querySelector('[data-role="adj-retriger"]')?.value==='yes'?'↻ ':'';
     const actLabel=ACTION_TYPES.find(a=>a.v===act)?.l.replace(/<[^>]+>/g,'')||act;
-    return`${retrig}${tag}: ${actLabel} | ${conds} cond(s)`;
+    const elseLabel=elseAct?(ACTION_TYPES.find(a=>a.v===elseAct)?.l.replace(/<[^>]+>/g,'')||elseAct):'';
+    const condTxt=hasElse?`IF ${ifConds} + ELSE ${elseConds}`:`IF ${ifConds}`;
+    const actTxt=hasElse?`${actLabel} / ELSE ${elseLabel}`:actLabel;
+    return`${retrig}${tag}: ${actTxt} | ${condTxt} cond(s)`;
   }).join('\n'):'No adjustment rules yet.';
 
   const xcs=[...document.querySelectorAll('#exitLegs .leg-card')];
@@ -1865,21 +1915,66 @@ function updateSummaries(){
 }
 
 /* ========== FLOWCHART ========== */
+function _shortTxt(s, n=120){
+  const t = String(s || '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n-1)}…` : t;
+}
+function _fmtCond(c){
+  if(!c) return '';
+  const v2 = (c.value2 !== undefined && c.value2 !== null && `${c.value2}` !== '') ? `, ${c.value2}` : '';
+  return `${c.parameter} ${c.comparator} ${c.value}${v2}`;
+}
+function _condSummary(listId){
+  const box = $(listId);
+  if(!box) return 'Always true';
+  const conds = extractCondsList(box);
+  if(!conds.length) return 'Always true';
+  return _shortTxt(conds.map((c,i)=>{
+    const j = i===0 ? '' : ` ${c.join || 'AND'} `;
+    return `${j}${_fmtCond(c)}`;
+  }).join(''), 150);
+}
+function _actionLabel(v){
+  return ACTION_TYPES.find(a=>a.v===v)?.l.replace(/<[^>]+>/g,'') || v || 'N/A';
+}
+function _adjActionSummary(card, adjId, branch, actionType){
+  const detail = card.querySelector(`#adj_${branch}_detail_${adjId}`) || card;
+  const q = sel => detail.querySelector(sel);
+  if(actionType==='close_leg') return `Close ${q('[data-role="close-leg-sel"]')?.value || 'selected leg'}`;
+  if(actionType==='partial_close_lots') return `Partial close ${q('[data-role="partial-leg-sel"]')?.value || 'selected leg'} (${q('[data-role="partial-lots"]')?.value || '1'} lot)`;
+  if(actionType==='reduce_by_pct') return `Reduce ${q('[data-role="reduce-leg-sel"]')?.value || 'selected leg'} by ${q('[data-role="reduce-pct"]')?.value || '50'}%`;
+  if(actionType==='roll_to_next_expiry') return `Roll ${q('[data-role="roll-leg-sel"]')?.value || 'selected leg'} to ${q('[data-role="roll-target-expiry"]')?.value || 'weekly_next'}`;
+  if(actionType==='open_hedge') return 'Open hedge leg';
+  if(actionType==='convert_to_spread') return 'Convert into spread (add wing)';
+  if(actionType==='simple_close_open_new'){
+    const swaps = [...(detail.querySelectorAll(`#swaps_${branch}_${adjId} .swap-card`) || [])];
+    if(!swaps.length) return 'Close/Open (swap)';
+    const tags = swaps.map(sc=>sc.querySelector('[data-role="swap-close"]')?.value || 'leg').join(', ');
+    return `Swap ${swaps.length} leg(s): ${_shortTxt(tags, 70)}`;
+  }
+  return _actionLabel(actionType);
+}
 function renderFlowchart(){
   const canvas=$('flowchartCanvas');
   if(!canvas||!$('sec-flowchart')?.classList.contains('active'))return;
   const entryCards=[...document.querySelectorAll('#entryLegs .leg-card')];
-  const adjCards=[...document.querySelectorAll('#adjLegs .leg-card')];
+  const adjCards=[...document.querySelectorAll('#adjLegs .leg-card')].sort((a,b)=>{
+    const ap=parseInt(a.querySelector('[data-role="adj-priority"]')?.value)||999;
+    const bp=parseInt(b.querySelector('[data-role="adj-priority"]')?.value)||999;
+    return ap-bp;
+  });
   const sym=gv('sSymbol')||'SYMBOL';
   const entryTime=gv('schEntry')||'09:18';const exitTime=gv('schExit')||'15:15';
   const entryEndTime=gv('schEntryEnd')||'14:00';
   const globalConds=document.querySelectorAll('#entryCombinedList .simple-cond-row').length;
+  const expiryMode=gv('schExpiry')||'weekly_current';
   const arrow=(lbl='')=>`<div class="fc-arrow"><div class="fc-arrow-line"></div>${lbl?`<span class="fc-arrow-label">${esc(lbl)}</span><div class="fc-arrow-line"></div>`:''}<div class="fc-arrow-tip"></div></div>`;
 
   let legsHtml='<div class="fc-legs-row">';
   if(!entryCards.length){legsHtml+=`<div class="fc-node fc-node-gate" style="color:var(--muted);font-style:italic;">No entry legs defined yet</div>`;}
   else{
     entryCards.forEach(card=>{
+      const id=card.id.replace('lc_entry_','');
       const tag=card.querySelector('.leg-tag')?.textContent||'?';
       const inst=card.querySelector('[data-role="instrument"]')?.value||'OPT';
       const side=card.querySelector('[data-role="side"]')?.value||'SELL';
@@ -1887,7 +1982,7 @@ function renderFlowchart(){
       const stk=card.querySelector('[data-role="strike-mode"]')?.value||'standard';
       const lots=card.querySelector('[data-role="lots"]')?.value||'1';
       const expiry=card.querySelector('[data-role="leg-expiry"]')?.value||'default';
-      const ifConds=card.querySelectorAll('[id*="cl_entry_if"] .simple-cond-row').length;
+      const ifConds=card.querySelectorAll(`#cl_entry_if_${id} .simple-cond-row`).length;
       const hasElse=card.querySelector('[id*="use_else_entry"]')?.checked;
       const grp=card.querySelector('[data-role="leg-group"]')?.value||'';
       const cls=side==='BUY'?'fc-node-buy':'fc-node-sell';
@@ -1908,16 +2003,37 @@ function renderFlowchart(){
   if(adjCards.length){
     adjHtml=arrow('monitoring loop')+`<div class="fc-node fc-node-monitor">🔄 Live Monitor</div>`+arrow()+`<div class="fc-adj-row">`;
     adjCards.forEach(card=>{
+      const id=card.id.replace('lc_adj_','');
       const tag=card.querySelector('.leg-tag')?.textContent||'?';
+      const ruleName=card.querySelector('[data-role="adj-name"]')?.value||tag;
+      const pri=card.querySelector('[data-role="adj-priority"]')?.value||'?';
+      const cooldown=card.querySelector('[data-role="adj-cooldown"]')?.value||'0';
       const act=card.querySelector('[data-role="adj-action-type"]')?.value||'close_leg';
-      const conds=card.querySelectorAll('.simple-cond-row').length;
+      const ifConds=card.querySelectorAll(`#cl_adj_${id} .simple-cond-row`).length;
+      const ifCondSummary=_condSummary(`cl_adj_${id}`);
+      const hasElse=!!card.querySelector(`#use_else_adj_${id}`)?.checked;
+      const elseConds=hasElse?card.querySelectorAll(`#cl_adj_else_${id} .simple-cond-row`).length:0;
+      const elseCondSummary=hasElse?_condSummary(`cl_adj_else_${id}`):'';
+      const elseAct=hasElse?(card.querySelector('[data-role="adj-else-action-type"]')?.value||'close_leg'):'';
       const retrig=card.querySelector('[data-role="adj-retriger"]')?.value==='yes';
-      const actLabel=ACTION_TYPES.find(a=>a.v===act)?.l.replace(/<[^>]+>/g,'')||act;
-      adjHtml+=`<div class="fc-node fc-node-adj" style="min-width:150px;font-size:10.5px;">
-        <div style="font-size:9px;opacity:.6;">ADJ${retrig?' ↻':''}</div>
-        <div style="font-weight:700;font-size:11px;">${esc(tag)}</div>
-        <div style="font-size:10px;margin-top:2px;opacity:.8;">${conds} trigger cond(s)</div>
-        <div style="font-size:10px;color:var(--orange);margin-top:2px;">→ ${esc(actLabel)}</div>
+      const actLabel=_actionLabel(act);
+      const elseLabel=hasElse?_actionLabel(elseAct):'';
+      const ifActionSummary=_adjActionSummary(card, id, 'if', act);
+      const elseActionSummary=hasElse?_adjActionSummary(card, id, 'else', elseAct):'';
+      adjHtml+=`<div class="fc-node fc-node-adj fc-adj-rule">
+        <div class="fc-adj-head">R${esc(pri)} · ${esc(ruleName)}${retrig?' · Retrigger':''} · Cooldown ${esc(cooldown)}s</div>
+        <div class="fc-adj-body">
+          <div class="fc-adj-branch">
+            <b>IF</b> (${ifConds} cond${ifConds===1?'':'s'})<br>
+            <span class="fc-adj-cond">${esc(ifCondSummary)}</span><br>
+            <span class="fc-adj-act">→ ${esc(actLabel)} · ${esc(_shortTxt(ifActionSummary,90))}</span>
+          </div>
+          ${hasElse?`<div class="fc-adj-branch fc-adj-branch-else">
+            <b>ELSE</b> (${elseConds} cond${elseConds===1?'':'s'})<br>
+            <span class="fc-adj-cond">${esc(elseCondSummary)}</span><br>
+            <span class="fc-adj-act">→ ${esc(elseLabel)} · ${esc(_shortTxt(elseActionSummary,90))}</span>
+          </div>`:''}
+        </div>
       </div>`;
     });
     adjHtml+='</div>';
@@ -1929,7 +2045,7 @@ function renderFlowchart(){
   const exitParts=[tgt&&`TP≥₹${tgt}`,sl&&`SL≥₹${sl}`,trail&&`Trail ₹${trail}`,`Time @ ${gv('exitTime')||'15:28'}`].filter(Boolean);
 
   canvas.innerHTML=`<div class="fc-canvas">
-    <div class="fc-node fc-node-start">▶ STRATEGY START<br><small style="font-weight:400;opacity:.7">${esc(sym)} · ${getActiveDays().join(', ')}</small></div>
+    <div class="fc-node fc-node-start">▶ STRATEGY START<br><small style="font-weight:400;opacity:.7">${esc(sym)} · ${getActiveDays().join(', ')} · Expiry: ${esc(expiryMode)}</small></div>
     ${arrow()}
     <div class="fc-node fc-node-schedule">⏰ Entry Window<br><small style="font-weight:400;opacity:.8">${entryTime} → ${entryEndTime} · EOD ${exitTime}</small></div>
     ${arrow(globalConds?'schedule ✓':'entry window open')}
@@ -1976,10 +2092,10 @@ async function loadSymbols(){
     loadDbFiles('NIFTY','NFO',[]);
   }
 }
-function onSymbolChange(){
+async function onSymbolChange(){
   const sym=gv('sSymbol');const item=ST.symMap[sym];
   sv('sExchange',item?.exchange||'NFO');
-  loadDbFiles(sym,item?.exchange||'NFO',item?.expiries);
+  await loadDbFiles(sym,item?.exchange||'NFO',item?.expiries);
 }
 async function loadDbFiles(sym,exchange,fallback){
   const el=$('sDbFile');let exps=Array.isArray(fallback)?fallback.filter(Boolean):[];
@@ -1988,12 +2104,21 @@ async function loadDbFiles(sym,exchange,fallback){
   onDbFileChange();
   // If we have a pending DB file, set it now
   if (ST.pendingDbFile) {
+    let found = false;
     // Try to find matching option
     for (let opt of el.options) {
       if (opt.value === ST.pendingDbFile) {
         opt.selected = true;
+        found = true;
         break;
       }
+    }
+    if (!found) {
+      const injected = document.createElement('option');
+      injected.value = ST.pendingDbFile;
+      injected.textContent = `${ST.pendingDbFile} (saved, not currently active)`;
+      el.appendChild(injected);
+      el.value = ST.pendingDbFile;
     }
     onDbFileChange();
     delete ST.pendingDbFile;

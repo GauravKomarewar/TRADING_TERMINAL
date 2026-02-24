@@ -39,7 +39,7 @@ VALID_OPTION_TYPES = {"CE", "PE"}
 VALID_SIDES = {"BUY", "SELL"}
 
 VALID_EXPIRY_MODES = {
-    "strategy_default", "weekly_current", "weekly_next", "monthly_current", "monthly_next", "custom"
+    "strategy_default", "weekly_current", "weekly_next", "weekly_auto", "monthly_current", "monthly_next", "custom"
 }
 VALID_ENTRY_SEQUENCES = {"parallel", "sequential"}
 

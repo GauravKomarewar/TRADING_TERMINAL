@@ -34,6 +34,7 @@ from datetime import datetime, timedelta
 import time
 import threading
 import logging
+import os
 from pathlib import Path
 from typing import Dict, Tuple, Optional, List, Any
 
@@ -59,7 +60,12 @@ DB_BASE_DIR = (
 )
 
 SNAPSHOT_INTERVAL = 1.0          # seconds
-EXPIRIES_PER_SYMBOL = 1          # nearest N expiries
+DEFAULT_EXPIRIES_PER_SYMBOL = 1  # nearest N expiries (fallback)
+# Per-symbol default overrides (customizable):
+# NIFTY -> 2 expiries, others -> DEFAULT_EXPIRIES_PER_SYMBOL
+SYMBOL_EXPIRY_OVERRIDES: Dict[str, int] = {
+    "NIFTY": 2,
+}
 RETENTION_DAYS = 1               # cleanup policy
 
 # Feed monitoring
@@ -85,6 +91,32 @@ DEFAULT_INSTRUMENTS = [
     {"exchange": "NFO", "symbol": "BANKNIFTY"},
     {"exchange": "MCX", "symbol": "CRUDEOILM"},
 ]
+
+
+def _parse_symbol_expiry_overrides(raw: str) -> Dict[str, int]:
+    """
+    Parse overrides from env string.
+
+    Format:
+      OPTION_CHAIN_EXPIRIES_PER_SYMBOL="NIFTY=2,BANKNIFTY=1,DEFAULT=1"
+    """
+    parsed: Dict[str, int] = {}
+    if not raw:
+        return parsed
+
+    for token in raw.split(","):
+        item = token.strip()
+        if not item or "=" not in item:
+            continue
+        symbol, value = item.split("=", 1)
+        key = symbol.strip().upper()
+        if not key:
+            continue
+        try:
+            parsed[key] = max(1, int(value.strip()))
+        except Exception:
+            logger.warning("Invalid expiry override token ignored: %s", item)
+    return parsed
 
 
 # =====================================================================
@@ -168,6 +200,28 @@ class OptionChainSupervisor:
         # 🔥 NEW: Recovery tracking
         self._last_feed_recovery = 0.0
         self._feed_stall_count = 0
+        
+        # Expiry customization:
+        # - defaults from code
+        # - optional env override per symbol
+        # Env format: OPTION_CHAIN_EXPIRIES_PER_SYMBOL="NIFTY=2,DEFAULT=1"
+        env_overrides = _parse_symbol_expiry_overrides(
+            os.getenv("OPTION_CHAIN_EXPIRIES_PER_SYMBOL", "")
+        )
+        self._symbol_expiry_overrides: Dict[str, int] = dict(SYMBOL_EXPIRY_OVERRIDES)
+        self._symbol_expiry_overrides.update(env_overrides)
+        self._default_expiries = max(
+            1,
+            int(self._symbol_expiry_overrides.get("DEFAULT", DEFAULT_EXPIRIES_PER_SYMBOL)),
+        )
+
+    def _get_expiry_count(self, exchange: str, symbol: str) -> int:
+        """
+        Get configured expiry count for a symbol.
+        """
+        _ = exchange  # Reserved for future exchange-specific rules.
+        key = str(symbol or "").strip().upper()
+        return max(1, int(self._symbol_expiry_overrides.get(key, self._default_expiries)))
 
     # --------------------------------------------------
     # BOOTSTRAP (MARKET OPEN)
@@ -187,8 +241,15 @@ class OptionChainSupervisor:
         for inst in DEFAULT_INSTRUMENTS:
             exchange = inst["exchange"]
             symbol = inst["symbol"]
+            expiry_count = self._get_expiry_count(exchange, symbol)
+            logger.info(
+                "Bootstrap expiry count | %s %s | expiries=%d",
+                exchange,
+                symbol,
+                expiry_count,
+            )
 
-            for i in range(EXPIRIES_PER_SYMBOL):
+            for i in range(expiry_count):
                 try:
                     expiry = get_expiry(
                         exchange=exchange,

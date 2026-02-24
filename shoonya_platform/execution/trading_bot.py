@@ -923,6 +923,22 @@ class ShoonyaBot:
         """Extract quantity from leg object safely."""
         return int(getattr(leg, "qty", 0) or getattr(leg, "quantity", 0))
 
+    def _serialize_leg_for_notification(self, leg: Any) -> Dict[str, Any]:
+        """Normalize leg object/dict for Telegram and structured logging."""
+        if isinstance(leg, dict):
+            payload = dict(leg)
+        else:
+            payload = {
+                "tradingsymbol": getattr(leg, "tradingsymbol", None) or getattr(leg, "symbol", None),
+                "direction": getattr(leg, "direction", None) or getattr(leg, "side", None),
+                "qty": getattr(leg, "qty", None) or getattr(leg, "quantity", None),
+                "order_type": getattr(leg, "order_type", None),
+                "price": getattr(leg, "price", None),
+            }
+        if payload.get("direction"):
+            payload["direction"] = str(payload["direction"]).upper()
+        return payload
+
     def _classify_leg_as_exit_or_entry(
         self,
         leg,
@@ -1463,6 +1479,7 @@ class ShoonyaBot:
 
             parsed = self.parse_alert_data(alert_data)
             execution_type = parsed.execution_type.upper()
+            leg_payloads = [self._serialize_leg_for_notification(leg) for leg in parsed.legs]
 
             # -------------------------------------------------
             # 🔒 PER-STRATEGY LOCK — prevents duplicate webhook races
@@ -1494,9 +1511,17 @@ class ShoonyaBot:
                             execution_type=execution_type,
                             legs_count=len(parsed.legs),
                             exchange=parsed.exchange,
+                            legs=leg_payloads,
                         )
                     except Exception as e:
                         logger.warning(f"Failed to send alert received message: {e}")
+                logger.info(
+                    "ALERT_RECEIVED | strategy=%s | type=%s | exchange=%s | legs=%s",
+                    parsed.strategy_name,
+                    execution_type,
+                    parsed.exchange,
+                    leg_payloads,
+                )
                 # -------------------------------------------------
                 # 🔁 EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
                 # -------------------------------------------------
@@ -1709,6 +1734,10 @@ class ShoonyaBot:
                             self.telegram.send_error_message(
                                 title="🚨 ENTRY FAILED",
                                 error=f"{parsed.strategy_name} | All legs rejected",
+                                strategy_name=parsed.strategy_name,
+                                execution_type=execution_type,
+                                exchange=parsed.exchange,
+                                legs=leg_payloads,
                             )
                         except Exception as e:
                             logger.warning(f"Failed to send error message: {e}")

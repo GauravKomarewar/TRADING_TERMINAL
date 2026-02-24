@@ -160,6 +160,8 @@ class StrategyExecutorService:
         self._mode_change_dict_lock = threading.Lock()
         self._mode_change_lock: Dict[str, threading.Lock] = {}
         self._monitor_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self._completed_monitor_history: List[Dict[str, Any]] = []
+        self._max_completed_monitor_history = 100
 
     def register_strategy(self, name: str, config_path: str):
         """Register a strategy with the service."""
@@ -226,6 +228,7 @@ class StrategyExecutorService:
                         logger.exception(f"Error processing strategy {name}: {e}")
             for name in completed_names:
                 try:
+                    self._archive_completed_strategy(name)
                     self.unregister_strategy(name)
                     logger.info(f"Strategy cycle completed and auto-stopped: {name}")
                 except Exception as e:
@@ -377,6 +380,93 @@ class StrategyExecutorService:
                     "legs": legs_payload,
                 }
         return snapshot
+
+    def _archive_completed_strategy(self, strategy_name: str) -> None:
+        """
+        Persist a completed strategy monitor snapshot before unregistering it.
+        """
+        with self._lock:
+            cache = dict((self._monitor_cache.get(strategy_name) or {}))
+            state = self._exec_states.get(strategy_name)
+            config = self._strategies.get(strategy_name, {}) or {}
+
+            if not cache:
+                return
+
+            mode = "MOCK" if self._is_paper_mode(config) else "LIVE"
+            legs_payload: List[Dict[str, Any]] = list(cache.values())
+            legs_payload.sort(
+                key=lambda row: str(row.get("updated_at") or row.get("opened_at") or ""),
+                reverse=True,
+            )
+
+            active_rows = [r for r in legs_payload if str(r.get("status", "")).upper() == "ACTIVE"]
+            closed_rows = [r for r in legs_payload if str(r.get("status", "")).upper() == "CLOSED"]
+            unrealized_pnl = sum(float(r.get("unrealized_pnl", 0) or 0) for r in active_rows)
+            realized_leg_pnl = sum(float(r.get("realized_pnl", 0) or 0) for r in closed_rows)
+            realized_state_pnl = float(getattr(state, "cumulative_daily_pnl", 0) or 0.0) if state else 0.0
+            realized_pnl = float(realized_state_pnl + realized_leg_pnl)
+
+            opened_ts_all: List[float] = []
+            closed_ts_all: List[float] = []
+            for row in legs_payload:
+                raw_opened = row.get("opened_at")
+                raw_closed = row.get("closed_at")
+                try:
+                    if raw_opened:
+                        opened_ts_all.append(datetime.fromisoformat(str(raw_opened)).timestamp())
+                except Exception:
+                    pass
+                try:
+                    if raw_closed:
+                        closed_ts_all.append(datetime.fromisoformat(str(raw_closed)).timestamp())
+                except Exception:
+                    pass
+
+            if opened_ts_all and closed_ts_all:
+                runtime_seconds = int(max(0, max(closed_ts_all) - min(opened_ts_all)))
+            else:
+                runtime_seconds = 0
+
+            history_row = {
+                "strategy_name": strategy_name,
+                "mode": mode,
+                "active": False,
+                "runtime_state": "COMPLETED",
+                "runtime_seconds": runtime_seconds,
+                "realized_pnl": realized_pnl,
+                "unrealized_pnl": float(unrealized_pnl),
+                "total_pnl": float(realized_pnl + unrealized_pnl),
+                "combined_delta": sum(float(r.get("delta", 0) or 0) for r in active_rows),
+                "combined_gamma": sum(float(r.get("gamma", 0) or 0) for r in active_rows),
+                "combined_theta": sum(float(r.get("theta", 0) or 0) for r in active_rows),
+                "combined_vega": sum(float(r.get("vega", 0) or 0) for r in active_rows),
+                "adjustments_today": int(getattr(state, "adjustments_today", 0) or 0) if state else 0,
+                "lifetime_adjustments": int(getattr(state, "lifetime_adjustments", 0) or 0) if state else 0,
+                "last_adjustment_time": (
+                    getattr(state, "last_adjustment_time", None).isoformat()
+                    if state and getattr(state, "last_adjustment_time", None)
+                    else None
+                ),
+                "leg_count": len(legs_payload),
+                "active_legs": len(active_rows),
+                "closed_legs": len(closed_rows),
+                "positions": [],
+                "all_legs": legs_payload,
+                "active_leg_rows": active_rows,
+                "closed_leg_rows": closed_rows,
+                "archived_at": datetime.now().isoformat(),
+            }
+
+            self._completed_monitor_history.insert(0, history_row)
+            if len(self._completed_monitor_history) > self._max_completed_monitor_history:
+                self._completed_monitor_history = self._completed_monitor_history[: self._max_completed_monitor_history]
+
+    def get_completed_strategy_monitor_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        with self._lock:
+            normalized_limit = max(1, int(limit or 20))
+            rows = self._completed_monitor_history[:normalized_limit]
+            return copy.deepcopy(rows)
 
     # BUG-026 FIX: STRATEGY_RECOVER_RESUME intent was submitted by the dashboard but
     # had NO consumer anywhere. The intent was stored in DB forever; recovery never happened.
@@ -1014,6 +1104,14 @@ class PerStrategyExecutor:
                 f"Adjustment validation failed for {self.name}: "
                 f"close/open resolved to same symbol(s): {details}"
             )
+            logger.error(
+                "ADJUSTMENT_VALIDATION_BLOCKED | strategy=%s | overlap=%s | close_map=%s | open_map=%s | legs=%s",
+                self.name,
+                details,
+                close_by_symbol,
+                open_by_symbol,
+                legs_payload,
+            )
             logger.error(err)
             now = datetime.now()
             self._adjustment_block_until = now + timedelta(seconds=self._adjustment_validation_backoff_sec)
@@ -1028,8 +1126,12 @@ class PerStrategyExecutor:
                 )
                 if should_notify and getattr(self.bot, "telegram_enabled", False) and getattr(self.bot, "telegram", None):
                     self.bot.telegram.send_error_message(
-                        title="ADJUSTMENT VALIDATION ERROR",
-                        error=f"{self.name} | {details}",
+                        title="⚠️ ADJUSTMENT VALIDATION ERROR",
+                        error=f"Close/Open resolved to same symbol(s): {details}",
+                        strategy_name=self.name,
+                        execution_type="ADJUSTMENT",
+                        exchange=str(self.config.get('identity', {}).get('exchange', 'NFO')),
+                        legs=legs_payload,
                     )
                     self._last_adjustment_validation_alert_at = now
             except Exception as notify_err:

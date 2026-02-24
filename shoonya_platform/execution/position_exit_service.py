@@ -166,16 +166,10 @@ class PositionExitService:
         Returns list of unique symbols that this strategy has open orders for.
         """
         try:
-            # Get all orders for this strategy
-            all_orders = self.repo.get_orders() or []
-            
-            # Filter to orders created by this strategy that are still active
-            strategy_orders = [
-                o for o in all_orders
-                if o.strategy_name == strategy_name and o.status in ("CREATED", "SENT_TO_BROKER", "EXECUTED")
-            ]
-            
-            # Extract unique symbols
+            # Use repository API that already scopes open orders by strategy.
+            strategy_orders = self.repo.get_open_orders_by_strategy(strategy_name) or []
+
+            # Extract unique symbols from active orders.
             symbols = list(set(o.symbol for o in strategy_orders))
             logger.info(
                 "STRATEGY_SYMBOLS | strategy=%s | symbols=%s",

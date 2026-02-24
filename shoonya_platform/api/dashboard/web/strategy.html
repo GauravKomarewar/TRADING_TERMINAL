@@ -436,6 +436,11 @@ input:checked + .toggle-slider:before {
       </div>
 
       <div class="monitor-section">
+        <div class="monitor-subtitle">Completed Strategy History</div>
+        <div id="monitor-completed-groups"></div>
+      </div>
+
+      <div class="monitor-section">
         <div class="monitor-subtitle">Orphan Positions (not strategy-generated)</div>
         <div id="monitor-orphans"></div>
       </div>
@@ -494,6 +499,7 @@ let currentDetailsStrategy = null;
 const monitorRenderCache = {
   summary: '',
   groups: '',
+  completed: '',
   orphans: ''
 };
 
@@ -861,6 +867,7 @@ async function loadLiveMonitor() {
       <div class="monitor-card"><div class="monitor-label">Orphan</div><div class="monitor-value">${Number(s.orphan_positions||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Tracked Legs</div><div class="monitor-value">${Number(s.total_strategy_legs_tracked||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Closed Legs</div><div class="monitor-value">${Number(s.total_closed_strategy_legs||0)}</div></div>
+      <div class="monitor-card"><div class="monitor-label">Completed Runs</div><div class="monitor-value">${Number(s.completed_strategy_runs||0)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio Realized</div><div class="monitor-value" style="color:${Number(s.portfolio_realized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_realized_pnl)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio Unrealized</div><div class="monitor-value" style="color:${Number(s.portfolio_unrealized_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_unrealized_pnl)}</div></div>
       <div class="monitor-card"><div class="monitor-label">Portfolio PnL</div><div class="monitor-value" style="color:${Number(s.portfolio_total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_total_pnl)}</div></div>
@@ -927,6 +934,44 @@ async function loadLiveMonitor() {
       setHtmlIfChanged('monitor-strategy-groups', 'groups', groupsHtml);
     }
 
+    const completedGroups = r.completed_strategy_groups || [];
+    if (!completedGroups.length) {
+      setHtmlIfChanged('monitor-completed-groups', 'completed', '<div style="color:var(--muted);font-size:12px;">No completed strategy history yet.</div>');
+    } else {
+      const completedHtml = completedGroups.map(g => {
+        const closedRowsRaw = (g.closed_leg_rows && g.closed_leg_rows.length)
+          ? g.closed_leg_rows
+          : ((g.all_legs || []).filter(x => String(x.status || '').toUpperCase() === 'CLOSED'));
+        return `
+          <div class="strat-card">
+            <div class="strat-card-header">
+              <div class="strat-card-name">
+                ${escHtml(g.strategy_name)}
+                ${g.mode === 'LIVE'
+                  ? '<span class="badge badge-mode badge-live">⚡ LIVE</span>'
+                  : '<span class="badge badge-mode badge-mock">🧪 MOCK</span>'}
+                <span class="badge badge-stopped">COMPLETED</span>
+              </div>
+              <div style="font-size:12px;color:${Number(g.total_pnl||0) >= 0 ? 'var(--success)' : 'var(--danger)'};">PnL ${fmt2(g.total_pnl)}</div>
+            </div>
+            <div class="strat-card-meta">
+              <span><strong>Runtime:</strong> ${fmtRuntime(g.runtime_seconds)} (Completed)</span>
+              <span><strong>Realized:</strong> ${fmt2(g.realized_pnl)}</span>
+              <span><strong>Unrealized:</strong> ${fmt2(g.unrealized_pnl)}</span>
+              <span><strong>Closed Legs:</strong> ${Number(g.closed_legs || closedRowsRaw.length || 0)}</span>
+              <span><strong>Adj Lifetime:</strong> ${Number(g.lifetime_adjustments || 0)}</span>
+              <span><strong>Archived:</strong> ${g.archived_at ? escHtml(g.archived_at) : '-'}</span>
+            </div>
+            <div class="monitor-tables-stack">
+              <div class="monitor-subtitle" style="margin-top:10px;">Closed Legs</div>
+              ${renderMonitorTable(collapseBySymbol(closedRowsRaw))}
+            </div>
+          </div>
+        `;
+      }).join('');
+      setHtmlIfChanged('monitor-completed-groups', 'completed', completedHtml);
+    }
+
     const oa = r.orphan_aggregate || {};
     const orphansHtml = `
       <div class="strat-card-meta" style="margin-bottom:8px;">
@@ -945,9 +990,11 @@ async function loadLiveMonitor() {
   } catch(e) {
     monitorRenderCache.summary = '';
     monitorRenderCache.groups = '';
+    monitorRenderCache.completed = '';
     monitorRenderCache.orphans = '';
     $('monitor-summary').innerHTML = '';
     $('monitor-strategy-groups').innerHTML = '';
+    $('monitor-completed-groups').innerHTML = '';
     $('monitor-orphans').innerHTML = `<div style="color:var(--danger);font-size:12px;">Failed to load live monitor: ${escHtml(e.message)}</div>`;
   }
 }

@@ -2446,6 +2446,7 @@ def get_live_positions_overview(
         orphan_positions = [p for p in classified if p["owner_type"] == "orphan"]
         leg_snapshot: dict[str, Any] = {}
         strategy_modes: dict[str, str] = {}
+        completed_strategy_groups: list[dict[str, Any]] = []
         if svc is not None:
             try:
                 getter = getattr(svc, "get_strategy_leg_monitor_snapshot", None)
@@ -2464,6 +2465,14 @@ def get_live_positions_overview(
                         strategy_modes[strat] = str(mode_getter(strat) or "LIVE").upper()
             except Exception as mode_err:
                 logger.debug("Could not fetch strategy modes for monitor: %s", mode_err)
+            try:
+                completed_getter = getattr(svc, "get_completed_strategy_monitor_history", None)
+                if callable(completed_getter):
+                    result = completed_getter(limit=50)
+                    if isinstance(result, list):
+                        completed_strategy_groups = result
+            except Exception as history_err:
+                logger.debug("Could not fetch completed strategy monitor history: %s", history_err)
 
         by_strategy: dict[str, dict[str, Any]] = {}
         for p in strategy_positions:
@@ -2666,12 +2675,14 @@ def get_live_positions_overview(
                 "strategy_unrealized_pnl": float(strategy_unrealized),
                 "total_strategy_legs_tracked": sum(len(g.get("all_legs") or []) for g in by_strategy.values()),
                 "total_closed_strategy_legs": sum(int(g.get("closed_legs", 0) or 0) for g in by_strategy.values()),
+                "completed_strategy_runs": len(completed_strategy_groups),
                 "portfolio_combined_delta": sum(float(p.get("delta", 0) or 0) for p in classified),
                 "portfolio_combined_gamma": sum(float(p.get("gamma", 0) or 0) for p in classified),
                 "portfolio_combined_theta": sum(float(p.get("theta", 0) or 0) for p in classified),
                 "portfolio_combined_vega": sum(float(p.get("vega", 0) or 0) for p in classified),
             },
             "strategy_groups": list(by_strategy.values()),
+            "completed_strategy_groups": completed_strategy_groups,
             "orphan_aggregate": orphan_aggregate,
             "orphan_positions": orphan_positions,
             "all_positions": classified,

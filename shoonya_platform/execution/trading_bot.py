@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 
 Trading Bot Module
 Main trading bot logic with alert processing and trade management
 """
 # ======================================================================
-# 🔒 PRODUCTION FROZEN — BOT / OMS LAYER
+# ðŸ”’ PRODUCTION FROZEN â€” BOT / OMS LAYER
 # Date: 2026-2-03
 
 # This file is client-isolated by design.
@@ -17,34 +17,34 @@ Main trading bot logic with alert processing and trade management
 # NO further OMS changes required for copy trading.
 
 # Guarantees:
-#   ✔ Single broker touchpoint via CommandService
-#   ✔ EXIT intents registered only, never executed directly
-#   ✔ OrderWatcherEngine is sole EXIT executor
-#   ✔ ScriptMaster governs all order-type rules
-#   ✔ Duplicate ENTRY blocked at memory, DB, broker & guard levels
-#   ✔ Recovery-safe across restart, cancel, and partial fills
-# ✅ Single _ensure_login() — no shadowing, no ambiguity
-# ✅ Lazy + auditable login (matches supervisor & long-running service model)
-# ✅ Single broker touchpoint (execute_command → ShoonyaClient)
-# ✅ EXIT purity preserved (intent-only → OrderWatcherEngine)
-# ✅ Risk manager correctly uses broker truth only
-# ✅ ExecutionGuard + DB + broker triple-duplicate protection intact
-# ✅ RecoveryBootstrap ordering is correct
-# ✅ Dashboard control consumers are isolated, intent-only
-# ✅ No silent session invalidation vectors left inside OMS
+#   âœ” Single broker touchpoint via CommandService
+#   âœ” EXIT intents registered only, never executed directly
+#   âœ” OrderWatcherEngine is sole EXIT executor
+#   âœ” ScriptMaster governs all order-type rules
+#   âœ” Duplicate ENTRY blocked at memory, DB, broker & guard levels
+#   âœ” Recovery-safe across restart, cancel, and partial fills
+# âœ… Single _ensure_login() â€” no shadowing, no ambiguity
+# âœ… Lazy + auditable login (matches supervisor & long-running service model)
+# âœ… Single broker touchpoint (execute_command â†’ ShoonyaClient)
+# âœ… EXIT purity preserved (intent-only â†’ OrderWatcherEngine)
+# âœ… Risk manager correctly uses broker truth only
+# âœ… ExecutionGuard + DB + broker triple-duplicate protection intact
+# âœ… RecoveryBootstrap ordering is correct
+# âœ… Dashboard control consumers are isolated, intent-only
+# âœ… No silent session invalidation vectors left inside OMS
 
-# 🔒 COPY-TRADING READY (BOT LAYER)
-# • Client identity resolved via Config.get_client_identity()
-# • No direct USER_ID / USER_NAME usage
-# • OMS behavior unchanged
+# ðŸ”’ COPY-TRADING READY (BOT LAYER)
+# â€¢ Client identity resolved via Config.get_client_identity()
+# â€¢ No direct USER_ID / USER_NAME usage
+# â€¢ OMS behavior unchanged
 
 
 # Architecture:
-#   Strategy / Risk → Intent → CommandService → OrderWatcher → Broker
-# 🔒 SINGLE SOURCE OF TRUTH FOR BROKER LOGIN
+#   Strategy / Risk â†’ Intent â†’ CommandService â†’ OrderWatcher â†’ Broker
+# ðŸ”’ SINGLE SOURCE OF TRUTH FOR BROKER LOGIN
 # Do NOT redefine this method elsewhere in the class.
 
-# ⚠️ DO NOT MODIFY WITHOUT FULL OMS RE-AUDIT
+# âš ï¸ DO NOT MODIFY WITHOUT FULL OMS RE-AUDIT
 # ======================================================================
 
 import logging
@@ -225,14 +225,14 @@ class ShoonyaBot:
     
     def __init__(self, config: Optional[Config] = None):
         """Initialize the Shoonya trading bot (PRODUCTION)"""
-        logger.critical("🔥 ShoonyaBot INIT STARTED")
+        logger.critical("ðŸ”¥ ShoonyaBot INIT STARTED")
 
         # -------------------------------------------------
-        # 🔧 CORE CONFIG
+        # ðŸ”§ CORE CONFIG
         # -------------------------------------------------
         self.config = config or Config()
 
-        # 🔒 Canonical client identity (SINGLE SOURCE OF TRUTH)
+        # ðŸ”’ Canonical client identity (SINGLE SOURCE OF TRUTH)
         # (copy-trading ready, NO behavior change)
         self.client_identity = self.config.get_client_identity()
         self.client_id = self.client_identity["client_id"]
@@ -240,78 +240,78 @@ class ShoonyaBot:
         self.trade_records: List[TradeRecord] = []
 
         # -------------------------------------------------
-        # 🔌 BROKER CLIENT (LAZY LOGIN)
+        # ðŸ”Œ BROKER CLIENT (LAZY LOGIN)
         # -------------------------------------------------
-        # 🔒 Login is enforced lazily via _ensure_login()
+        # ðŸ”’ Login is enforced lazily via _ensure_login()
         self.api = ShoonyaClient(self.config)
         # Public proxy that serializes and centralizes all API calls
         self.api_proxy = ShoonyaApiProxy(self.api)
         # -------------------------------------------------
-        # 📢 TELEGRAM FLAGS (MUST EXIST BEFORE LOGIN)
+        # ðŸ“¢ TELEGRAM FLAGS (MUST EXIST BEFORE LOGIN)
         # -------------------------------------------------
-        # 🔒 Prevent attribute errors during early login
+        # ðŸ”’ Prevent attribute errors during early login
         self.telegram_enabled = False
         self.telegram = None
         # -------------------------------------------------
-        # 🔐 INITIAL LOGIN (ONCE, BLOCKING)
+        # ðŸ” INITIAL LOGIN (ONCE, BLOCKING)
         # -------------------------------------------------
-        # 🔥 FIX: Check login() return value and handle failure properly
+        # ðŸ”¥ FIX: Check login() return value and handle failure properly
         login_ok = self.login()
         if not login_ok:
-            # TOTP may have just changed — wait for next 30s window and retry once
-            logger.warning("⚠️ First login failed — waiting 35s for fresh TOTP window and retrying")
+            # TOTP may have just changed â€” wait for next 30s window and retry once
+            logger.warning("âš ï¸ First login failed â€” waiting 35s for fresh TOTP window and retrying")
             time.sleep(35)
             login_ok = self.login()
 
         if not login_ok:
-            logger.critical("❌ Broker login failed after 2 attempts — aborting startup")
+            logger.critical("âŒ Broker login failed after 2 attempts â€” aborting startup")
             raise RuntimeError("BROKER_LOGIN_FAILED")
 
         # -------------------------------------------------
-        # 📡 LIVE FEED STARTUP (with retry + re-login)
+        # ðŸ“¡ LIVE FEED STARTUP (with retry + re-login)
         # -------------------------------------------------
         feed_started = False
         max_feed_attempts = 3
         for attempt in range(1, max_feed_attempts + 1):
             timeout = 15.0 + (attempt - 1) * 5.0  # 15s, 20s, 25s
-            logger.info(f"🔄 Feed startup attempt {attempt}/{max_feed_attempts} (timeout={timeout}s)")
+            logger.info(f"ðŸ”„ Feed startup attempt {attempt}/{max_feed_attempts} (timeout={timeout}s)")
 
             try:
                 if start_live_feed(self.api_proxy, timeout=timeout):
-                    logger.info("✅ Live feed initialized successfully")
+                    logger.info("âœ… Live feed initialized successfully")
 
                     # Subscribe to index tokens for live dashboard
                     try:
                         try:
                             index_tokens_subscriber.resolve_futures_tokens(self.api_proxy)
                         except Exception as e:
-                            logger.warning(f"⚠️  MCX futures token resolution failed: {e}")
+                            logger.warning(f"âš ï¸  MCX futures token resolution failed: {e}")
 
                         count, symbols = index_tokens_subscriber.subscribe_index_tokens(
                             self.api_proxy
                         )
-                        logger.info(f"📊 Index tokens subscribed: {count} indices ({symbols})")
+                        logger.info(f"ðŸ“Š Index tokens subscribed: {count} indices ({symbols})")
                     except Exception as e:
-                        logger.warning(f"⚠️  Index token subscription failed: {e}")
+                        logger.warning(f"âš ï¸  Index token subscription failed: {e}")
 
                     feed_started = True
                     break
             except Exception as e:
-                logger.warning(f"⚠️ Feed attempt {attempt} exception: {e}")
+                logger.warning(f"âš ï¸ Feed attempt {attempt} exception: {e}")
 
             if attempt < max_feed_attempts:
-                logger.warning(f"⚠️ Feed attempt {attempt} failed, retrying...")
-                # 🔥 FIX: Re-login if session died (common on EC2 after network blip)
+                logger.warning(f"âš ï¸ Feed attempt {attempt} failed, retrying...")
+                # ðŸ”¥ FIX: Re-login if session died (common on EC2 after network blip)
                 if not self.api.is_logged_in():
-                    logger.info("🔄 Session lost — re-logging before next feed attempt")
+                    logger.info("ðŸ”„ Session lost â€” re-logging before next feed attempt")
                     time.sleep(5)
                     self.login()
                 else:
                     time.sleep(3)
 
         if not feed_started:
-            logger.critical("❌ Failed to start live feed after %d attempts", max_feed_attempts)
-            raise RuntimeError("Live feed startup failed — check broker session and network")
+            logger.critical("âŒ Failed to start live feed after %d attempts", max_feed_attempts)
+            raise RuntimeError("Live feed startup failed â€” check broker session and network")
         
         #--------------------------------------------------
         self.broker_view = BrokerView(self.api_proxy)
@@ -322,12 +322,12 @@ class ShoonyaBot:
             try:
                 self.option_supervisor.run()
             except Exception:
-                logger.exception("❌ OptionChainSupervisor crashed")
+                logger.exception("âŒ OptionChainSupervisor crashed")
 
         self._option_supervisor_thread = threading.Thread(
             target=_start_option_supervisor,
             name="OptionChainSupervisorThread",
-            daemon=False,   # 🔒 MUST be non-daemon
+            daemon=False,   # ðŸ”’ MUST be non-daemon
         )
         self._option_supervisor_thread.start()
 
@@ -343,27 +343,27 @@ class ShoonyaBot:
             state_db_path=executor_db,
         )
         self.strategy_executor_service.start()  # Start background loop
-        logger.info("✅ StrategyExecutorService initialized and started")
+        logger.info("âœ… StrategyExecutorService initialized and started")
         # -------------------------------------------------
-        # 📦 PERSISTENCE (POSITION / ORDER SOURCE OF TRUTH)
+        # ðŸ“¦ PERSISTENCE (POSITION / ORDER SOURCE OF TRUTH)
         # -------------------------------------------------
         self.order_repo = OrderRepository(client_id=self.client_id)
 
         # -------------------------------------------------
-        # 🚨 SINGLE EXIT AUTHORITY(POSITION-DRIVEN) (MUST BE INITIALIZED FIRST)
+        # ðŸš¨ SINGLE EXIT AUTHORITY(POSITION-DRIVEN) (MUST BE INITIALIZED FIRST)
         # -------------------------------------------------
-        # 🔒 ALL exits (risk / manual / dashboard / recovery)
-        # 🔒 MUST flow through OrderWatcherEngine ONLY
+        # ðŸ”’ ALL exits (risk / manual / dashboard / recovery)
+        # ðŸ”’ MUST flow through OrderWatcherEngine ONLY
         self.order_watcher = OrderWatcherEngine(self)
-        self.order_watcher.start()  # ✅ CRITICAL FIX: Actually start the thread!
-        logger.info("🧠 OrderWatcher thread started")
+        self.order_watcher.start()  # âœ… CRITICAL FIX: Actually start the thread!
+        logger.info("ðŸ§  OrderWatcher thread started")
 
         # -------------------------------------------------
-        # 🛡 EXECUTION & COMMAND LAYER
+        # ðŸ›¡ EXECUTION & COMMAND LAYER
         # -------------------------------------------------
         self.execution_guard = ExecutionGuard()
 
-        # 🔒 STARTUP GUARD RECONCILIATION — rebuild guard state from broker truth
+        # ðŸ”’ STARTUP GUARD RECONCILIATION â€” rebuild guard state from broker truth
         # Without this, after a restart the guard thinks no strategies have positions,
         # allowing duplicate ENTRY orders for strategies that already have live broker positions.
         try:
@@ -397,25 +397,25 @@ class ShoonyaBot:
             else:
                 logger.info("STARTUP_GUARD_RECONCILE | No live positions at startup")
         except Exception as e:
-            logger.warning("STARTUP_GUARD_RECONCILE FAILED | %s — guard starts empty", e)
+            logger.warning("STARTUP_GUARD_RECONCILE FAILED | %s â€” guard starts empty", e)
 
-        # ⚠️ CommandService DEPENDS on order_watcher
+        # âš ï¸ CommandService DEPENDS on order_watcher
         self.command_service = CommandService(self)
         self.pending_commands = []
-        # 🔒 Atomic lock for execute_command (prevents double execution)
+        # ðŸ”’ Atomic lock for execute_command (prevents double execution)
         self._cmd_lock = threading.Lock()
-        # 🔒 Per-strategy locks for process_alert (prevents duplicate webhook races)
+        # ðŸ”’ Per-strategy locks for process_alert (prevents duplicate webhook races)
         self._alert_locks: Dict[str, threading.Lock] = {}
         self._alert_locks_guard = threading.Lock()
         self._atomic_locks: Dict[str, threading.Lock] = {}
         self._atomic_locks_guard = threading.Lock()
         # -------------------------------------------------
-        # 🧠 RISK MANAGER (INTENT ONLY – NO DIRECT ORDERS)
+        # ðŸ§  RISK MANAGER (INTENT ONLY â€“ NO DIRECT ORDERS)
         # -------------------------------------------------
         self.risk_manager = SupremeRiskManager(self)
 
         # -------------------------------------------------
-        # 📢 TELEGRAM (OPTIONAL, NON-BLOCKING)
+        # ðŸ“¢ TELEGRAM (OPTIONAL, NON-BLOCKING)
         # -------------------------------------------------
         self.telegram_enabled = self.config.is_telegram_enabled()
         self.telegram = None  # Initialize to None first
@@ -439,58 +439,97 @@ class ShoonyaBot:
             logger.warning("Telegram configuration missing - notifications disabled")
 
         # -------------------------------------------------
-        # 📈 STRATEGY REGISTRY (THREAD-SAFE)
+        # ðŸ“ˆ STRATEGY REGISTRY (THREAD-SAFE)
         # -------------------------------------------------
         self._live_strategies = {}  # strategy_name -> (strategy, market)
-        self._live_strategies_lock = threading.Lock()  # 🔒 Thread-safe access
+        self._live_strategies_lock = threading.Lock()  # ðŸ”’ Thread-safe access
 
         # -------------------------------------------------
-        # ♻️ PHASE-2 RECOVERY (SAFE, NON-ACTIVE)
+        # â™»ï¸ PHASE-2 RECOVERY (SAFE, NON-ACTIVE)
         # -------------------------------------------------
         RecoveryBootstrap(self).run()
 
         # -------------------------------------------------
-        # 🧭 DASHBOARD / API CONTROL CONSUMERS
+        # ðŸ§­ DASHBOARD / API CONTROL CONSUMERS
         # -------------------------------------------------
         self._shutdown_event = threading.Event()
         self.start_control_intent_consumers()
 
         # -------------------------------------------------
-        # 📈 STRATEGY RUNNER (CLOCK + DISPATCHER ONLY)
+        # ðŸ“ˆ STRATEGY RUNNER (CLOCK + DISPATCHER ONLY)
         # -------------------------------------------------
         self.strategy_runner = None
         logger.info("StrategyRunner legacy path disabled; using StrategyExecutorService only")
 
         # -------------------------------------------------
-        # 🚀 START STRATEGY RUNNER
+        # ðŸš€ START STRATEGY RUNNER
         # -------------------------------------------------
         # StrategyRunner disabled (strategy_runner-only architecture)
 
         # -------------------------------------------------
-        # 🔓 ORPHAN POSITION MANAGER (MANUAL POSITION CONTROL)
+        # ðŸ”“ ORPHAN POSITION MANAGER (MANUAL POSITION CONTROL)
         # -------------------------------------------------
         self.orphan_manager = OrphanPositionManager(self)
         self.orphan_manager.load_active_rules()
-        logger.info("🔓 OrphanPositionManager initialized")
+        logger.info("ðŸ”“ OrphanPositionManager initialized")
 
         # -------------------------------------------------
-        # ⏱ SCHEDULER
+        # â± SCHEDULER
         # -------------------------------------------------
         self.start_scheduler()
-
+        self._announce_startup_complete()
 
 
     def register_live_strategy(self, strategy_name, strategy, market):
         with self._live_strategies_lock:
             if strategy_name in self._live_strategies:
-                logger.warning(f"⚠️ Strategy already registered: {strategy_name}")
+                logger.warning(f"âš ï¸ Strategy already registered: {strategy_name}")
                 return
             """
             READ-ONLY registration for reporting only.
             NO trading, NO execution, NO mutation.
             """
             self._live_strategies[strategy_name] = (strategy, market)
-            logger.info(f"📡 Registered live strategy for reporting: {strategy_name}")
+            logger.info(f"ðŸ“¡ Registered live strategy for reporting: {strategy_name}")
+
+    def _announce_startup_complete(self) -> None:
+        """Emit one canonical startup-complete message to logs and Telegram."""
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(
+            "\u2705 BOT STARTUP COMPLETE | client=%s | ts=%s | telegram=%s",
+            self.client_id,
+            ts,
+            self.telegram_enabled,
+        )
+        if self.telegram_enabled:
+            try:
+                self.send_telegram(
+                    "\U0001F680 <b>BOT STARTED</b>\n"
+                    f"\U0001F4C5 {ts}\n"
+                    f"\U0001F464 Client: <code>{self.client_id}</code>\n"
+                    "\u2705 Systems initialized and ready"
+                )
+            except Exception as e:
+                logger.warning("Startup Telegram notification failed: %s", e)
+
+    def _announce_shutdown_start(self) -> None:
+        """Emit one canonical shutdown-start message to logs and Telegram."""
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(
+            "\U0001F6D1 BOT SHUTDOWN STARTED | client=%s | ts=%s",
+            self.client_id,
+            ts,
+        )
+        if self.telegram_enabled:
+            try:
+                self.send_telegram(
+                    "\U0001F6D1 <b>BOT SHUTDOWN STARTED</b>\n"
+                    f"\U0001F4C5 {ts}\n"
+                    f"\U0001F464 Client: <code>{self.client_id}</code>\n"
+                    "\u2139\ufe0f Graceful shutdown in progress"
+                )
+            except Exception as e:
+                logger.warning("Shutdown-start Telegram notification failed: %s", e)
 
   
     # ==================================================
@@ -660,7 +699,7 @@ class ShoonyaBot:
         self,
         *,
         scope,
-        strategy_name=None,  # 🔥 NEW: strategy-scoped exits
+        strategy_name=None,  # ðŸ”¥ NEW: strategy-scoped exits
         symbols=None,
         product_type="ALL",
         reason,
@@ -687,7 +726,7 @@ class ShoonyaBot:
         """Safe wrapper for sending Telegram messages"""
         if self.telegram_enabled and self.telegram:
             try:
-                normalized = sanitize_text(message, ascii_only=True)
+                normalized = sanitize_text(message, ascii_only=False)
                 return self.telegram.send_message(normalized)
             except Exception as e:
                 logger.error(f"Telegram send error: {e}")
@@ -719,24 +758,24 @@ class ShoonyaBot:
                 # Periodic PnL OHLC tracking (analytics only)
                 schedule.every(1).minutes.do(self.risk_manager.track_pnl_ohlc)
                 
-                # 🔐 Supreme Risk Manager heartbeat (REAL-TIME RISK)
+                # ðŸ” Supreme Risk Manager heartbeat (REAL-TIME RISK)
                 def _rms_heartbeat_wrapper():
                     try:
                         self.risk_manager.heartbeat()
                     except RuntimeError:
-                        # 🔥 FAIL-HARD: escape schedule
+                        # ðŸ”¥ FAIL-HARD: escape schedule
                         raise
                     except Exception as e:
                         log_exception("RMS.heartbeat", e)
 
                 schedule.every(5).seconds.do(_rms_heartbeat_wrapper)
                 
-                # 💓 Telegram Heartbeat - validates session + sends alive signal
+                # ðŸ’“ Telegram Heartbeat - validates session + sends alive signal
                 def _telegram_heartbeat():
                     try:
                         self.send_telegram_heartbeat()
                     except RuntimeError:
-                        # 🔥 FAIL-HARD: session failure must trigger restart
+                        # ðŸ”¥ FAIL-HARD: session failure must trigger restart
                         raise
                     except Exception as e:
                         log_exception("telegram_heartbeat", e)
@@ -745,18 +784,18 @@ class ShoonyaBot:
 
                 schedule.every(10).minutes.do(send_strategy_reports)
                 
-                # 🔓 ORPHAN POSITION MANAGEMENT (check every 30 seconds)
+                # ðŸ”“ ORPHAN POSITION MANAGEMENT (check every 30 seconds)
                 def _orphan_monitor_wrapper():
                     try:
                         executed = self.orphan_manager.monitor_and_execute()
                         if executed > 0:
-                            logger.warning(f"🔓 ORPHAN MANAGER: Executed {executed} rule(s)")
+                            logger.warning(f"ðŸ”“ ORPHAN MANAGER: Executed {executed} rule(s)")
                     except Exception as e:
                         log_exception("orphan_manager.monitor", e)
                 
                 schedule.every(30).seconds.do(_orphan_monitor_wrapper)
                 
-                # 🧹 Weekly DB hygiene (safe, non-trading)
+                # ðŸ§¹ Weekly DB hygiene (safe, non-trading)
                 schedule.every().day.at("03:30").do(self.cleanup_old_orders)
                 
                 logger.info(f"Scheduler started - reports every {self.config.report_frequency} minutes")
@@ -765,16 +804,16 @@ class ShoonyaBot:
                     try:
                         schedule.run_pending()
 
-                    # 🔥 FAIL-HARD: broker/session failure must kill process
+                    # ðŸ”¥ FAIL-HARD: broker/session failure must kill process
                     except RuntimeError as e:
                         logger.critical(f"FATAL SESSION ERROR: {e} - RESTARTING PROCESS")
                         if self.telegram_enabled:
                             try:
                                 self.send_telegram(
-                                    f"🚨 <b>CRITICAL: SERVICE RESTART REQUIRED</b>\n"
-                                    f"❌ Session recovery failed\n"
-                                    f"🔄 Service will auto-restart in 5 seconds\n"
-                                    f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}"
+                                    f"ðŸš¨ <b>CRITICAL: SERVICE RESTART REQUIRED</b>\n"
+                                    f"âŒ Session recovery failed\n"
+                                    f"ðŸ”„ Service will auto-restart in 5 seconds\n"
+                                    f"â° Time: {datetime.now().strftime('%H:%M:%S')}"
                                 )
                             except Exception as notify_error:
                                 logger.error(f"Failed to send critical restart alert: {notify_error}")
@@ -802,19 +841,19 @@ class ShoonyaBot:
         try:
             if self.api.is_logged_in():
                 logger.info(
-                    "🔐 LOGIN SKIPPED | service=signal_processor | reason=already_logged_in"
+                    "ðŸ” LOGIN SKIPPED | service=signal_processor | reason=already_logged_in"
                 )
                 return True
 
             logger.critical(
-                "🔐 LOGIN ATTEMPT | service=signal_processor | reason=startup"
+                "ðŸ” LOGIN ATTEMPT | service=signal_processor | reason=startup"
             )
 
             success = self.api.login()
 
             if success:
                 logger.critical(
-                    "✅ LOGIN SUCCESS | service=signal_processor | session_active=True"
+                    "âœ… LOGIN SUCCESS | service=signal_processor | session_active=True"
                 )
 
                 if self.telegram_enabled and self.telegram and self.config.user_id:
@@ -826,7 +865,7 @@ class ShoonyaBot:
                 return True
 
             logger.error(
-                "❌ LOGIN FAILED | service=signal_processor | reason=unknown"
+                "âŒ LOGIN FAILED | service=signal_processor | reason=unknown"
             )
 
             if self.telegram_enabled and self.telegram:
@@ -841,7 +880,7 @@ class ShoonyaBot:
             log_exception("login", e)
 
             logger.critical(
-                "❌ LOGIN EXCEPTION | service=signal_processor | fatal=True"
+                "âŒ LOGIN EXCEPTION | service=signal_processor | fatal=True"
             )
 
             if self.telegram_enabled and self.telegram:
@@ -858,7 +897,7 @@ class ShoonyaBot:
         Health check for monitoring.
         
         SAFE STUB: Returns True unless critical failures detected.
-        Do NOT add complex logic yet — this is for operational safety only.
+        Do NOT add complex logic yet â€” this is for operational safety only.
         
         Returns:
             bool: True if service is healthy, False if critical failure
@@ -878,7 +917,7 @@ class ShoonyaBot:
             # If health check itself fails, assume healthy to avoid false alarms
             return True
     # ============================================================
-    # USAGE IN HEALTH MONITOR (OPTIONAL — CURRENTLY COMMENTED OUT)
+    # USAGE IN HEALTH MONITOR (OPTIONAL â€” CURRENTLY COMMENTED OUT)
     # ============================================================
     # 
     # If you want to enable the health monitor in main.py, uncomment:
@@ -894,19 +933,19 @@ class ShoonyaBot:
     # ============================================================
 
     # -------------------------------------------------
-    # 🔐 BROKER SESSION GUARD (MANDATORY)
+    # ðŸ” BROKER SESSION GUARD (MANDATORY)
     # -------------------------------------------------
    
     def _ensure_login(self):
         """
-        🔒 SINGLE SOURCE OF TRUTH FOR SESSION VALIDITY
+        ðŸ”’ SINGLE SOURCE OF TRUTH FOR SESSION VALIDITY
 
         Delegates session validation and recovery
         entirely to ShoonyaClient.
         """
         if not self.api.ensure_session():
             logger.critical(
-                "❌ BROKER SESSION INVALID | auto-recovery failed"
+                "âŒ BROKER SESSION INVALID | auto-recovery failed"
             )
             raise RuntimeError("Broker session invalid and recovery failed")
 
@@ -1209,8 +1248,8 @@ class ShoonyaBot:
         """
         Starts dashboard control intent consumers in background.
 
-        - GenericControlIntentConsumer → ENTRY / EXIT / BASKET
-        - StrategyControlConsumer     → STRATEGY lifecycle only
+        - GenericControlIntentConsumer â†’ ENTRY / EXIT / BASKET
+        - StrategyControlConsumer     â†’ STRATEGY lifecycle only
         - Shared stop_event
         - No shared logic
         """
@@ -1233,7 +1272,7 @@ class ShoonyaBot:
             # STRATEGY CONTROL CONSUMER
             # -------------------------------
             strategy_consumer = StrategyControlConsumer(
-                strategy_manager=self,   # 🔒 ShoonyaBot is the strategy manager
+                strategy_manager=self,   # ðŸ”’ ShoonyaBot is the strategy manager
                 stop_event=self._shutdown_event,
             )
             self._strategy_control_thread = threading.Thread(
@@ -1243,7 +1282,7 @@ class ShoonyaBot:
             )
             self._strategy_control_thread.start()
 
-            logger.info("🧭 Dashboard control intent consumers started")
+            logger.info("ðŸ§­ Dashboard control intent consumers started")
 
         except Exception as e:
             log_exception("start_control_intent_consumers", e)
@@ -1284,7 +1323,7 @@ class ShoonyaBot:
 
             if deleted > 0:
                 logger.info(
-                    f"🧹 DB CLEANUP | removed {deleted} old closed orders"
+                    f"ðŸ§¹ DB CLEANUP | removed {deleted} old closed orders"
                 )
         except Exception as e:
             log_exception("db_cleanup", e)
@@ -1299,9 +1338,9 @@ class ShoonyaBot:
         is_duplicate: bool = False,
     ) -> LegResult:
         """
-        PURE INTENT REGISTRATION ENGINE (PRODUCTION — FROZEN)
+        PURE INTENT REGISTRATION ENGINE (PRODUCTION â€” FROZEN)
 
-        🔒 RULE:
+        ðŸ”’ RULE:
         - NO broker execution
         - NO DB writes
         - Registers intent ONLY
@@ -1309,11 +1348,11 @@ class ShoonyaBot:
         """
 
         # =================================================
-        # 🧪 TEST MODE — NO BROKER, NO DB
+        # ðŸ§ª TEST MODE â€” NO BROKER, NO DB
         # =================================================
         if test_mode:
             fake_order_id = f"TEST_{strategy_name}_{leg_data.tradingsymbol}_{int(time.time()*1000)}"
-            logger.warning(f"🧪 TEST MODE | {leg_data.tradingsymbol}")
+            logger.warning(f"ðŸ§ª TEST MODE | {leg_data.tradingsymbol}")
 
             self.trade_records.append(
                 TradeRecord(
@@ -1346,7 +1385,7 @@ class ShoonyaBot:
             direction = leg_data.direction.upper()
 
             # =================================================
-            # 🔒 BUILD CANONICAL INTENT
+            # ðŸ”’ BUILD CANONICAL INTENT
             # =================================================
             cmd = UniversalOrderCommand.from_order_params(
                 order_params={
@@ -1364,7 +1403,7 @@ class ShoonyaBot:
             )
 
             # =================================================
-            # 🔒 CANONICAL INSTRUMENT RULE (ScriptMaster)
+            # ðŸ”’ CANONICAL INSTRUMENT RULE (ScriptMaster)
             # =================================================
             must_limit = requires_limit_order(
                 exchange=exchange,
@@ -1382,7 +1421,7 @@ class ShoonyaBot:
                     )
 
             # =================================================
-            # DUPLICATE ENTRY — HARD BLOCK
+            # DUPLICATE ENTRY â€” HARD BLOCK
             # =================================================
             if execution_type == "ENTRY" and is_duplicate:
                 logger.warning(
@@ -1397,7 +1436,7 @@ class ShoonyaBot:
                 )
 
             # =================================================
-            # TELEGRAM — INTENT REGISTERED
+            # TELEGRAM â€” INTENT REGISTERED
             # =================================================
             if self.telegram_enabled and self.telegram:
                 try:
@@ -1418,7 +1457,7 @@ class ShoonyaBot:
                     logger.warning(f"Failed to send order placing message: {e}")
 
             # =================================================
-            # 🔒 REGISTER INTENT ONLY
+            # ðŸ”’ REGISTER INTENT ONLY
             # =================================================
             if execution_type == "EXIT":
                 self.command_service.register(cmd)
@@ -1458,16 +1497,16 @@ class ShoonyaBot:
 
     def process_alert(self, alert_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        PURE EXECUTION ALERT HANDLER (PRODUCTION — FROZEN)
+        PURE EXECUTION ALERT HANDLER (PRODUCTION â€” FROZEN)
 
         RULES:
-        - ❌ No quotes
-        - ❌ No LTP
-        - ❌ No bid/ask
-        - ✅ Alert defines order_type & price
-        - ✅ ExecutionGuard controls risk
-        - ✅ Broker position book controls duplicates
-        - ✅ Per-strategy lock prevents duplicate webhook races
+        - âŒ No quotes
+        - âŒ No LTP
+        - âŒ No bid/ask
+        - âœ… Alert defines order_type & price
+        - âœ… ExecutionGuard controls risk
+        - âœ… Broker position book controls duplicates
+        - âœ… Per-strategy lock prevents duplicate webhook races
         """
 
         try:
@@ -1482,7 +1521,7 @@ class ShoonyaBot:
             leg_payloads = [self._serialize_leg_for_notification(leg) for leg in parsed.legs]
 
             # -------------------------------------------------
-            # 🔒 PER-STRATEGY LOCK — prevents duplicate webhook races
+            # ðŸ”’ PER-STRATEGY LOCK â€” prevents duplicate webhook races
             # Two identical webhooks arriving simultaneously will serialize
             # on the strategy lock; the second one will hit dedup checks.
             # -------------------------------------------------
@@ -1493,7 +1532,7 @@ class ShoonyaBot:
 
             with strategy_lock:
 
-                # Risk check — EXIT alerts always pass (they reduce risk)
+                # Risk check â€” EXIT alerts always pass (they reduce risk)
                 if execution_type != "EXIT" and not self.risk_manager.can_execute():
                     return {
                         "status": "blocked",
@@ -1502,7 +1541,7 @@ class ShoonyaBot:
                     }
 
                 # -------------------------------------------------
-                # TELEGRAM — ALERT RECEIVED
+                # TELEGRAM â€” ALERT RECEIVED
                 # -------------------------------------------------
                 if self.telegram_enabled and self.telegram:
                     try:
@@ -1523,7 +1562,7 @@ class ShoonyaBot:
                     leg_payloads,
                 )
                 # -------------------------------------------------
-                # 🔁 EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
+                # ðŸ” EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
                 # -------------------------------------------------
                 if not parsed.test_mode:
                     try:
@@ -1532,7 +1571,7 @@ class ShoonyaBot:
                     except Exception:
                         positions = []
 
-                    # 🔒 Direction-aware broker map (ExecutionGuard v1.3 contract)
+                    # ðŸ”’ Direction-aware broker map (ExecutionGuard v1.3 contract)
                     broker_map = {}
                     for p in positions:
                         sym = p.get("tsym")
@@ -1561,7 +1600,7 @@ class ShoonyaBot:
                         if self.has_live_entry_block(parsed.strategy_name, leg.tradingsymbol):
                             duplicate_symbols.add(leg.tradingsymbol)
                             logger.warning(
-                                f"ENTRY BLOCKED — LIVE ORDER OR POSITION EXISTS | "
+                                f"ENTRY BLOCKED â€” LIVE ORDER OR POSITION EXISTS | "
                                 f"{leg.tradingsymbol} | {parsed.strategy_name}"
                             )
 
@@ -1630,7 +1669,7 @@ class ShoonyaBot:
                 # -------------------------------------------------
                 # EXECUTE LEGS
                 # -------------------------------------------------
-                # 🔒 Fetch positions ONCE before the loop for EXIT legs
+                # ðŸ”’ Fetch positions ONCE before the loop for EXIT legs
                 # (prevents per-leg API calls and race conditions between legs)
                 # In test_mode, do not gate exits by broker positions because
                 # mock runs may not have real broker netqty state.
@@ -1647,7 +1686,7 @@ class ShoonyaBot:
 
                     if execution_type == "EXIT" and not parsed.test_mode:
                         # -------------------------------------------------
-                        # 🔒 BROKER-TRUTH EXIT DIRECTION (from cached snapshot)
+                        # ðŸ”’ BROKER-TRUTH EXIT DIRECTION (from cached snapshot)
                         # -------------------------------------------------
                         net_qty = 0
                         for p in exit_positions_cache:
@@ -1657,12 +1696,12 @@ class ShoonyaBot:
 
                         if net_qty == 0:
                             logger.warning(
-                                f"EXIT SKIPPED — NO POSITION | {leg.tradingsymbol}"
+                                f"EXIT SKIPPED â€” NO POSITION | {leg.tradingsymbol}"
                             )
                             continue
 
-                        # If net_qty > 0 → SELL to exit
-                        # If net_qty < 0 → BUY to exit
+                        # If net_qty > 0 â†’ SELL to exit
+                        # If net_qty < 0 â†’ BUY to exit
                         leg.direction = "SELL" if net_qty > 0 else "BUY"
 
                     if execution_type == "EXIT":
@@ -1724,7 +1763,7 @@ class ShoonyaBot:
                         # Continue processing remaining legs
 
                 # -------------------------------------------------
-                # ENTRY FAILURE — ROLLBACK
+                # ENTRY FAILURE â€” ROLLBACK
                 # -------------------------------------------------
                 if execution_type == "ENTRY" and success_count == 0:
                     self.execution_guard.force_close_strategy(parsed.strategy_name)
@@ -1732,7 +1771,7 @@ class ShoonyaBot:
                     if self.telegram_enabled and self.telegram:
                         try:
                             self.telegram.send_error_message(
-                                title="🚨 ENTRY FAILED",
+                                title="ðŸš¨ ENTRY FAILED",
                                 error=f"{parsed.strategy_name} | All legs rejected",
                                 strategy_name=parsed.strategy_name,
                                 execution_type=execution_type,
@@ -1776,7 +1815,7 @@ class ShoonyaBot:
                     "timestamp": datetime.now().isoformat(),
                 }
         except RuntimeError:
-            # 🔥 FAIL-HARD: broker/session blind
+            # ðŸ”¥ FAIL-HARD: broker/session blind
             raise
         except Exception as e:
             log_exception("process_alert", e)
@@ -1912,28 +1951,28 @@ class ShoonyaBot:
 
     def execute_command(self, command, **kwargs):
         """
-        🔗 DESIRED FLOW: COMPLETE 6-STEP ORDER EXECUTION
+        ðŸ”— DESIRED FLOW: COMPLETE 6-STEP ORDER EXECUTION
         
-        Step 1: REGISTER TO DB with status=CREATED       [✅ DONE by CommandService.submit()]
-        Step 2: SYSTEM BLOCKERS CHECK (Risk/Guard/Dup)   [✅ THIS METHOD]
-        Step 3: UPDATE TO status=SENT_TO_BROKER          [✅ THIS METHOD - before broker call]
-        Step 4: EXECUTE ON BROKER                        [✅ THIS METHOD - place order]
-        Step 5: UPDATE DB BASED ON BROKER RESULT         [✅ THIS METHOD - handle success/fail]
-        Step 6: ORDERWATCH POLLS BROKER ("EXECUTED TRUTH") [✅ DONE by OrderWatcher]
+        Step 1: REGISTER TO DB with status=CREATED       [âœ… DONE by CommandService.submit()]
+        Step 2: SYSTEM BLOCKERS CHECK (Risk/Guard/Dup)   [âœ… THIS METHOD]
+        Step 3: UPDATE TO status=SENT_TO_BROKER          [âœ… THIS METHOD - before broker call]
+        Step 4: EXECUTE ON BROKER                        [âœ… THIS METHOD - place order]
+        Step 5: UPDATE DB BASED ON BROKER RESULT         [âœ… THIS METHOD - handle success/fail]
+        Step 6: ORDERWATCH POLLS BROKER ("EXECUTED TRUTH") [âœ… DONE by OrderWatcher]
         
         Accepts extra keyword args (trailing_engine, etc.)
         for forward compatibility.
         """
-        # 🔒 EXECUTION AUTHORITY — log non-ORDER_WATCHER callers for audit
+        # ðŸ”’ EXECUTION AUTHORITY â€” log non-ORDER_WATCHER callers for audit
         # Both CommandService.submit() and OrderWatcher may call execute_command.
         # Previously this was an assert that broke strategy ENTRY orders.
         if command.source != "ORDER_WATCHER":
             logger.info(
                 f"EXECUTE_COMMAND_SOURCE | cmd_id={command.command_id} | source={command.source} | "
-                f"(non-ORDER_WATCHER caller — allowed)"
+                f"(non-ORDER_WATCHER caller â€” allowed)"
             )
 
-        # 🔒 ATOMIC LOCK: Prevents race condition where two threads both pass
+        # ðŸ”’ ATOMIC LOCK: Prevents race condition where two threads both pass
         # can_execute() and place the same order twice (double execution).
         with self._cmd_lock:
             return self._execute_command_inner(command, **kwargs)
@@ -1950,8 +1989,8 @@ class ShoonyaBot:
                 f"STEP_2: SYSTEM_BLOCKERS_CHECK | cmd_id={command.command_id} | {command.symbol}"
             )
             
-            # 🛡️ Check 2A: RISK MANAGER (daily loss, cooldown, max loss)
-            # EXIT orders ALWAYS bypass risk checks — they REDUCE risk, not add it.
+            # ðŸ›¡ï¸ Check 2A: RISK MANAGER (daily loss, cooldown, max loss)
+            # EXIT orders ALWAYS bypass risk checks â€” they REDUCE risk, not add it.
             # Without this bypass, RMS exit orders block themselves when daily_loss_hit=True.
             #
             # Detection: intent field (set by from_record / with_intent) OR command_id prefix
@@ -1978,7 +2017,7 @@ class ShoonyaBot:
                 
                 return OrderResult(success=False, error_message=reason)
             
-            # 🛡️ Check 2B: EXECUTION GUARD (strategy tracking)
+            # ðŸ›¡ï¸ Check 2B: EXECUTION GUARD (strategy tracking)
             # Check if strategy already has an ENTRY (prevent duplicate entries)
             strategy_id = getattr(command, 'strategy_name', 'UNKNOWN')
             if self.execution_guard.has_strategy(strategy_id):
@@ -1997,8 +2036,8 @@ class ShoonyaBot:
                     
                     return OrderResult(success=False, error_message=reason)
             
-            # 🛡️ Check 2C: DUPLICATE DETECTION (live orders by symbol)
-            # EXIT orders skip duplicate check — multiple exit legs for same symbol are valid
+            # ðŸ›¡ï¸ Check 2C: DUPLICATE DETECTION (live orders by symbol)
+            # EXIT orders skip duplicate check â€” multiple exit legs for same symbol are valid
             if not is_exit_order:
                 open_orders = self.order_repo.get_open_orders_by_strategy(strategy_id)
                 
@@ -2018,7 +2057,7 @@ class ShoonyaBot:
                         return OrderResult(success=False, error_message=reason)
             
             logger.info(
-                f"BLOCKERS_PASSED ✅ | cmd_id={command.command_id} | {command.symbol}"
+                f"BLOCKERS_PASSED âœ… | cmd_id={command.command_id} | {command.symbol}"
             )
             
             # ==================================================
@@ -2041,7 +2080,7 @@ class ShoonyaBot:
                 f"STEP_4: EXECUTE_ON_BROKER | cmd_id={command.command_id} | {command.symbol}"
             )
             
-            # Convert canonical command → broker params
+            # Convert canonical command â†’ broker params
             order_params = command.to_broker_params()
 
             logger.info(
@@ -2052,7 +2091,7 @@ class ShoonyaBot:
                 f"type={order_params.get('price_type')}"
             )
 
-            # 🔥 Single broker touchpoint
+            # ðŸ”¥ Single broker touchpoint
             result = self.api.place_order(order_params)
             
             # ==================================================
@@ -2064,7 +2103,7 @@ class ShoonyaBot:
             )
             
             if result.success:
-                # ✅ BROKER ACCEPTED: Update with broker_order_id
+                # âœ… BROKER ACCEPTED: Update with broker_order_id
                 broker_id = getattr(result, 'order_id', None) or getattr(result, 'norenordno', None)
                 if broker_id:
                     try:
@@ -2074,9 +2113,9 @@ class ShoonyaBot:
                             f"broker_id={broker_id} | status=SENT_TO_BROKER"
                         )
                         
-                        # ────────────────────────────────────────────────
-                        # 🔄 INVALIDATE BROKER CACHE (NEW)
-                        # ────────────────────────────────────────────────
+                        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                        # ðŸ”„ INVALIDATE BROKER CACHE (NEW)
+                        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                         # After successful order placement, force fresh data on next poll
                         # Ensures OrderWatcher and dashboard see new broker state immediately
                         try:
@@ -2089,7 +2128,7 @@ class ShoonyaBot:
                         except Exception as cache_err:
                             # Non-critical - cache will expire naturally in 1.5s
                             logger.debug(f"Cache invalidation warning (non-critical): {cache_err}")
-                        # ────────────────────────────────────────────────
+                        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                         
                     except Exception as db_err:
                         logger.error(f"STEP_5 WARNING: Failed to persist broker_id: {db_err}")
@@ -2099,7 +2138,7 @@ class ShoonyaBot:
                         f"cmd_id={command.command_id}"
                     )
             else:
-                # ❌ BROKER REJECTED: Update status to FAILED
+                # âŒ BROKER REJECTED: Update status to FAILED
                 logger.error(
                     f"STEP_5_BROKER_REJECTED | cmd_id={command.command_id} | {command.symbol} | "
                     f"error={result.error_message}"
@@ -2113,15 +2152,15 @@ class ShoonyaBot:
                 except Exception as db_err:
                     logger.error(f"STEP_5 ERROR: Failed to update DB on broker rejection: {db_err}")
                 
-                # 📢 TELEGRAM ALERT for failed exits
+                # ðŸ“¢ TELEGRAM ALERT for failed exits
                 if hasattr(command, 'execution_type') and command.execution_type == "EXIT":
                     if self.telegram_enabled:
                         try:
                             self.send_telegram(
-                                f"🚨 EXIT ORDER REJECTED\n"
+                                f"ðŸš¨ EXIT ORDER REJECTED\n"
                                 f"Symbol: {command.symbol}\n"
                                 f"Reason: {result.error_message}\n"
-                                f"⚠️ Position still open - manual action may be needed"
+                                f"âš ï¸ Position still open - manual action may be needed"
                             )
                         except Exception as e:
                             logger.warning(f"Failed to send telegram notification: {e}")
@@ -2134,7 +2173,7 @@ class ShoonyaBot:
         except Exception as e:
             log_exception("execute_command", e)
             
-            # 🆘 UNEXPECTED ERROR: Mark as FAILED
+            # ðŸ†˜ UNEXPECTED ERROR: Mark as FAILED
             logger.error(f"STEP_5_EXCEPTION | cmd_id={command.command_id} | {type(e).__name__}: {e}")
             try:
                 self.order_repo.update_status(command.command_id, "FAILED")
@@ -2180,25 +2219,25 @@ class ShoonyaBot:
             if not self.telegram_enabled:
                 return
             
-            message = f"🌅 <b>GOOD MORNING!</b>\n"
-            message += f"📅 {datetime.now().strftime('%A, %B %d, %Y')}\n"
-            message += f"🕘 Market Opening Soon\n\n"
-            message += f"🤖 Bot Status: ✅ Ready for Trading\n"
-            message += f"💰 Account: Connected & Active\n\n"
+            message = f"ðŸŒ… <b>GOOD MORNING!</b>\n"
+            message += f"ðŸ“… {datetime.now().strftime('%A, %B %d, %Y')}\n"
+            message += f"ðŸ•˜ Market Opening Soon\n\n"
+            message += f"ðŸ¤– Bot Status: âœ… Ready for Trading\n"
+            message += f"ðŸ’° Account: Connected & Active\n\n"
             
             yesterday_trades = get_yesterday_trades(self.trade_records)
             
-            message += f"📊 Yesterday's Performance:\n"
+            message += f"ðŸ“Š Yesterday's Performance:\n"
             if yesterday_trades:
                 successful_trades = len([t for t in yesterday_trades if t.status in ("PLACED", "Ok", "FILLED")])
                 success_rate = calculate_success_rate(successful_trades, len(yesterday_trades))
-                message += f"• Total Trades: {len(yesterday_trades)}\n"
-                message += f"• Successful: {successful_trades}\n"
-                message += f"• Success Rate: {success_rate:.1f}%\n"
+                message += f"â€¢ Total Trades: {len(yesterday_trades)}\n"
+                message += f"â€¢ Successful: {successful_trades}\n"
+                message += f"â€¢ Success Rate: {success_rate:.1f}%\n"
             else:
-                message += f"• No trades executed yesterday\n"
+                message += f"â€¢ No trades executed yesterday\n"
             
-            message += f"\n🎯 Ready for today's opportunities!"
+            message += f"\nðŸŽ¯ Ready for today's opportunities!"
             self.send_telegram(message)
             
         except Exception as e:
@@ -2212,19 +2251,19 @@ class ShoonyaBot:
             
             today_trades = get_today_trades(self.trade_records)
             
-            message = f"🌆 <b>MARKET CLOSED</b>\n"
-            message += f"📅 {datetime.now().strftime('%Y-%m-%d')}\n"
+            message = f"ðŸŒ† <b>MARKET CLOSED</b>\n"
+            message += f"ðŸ“… {datetime.now().strftime('%Y-%m-%d')}\n"
             message += f"{'='*25}\n\n"
             
             if today_trades:
                 successful_trades = len([t for t in today_trades if t.status in ("PLACED", "Ok", "FILLED")])
                 success_rate = calculate_success_rate(successful_trades, len(today_trades))
                 
-                message += f"📊 <b>Today's Summary:</b>\n"
-                message += f"• Total Trades: {len(today_trades)}\n"
-                message += f"• Successful: {successful_trades}\n"
-                message += f"• Failed: {len(today_trades) - successful_trades}\n"
-                message += f"• Success Rate: {success_rate:.1f}%\n"
+                message += f"ðŸ“Š <b>Today's Summary:</b>\n"
+                message += f"â€¢ Total Trades: {len(today_trades)}\n"
+                message += f"â€¢ Successful: {successful_trades}\n"
+                message += f"â€¢ Failed: {len(today_trades) - successful_trades}\n"
+                message += f"â€¢ Success Rate: {success_rate:.1f}%\n"
                 
                 # Strategy breakdown
                 strategies = defaultdict(int)
@@ -2232,13 +2271,13 @@ class ShoonyaBot:
                     strategies[trade.strategy_name] += 1
                 
                 if len(strategies) > 1:
-                    message += f"\n📋 <b>Strategy Breakdown:</b>\n"
+                    message += f"\nðŸ“‹ <b>Strategy Breakdown:</b>\n"
                     for strategy, count in strategies.items():
-                        message += f"• {strategy}: {count} trades\n"
+                        message += f"â€¢ {strategy}: {count} trades\n"
             else:
-                message += f"📊 No trades executed today\n"
+                message += f"ðŸ“Š No trades executed today\n"
             
-            message += f"\n😴 Bot will continue monitoring overnight"
+            message += f"\nðŸ˜´ Bot will continue monitoring overnight"
             self.send_telegram(message)
             
         except Exception as e:
@@ -2250,16 +2289,16 @@ class ShoonyaBot:
             if not self.telegram_enabled:
                 return
             
-            # 1️⃣ Validate session by fetching limits
+            # 1ï¸âƒ£ Validate session by fetching limits
             try:
                 limits = self.broker_view.get_limits(force_refresh=True)
                 if not limits or not isinstance(limits, dict):
                     raise RuntimeError("BROKER_SESSION_INVALID")
-                session_status = "✅ Live"
+                session_status = "âœ… Live"
                 cash = float(limits.get('cash', 0))
             except Exception as e:
                 logger.error(f"Heartbeat session check failed: {e}")
-                session_status = "❌ Disconnected"
+                session_status = "âŒ Disconnected"
                 cash = 0.0
 
                 # Heartbeat should not kill service; try one explicit recovery pass.
@@ -2268,13 +2307,13 @@ class ShoonyaBot:
                     self.broker_view.invalidate_cache("limits")
                     limits = self.broker_view.get_limits(force_refresh=True)
                     if limits and isinstance(limits, dict):
-                        session_status = "✅ Recovered"
+                        session_status = "âœ… Recovered"
                         cash = float(limits.get('cash', 0))
                         logger.info("Heartbeat session recovered after explicit revalidation")
                 except Exception as recovery_error:
                     logger.error(f"Heartbeat session recovery failed: {recovery_error}")
             
-            # 2️⃣ Get positions count
+            # 2ï¸âƒ£ Get positions count
             try:
                 positions = self.broker_view.get_positions()
                 active_pos = sum(1 for p in positions if int(p.get('netqty', 0)) != 0)
@@ -2282,16 +2321,16 @@ class ShoonyaBot:
                 logger.warning(f"Could not fetch positions for heartbeat: {position_error}")
                 active_pos = 0
             
-            # 3️⃣ Send compact heartbeat
+            # 3ï¸âƒ£ Send compact heartbeat
             now = datetime.now()
             message = (
-                f"💓 <b>SYSTEM HEARTBEAT</b>\n"
-                f"⏰ {now.strftime('%H:%M:%S')} | {now.strftime('%d-%b-%Y')}\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"🔐 Session: {session_status}\n"
-                f"💰 Cash: ₹{cash:,.2f}\n"
-                f"📊 Positions: {active_pos}\n"
-                f"🤖 Status: Active & Monitoring"
+                f"ðŸ’“ <b>SYSTEM HEARTBEAT</b>\n"
+                f"â° {now.strftime('%H:%M:%S')} | {now.strftime('%d-%b-%Y')}\n"
+                f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+                f"ðŸ” Session: {session_status}\n"
+                f"ðŸ’° Cash: â‚¹{cash:,.2f}\n"
+                f"ðŸ“Š Positions: {active_pos}\n"
+                f"ðŸ¤– Status: Active & Monitoring"
             )
             
             self.send_telegram(message)
@@ -2330,19 +2369,19 @@ class ShoonyaBot:
                 logger.warning(f"Could not fetch limits for status report: {limits_error}")
                         
             # Format message
-            message = f"📊 <b>BOT STATUS REPORT</b>\n"
-            message += f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            message = f"ðŸ“Š <b>BOT STATUS REPORT</b>\n"
+            message += f"ðŸ“… {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             message += f"{'='*30}\n\n"
             
             # Bot Status
-            message += f"🤖 <b>BOT STATUS:</b> ✅ Active\n"
-            message += f"🔐 <b>Login Status:</b> {'✅ Connected' if session_valid else '❌ Disconnected'}\n\n"
+            message += f"ðŸ¤– <b>BOT STATUS:</b> âœ… Active\n"
+            message += f"ðŸ” <b>Login Status:</b> {'âœ… Connected' if session_valid else 'âŒ Disconnected'}\n\n"
             
             if account_info:
                 # Account Limits
-                message += f"💰 <b>ACCOUNT LIMITS</b>\n"
-                message += f"💵 Available Cash: {format_currency(account_info.available_cash)}\n"
-                message += f"📊 Used Margin: {format_currency(account_info.used_margin)}\n\n"
+                message += f"ðŸ’° <b>ACCOUNT LIMITS</b>\n"
+                message += f"ðŸ’µ Available Cash: {format_currency(account_info.available_cash)}\n"
+                message += f"ðŸ“Š Used Margin: {format_currency(account_info.used_margin)}\n\n"
                 
                 # Positions
                 active_positions = [
@@ -2351,7 +2390,7 @@ class ShoonyaBot:
                 ]
                 
                 if active_positions:
-                    message += f"📍 <b>ACTIVE POSITIONS</b>\n"
+                    message += f"ðŸ“ <b>ACTIVE POSITIONS</b>\n"
                     for pos in active_positions[:3]:  # Show max 3 positions
                         symbol = pos.get('tsym', 'Unknown')
                         qty = pos.get('netqty', '0')
@@ -2359,35 +2398,35 @@ class ShoonyaBot:
                         urmtom = float(pos.get('urmtom', 0))
                         pnl = rpnl + urmtom
 
-                        message += f"• {symbol}: {qty} qty, PnL: {format_currency(pnl)}\n"
+                        message += f"â€¢ {symbol}: {qty} qty, PnL: {format_currency(pnl)}\n"
                     if len(active_positions) > 3:
                         message += f"... and {len(active_positions) - 3} more positions\n"
                     message += "\n"
                 else:
-                    message += f"📍 <b>POSITIONS:</b> No active positions\n\n"
+                    message += f"ðŸ“ <b>POSITIONS:</b> No active positions\n\n"
             else:
-                message += f"⚠️ <b>ACCOUNT INFO:</b> Unable to fetch data\n\n"
+                message += f"âš ï¸ <b>ACCOUNT INFO:</b> Unable to fetch data\n\n"
             
             # Trading Statistics
-            message += f"📈 <b>TRADING STATS</b>\n"
-            message += f"📊 Today's Trades: {bot_stats.today_trades}\n"
-            message += f"📋 Total Trades: {bot_stats.total_trades}\n"
+            message += f"ðŸ“ˆ <b>TRADING STATS</b>\n"
+            message += f"ðŸ“Š Today's Trades: {bot_stats.today_trades}\n"
+            message += f"ðŸ“‹ Total Trades: {bot_stats.total_trades}\n"
             
             if bot_stats.last_activity:
                 last_trade_time = datetime.fromisoformat(bot_stats.last_activity)
-                message += f"🕐 Last Activity: {last_trade_time.strftime('%H:%M:%S')}\n"
+                message += f"ðŸ• Last Activity: {last_trade_time.strftime('%H:%M:%S')}\n"
             else:
-                message += f"🕐 Last Activity: No trades yet\n"
+                message += f"ðŸ• Last Activity: No trades yet\n"
 
-            # 🛡 Supreme Risk Manager Status
-            message += f"\n🛡 <b>RISK MANAGER STATUS</b>\n"
-            message += f"• Daily PnL: ₹{risk_status['daily_pnl']:.2f}\n"
-            message += f"• Loss Hit Today: {'YES' if risk_status['daily_loss_hit'] else 'NO'}\n"
+            # ðŸ›¡ Supreme Risk Manager Status
+            message += f"\nðŸ›¡ <b>RISK MANAGER STATUS</b>\n"
+            message += f"â€¢ Daily PnL: â‚¹{risk_status['daily_pnl']:.2f}\n"
+            message += f"â€¢ Loss Hit Today: {'YES' if risk_status['daily_loss_hit'] else 'NO'}\n"
 
             if risk_status.get("cooldown_until"):
-                message += f"• Cooldown Until: {risk_status['cooldown_until']}\n"
+                message += f"â€¢ Cooldown Until: {risk_status['cooldown_until']}\n"
    
-            message += f"\n🔔 <i>Next report in {self.config.report_frequency} minutes</i>"
+            message += f"\nðŸ”” <i>Next report in {self.config.report_frequency} minutes</i>"
             
             self.send_telegram(message)
             logger.info("Status report sent")
@@ -2464,24 +2503,25 @@ class ShoonyaBot:
         shutdown_timeout = 30.0  # 30 second total timeout
         
         try:
-            logger.info("🛑 Shutting down bot...")
+            self._announce_shutdown_start()
+            logger.info("ðŸ›‘ Shutting down bot...")
 
-            # 0️⃣ Set global shutdown event FIRST (stops all loops)
+            # 0ï¸âƒ£ Set global shutdown event FIRST (stops all loops)
             self._shutdown_event.set()
 
-            # 1️⃣ STOP ORDER WATCHER (BLOCKING - must complete)
+            # 1ï¸âƒ£ STOP ORDER WATCHER (BLOCKING - must complete)
             try:
                 elapsed = time.time() - shutdown_start
                 remaining = shutdown_timeout - elapsed
                 if remaining > 5:
-                    logger.info(f"⏳ Stopping OrderWatcher (timeout={remaining:.1f}s)")
+                    logger.info(f"â³ Stopping OrderWatcher (timeout={remaining:.1f}s)")
                     self.order_watcher.stop()
                 else:
-                    logger.warning("⚠️ OrderWatcher shutdown timeout - skipping")
+                    logger.warning("âš ï¸ OrderWatcher shutdown timeout - skipping")
             except Exception as e:
-                logger.error(f"❌ OrderWatcher shutdown error: {e}")
+                logger.error(f"âŒ OrderWatcher shutdown error: {e}")
 
-            # 2️⃣ NOTIFY SUPERVISOR & RUNNER (NO WAIT)
+            # 2ï¸âƒ£ NOTIFY SUPERVISOR & RUNNER (NO WAIT)
             if hasattr(self, "option_supervisor"):
                 try:
                     self.option_supervisor._stop_event.set()
@@ -2489,42 +2529,42 @@ class ShoonyaBot:
                 except Exception as e:
                     logger.error(f"Option supervisor signal error: {e}")
 
-            # 3️⃣ STOP STRATEGY RUNNER (WITH TIMEOUT)
+            # 3ï¸âƒ£ STOP STRATEGY RUNNER (WITH TIMEOUT)
             runner = getattr(self, "strategy_runner", None)
             if runner is not None and hasattr(runner, "stop"):
                 try:
                     elapsed = time.time() - shutdown_start
                     remaining = shutdown_timeout - elapsed
                     if remaining > 5:
-                        logger.info(f"⏳ Stopping StrategyRunner (timeout={remaining:.1f}s)")
+                        logger.info(f"â³ Stopping StrategyRunner (timeout={remaining:.1f}s)")
                         runner.stop(timeout=int(remaining))
                     else:
-                        logger.warning("⚠️ StrategyRunner shutdown timeout - skipping")
+                        logger.warning("âš ï¸ StrategyRunner shutdown timeout - skipping")
                 except Exception as e:
-                    logger.error(f"❌ StrategyRunner shutdown error: {e}")
+                    logger.error(f"âŒ StrategyRunner shutdown error: {e}")
 
             # Stop strategy executor service
             if hasattr(self, "strategy_executor_service"):
                 try:
-                    logger.info("⏳ Stopping StrategyExecutorService")
+                    logger.info("â³ Stopping StrategyExecutorService")
                     self.strategy_executor_service.stop()
-                    logger.info("✅ StrategyExecutorService stopped")
+                    logger.info("âœ… StrategyExecutorService stopped")
                 except Exception as e:
                     logger.error(f"StrategyExecutorService shutdown error: {e}")
 
-            # 4️⃣ TELEGRAM SHUTDOWN (NON-BLOCKING - fire and forget with short timeout)
+            # 4ï¸âƒ£ TELEGRAM SHUTDOWN (NON-BLOCKING - fire and forget with short timeout)
             if self.telegram_enabled:
                 try:
                     # Send async to avoid blocking shutdown
                     def send_shutdown_msg():
                         try:
                             shutdown_msg = (
-                                f"🛑 <b>BOT SHUTDOWN</b>\n"
-                                f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                                f"🤖 Graceful shutdown complete\n"
-                                f"📊 Session stats:\n"
-                                f"• Total trades: {len(self.trade_records)}\n"
-                                f"• Uptime: Until shutdown"
+                                f"ðŸ›‘ <b>BOT SHUTDOWN</b>\n"
+                                f"ðŸ“… {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                f"ðŸ¤– Graceful shutdown complete\n"
+                                f"ðŸ“Š Session stats:\n"
+                                f"â€¢ Total trades: {len(self.trade_records)}\n"
+                                f"â€¢ Uptime: Until shutdown"
                             )
                             self.telegram.send_message(shutdown_msg, timeout=3.0)  # 3 sec timeout
                         except Exception as tg_e:
@@ -2538,24 +2578,27 @@ class ShoonyaBot:
                 except Exception as e:
                     logger.debug(f"Telegram notification skipped: {e}")
 
-            # 5️⃣ LOGOUT FROM API (WITH TIMEOUT)
+            # 5ï¸âƒ£ LOGOUT FROM API (WITH TIMEOUT)
             try:
                 elapsed = time.time() - shutdown_start
                 remaining = shutdown_timeout - elapsed
                 if remaining > 2:
-                    logger.info(f"⏳ Logging out from broker (timeout={remaining:.1f}s)")
+                    logger.info(f"â³ Logging out from broker (timeout={remaining:.1f}s)")
                     self.api.logout()
                 else:
-                    logger.warning("⚠️ API logout timeout - skipping")
+                    logger.warning("âš ï¸ API logout timeout - skipping")
             except Exception as e:
                 logger.debug(f"API logout error (expected): {e}")
             
             elapsed = time.time() - shutdown_start
-            logger.info(f"✅ Bot shutdown completed in {elapsed:.1f}s")
+            logger.info(f"âœ… Bot shutdown completed in {elapsed:.1f}s")
             
         except Exception as e:
             elapsed = time.time() - shutdown_start
-            logger.error(f"❌ Shutdown error after {elapsed:.1f}s: {e}")
+            logger.error(f"âŒ Shutdown error after {elapsed:.1f}s: {e}")
+
+
+
 
 
 

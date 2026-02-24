@@ -7,17 +7,29 @@ import re
 import unicodedata
 
 _ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
-_MOJIBAKE_HINTS = ("Ã", "Â", "â", "ðŸ", "ï¸", "Å", "¢")
+_MOJIBAKE_HINTS = ("Ã", "Â", "â", "ð", "ï", "�")
 
 _SYMBOL_MAP = {
-    "₹": "INR ",
-    "→": "->",
-    "←": "<-",
-    "↔": "<->",
-    "•": "-",
-    "⚠": "WARNING",
-    "✅": "OK",
-    "❌": "ERROR",
+    # Common mojibake symbols
+    "â‚¹": "₹",
+    "â†’": "→",
+    "â†": "←",
+    "â†”": "↔",
+    "â€¢": "•",
+    "ï¸": "",
+    # Common mojibake emojis
+    "âœ…": "✅",
+    "âŒ": "❌",
+    "âš ": "⚠️",
+    "ðŸš€": "🚀",
+    "ðŸ”„": "🔄",
+    "ðŸ”¥": "🔥",
+    "ðŸ”": "🔐",
+    "ðŸ›‘": "🛑",
+    "ðŸ“¡": "📡",
+    "ðŸ“Š": "📊",
+    "ðŸ§¹": "🧹",
+    "ðŸ’“": "💓",
 }
 
 
@@ -31,7 +43,9 @@ def _repair_mojibake(text: str) -> str:
     repaired = text
     for _ in range(2):
         try:
-            candidate = repaired.encode("latin-1", errors="ignore").decode("utf-8", errors="ignore")
+            candidate = repaired.encode("latin-1", errors="ignore").decode(
+                "utf-8", errors="ignore"
+            )
             if candidate and candidate != repaired:
                 repaired = candidate
             else:
@@ -60,4 +74,3 @@ def sanitize_text(text: str, ascii_only: bool = True) -> str:
     # Keep formatting readable, remove accidental trailing spaces.
     cleaned = "\n".join(line.rstrip() for line in cleaned.split("\n"))
     return cleaned
-

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 CENTRALIZED LOGGING CONFIGURATION
 ==================================
@@ -42,7 +42,7 @@ LOG_DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
 class SanitizingFormatter(logging.Formatter):
-    """Formatter that normalizes mojibake/ansi and emits ASCII-safe text."""
+    """Formatter that normalizes mojibake/ansi and preserves Unicode symbols."""
 
     def format(self, record: logging.LogRecord) -> str:
         original_msg = record.msg
@@ -50,16 +50,16 @@ class SanitizingFormatter(logging.Formatter):
         try:
             # Resolve lazy formatting first, then sanitize once.
             resolved = record.getMessage()
-            record.msg = sanitize_text(resolved, ascii_only=True)
+            record.msg = sanitize_text(resolved, ascii_only=False)
             record.args = ()
             formatted = super().format(record)
-            return sanitize_text(formatted, ascii_only=True)
+            return sanitize_text(formatted, ascii_only=False)
         finally:
             record.msg = original_msg
             record.args = original_args
 
 # Component names - use these consistently
-# Key → (logger_name, log_filename)
+# Key â†’ (logger_name, log_filename)
 # Loggers using __name__ (e.g. 'shoonya_platform.execution.broker') are
 # children of their parent logger, so we register parent loggers as well.
 COMPONENT_NAMES = {
@@ -159,7 +159,7 @@ def setup_application_logging(
     # Initialize component-specific handlers
     _setup_component_handlers(max_bytes, backup_count, formatter)
 
-    # 🔒 CATCH-ALL: root file handler so NO log message is lost.
+    # ðŸ”’ CATCH-ALL: root file handler so NO log message is lost.
     # When running as a systemd service, console output may be truncated.
     # This file catches everything that doesn't match a component handler.
     _root_log_file = _log_dir / "application.log"
@@ -180,7 +180,7 @@ def _setup_component_handlers(max_bytes: int, backup_count: int, formatter: logg
 
     Previously handlers were created here but only attached in get_component_logger().
     This meant any module that used logging.getLogger() instead of get_component_logger()
-    would never get a file handler — losing all logs when running as a systemd service.
+    would never get a file handler â€” losing all logs when running as a systemd service.
     """
     global _component_handlers
     
@@ -199,10 +199,10 @@ def _setup_component_handlers(max_bytes: int, backup_count: int, formatter: logg
         
         _component_handlers[component_name] = handler
 
-        # 🔧 IMMEDIATELY attach handler to the named logger.
+        # ðŸ”§ IMMEDIATELY attach handler to the named logger.
         # This covers both:
-        #   - Modules using get_component_logger('trading_bot') → logger name 'TRADING_BOT'
-        #   - Modules using logging.getLogger(__name__)         → logger name 'shoonya_platform.execution.xyz'
+        #   - Modules using get_component_logger('trading_bot') â†’ logger name 'TRADING_BOT'
+        #   - Modules using logging.getLogger(__name__)         â†’ logger name 'shoonya_platform.execution.xyz'
         #     (these propagate up to parent logger 'shoonya_platform.execution')
         logger = logging.getLogger(component_name)
         if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers):
@@ -322,11 +322,11 @@ class ServiceLogger:
     
     def startup(self, message: str):
         """Log component startup"""
-        self.logger.info(f"🚀 STARTUP: {message}")
+        self.logger.info(f"\U0001F680 STARTUP: {message}")
     
     def shutdown(self, message: str):
         """Log component shutdown"""
-        self.logger.info(f"🛑 SHUTDOWN: {message}")
+        self.logger.info(f"\U0001F6D1 SHUTDOWN: {message}")
     
     def event(self, event_type: str, action: str, **context):
         """Log a business event"""
@@ -339,7 +339,7 @@ class ServiceLogger:
     def warning(self, message: str, **context):
         """Log warning with context"""
         ctx_str = " | ".join(f"{k}={v}" for k, v in context.items())
-        msg = f"⚠️  {message}"
+        msg = f"\u26A0\uFE0F {message}"
         if ctx_str:
             msg += f" | {ctx_str}"
         self.logger.warning(msg)
@@ -347,7 +347,7 @@ class ServiceLogger:
     def error_with_context(self, message: str, **context):
         """Log error with structured context"""
         ctx_str = " | ".join(f"{k}={v}" for k, v in context.items())
-        msg = f"❌ {message}"
+        msg = f"\u274C {message}"
         if ctx_str:
             msg += f" | {ctx_str}"
         self.logger.error(msg)
@@ -398,3 +398,4 @@ def setup_logging(log_file: str = 'webhook_bot.log', log_level: str = 'INFO') ->
     root_logger.addHandler(console_handler)
     
     return root_logger
+

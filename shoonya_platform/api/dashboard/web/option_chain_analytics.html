@@ -36,6 +36,7 @@ main{max-width:1700px;margin:0 auto;padding:18px}
 .chart h3{font-size:12px;margin-bottom:8px;color:var(--accent)}
 canvas{width:100%;height:280px;display:block;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.2)}
 .status{margin-bottom:8px;color:var(--muted);font-size:11px}
+.history-box{margin-top:10px}
 @media (max-width:1080px){.charts{grid-template-columns:1fr}}
 </style>
 </head>
@@ -46,6 +47,9 @@ canvas{width:100%;height:280px;display:block;border:1px solid rgba(255,255,255,0
     <select id="sym" class="sel"></select>
     <select id="exp" class="sel"></select>
     <button class="btn" onclick="refreshAll()">Refresh</button>
+    <input id="h_from" class="sel" type="datetime-local" title="History from">
+    <input id="h_to" class="sel" type="datetime-local" title="History to">
+    <button class="btn" onclick="loadHistoryTrend()">Load History</button>
     <span id="status" class="status"></span>
   </div>
 
@@ -57,6 +61,11 @@ canvas{width:100%;height:280px;display:block;border:1px solid rgba(255,255,255,0
     <div class="chart"><h3>OI Build-Up (OI Change) by Strike</h3><canvas id="c_buildup"></canvas></div>
     <div class="chart"><h3>PCR by Strike</h3><canvas id="c_pcr"></canvas></div>
     <div class="chart"><h3>PCS (CE LTP - PE LTP) by Strike</h3><canvas id="c_pcs"></canvas></div>
+  </div>
+
+  <div class="chart history-box">
+    <h3>Historical Trend (ATM Straddle / PCR / Max Pain)</h3>
+    <canvas id="c_hist"></canvas>
   </div>
 </main>
 
@@ -137,6 +146,13 @@ function calcMaxPain(rows){
   return bestK;
 }
 
+function toIsoFromLocalInput(v){
+  if(!v) return null;
+  const d=new Date(v);
+  if(!Number.isFinite(d.getTime())) return null;
+  return d.toISOString();
+}
+
 function updateCards(meta, points){
   const ceOi=points.reduce((t,p)=>t+p.ceOi,0), peOi=points.reduce((t,p)=>t+p.peOi,0);
   const ceVol=points.reduce((t,p)=>t+p.ceVol,0), peVol=points.reduce((t,p)=>t+p.peVol,0);
@@ -215,12 +231,58 @@ async function refreshAll(){
     currentMeta=r.meta||{};
     render();
     $('status').textContent=`Snapshot age ${toNum(currentMeta.snapshot_age).toFixed(1)}s` + (currentMeta.is_stale?' (stale)':'');
+    loadHistoryTrend();
   }catch(e){
     $('status').textContent='Load failed';
   }
 }
 
+async function loadHistoryTrend(){
+  const ex=$('ex').value,sym=$('sym').value,exp=$('exp').value;
+  if(!ex||!sym||!exp) return;
+  const q=new URLSearchParams({
+    exchange: ex,
+    symbol: sym,
+    expiry: exp,
+    limit: '20000',
+  });
+  const fromIso=toIsoFromLocalInput($('h_from')?.value);
+  const toIso=toIsoFromLocalInput($('h_to')?.value);
+  if(fromIso) q.set('from_ts', fromIso);
+  if(toIso) q.set('to_ts', toIso);
+  try{
+    const r=await api(`/analytics/history/option-metrics?${q.toString()}`);
+    const rows=(r.rows||[]).map(x=>({
+      ts: new Date(x.ts).getTime(),
+      atm_straddle: toNum(x.atm_straddle),
+      pcr_oi: toNum(x.pcr_oi),
+      max_pain_strike: toNum(x.max_pain_strike),
+    })).filter(x=>Number.isFinite(x.ts));
+    if(!rows.length){
+      drawLine($('c_hist'), [], []);
+      return;
+    }
+    const labels=rows.map(x=>new Date(x.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+    drawLine(
+      $('c_hist'),
+      labels,
+      [
+        {values: rows.map(x=>x.atm_straddle), color:'#6ce5ff'},
+        {values: rows.map(x=>x.pcr_oi), color:'#f8c565'},
+        {values: rows.map(x=>x.max_pain_strike), color:'#fb7185'},
+      ]
+    );
+  }catch(e){
+    // Historical layer may be disabled/unavailable.
+  }
+}
+
 window.addEventListener('load', async ()=>{
+  const to = new Date();
+  const from = new Date(to.getTime() - (60 * 60 * 1000));
+  const fmt = d => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+  $('h_from').value = fmt(from);
+  $('h_to').value = fmt(to);
   await loadSymbols();
   setInterval(refreshAll, 5000);
   window.addEventListener('resize', render);

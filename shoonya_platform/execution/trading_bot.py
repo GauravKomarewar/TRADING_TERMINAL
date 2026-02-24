@@ -119,6 +119,7 @@ from shoonya_platform.strategy_runner.strategy_executor_service import (
     StrategyExecutorService,
 )
 from shoonya_platform.strategy_runner.market_reader import MarketReader
+from shoonya_platform.analytics.historical_service import HistoricalAnalyticsService
 
 logger = get_component_logger('trading_bot')
 
@@ -344,6 +345,8 @@ class ShoonyaBot:
         )
         self.strategy_executor_service.start()  # Start background loop
         logger.info("âœ… StrategyExecutorService initialized and started")
+        self.historical_analytics_service = HistoricalAnalyticsService(self)
+        self.historical_analytics_service.start()
         # -------------------------------------------------
         # ðŸ“¦ PERSISTENCE (POSITION / ORDER SOURCE OF TRUTH)
         # -------------------------------------------------
@@ -2551,6 +2554,14 @@ class ShoonyaBot:
                     logger.info("âœ… StrategyExecutorService stopped")
                 except Exception as e:
                     logger.error(f"StrategyExecutorService shutdown error: {e}")
+
+            if hasattr(self, "historical_analytics_service"):
+                try:
+                    logger.info("â³ Stopping HistoricalAnalyticsService")
+                    self.historical_analytics_service.stop()
+                    logger.info("âœ… HistoricalAnalyticsService stopped")
+                except Exception as e:
+                    logger.error(f"HistoricalAnalyticsService shutdown error: {e}")
 
             # 4ï¸âƒ£ TELEGRAM SHUTDOWN (NON-BLOCKING - fire and forget with short timeout)
             if self.telegram_enabled:

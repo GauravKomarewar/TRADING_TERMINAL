@@ -93,6 +93,26 @@ logger = logging.getLogger("DASHBOARD.INTENT.API")
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
+
+def _parse_iso_ts(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        raw = str(value).strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        return datetime.fromisoformat(raw)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid timestamp '{value}': {e}")
+
+
+def _get_historical_service(ctx: dict):
+    bot = ctx.get("bot")
+    svc = getattr(bot, "historical_analytics_service", None)
+    if svc is None:
+        raise HTTPException(status_code=503, detail="Historical analytics service unavailable")
+    return svc
+
 # ==================================================
 # DEPENDENCY FACTORIES (CLIENT-SCOPED)
 # ==================================================
@@ -2855,6 +2875,114 @@ def list_available_indices(ctx=Depends(require_dashboard_auth)):
 # ======================================================================
 # 📊 STRATEGY MANAGEMENT ENDPOINTS (NEW)
 # ======================================================================
+
+
+# ======================================================================
+# HISTORICAL ANALYTICS API (POSTGRESQL LAYER)
+# ======================================================================
+
+@router.get("/analytics/history/health")
+def analytics_history_health(ctx=Depends(require_dashboard_auth)):
+    svc = _get_historical_service(ctx)
+    return svc.health()
+
+
+@router.get("/analytics/history/strategy-samples")
+def analytics_strategy_samples(
+    strategy_name: str = Query(..., min_length=1),
+    from_ts: Optional[str] = Query(None, description="ISO datetime"),
+    to_ts: Optional[str] = Query(None, description="ISO datetime"),
+    limit: int = Query(5000, ge=1, le=20000),
+    ctx=Depends(require_dashboard_auth),
+):
+    svc = _get_historical_service(ctx)
+    if not svc.enabled or svc.store is None:
+        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+    return {
+        "strategy_name": strategy_name,
+        "rows": svc.store.fetch_strategy_samples(
+            strategy_name=strategy_name,
+            from_ts=_parse_iso_ts(from_ts),
+            to_ts=_parse_iso_ts(to_ts),
+            limit=limit,
+        ),
+    }
+
+
+@router.get("/analytics/history/strategy-events")
+def analytics_strategy_events(
+    strategy_name: str = Query(..., min_length=1),
+    from_ts: Optional[str] = Query(None, description="ISO datetime"),
+    to_ts: Optional[str] = Query(None, description="ISO datetime"),
+    limit: int = Query(2000, ge=1, le=20000),
+    ctx=Depends(require_dashboard_auth),
+):
+    svc = _get_historical_service(ctx)
+    if not svc.enabled or svc.store is None:
+        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+    return {
+        "strategy_name": strategy_name,
+        "rows": svc.store.fetch_strategy_events(
+            strategy_name=strategy_name,
+            from_ts=_parse_iso_ts(from_ts),
+            to_ts=_parse_iso_ts(to_ts),
+            limit=limit,
+        ),
+    }
+
+
+@router.get("/analytics/history/index-ticks")
+def analytics_index_ticks(
+    symbols: str = Query(..., description="Comma-separated symbol list"),
+    from_ts: Optional[str] = Query(None, description="ISO datetime"),
+    to_ts: Optional[str] = Query(None, description="ISO datetime"),
+    limit: int = Query(20000, ge=1, le=50000),
+    ctx=Depends(require_dashboard_auth),
+):
+    svc = _get_historical_service(ctx)
+    if not svc.enabled or svc.store is None:
+        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+    syms = [s.strip().upper() for s in str(symbols).split(",") if s.strip()]
+    if not syms:
+        raise HTTPException(status_code=400, detail="At least one symbol is required")
+    return {
+        "symbols": syms,
+        "rows": svc.store.fetch_index_ticks(
+            symbols=syms,
+            from_ts=_parse_iso_ts(from_ts),
+            to_ts=_parse_iso_ts(to_ts),
+            limit=limit,
+        ),
+    }
+
+
+@router.get("/analytics/history/option-metrics")
+def analytics_option_metrics(
+    exchange: Optional[str] = Query(None),
+    symbol: Optional[str] = Query(None),
+    expiry: Optional[str] = Query(None),
+    from_ts: Optional[str] = Query(None, description="ISO datetime"),
+    to_ts: Optional[str] = Query(None, description="ISO datetime"),
+    limit: int = Query(5000, ge=1, le=20000),
+    ctx=Depends(require_dashboard_auth),
+):
+    svc = _get_historical_service(ctx)
+    if not svc.enabled or svc.store is None:
+        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+    return {
+        "exchange": exchange,
+        "symbol": symbol,
+        "expiry": expiry,
+        "rows": svc.store.fetch_option_metrics(
+            exchange=(exchange.upper() if exchange else None),
+            symbol=(symbol.upper() if symbol else None),
+            expiry=expiry,
+            from_ts=_parse_iso_ts(from_ts),
+            to_ts=_parse_iso_ts(to_ts),
+            limit=limit,
+        ),
+    }
+
 
 class _ValidationResult:
     def __init__(self, valid: bool, errors: List[str], warnings: List[str]):

@@ -369,6 +369,58 @@ input:checked + .toggle-slider:before {
 }
 .mode-changing { opacity: 0.5; pointer-events: none; }
 .btn-mode { font-size: 11px; padding: 5px 10px; }
+.analytics-toolbar {
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.analytics-toolbar .form-control {
+  width:auto;
+  min-width:170px;
+}
+.analytics-canvas-wrap {
+  background:rgba(0,0,0,0.22);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:8px;
+}
+.analytics-canvas {
+  width:100%;
+  height:360px;
+  display:block;
+}
+.analytics-legend {
+  display:flex;
+  gap:14px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-top:8px;
+  font-size:11px;
+  color:var(--muted);
+}
+.legend-swatch {
+  width:10px;
+  height:10px;
+  border-radius:2px;
+  display:inline-block;
+  margin-right:6px;
+}
+.analytics-stats {
+  margin-top:10px;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:8px;
+}
+.analytics-stat {
+  background:rgba(0,0,0,0.22);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:8px;
+}
+.analytics-stat .k { font-size:11px; color:var(--muted); }
+.analytics-stat .v { font-size:16px; font-weight:700; margin-top:3px; }
 </style>
 </head>
 <body>
@@ -383,8 +435,9 @@ input:checked + .toggle-slider:before {
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('list', this)">📋 All Strategies</button>
+    <button class="tab-btn active" onclick="switchTab('list', this)">All Strategies</button>
     <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>
+    <button class="tab-btn" onclick="switchTab('analytics', this)">Analytics</button>
   </div>
 
   <!-- ====== TAB 1: ALL STRATEGIES ====== -->
@@ -406,7 +459,7 @@ input:checked + .toggle-slider:before {
           <option value="iron_condor">Iron Condor</option>
           <option value="strangle">Strangle</option>
         </select>
-        <button class="btn btn-secondary btn-sm" onclick="loadStrategies()">⟳ Reload</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadStrategies()">Reload</button>
       </div>
 
       <div class="filters">
@@ -426,7 +479,7 @@ input:checked + .toggle-slider:before {
     <div class="widget">
       <div class="widget-title">
         <span>Live Position Monitor</span>
-        <button class="btn btn-secondary btn-sm" onclick="loadLiveMonitor()">⟳ Refresh</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadLiveMonitor()">Refresh</button>
       </div>
       <div id="monitor-summary" class="monitor-grid"></div>
 
@@ -444,6 +497,40 @@ input:checked + .toggle-slider:before {
         <div class="monitor-subtitle">Orphan Positions (not strategy-generated)</div>
         <div id="monitor-orphans"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ====== TAB 3: ANALYTICS ====== -->
+  <div id="analytics-tab" class="tab-content">
+    <div class="widget">
+      <div class="widget-title">
+        <span>Strategy PnL vs Spot Timeline</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="clearAnalyticsSeries()">Clear Series</button>
+          <button class="btn btn-primary btn-sm" onclick="openOptionAnalyticsPage()">Option Analytics Page</button>
+        </div>
+      </div>
+      <div class="analytics-toolbar">
+        <select id="analytics-strategy-select" class="form-control" onchange="renderAnalyticsChart()"></select>
+        <select id="analytics-range-select" class="form-control" onchange="renderAnalyticsChart()">
+          <option value="900">Last 15m</option>
+          <option value="1800">Last 30m</option>
+          <option value="3600" selected>Last 1h</option>
+          <option value="10800">Last 3h</option>
+          <option value="0">All</option>
+        </select>
+      </div>
+      <div class="analytics-canvas-wrap">
+        <canvas id="analytics-canvas" class="analytics-canvas"></canvas>
+        <div class="analytics-legend">
+          <span><span class="legend-swatch" style="background:#66e4ff;"></span>PnL</span>
+          <span><span class="legend-swatch" style="background:#fbcb5c;"></span>Spot</span>
+          <span><span class="legend-swatch" style="background:#4ade80;"></span>Entry</span>
+          <span><span class="legend-swatch" style="background:#fbcb5c;"></span>Adjustment</span>
+          <span><span class="legend-swatch" style="background:#fb7185;"></span>Exit</span>
+        </div>
+      </div>
+      <div id="analytics-stats" class="analytics-stats"></div>
     </div>
   </div>
 </main>
@@ -502,6 +589,9 @@ const monitorRenderCache = {
   completed: '',
   orphans: ''
 };
+let latestOverview = null;
+let latestIndexPrices = {};
+const analyticsSeries = {};
 
 // ====== UTILS ======
 const $ = id => document.getElementById(id);
@@ -541,7 +631,8 @@ function switchTab(name, btnEl=null) {
   
   const tabMap = {
     'list': 'list-tab',
-    'monitor': 'monitor-tab'
+    'monitor': 'monitor-tab',
+    'analytics': 'analytics-tab'
   };
   
   const activeBtn = btnEl || document.querySelector(`.tab-btn[onclick*="switchTab('${name}'"]`);
@@ -550,6 +641,7 @@ function switchTab(name, btnEl=null) {
   
   if (name === 'list') loadStrategies();
   if (name === 'monitor') loadLiveMonitor();
+  if (name === 'analytics') renderAnalyticsChart();
 }
 
 // ====== LOAD STRATEGIES ======
@@ -558,6 +650,7 @@ async function loadStrategies() {
     const r = await api('GET', '/strategy/configs');
     allStrategies = r.configs || r.strategies || [];
     renderStrategies();
+    refreshAnalyticsStrategyOptions();
   } catch(e) {
     toast('Failed to load strategies: ' + e.message, 'error');
   }
@@ -859,6 +952,9 @@ function renderMonitorTable(positions, isOrphan=false) {
 async function loadLiveMonitor() {
   try {
     const r = await api('GET', '/monitoring/live-positions-overview');
+    latestOverview = r;
+    await refreshIndexPrices();
+    captureAnalyticsSample(r);
     const s = r.summary || {};
 
     const summaryHtml = `
@@ -987,6 +1083,9 @@ async function loadLiveMonitor() {
       ${renderMonitorTable(collapseBySymbol(r.orphan_positions || []), true)}
     `;
     setHtmlIfChanged('monitor-orphans', 'orphans', orphansHtml);
+    if (document.getElementById('analytics-tab')?.classList.contains('active')) {
+      renderAnalyticsChart();
+    }
   } catch(e) {
     monitorRenderCache.summary = '';
     monitorRenderCache.groups = '';
@@ -997,6 +1096,184 @@ async function loadLiveMonitor() {
     $('monitor-completed-groups').innerHTML = '';
     $('monitor-orphans').innerHTML = `<div style="color:var(--danger);font-size:12px;">Failed to load live monitor: ${escHtml(e.message)}</div>`;
   }
+}
+
+function strategyUnderlying(name) {
+  const s = allStrategies.find(x => x.name === name);
+  return String(s?.identity?.underlying || s?.basic?.underlying || '').toUpperCase();
+}
+
+async function refreshIndexPrices() {
+  try {
+    const syms = [...new Set(allStrategies.map(s => strategyUnderlying(s.name)).filter(Boolean))];
+    if (!syms.length) return;
+    const q = encodeURIComponent(syms.join(','));
+    const r = await api('GET', `/index-tokens/prices?symbols=${q}`);
+    latestIndexPrices = r.indices || {};
+  } catch (_) {
+    latestIndexPrices = latestIndexPrices || {};
+  }
+}
+
+function refreshAnalyticsStrategyOptions() {
+  const sel = $('analytics-strategy-select');
+  if (!sel) return;
+  const prev = sel.value;
+  const names = [...new Set(allStrategies.map(s => s.name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  if (!names.length) {
+    sel.innerHTML = '<option value="">No strategy</option>';
+    return;
+  }
+  sel.innerHTML = names.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+  sel.value = names.includes(prev) ? prev : names[0];
+}
+
+function captureAnalyticsSample(overview) {
+  const groups = overview?.strategy_groups || [];
+  const ts = Date.now();
+  for (const g of groups) {
+    const name = String(g.strategy_name || '').trim();
+    if (!name) continue;
+    if (!analyticsSeries[name]) analyticsSeries[name] = { samples: [], events: [], last: null };
+    const data = analyticsSeries[name];
+    const underlying = strategyUnderlying(name);
+    const sample = {
+      ts,
+      pnl: Number(g.total_pnl || 0),
+      spot: Number(latestIndexPrices?.[underlying]?.ltp || 0),
+      active: Boolean(g.active),
+      adj: Number(g.lifetime_adjustments || 0),
+    };
+    data.samples.push(sample);
+    if (data.samples.length > 2400) data.samples.shift();
+
+    const last = data.last;
+    if (!last) {
+      if (sample.active) data.events.push({ ts, type: 'entry', label: 'Entry' });
+    } else {
+      if (!last.active && sample.active) data.events.push({ ts, type: 'entry', label: 'Entry' });
+      if (last.active && !sample.active) data.events.push({ ts, type: 'exit', label: 'Exit' });
+      if (sample.adj > last.adj) data.events.push({ ts, type: 'adjustment', label: `Adjustment +${sample.adj - last.adj}` });
+    }
+    if (data.events.length > 300) data.events.shift();
+    data.last = sample;
+  }
+}
+
+function clearAnalyticsSeries() {
+  Object.keys(analyticsSeries).forEach(k => delete analyticsSeries[k]);
+  renderAnalyticsChart();
+}
+
+function openOptionAnalyticsPage() {
+  window.open('/dashboard/web/option_chain_analytics.html', '_blank');
+}
+
+function renderAnalyticsChart() {
+  const canvas = $('analytics-canvas');
+  const stats = $('analytics-stats');
+  const sel = $('analytics-strategy-select');
+  const rangeSel = $('analytics-range-select');
+  if (!canvas || !stats || !sel || !rangeSel) return;
+
+  const strategy = sel.value;
+  const series = analyticsSeries[strategy] || { samples: [], events: [] };
+  const all = series.samples || [];
+  const rangeSec = Number(rangeSel.value || 0);
+  const now = Date.now();
+  const samples = rangeSec > 0 ? all.filter(x => x.ts >= now - (rangeSec * 1000)) : all.slice();
+  const events = rangeSec > 0 ? (series.events || []).filter(e => e.ts >= now - (rangeSec * 1000)) : (series.events || []);
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 900;
+  const cssH = canvas.clientHeight || 360;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  ctx.fillStyle = '#f8fbff';
+  ctx.font = '12px IBM Plex Mono, monospace';
+
+  if (samples.length < 2) {
+    ctx.fillText('Waiting for live samples...', 12, 22);
+    stats.innerHTML = '<div class="analytics-stat"><div class="k">Status</div><div class="v">No samples</div></div>';
+    return;
+  }
+
+  const pad = { l: 52, r: 56, t: 20, b: 28 };
+  const w = cssW - pad.l - pad.r;
+  const h = cssH - pad.t - pad.b;
+  const tMin = samples[0].ts;
+  const tMax = samples[samples.length - 1].ts;
+  const pnlVals = samples.map(x => Number(x.pnl || 0));
+  const spotVals = samples.map(x => Number(x.spot || 0)).filter(v => Number.isFinite(v) && v !== 0);
+  let pnlMin = Math.min(...pnlVals), pnlMax = Math.max(...pnlVals);
+  if (pnlMin === pnlMax) { pnlMin -= 1; pnlMax += 1; }
+  let spotMin = spotVals.length ? Math.min(...spotVals) : 0;
+  let spotMax = spotVals.length ? Math.max(...spotVals) : 1;
+  if (spotMin === spotMax) { spotMin -= 1; spotMax += 1; }
+
+  const x = ts => pad.l + ((ts - tMin) / Math.max(1, (tMax - tMin))) * w;
+  const yPnl = v => pad.t + (1 - ((v - pnlMin) / Math.max(1e-9, (pnlMax - pnlMin)))) * h;
+  const ySpot = v => pad.t + (1 - ((v - spotMin) / Math.max(1e-9, (spotMax - spotMin)))) * h;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t);
+  ctx.lineTo(pad.l, pad.t + h);
+  ctx.lineTo(pad.l + w, pad.t + h);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#66e4ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  samples.forEach((s, i) => {
+    const px = x(s.ts), py = yPnl(s.pnl);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  if (spotVals.length) {
+    ctx.strokeStyle = '#fbcb5c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    samples.forEach((s, i) => {
+      if (!s.spot) return;
+      const px = x(s.ts), py = ySpot(s.spot);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+  }
+
+  for (const ev of events) {
+    const px = x(ev.ts);
+    const color = ev.type === 'entry' ? '#4ade80' : (ev.type === 'exit' ? '#fb7185' : '#fbcb5c');
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px, pad.t);
+    ctx.lineTo(px, pad.t + h);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#66e4ff';
+  ctx.fillText(`PnL ${pnlMin.toFixed(2)} .. ${pnlMax.toFixed(2)}`, 8, 14);
+  ctx.fillStyle = '#fbcb5c';
+  ctx.fillText(`Spot ${spotMin.toFixed(2)} .. ${spotMax.toFixed(2)}`, cssW - 190, 14);
+
+  const first = samples[0], last = samples[samples.length - 1];
+  const pnlChange = Number(last.pnl || 0) - Number(first.pnl || 0);
+  const spotChange = Number(last.spot || 0) - Number(first.spot || 0);
+  stats.innerHTML = `
+    <div class="analytics-stat"><div class="k">Strategy</div><div class="v">${escHtml(strategy)}</div></div>
+    <div class="analytics-stat"><div class="k">Last PnL</div><div class="v" style="color:${last.pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(last.pnl)}</div></div>
+    <div class="analytics-stat"><div class="k">PnL Change</div><div class="v" style="color:${pnlChange >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(pnlChange)}</div></div>
+    <div class="analytics-stat"><div class="k">Spot Change</div><div class="v">${fmt2(spotChange)}</div></div>
+    <div class="analytics-stat"><div class="k">Samples</div><div class="v">${samples.length}</div></div>
+    <div class="analytics-stat"><div class="k">Events</div><div class="v">${events.length}</div></div>
+  `;
 }
 
 async function forceExit(name) {
@@ -1167,13 +1444,19 @@ async function toggleMode(name) {
 window.addEventListener('load', () => {
   loadStrategies();
   refreshStatus();
+  refreshAnalyticsStrategyOptions();
   setInterval(refreshStatus, 5000);
   setInterval(() => {
     const activeTab = document.querySelector('.tab-btn.active');
-    if (activeTab && activeTab.textContent.includes('Monitor')) {
+    if (activeTab && (activeTab.textContent.includes('Monitor') || activeTab.textContent.includes('Analytics'))) {
       loadLiveMonitor();
     }
   }, 3000);
+  window.addEventListener('resize', () => {
+    if (document.getElementById('analytics-tab')?.classList.contains('active')) {
+      renderAnalyticsChart();
+    }
+  });
 });
 
 document.addEventListener('keydown', (e) => {
@@ -1191,3 +1474,6 @@ document.querySelectorAll('.modal').forEach((modalEl) => {
 </script>
 </body>
 </html>
+
+
+

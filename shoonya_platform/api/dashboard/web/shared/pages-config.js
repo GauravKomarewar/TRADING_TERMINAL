@@ -30,6 +30,12 @@ const PAGES = [
         icon: 'ðŸ“ˆ'
     },
     {
+        id: 'option-analytics',
+        label: 'Option Analytics',
+        href: '/dashboard/web/option_chain_analytics.html',
+        icon: 'ðŸ§ '
+    },
+    {
         id: 'orders',
         label: 'Orders',
         href: '/dashboard/web/orderbook.html',

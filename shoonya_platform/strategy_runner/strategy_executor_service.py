@@ -92,6 +92,33 @@ class StateManager:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS monitor_leg_rows (
+                    strategy_name TEXT NOT NULL,
+                    leg_key TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (strategy_name, leg_key)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS completed_monitor_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    strategy_name TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    archived_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_completed_monitor_history_archived_at
+                ON completed_monitor_history(archived_at DESC)
+                """
+            )
             conn.commit()
         finally:
             conn.close()
@@ -147,6 +174,150 @@ class StateManager:
         finally:
             conn.close()
 
+    def load_monitor_snapshot(self, strategy_name: str) -> Dict[str, Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT leg_key, payload
+                FROM monitor_leg_rows
+                WHERE strategy_name = ?
+                ORDER BY updated_at DESC
+                """,
+                (strategy_name,),
+            ).fetchall()
+            out: Dict[str, Dict[str, Any]] = {}
+            for row in rows:
+                try:
+                    out[str(row["leg_key"])] = json.loads(row["payload"])
+                except Exception:
+                    continue
+            return out
+        finally:
+            conn.close()
+
+    def save_monitor_snapshot(self, strategy_name: str, cache: Dict[str, Dict[str, Any]]) -> None:
+        conn = self._connect()
+        try:
+            keys = list(cache.keys())
+            conn.execute("BEGIN")
+            if not keys:
+                conn.execute(
+                    "DELETE FROM monitor_leg_rows WHERE strategy_name = ?",
+                    (strategy_name,),
+                )
+            else:
+                placeholders = ",".join("?" for _ in keys)
+                conn.execute(
+                    f"""
+                    DELETE FROM monitor_leg_rows
+                    WHERE strategy_name = ?
+                      AND leg_key NOT IN ({placeholders})
+                    """,
+                    [strategy_name, *keys],
+                )
+                for leg_key, row in cache.items():
+                    updated_at = time.time()
+                    try:
+                        raw_updated = row.get("updated_at")
+                        if raw_updated:
+                            updated_at = datetime.fromisoformat(str(raw_updated)).timestamp()
+                    except Exception:
+                        pass
+                    conn.execute(
+                        """
+                        INSERT INTO monitor_leg_rows(strategy_name, leg_key, payload, updated_at)
+                        VALUES(?, ?, ?, ?)
+                        ON CONFLICT(strategy_name, leg_key) DO UPDATE SET
+                            payload=excluded.payload,
+                            updated_at=excluded.updated_at
+                        """,
+                        (
+                            strategy_name,
+                            str(leg_key),
+                            json.dumps(row, default=str),
+                            float(updated_at),
+                        ),
+                    )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def clear_monitor_snapshot(self, strategy_name: str) -> None:
+        conn = self._connect()
+        try:
+            conn.execute(
+                "DELETE FROM monitor_leg_rows WHERE strategy_name = ?",
+                (strategy_name,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def append_completed_monitor_history(self, history_row: Dict[str, Any], max_rows: int = 100) -> None:
+        conn = self._connect()
+        try:
+            archived_at = time.time()
+            try:
+                raw_archived = history_row.get("archived_at")
+                if raw_archived:
+                    archived_at = datetime.fromisoformat(str(raw_archived)).timestamp()
+            except Exception:
+                pass
+            conn.execute(
+                """
+                INSERT INTO completed_monitor_history(strategy_name, payload, archived_at)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    str(history_row.get("strategy_name") or ""),
+                    json.dumps(history_row, default=str),
+                    float(archived_at),
+                ),
+            )
+            if int(max_rows) > 0:
+                conn.execute(
+                    """
+                    DELETE FROM completed_monitor_history
+                    WHERE id NOT IN (
+                        SELECT id
+                        FROM completed_monitor_history
+                        ORDER BY archived_at DESC, id DESC
+                        LIMIT ?
+                    )
+                    """,
+                    (int(max_rows),),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_completed_monitor_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            normalized_limit = max(1, int(limit or 20))
+            rows = conn.execute(
+                """
+                SELECT payload
+                FROM completed_monitor_history
+                ORDER BY archived_at DESC, id DESC
+                LIMIT ?
+                """,
+                (normalized_limit,),
+            ).fetchall()
+            out: List[Dict[str, Any]] = []
+            for row in rows:
+                try:
+                    out.append(json.loads(row["payload"]))
+                except Exception:
+                    continue
+            return out
+        finally:
+            conn.close()
+
 class StrategyExecutorService:
     """
     Service that manages multiple strategies using the Universal Engine.
@@ -170,6 +341,12 @@ class StrategyExecutorService:
         self._monitor_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self._completed_monitor_history: List[Dict[str, Any]] = []
         self._max_completed_monitor_history = 100
+        try:
+            self._completed_monitor_history = self.state_mgr.get_completed_monitor_history(
+                limit=self._max_completed_monitor_history
+            )
+        except Exception as e:
+            logger.debug("Could not load completed monitor history from DB: %s", e)
 
     def register_strategy(self, name: str, config_path: str):
         """Register a strategy with the service."""
@@ -189,7 +366,12 @@ class StrategyExecutorService:
             )
             self._executors[name] = executor
             self._exec_states[name] = executor.state
-            self._monitor_cache[name] = {}
+            persisted_cache = {}
+            try:
+                persisted_cache = self.state_mgr.load_monitor_snapshot(name)
+            except Exception as e:
+                logger.debug("Could not load monitor cache for %s: %s", name, e)
+            self._monitor_cache[name] = persisted_cache if isinstance(persisted_cache, dict) else {}
             logger.info(f"Registered strategy: {name}")
 
     def unregister_strategy(self, name: str):
@@ -199,6 +381,10 @@ class StrategyExecutorService:
             self._strategies.pop(name, None)
             self._exec_states.pop(name, None)
             self._monitor_cache.pop(name, None)
+            try:
+                self.state_mgr.clear_monitor_snapshot(name)
+            except Exception as e:
+                logger.debug("Could not clear persisted monitor snapshot for %s: %s", name, e)
             logger.info(f"Strategy unregistered: {name}")
 
     def start(self):
@@ -296,12 +482,19 @@ class StrategyExecutorService:
                 identity = config.get("identity", {}) or {}
                 mode = "MOCK" if self._is_paper_mode(config) else "LIVE"
                 cache = self._monitor_cache.setdefault(strategy_name, {})
+                executor = self._executors.get(strategy_name)
                 seen_keys: set[str] = set()
 
                 for leg in (getattr(state, "legs", {}) or {}).values():
                     side_val = getattr(getattr(leg, "side", None), "value", getattr(leg, "side", ""))
                     side = str(side_val or "").upper()
                     qty = int(getattr(leg, "qty", 0) or 0)
+                    order_qty = qty
+                    try:
+                        if executor is not None and hasattr(executor, "_lots_to_order_qty"):
+                            order_qty = int(executor._lots_to_order_qty(int(qty), leg))
+                    except Exception:
+                        order_qty = qty
                     is_active = bool(getattr(leg, "is_active", False)) and qty > 0
                     status = "ACTIVE" if is_active else "CLOSED"
                     leg_pnl = float(getattr(leg, "pnl", 0) or 0)
@@ -334,12 +527,20 @@ class StrategyExecutorService:
                         row["closed_at"] = now_iso
                         row["realized_pnl"] = float(row.get("realized_pnl", 0) or 0) + float(leg_pnl)
 
+                    display_qty = max(0, int(order_qty))
+                    if not is_active:
+                        try:
+                            prior_qty = int(row.get("qty", display_qty) or display_qty)
+                            display_qty = max(display_qty, prior_qty)
+                        except Exception:
+                            pass
+
                     row.update({
                         "strategy_name": strategy_name,
                         "exchange": identity.get("exchange", ""),
                         "symbol": symbol,
                         "side": side,
-                        "qty": max(0, qty),
+                        "qty": max(0, display_qty),
                         "entry_price": float(getattr(leg, "entry_price", 0) or 0),
                         "exit_price": None,
                         "ltp": float(getattr(leg, "ltp", 0) or 0),
@@ -387,6 +588,10 @@ class StrategyExecutorService:
                     ),
                     "legs": legs_payload,
                 }
+                try:
+                    self.state_mgr.save_monitor_snapshot(strategy_name, cache)
+                except Exception as e:
+                    logger.debug("Could not persist monitor cache for %s: %s", strategy_name, e)
         return snapshot
 
     def _archive_completed_strategy(self, strategy_name: str) -> None:
@@ -469,10 +674,25 @@ class StrategyExecutorService:
             self._completed_monitor_history.insert(0, history_row)
             if len(self._completed_monitor_history) > self._max_completed_monitor_history:
                 self._completed_monitor_history = self._completed_monitor_history[: self._max_completed_monitor_history]
+            try:
+                self.state_mgr.append_completed_monitor_history(
+                    history_row,
+                    max_rows=self._max_completed_monitor_history,
+                )
+                self.state_mgr.clear_monitor_snapshot(strategy_name)
+            except Exception as e:
+                logger.debug("Could not persist completed monitor history for %s: %s", strategy_name, e)
 
     def get_completed_strategy_monitor_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        normalized_limit = max(1, int(limit or 20))
         with self._lock:
-            normalized_limit = max(1, int(limit or 20))
+            try:
+                rows = self.state_mgr.get_completed_monitor_history(limit=normalized_limit)
+                if rows:
+                    self._completed_monitor_history = rows[: self._max_completed_monitor_history]
+                    return copy.deepcopy(rows)
+            except Exception as e:
+                logger.debug("Could not load completed monitor history from DB: %s", e)
             rows = self._completed_monitor_history[:normalized_limit]
             return copy.deepcopy(rows)
 

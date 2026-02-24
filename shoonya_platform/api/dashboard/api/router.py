@@ -2454,8 +2454,15 @@ def get_live_positions_overview(
                             getattr(leg, "trading_symbol", None)
                             or getattr(leg, "symbol", "")
                         ).strip()
-                        qty = int(getattr(leg, "qty", 0) or 0)
-                        if not symbol or qty <= 0:
+                        lots_qty = int(getattr(leg, "qty", 0) or 0)
+                        qty = lots_qty
+                        try:
+                            exec_obj = (getattr(svc, "_executors", {}) or {}).get(strat_name)
+                            if exec_obj is not None and hasattr(exec_obj, "_lots_to_order_qty"):
+                                qty = int(exec_obj._lots_to_order_qty(lots_qty, leg))
+                        except Exception:
+                            qty = lots_qty
+                        if not symbol or lots_qty <= 0:
                             continue
                         key = (symbol, owner_type)
                         if key in seen_symbol_owner:

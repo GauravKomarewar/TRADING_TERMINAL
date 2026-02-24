@@ -16,6 +16,7 @@
     let NAV_ITEMS = [
         { id: 'dashboard',    label: 'Dashboard',    href: '/dashboard/web/dashboard.html' },
         { id: 'option-chain', label: 'Option Chain',  href: '/dashboard/web/option_chain_dashboard.html' },
+        { id: 'option-analytics', label: 'Option Analytics', href: '/dashboard/web/option_chain_analytics.html' },
         { id: 'orders',       label: 'Orders',        href: '/dashboard/web/orderbook.html' },
         { id: 'place-order',  label: 'Place Order',   href: '/dashboard/web/place_order.html' },
         { id: 'strategy',     label: 'Strategy',      href: '/dashboard/web/strategy.html' },

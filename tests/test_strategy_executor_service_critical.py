@@ -327,6 +327,36 @@ def test_build_alert_leg_converts_lots_to_contract_quantity():
         assert payload["qty"] == 20
 
 
+def test_adjustment_validation_backoff_blocks_repeated_retries():
+    cfg = _base_config()
+    cfg["adjustment"]["validation_retry_cooldown_sec"] = 120
+    bot = _DummyBot()
+    with tempfile.TemporaryDirectory() as td, patch(
+        "shoonya_platform.strategy_runner.strategy_executor_service.MarketReader",
+        _TestMarketReader,
+    ):
+        ex = PerStrategyExecutor("svc_adj_backoff", cfg, bot, str(Path(td) / "state.sqlite"))
+        ex.state.entered_today = True
+        ex.state.legs["L1"] = _mk_leg("L1", Side.SELL, qty=1)
+        ex.state.legs["L1"].trading_symbol = "NIFTY_EQ_SAME"
+        call_counter = {"count": 0}
+
+        def _fake_adjust(_now):
+            call_counter["count"] += 1
+            ex.state.legs["L1"].is_active = False
+            new_leg = _mk_leg("L2", Side.SELL, qty=1, strike=25100.0)
+            new_leg.trading_symbol = "NIFTY_EQ_SAME"  # Force close/open overlap.
+            ex.state.legs["L2"] = new_leg
+            return ["Rule X: IF triggered"]
+
+        ex.adjustment_engine.check_and_apply = _fake_adjust
+        ex.process_tick()
+        assert call_counter["count"] == 1
+        assert ex._adjustment_block_until is not None
+        ex.process_tick()
+        assert call_counter["count"] == 1
+
+
 def test_execute_entry_uses_contract_quantity_for_alert_legs():
     cfg = _base_config()
     cfg["entry"] = {"global_conditions": [], "legs": []}

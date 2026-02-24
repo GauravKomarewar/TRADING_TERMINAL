@@ -12,7 +12,7 @@ import threading
 import time
 import copy
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -575,6 +575,19 @@ class PerStrategyExecutor:
         # Daily reset tracking
         self._last_date = datetime.now().date()
         self.cycle_completed = False
+        adjustment_cfg = self.config.get("adjustment", {})
+        self._adjustment_validation_backoff_sec = max(
+            5,
+            int(adjustment_cfg.get("validation_retry_cooldown_sec", 60) or 60),
+        )
+        self._adjustment_validation_alert_cooldown_sec = max(
+            5,
+            int(adjustment_cfg.get("validation_alert_cooldown_sec", 60) or 60),
+        )
+        self._adjustment_block_until: Optional[datetime] = None
+        self._adjustment_block_reason: str = ""
+        self._adjustment_block_announced: bool = False
+        self._last_adjustment_validation_alert_at: Optional[datetime] = None
 
     def process_tick(self):
         """Called by the service loop each tick."""
@@ -602,23 +615,37 @@ class PerStrategyExecutor:
             self._execute_entry()
 
         # Check adjustments
-        pre_adjustment_legs = copy.deepcopy(self.state.legs)
-        pre_adjustments_today = self.state.adjustments_today
-        pre_lifetime_adjustments = self.state.lifetime_adjustments
-        pre_last_adjustment_time = self.state.last_adjustment_time
-        actions = self.adjustment_engine.check_and_apply(now)
-        for action in actions:
-            logger.info(f"Adjustment: {action}")
-        if actions:
-            if not self._dispatch_adjustment_orders(pre_adjustment_legs):
-                # Roll back local state if broker rejected adjustment orders.
-                self.state.legs = pre_adjustment_legs
-                self.state.adjustments_today = pre_adjustments_today
-                self.state.lifetime_adjustments = pre_lifetime_adjustments
-                self.state.last_adjustment_time = pre_last_adjustment_time
-                logger.error(f"Adjustment rollback applied for {self.name}")
-            else:
-                self.persistence.save(self.state, str(self.state_file))
+        if self._adjustment_block_until and now < self._adjustment_block_until:
+            if not self._adjustment_block_announced:
+                logger.warning(
+                    "Adjustment dispatch temporarily blocked for %s until %s due to validation guard: %s",
+                    self.name,
+                    self._adjustment_block_until.strftime("%H:%M:%S"),
+                    self._adjustment_block_reason,
+                )
+                self._adjustment_block_announced = True
+        else:
+            if self._adjustment_block_until and now >= self._adjustment_block_until:
+                self._adjustment_block_until = None
+                self._adjustment_block_reason = ""
+                self._adjustment_block_announced = False
+            pre_adjustment_legs = copy.deepcopy(self.state.legs)
+            pre_adjustments_today = self.state.adjustments_today
+            pre_lifetime_adjustments = self.state.lifetime_adjustments
+            pre_last_adjustment_time = self.state.last_adjustment_time
+            actions = self.adjustment_engine.check_and_apply(now)
+            for action in actions:
+                logger.info(f"Adjustment: {action}")
+            if actions:
+                if not self._dispatch_adjustment_orders(pre_adjustment_legs):
+                    # Roll back local state if broker rejected adjustment orders.
+                    self.state.legs = pre_adjustment_legs
+                    self.state.adjustments_today = pre_adjustments_today
+                    self.state.lifetime_adjustments = pre_lifetime_adjustments
+                    self.state.last_adjustment_time = pre_last_adjustment_time
+                    logger.error(f"Adjustment rollback applied for {self.name}")
+                else:
+                    self.persistence.save(self.state, str(self.state_file))
 
         # BUG-012 FIX: Run broker reconciliation every 5 minutes to catch drift
         # between strategy state and live broker positions (e.g. manual broker exits,
@@ -988,12 +1015,23 @@ class PerStrategyExecutor:
                 f"close/open resolved to same symbol(s): {details}"
             )
             logger.error(err)
+            now = datetime.now()
+            self._adjustment_block_until = now + timedelta(seconds=self._adjustment_validation_backoff_sec)
+            self._adjustment_block_reason = details
+            self._adjustment_block_announced = False
             try:
-                if getattr(self.bot, "telegram_enabled", False) and getattr(self.bot, "telegram", None):
+                should_notify = (
+                    self._last_adjustment_validation_alert_at is None
+                    or (
+                        now - self._last_adjustment_validation_alert_at
+                    ).total_seconds() >= self._adjustment_validation_alert_cooldown_sec
+                )
+                if should_notify and getattr(self.bot, "telegram_enabled", False) and getattr(self.bot, "telegram", None):
                     self.bot.telegram.send_error_message(
                         title="ADJUSTMENT VALIDATION ERROR",
                         error=f"{self.name} | {details}",
                     )
+                    self._last_adjustment_validation_alert_at = now
             except Exception as notify_err:
                 logger.warning(f"Failed to send adjustment validation alert: {notify_err}")
             return False

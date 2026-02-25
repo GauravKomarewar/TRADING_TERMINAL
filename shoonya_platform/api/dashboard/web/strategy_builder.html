@@ -296,7 +296,20 @@ button,input,select,textarea{font-family:var(--sans);}
   <button class="nav-tab" data-sec="flowchart"  onclick="switchSec('flowchart',this)">📊 Flowchart</button>
   <button class="nav-tab" data-sec="json"       onclick="switchSec('json',this)">{ } JSON</button>
 </div>
+.fc-adj-swap-close {
+  color: var(--danger);
+  font-weight: 600;
+}
 
+.fc-adj-swap-arrow {
+  color: var(--muted);
+  margin: 0 4px;
+}
+
+.fc-adj-swap-new {
+  color: var(--success);
+  font-weight: 600;
+}
 <!-- BODY -->
 <div class="builder-body">
   <div id="alertBox" class="alert"></div>
@@ -1941,18 +1954,75 @@ function _actionLabel(v){
 function _adjActionSummary(card, adjId, branch, actionType){
   const detail = card.querySelector(`#adj_${branch}_detail_${adjId}`) || card;
   const q = sel => detail.querySelector(sel);
-  if(actionType==='close_leg') return `Close ${q('[data-role="close-leg-sel"]')?.value || 'selected leg'}`;
-  if(actionType==='partial_close_lots') return `Partial close ${q('[data-role="partial-leg-sel"]')?.value || 'selected leg'} (${q('[data-role="partial-lots"]')?.value || '1'} lot)`;
-  if(actionType==='reduce_by_pct') return `Reduce ${q('[data-role="reduce-leg-sel"]')?.value || 'selected leg'} by ${q('[data-role="reduce-pct"]')?.value || '50'}%`;
-  if(actionType==='roll_to_next_expiry') return `Roll ${q('[data-role="roll-leg-sel"]')?.value || 'selected leg'} to ${q('[data-role="roll-target-expiry"]')?.value || 'weekly_next'}`;
-  if(actionType==='open_hedge') return 'Open hedge leg';
-  if(actionType==='convert_to_spread') return 'Convert into spread (add wing)';
+  
+  if(actionType==='close_leg') {
+    return `Close ${q('[data-role="close-leg-sel"]')?.value || 'selected leg'}`;
+  }
+  
+  if(actionType==='partial_close_lots') {
+    return `Partial close ${q('[data-role="partial-leg-sel"]')?.value || 'selected leg'} (${q('[data-role="partial-lots"]')?.value || '1'} lot)`;
+  }
+  
+  if(actionType==='reduce_by_pct') {
+    return `Reduce ${q('[data-role="reduce-leg-sel"]')?.value || 'selected leg'} by ${q('[data-role="reduce-pct"]')?.value || '50'}%`;
+  }
+  
+  if(actionType==='roll_to_next_expiry') {
+    const leg = q('[data-role="roll-leg-sel"]')?.value || 'selected leg';
+    const target = q('[data-role="roll-target-expiry"]')?.value || 'weekly_next';
+    const same = q('[data-role="roll-same-strike"]')?.value || 'yes';
+    return `Roll ${leg} to ${target} (${same === 'yes' ? 'same strike' : same})`;
+  }
+  
+  if(actionType==='open_hedge') {
+    return 'Open hedge leg';
+  }
+  
+  if(actionType==='convert_to_spread') {
+    return 'Convert into spread (add wing)';
+  }
+  
   if(actionType==='simple_close_open_new'){
     const swaps = [...(detail.querySelectorAll(`#swaps_${branch}_${adjId} .swap-card`) || [])];
     if(!swaps.length) return 'Close/Open (swap)';
-    const tags = swaps.map(sc=>sc.querySelector('[data-role="swap-close"]')?.value || 'leg').join(', ');
-    return `Swap ${swaps.length} leg(s): ${_shortTxt(tags, 70)}`;
+    
+    // Build detailed swap descriptions
+    const swapDetails = swaps.map(sc => {
+      const closeTag = sc.querySelector('[data-role="swap-close"]')?.value || 'leg';
+      // NOTE: strikeModeHtml() uses "{prefix}-side", "{prefix}-opt", "{prefix}-stk-mode",
+      //       "{prefix}-stk-sel", "{prefix}-ref-leg" — use ends-with ($=) selectors.
+      const side = sc.querySelector('[data-role$="-side"]')?.value || '';
+      const optType = sc.querySelector('[data-role$="-opt"]')?.value || '';
+      const strikeMode = sc.querySelector('[data-role$="-stk-mode"]')?.value || '';
+      const strikeSel = sc.querySelector('[data-role$="-stk-sel"]')?.value || '';
+      const matchLeg = sc.querySelector('[data-role$="-ref-leg"]')?.value || '';
+      const matchParam = sc.querySelector('[data-role$="-match-param"]')?.value || '';
+      const matchOffset = sc.querySelector('[data-role$="-match-offset"]')?.value || '';
+      
+      let newLegDesc = '';
+      if (side && optType) {
+        newLegDesc = `${side} ${optType}`;
+        
+        if (strikeMode === 'match_leg' && matchLeg) {
+          newLegDesc += ` matching ${matchLeg}`;
+          if (matchParam) {
+            newLegDesc += ` ${matchParam}`;
+          }
+          if (matchOffset && matchOffset !== '0') {
+            newLegDesc += ` ${Number(matchOffset) > 0 ? '+' : ''}${matchOffset}`;
+          }
+        } else if (strikeSel) {
+          newLegDesc += ` @ ${strikeSel}`;
+        }
+      }
+      
+      return newLegDesc ? `${closeTag} → ${newLegDesc}` : closeTag;
+    });
+    
+    const fullDesc = swapDetails.join(', ');
+    return `Swap: ${fullDesc}`;
   }
+  
   return _actionLabel(actionType);
 }
 function renderFlowchart(){
@@ -2027,12 +2097,12 @@ function renderFlowchart(){
           <div class="fc-adj-branch">
             <b>IF</b> (${ifConds} cond${ifConds===1?'':'s'})<br>
             <span class="fc-adj-cond">${esc(ifCondSummary)}</span><br>
-            <span class="fc-adj-act">→ ${esc(actLabel)} · ${esc(_shortTxt(ifActionSummary,90))}</span>
+            <span class="fc-adj-act">→ ${esc(actLabel)} · ${ifActionSummary}</span>
           </div>
           ${hasElse?`<div class="fc-adj-branch fc-adj-branch-else">
             <b>ELSE</b> (${elseConds} cond${elseConds===1?'':'s'})<br>
             <span class="fc-adj-cond">${esc(elseCondSummary)}</span><br>
-            <span class="fc-adj-act">→ ${esc(elseLabel)} · ${esc(_shortTxt(elseActionSummary,90))}</span>
+            <span class="fc-adj-act">→ ${esc(elseLabel)} · ${elseActionSummary}</span>
           </div>`:''}
         </div>
       </div>`;

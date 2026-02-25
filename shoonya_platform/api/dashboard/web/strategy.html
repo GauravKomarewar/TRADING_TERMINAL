@@ -730,7 +730,8 @@ function renderStrategies() {
               class="btn btn-secondary btn-sm btn-mode"
               id="mode-btn-${escHtml(s.name)}"
               onclick="toggleMode('${escHtml(s.name)}')"
-              title="${!s.can_change_mode ? escHtml(s.mode_change_reason || 'Cannot change mode') : ''}">
+              ${s.can_change_mode === false ? 'disabled' : ''}
+              title="${s.can_change_mode === false ? escHtml(s.mode_change_reason || 'Cannot change mode') : ''}">
               ${s.mode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE'}
             </button>
             
@@ -888,8 +889,14 @@ function collapseBySymbol(rows) {
       x.avg_price = p.avg_price;
     }
     if (x.ltp == null && p.ltp != null) x.ltp = p.ltp;
-    if (!x.status && p.status) x.status = p.status;
-  }
+    
+    // FIX: Always preserve CLOSED status (highest priority)
+    if (p.status === 'CLOSED' || String(p.status).toUpperCase() === 'CLOSED') {
+      x.status = 'CLOSED';
+    } else if (!x.status && p.status) {
+      x.status = p.status;
+    }
+  }  
 
   const sideRank = (side) => {
     const s = String(side || '').toUpperCase();
@@ -1035,7 +1042,7 @@ async function loadLiveMonitor() {
               <div class="monitor-subtitle" style="margin-top:10px;">Active Legs</div>
               ${renderMonitorTable(collapseBySymbol(activeRowsRaw))}
               <div class="monitor-subtitle" style="margin-top:12px;">Closed Legs</div>
-              ${renderMonitorTable(collapseBySymbol(closedRowsRaw))}
+              ${renderMonitorTable(closedRowsRaw)}
             </div>
           </div>
         `;
@@ -1073,7 +1080,7 @@ async function loadLiveMonitor() {
             </div>
             <div class="monitor-tables-stack">
               <div class="monitor-subtitle" style="margin-top:10px;">Closed Legs</div>
-              ${renderMonitorTable(collapseBySymbol(closedRowsRaw))}
+              ${renderMonitorTable(closedRowsRaw)}
             </div>
           </div>
         `;
@@ -1228,7 +1235,8 @@ async function loadReplayHistory() {
       type: String(r.event_type || '').toLowerCase(),
       label: String(r.event_type || ''),
     })).filter(x => Number.isFinite(x.ts));
-    replayState.idx = replayState.samples.length ? 1 : 0;
+    // Start at full length so the loaded history renders immediately.
+    replayState.idx = replayState.samples.length;
     if (replayState.timer) clearInterval(replayState.timer);
     replayState.timer = null;
     const btn = $('replay-play-btn');
@@ -1345,12 +1353,14 @@ function renderAnalyticsChart() {
     ctx.strokeStyle = '#fbcb5c';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    samples.forEach((s, i) => {
+    let spotMoved = false;
+    samples.forEach((s) => {
       if (!s.spot) return;
       const px = x(s.ts), py = ySpot(s.spot);
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if (!spotMoved) { ctx.moveTo(px, py); spotMoved = true; }
+      else ctx.lineTo(px, py);
     });
-    ctx.stroke();
+    if (spotMoved) ctx.stroke();
   }
 
   for (const ev of events) {

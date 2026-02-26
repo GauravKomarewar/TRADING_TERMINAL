@@ -193,7 +193,6 @@ class OrderWatcherEngine(threading.Thread):
     # --------------------------------------------------
     # ExecutionGuard reconciliation (BROKER-DRIVEN ONLY)
     # --------------------------------------------------
-
     def _reconcile_execution_guard(self, strategy_name: str) -> None:
         """
         Reconcile ExecutionGuard AFTER broker EXECUTED confirmation.
@@ -210,9 +209,8 @@ class OrderWatcherEngine(threading.Thread):
                 broker_positions=broker_map,
             )
 
-            # If strategy is fully flat after reconciliation,
-            # cleanup is now LEGALLY allowed.
-            if not self.bot.execution_guard.has_strategy(strategy_name):
+            # ✅ FIX: call force_close_strategy only if strategy still exists
+            if self.bot.execution_guard.has_strategy(strategy_name):
                 self.bot.execution_guard.force_close_strategy(strategy_name)
 
                 logger.info(

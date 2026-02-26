@@ -438,6 +438,9 @@ class ExecutionGuard:
                     self._global_positions[pos.symbol][pos.direction] -= pos.qty
                     if self._global_positions[pos.symbol][pos.direction] <= 0:
                         del self._global_positions[pos.symbol][pos.direction]
+                        # ✅ FIX: remove empty symbol dict
+                    if not self._global_positions[pos.symbol]:
+                        del self._global_positions[pos.symbol]
 
             logger.info(
                 f"ExecutionGuard: force-cleared {len(positions)} positions "

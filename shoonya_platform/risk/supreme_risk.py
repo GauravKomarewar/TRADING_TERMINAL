@@ -101,6 +101,24 @@ class SupremeRiskManager:
 
         logger.info("SupremeRiskManager initialized v1.3.0 (EXECUTION-ALIGNED)")
 
+    @staticmethod
+    def _trading_days_between(d1: date, d2: date) -> int:
+        """
+        Return number of trading days between d1 and d2 (exclusive).
+        Assumes Monday–Friday are trading days.
+        """
+        if d1 >= d2:
+            return 0
+        delta = (d2 - d1).days
+        # full weeks contribute 5 trading days each
+        full_weeks, remainder = divmod(delta, 7)
+        trading_days = full_weeks * 5
+        # add trading days in the remaining partial week
+        for offset in range(1, remainder + 1):
+            if (d1 + timedelta(days=offset)).weekday() < 5:  # 0=Monday .. 4=Friday
+                trading_days += 1
+        return trading_days
+    
     # --------------------------------------------------
     # STATE PERSISTENCE
     # --------------------------------------------------
@@ -264,7 +282,6 @@ class SupremeRiskManager:
     # --------------------------------------------------
     # LOSS BREACH
     # --------------------------------------------------
-
     def _handle_daily_loss_breach(self):
         if self.daily_loss_hit:
             logger.debug("RMS: Loss breach already handled, skipping duplicate")
@@ -274,14 +291,37 @@ class SupremeRiskManager:
         self._save_state()  # 🔒 PERSIST IMMEDIATELY — crash cannot clear this flag
         self.failed_days.append(self.current_day)
         self.force_exit_in_progress = True
-        consecutive_losses = len(self.failed_days)
+
+        # # ✅ FIX: verify that the loss days are truly consecutive
+        # days_list = list(self.failed_days)
+        # is_consecutive = True
+        # if len(days_list) >= 2:
+        #     for i in range(len(days_list)-1):
+        #         if (days_list[i+1] - days_list[i]).days != 1:
+        #             is_consecutive = False
+        #             break
+
+        # consecutive_losses = len(days_list) if is_consecutive else 0
+        # 🔥 NEW LOGIC: count trading days between first and last failure — must be <= MAX_CONSECUTIVE_LOSS_DAY
+        # ✅ Check that loss days are truly consecutive trading days
+        days_list = list(self.failed_days)
+        is_consecutive = True
+        if len(days_list) >= 2:
+            for i in range(len(days_list) - 1):
+                # Gap should be exactly 1 trading day
+                if self._trading_days_between(days_list[i], days_list[i+1]) != 1:
+                    is_consecutive = False
+                    break
+
+        consecutive_losses = len(days_list) if is_consecutive else 0
 
         logger.critical(
-            "🔴 DAILY MAX LOSS HIT | pnl=%.2f | max_loss=%.2f | consecutive_days=%d/%d",
+            "🔴 DAILY MAX LOSS HIT | pnl=%.2f | max_loss=%.2f | consecutive_days=%d/%d | consecutive=%s",
             self.daily_pnl,
             self.dynamic_max_loss,
             consecutive_losses,
             self.MAX_CONSECUTIVE_LOSS_DAYS,
+            is_consecutive,
         )
 
         if self.bot.telegram_enabled:
@@ -302,7 +342,8 @@ class SupremeRiskManager:
         self._cancel_pending_broker_orders()
         self._cancel_pending_system_entries()
 
-        if consecutive_losses == self.MAX_CONSECUTIVE_LOSS_DAYS:
+        # ✅ FIX: only activate cooldown if days are truly consecutive
+        if is_consecutive and consecutive_losses == self.MAX_CONSECUTIVE_LOSS_DAYS:
             logger.critical(
                 "🚨 MAX CONSECUTIVE LOSS DAYS REACHED | activating cooldown until Monday"
             )
@@ -629,14 +670,14 @@ class SupremeRiskManager:
         today = date.today()
         days_until_monday = (7 - today.weekday()) % 7 or 7
         self.cooldown_until = today + timedelta(days=days_until_monday)
-        
+
         logger.critical(
             "🚨 COOLDOWN ACTIVATED | consecutive_losses=%d | until=%s | days=%d",
             self.MAX_CONSECUTIVE_LOSS_DAYS,
             self.cooldown_until,
             days_until_monday,
         )
-        
+
         if self.bot.telegram_enabled:
             msg = (
                 f"🚨 <b>TRADING COOLDOWN ACTIVATED</b>\n\n"

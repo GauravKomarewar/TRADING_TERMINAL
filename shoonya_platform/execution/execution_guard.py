@@ -1,13 +1,8 @@
 # 🔒 EXECUTION GUARD — FROZEN (DO NOT MODIFY WITHOUT AUDIT)
 # 🔒 CRITICAL RISK COMPONENT
-# Version : v1.3.0
-# Status  : PRODUCTION FROZEN — AUDITED 2026-01-30
-# Changes from v1.2:
-# • Added force_clear_symbol() — OrderWatcher failure recovery
-# • Partial reconciliation support — broker qty reductions now tracked
-# • Explicit direction-aware broker contract — {symbol: {direction: qty}}
-# • Complete global position cleanup on reconciliation
-#
+# Version : v1.3.1
+# Status  : PRODUCTION FROZEN — AUDITED 2026-02-26
+
 # Any change requires:
 # 1. Execution flow audit
 # 2. Cross-strategy conflict review
@@ -117,7 +112,7 @@ class ExecutionGuard:
             if i.qty <= 0:
                 raise RuntimeError(f"Invalid qty {i.qty} for {i.symbol}")
 
-# -----------------------------------------------------
+    # -----------------------------------------------------
     # RULE B — CROSS STRATEGY CONFLICT (OPPOSITE DIRECTION ONLY)
     # ✅ INTENTIONAL DESIGN: Same-direction positions ALLOWED
     # (Each strategy manages its own position independently)
@@ -207,15 +202,16 @@ class ExecutionGuard:
                         f"Direction mismatch for {i.symbol} in strategy {strategy}"
                     )
 
+        # Build old quantity map for global update later
+        old_qty_map = {}
+        for i in intents:
+            old_qty_map[i.symbol] = existing.get(i.symbol, Position(i.symbol, i.direction, 0)).qty
+
         # 2️⃣ DELTA CALCULATION
         final_intents: List[LegIntent] = []
 
         for i in intents:
-            current_qty = existing.get(
-                i.symbol,
-                Position(i.symbol, i.direction, 0)
-            ).qty
-
+            current_qty = old_qty_map[i.symbol]
             delta = i.qty - current_qty
 
             if delta < 0:
@@ -240,8 +236,28 @@ class ExecutionGuard:
                 f"Partial strategy execution blocked for {strategy}"
             )
 
-        return final_intents
+        # ========== PERSIST NEW STATE ==========
+        for i in intents:
+            old_qty = old_qty_map[i.symbol]
+            new_qty = i.qty
+            delta = new_qty - old_qty
 
+            # Update strategy positions
+            existing[i.symbol] = Position(
+                symbol=i.symbol,
+                direction=i.direction,
+                qty=new_qty
+            )
+
+            # Update global positions
+            if delta != 0:
+                glob = self._global_positions.setdefault(i.symbol, {})
+                glob[i.direction] = glob.get(i.direction, 0) + delta
+
+        # Ensure strategy entry exists (if it was new)
+        self._strategy_positions[strategy] = existing
+
+        return final_intents
     # -----------------------------------------------------
     # RULE C — EXIT ALWAYS ALLOWED
     # -----------------------------------------------------

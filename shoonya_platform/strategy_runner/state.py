@@ -65,15 +65,7 @@ class LegState:
     def abs_vega(self) -> float:
         return abs(self.vega)
 
-    @property
-    def moneyness(self) -> float:
-        if self.option_type is None or self.strike is None or self.ltp == 0:
-            return 0.0
-        if self.option_type == OptionType.CE:
-            return (self.strike - self.ltp) / self.ltp
-        else:
-            return (self.ltp - self.strike) / self.ltp
-
+   
 @dataclass
 class StrategyState:
     legs: Dict[str, LegState] = field(default_factory=dict)
@@ -255,14 +247,32 @@ class StrategyState:
         active = [leg for leg in self.legs.values() if leg.is_active]
         if not active:
             return None
-        return max(active, key=lambda l: l.moneyness).tag
+
+        def moneyness(leg):
+            if leg.option_type is None or leg.strike is None or self.spot_price == 0:
+                return 0.0
+            if leg.option_type == OptionType.CE:
+                return (leg.strike - self.spot_price) / self.spot_price
+            else:
+                return (self.spot_price - leg.strike) / self.spot_price
+
+        return max(active, key=moneyness).tag
 
     @property
     def most_otm_leg(self) -> Optional[str]:
         active = [leg for leg in self.legs.values() if leg.is_active]
         if not active:
             return None
-        return min(active, key=lambda l: l.moneyness).tag
+
+        def moneyness(leg):
+            if leg.option_type is None or leg.strike is None or self.spot_price == 0:
+                return 0.0
+            if leg.option_type == OptionType.CE:
+                return (leg.strike - self.spot_price) / self.spot_price
+            else:
+                return (self.spot_price - leg.strike) / self.spot_price
+
+        return min(active, key=moneyness).tag
 
     # New computed properties
     @property

@@ -30,7 +30,8 @@ Invariants:
 import time
 import logging
 import threading
-from typing import Dict
+from types import SimpleNamespace
+from typing import Dict, Optional
 
 from shoonya_platform.logging.logger_config import get_component_logger
 from shoonya_platform.persistence.repository import OrderRepository
@@ -177,7 +178,7 @@ class OrderWatcherEngine(threading.Thread):
                     broker_id,
                 )
 
-                # � NEW: Notify strategy of fill via on_fill() callback
+                # 🔔 Notify strategy of fill via on_fill() callback
                 try:
                     self._notify_strategy_fill(record, bo)
                 except Exception:
@@ -186,7 +187,7 @@ class OrderWatcherEngine(threading.Thread):
                         record.command_id,
                     )
 
-                # �🔒 BROKER-TRUTH CONVERGENCE POINT
+                # 🔒 BROKER-TRUTH CONVERGENCE POINT
                 self._reconcile_execution_guard(record.strategy_name)
 
     # --------------------------------------------------
@@ -211,7 +212,6 @@ class OrderWatcherEngine(threading.Thread):
 
             # If strategy is fully flat after reconciliation,
             # cleanup is now LEGALLY allowed.
-            # if strategy_name not in self.bot.execution_guard._strategy_positions:
             if not self.bot.execution_guard.has_strategy(strategy_name):
                 self.bot.execution_guard.force_close_strategy(strategy_name)
 
@@ -293,18 +293,7 @@ class OrderWatcherEngine(threading.Thread):
                 strategy_name=record.strategy_name,
             )
 
-            # ✅ FIX: Use broker_order_id from broker_order
-            broker_order_id = broker_order.get("norenordno")
-            self.bot.notify_fill(
-                strategy_name=record.strategy_name,
-                symbol=symbol,
-                side=side,
-                qty=qty,
-                price=price,
-                delta=delta,
-                broker_order_id=broker_order_id,
-                command_id=record.command_id
-            )
+            # ✅ FIX: Remove redundant bot.notify_fill to avoid double notification
 
             # Route collected intents through CommandService
             for intent in intents:
@@ -327,7 +316,7 @@ class OrderWatcherEngine(threading.Thread):
             )
 
     def _collect_fill_callbacks(
-        self, symbol: str, side: str, qty: int, price: float, delta: float, strategy_name: str
+        self, symbol: str, side: str, qty: int, price: float, delta: Optional[float], strategy_name: str
     ) -> list:
         intents = []
         with self.bot._live_strategies_lock:
@@ -360,6 +349,7 @@ class OrderWatcherEngine(threading.Thread):
                 logger.exception("OrderWatcher: strategy.on_fill() failed | strategy=%s | symbol=%s", strat_name, symbol)
 
         return intents
+
     # --------------------------------------------------
     # Direction-aware broker map (ExecutionGuard v1.3)
     # --------------------------------------------------
@@ -475,21 +465,22 @@ class OrderWatcherEngine(threading.Thread):
             )
             return
 
-        # Normalize result object/dict for backwards compatibility
+        # Normalize result to a simple object with attributes
+        # Use SimpleNamespace to avoid type errors
         if isinstance(result, dict):
-            _R = type("ExecutionResult", (), {})()
-            _R.success = result.get("success", result.get("ok", False))
-            _R.error_message = (
+            ns = SimpleNamespace()
+            ns.success = result.get("success", result.get("ok", False))
+            ns.error_message = (
                 result.get("error_message")
                 or result.get("error")
                 or result.get("emsg")
             )
-            _R.order_id = (
+            ns.order_id = (
                 result.get("order_id")
                 or result.get("norenordno")
                 or result.get("broker_id")
             )
-            result = _R
+            result = ns
 
         if not getattr(result, "success", False):
             logger.error(

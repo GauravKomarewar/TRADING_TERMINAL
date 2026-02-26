@@ -601,7 +601,8 @@ class SupremeRiskManager:
         
         threshold_value = abs(self.dynamic_max_loss) * self.WARNING_THRESHOLD_PCT
         
-        if abs(self.daily_pnl) >= threshold_value:
+        # ✅ FIX: Only trigger on losses, not profits
+        if self.daily_pnl <= -threshold_value:
             self.warning_sent = True
             
             distance_to_exit = abs(self.daily_pnl - self.dynamic_max_loss)

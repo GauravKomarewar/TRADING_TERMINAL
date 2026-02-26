@@ -327,7 +327,7 @@ class OrderRepository:
             SELECT *
             FROM orders
             WHERE status = 'SENT_TO_BROKER'
-              AND user = ?
+              AND strategy_name = ?
               AND client_id = ?
             """,
             (strategy_name, self.client_id),

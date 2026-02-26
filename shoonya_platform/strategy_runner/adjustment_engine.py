@@ -18,6 +18,8 @@ class AdjustmentEngine:
         self.condition_engine = ConditionEngine(state)
         self.rules_config = []
 
+        self._rule_last_fired: Dict[str, datetime] = {}
+
     def load_rules(self, rules_config: List[Dict[str, Any]]):
         self.rules_config = sorted(rules_config, key=lambda r: r.get("priority", 999))
 
@@ -33,6 +35,8 @@ class AdjustmentEngine:
                 action = rule["action"]
                 self._execute_action(action, "if", rule)
                 actions_taken.append(f"Rule {rule.get('name')}: IF triggered")
+                rule_name = rule.get("name") or str(id(rule))
+                self._rule_last_fired[rule_name] = current_time
                 self.state.last_adjustment_time = current_time
                 self.state.adjustments_today += 1
                 self.state.lifetime_adjustments += 1
@@ -44,6 +48,8 @@ class AdjustmentEngine:
                     else_action = rule["else_action"]
                     self._execute_action(else_action, "else", rule)
                     actions_taken.append(f"Rule {rule.get('name')}: ELSE triggered")
+                    rule_name = rule.get("name") or str(id(rule))
+                    self._rule_last_fired[rule_name] = current_time
                     self.state.last_adjustment_time = current_time
                     self.state.adjustments_today += 1
                     self.state.lifetime_adjustments += 1
@@ -52,9 +58,12 @@ class AdjustmentEngine:
 
     def _check_guards(self, rule: Dict[str, Any], current_time: Optional[datetime] = None) -> bool:
         cooldown = rule.get("cooldown_sec", 0)
+        rule_name = rule.get("name") or str(id(rule))  # fallback if name missing
         now = current_time or datetime.now()
-        if cooldown > 0 and self.state.last_adjustment_time:
-            if (now - self.state.last_adjustment_time).total_seconds() < cooldown:
+
+        # Per‑rule cooldown
+        if cooldown > 0 and rule_name in self._rule_last_fired:
+            if (now - self._rule_last_fired[rule_name]).total_seconds() < cooldown:
                 return False
 
         max_day = rule.get("max_per_day")

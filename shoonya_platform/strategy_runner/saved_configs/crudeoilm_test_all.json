@@ -5,7 +5,7 @@
   "description": "Runtime adjustment test: staged 30s rules, delta-neutral branch, and forced 5-minute exit.",
   "type": "neutral",
   "enabled": true,
-  "status": "STOPPED",
+  "status": "RUNNING",
   "paper_mode": true,
   "test_mode": "SUCCESS",
   "identity": {
@@ -345,5 +345,6 @@
   "meta": {
     "schema_version": "4.0",
     "created_at": "2026-02-24T00:00:00.000Z"
-  }
+  },
+  "status_updated_at": "2026-02-25T18:31:41.727927"
 }

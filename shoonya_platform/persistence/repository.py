@@ -211,7 +211,25 @@ class OrderRepository:
             records.append(OrderRecord(**d))
         return records
 
+    # =====================================================
+    # READ-ONLY HELPERS (RECOVERY / REPORTING)
+    # =====================================================
 
+    def get_open_orders_by_strategy(self, strategy_name: str) -> List[OrderRecord]:
+        """Return all orders for a strategy with status CREATED or SENT_TO_BROKER."""
+        conn = get_connection()
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE status IN ('CREATED', 'SENT_TO_BROKER')
+            AND strategy_name = ?
+            AND client_id = ?
+            """,
+            (strategy_name, self.client_id),
+        ).fetchall()
+        return [OrderRecord(**{k: v for k, v in dict(r).items() if k not in ("id", "client_id")}) for r in rows]
+        
     def get_by_id(self, command_id: str) -> Optional[OrderRecord]:
         conn = get_connection()
         row = conn.execute(
@@ -231,33 +249,6 @@ class OrderRepository:
         data.pop("id", None)
         data.pop("client_id", None)
         return OrderRecord(**data)
-
-
-    # =====================================================
-    # READ-ONLY HELPERS (RECOVERY / REPORTING)
-    # =====================================================
-
-    def get_open_orders_by_strategy(self, strategy_name: str) -> List[OrderRecord]:
-        """
-        Returns all non-closed orders for a strategy.
-        Strategy name is stored in `strategy_name` column.
-        """
-        conn = get_connection()
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM orders
-            WHERE status IN ('CREATED', 'SENT_TO_BROKER')
-              AND strategy_name = ?
-              AND client_id = ?
-            """,
-            (strategy_name, self.client_id),
-        ).fetchall()
-
-        return [
-            OrderRecord(**{k: v for k, v in dict(r).items() if k not in ("id", "client_id")})
-            for r in rows
-        ]
 
     def get_last_order_source(self, symbol: str) -> Optional[str]:
         """

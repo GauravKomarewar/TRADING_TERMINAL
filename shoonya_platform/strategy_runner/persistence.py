@@ -56,7 +56,12 @@ class StatePersistence:
                     "oi": leg.oi,
                     "oi_change": leg.oi_change,
                     "volume": leg.volume,
-                    "trading_symbol": leg.trading_symbol,  # ✅ BUG-002
+                    "trading_symbol": leg.trading_symbol, 
+                    "order_id": leg.order_id,
+                    "command_id": leg.command_id,
+                    "order_status": leg.order_status,
+                    "filled_qty": leg.filled_qty,
+                    "order_placed_at": leg.order_placed_at.isoformat() if leg.order_placed_at else None,
                 } for tag, leg in state.legs.items()
             },
             "spot_price": state.spot_price,
@@ -105,7 +110,12 @@ class StatePersistence:
                 oi=leg_data.get("oi", 0),
                 oi_change=leg_data.get("oi_change", 0),
                 volume=leg_data.get("volume", 0),
-                trading_symbol=leg_data.get("trading_symbol", ""),  # ✅ BUG-002
+                trading_symbol=leg_data.get("trading_symbol", ""),  
+                order_id=leg_data.get("order_id"),
+                command_id=leg_data.get("command_id"),
+                order_status=leg_data.get("order_status", "PENDING"),
+                filled_qty=leg_data.get("filled_qty", 0),
+                order_placed_at=datetime.fromisoformat(leg_data["order_placed_at"]) if leg_data.get("order_placed_at") else None,
             )
             legs[tag] = leg
 

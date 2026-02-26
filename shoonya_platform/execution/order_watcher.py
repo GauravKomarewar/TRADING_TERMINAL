@@ -230,21 +230,20 @@ class OrderWatcherEngine(threading.Thread):
     # --------------------------------------------------
     # 🔥 ON_FILL CALLBACK — Wire strategy fill notifications
     # --------------------------------------------------
-
     def _notify_strategy_fill(self, record, broker_order):
         """
         Extract fill details from broker order and notify strategy via on_fill().
 
         Broker order format:
         {
-          "norenordno": "string",
-          "status": "COMPLETE",
-          "tsym": "SYMBOL",
-          "side": "BUY" / "SELL",
-          "fillshares": qty,
-          "avgprc": price,
-          "prcflag": "LTP" / etc,
-          ... (delta may or may not be present)
+        "norenordno": "string",
+        "status": "COMPLETE",
+        "tsym": "SYMBOL",
+        "side": "BUY" / "SELL",
+        "fillshares": qty,
+        "avgprc": price,
+        "prcflag": "LTP" / etc,
+        ... (delta may or may not be present)
         }
 
         Route returned intents through CommandService.
@@ -294,6 +293,19 @@ class OrderWatcherEngine(threading.Thread):
                 strategy_name=record.strategy_name,
             )
 
+            # ✅ FIX: Use broker_order_id from broker_order
+            broker_order_id = broker_order.get("norenordno")
+            self.bot.notify_fill(
+                strategy_name=record.strategy_name,
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                price=price,
+                delta=delta,
+                broker_order_id=broker_order_id,
+                command_id=record.command_id
+            )
+
             # Route collected intents through CommandService
             for intent in intents:
                 try:
@@ -317,21 +329,18 @@ class OrderWatcherEngine(threading.Thread):
     def _collect_fill_callbacks(
         self, symbol: str, side: str, qty: int, price: float, delta: float, strategy_name: str
     ) -> list:
-        """
-        Call on_fill() on all live strategies matching the filled symbol/strategy.
-
-        Returns list of UniversalOrderCommand intents for adjustments/exit.
-        """
         intents = []
-
         with self.bot._live_strategies_lock:
             strategies = list(self.bot._live_strategies.items())
 
-        for strat_name, (strategy, market) in strategies:
-            # Only notify the strategy that placed the order
-            # (or all strategies if strategy_name is unknown)
+        for strat_name, value in strategies:
             if strategy_name and strat_name != strategy_name:
                 continue
+            # value can be tuple (legacy) or dict (executor service)
+            if isinstance(value, tuple) and len(value) == 2:
+                strategy, market = value
+            else:
+                continue  # skip executor‑service entries (they have no on_fill)
 
             if not hasattr(strategy, "on_fill"):
                 continue
@@ -344,22 +353,13 @@ class OrderWatcherEngine(threading.Thread):
                     qty=qty,
                     delta=delta,
                 )
-
                 if result:
                     intents.extend(result)
-                    logger.info(
-                        f"Strategy on_fill returned {len(result)} intents | {strat_name}"
-                    )
-
+                    logger.info(f"Strategy on_fill returned {len(result)} intents | {strat_name}")
             except Exception:
-                logger.exception(
-                    "OrderWatcher: strategy.on_fill() failed | strategy=%s | symbol=%s",
-                    strat_name,
-                    symbol,
-                )
+                logger.exception("OrderWatcher: strategy.on_fill() failed | strategy=%s | symbol=%s", strat_name, symbol)
 
         return intents
-
     # --------------------------------------------------
     # Direction-aware broker map (ExecutionGuard v1.3)
     # --------------------------------------------------
@@ -551,7 +551,7 @@ class OrderWatcherEngine(threading.Thread):
 
             # Submit via command service (OrderWatcher expects CommandService to exist on bot)
             try:
-                self.bot.command_service.register(cmd, execution_type="EXIT")
+                self.bot.command_service.register(cmd)
             except Exception:
                 # best-effort: fall back to direct execute_command
                 try:

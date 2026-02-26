@@ -30,6 +30,12 @@ class LegState:
     volume: int = 0
     trading_symbol: str = ""      # ✅ BUG-002 FIX: resolved broker tradingsymbol (e.g. "NIFTY25FEB26C22000CE")
 
+    order_id: Optional[str] = None          # broker order ID
+    command_id: Optional[str] = None        # command ID from intent
+    order_status: str = "PENDING"           # PENDING, FILLED, FAILED, CANCELLED
+    filled_qty: int = 0                      # filled quantity in contracts (or lots)
+    order_placed_at: Optional[datetime] = None
+    
     @property
     def pnl(self) -> float:
         if self.side == Side.BUY:

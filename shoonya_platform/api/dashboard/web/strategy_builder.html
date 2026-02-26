@@ -267,6 +267,20 @@ button,input,select,textarea{font-family:var(--sans);}
   .f-row.c3,.f-row.c4,.f-row.c5,.f-row.c6{grid-template-columns:1fr 1fr;}
   .simple-cond-row{grid-template-columns:1fr 75px 1fr 24px;}
 }
+.fc-adj-swap-close {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.fc-adj-swap-arrow {
+  color: var(--muted);
+  margin: 0 4px;
+}
+
+.fc-adj-swap-new {
+  color: var(--success);
+  font-weight: 600;
+}
 </style>
 </head>
 <body>
@@ -296,20 +310,7 @@ button,input,select,textarea{font-family:var(--sans);}
   <button class="nav-tab" data-sec="flowchart"  onclick="switchSec('flowchart',this)">📊 Flowchart</button>
   <button class="nav-tab" data-sec="json"       onclick="switchSec('json',this)">{ } JSON</button>
 </div>
-.fc-adj-swap-close {
-  color: var(--danger);
-  font-weight: 600;
-}
 
-.fc-adj-swap-arrow {
-  color: var(--muted);
-  margin: 0 4px;
-}
-
-.fc-adj-swap-new {
-  color: var(--success);
-  font-weight: 600;
-}
 <!-- BODY -->
 <div class="builder-body">
   <div id="alertBox" class="alert"></div>

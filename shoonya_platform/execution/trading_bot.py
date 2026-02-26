@@ -1217,6 +1217,21 @@ class ShoonyaBot:
         finally:
             atomic_lock.release()
 
+    def notify_fill(self, strategy_name: str, symbol: str, side: str, qty: int,
+                price: float, delta: Optional[float], broker_order_id: str,
+                command_id: Optional[str] = None):
+        """Called by OrderWatcher when an order fills."""
+        if hasattr(self, "strategy_executor_service"):
+            self.strategy_executor_service.notify_fill(
+                strategy_name=strategy_name,
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                price=price,
+                delta=delta,
+                broker_order_id=broker_order_id,
+                command_id=command_id
+            )
     def validate_webhook_signature(self, payload: str, signature: str) -> bool:
         """Validate webhook signature for security"""
         # Validate webhook_secret is configured

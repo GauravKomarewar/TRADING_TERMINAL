@@ -40,7 +40,7 @@ _DB_FILE_EXPIRY_RE = re.compile(
 @dataclass
 class ExecutionState:
     """
-    Backward-compatible execution snapshot used by dashboard/runtime recovery paths.
+    execution snapshot used by dashboard/runtime recovery paths.
     """
     strategy_name: str
     run_id: str
@@ -434,6 +434,14 @@ class StrategyExecutorService:
             if strategy_name not in self._mode_change_lock:
                 self._mode_change_lock[strategy_name] = threading.Lock()
             return self._mode_change_lock[strategy_name]
+
+    def notify_fill(self, strategy_name: str, **kwargs):
+        """Delegate fill notification to the appropriate executor."""
+        executor = self._executors.get(strategy_name)
+        if executor:
+            executor.notify_fill(**kwargs)
+        else:
+            logger.warning(f"Fill notification for unknown strategy: {strategy_name}")
 
     def _validate_mode_change_allowed(self, strategy_name: str) -> Tuple[bool, str]:
         """Return (allowed, reason)."""
@@ -919,6 +927,235 @@ class PerStrategyExecutor:
         self._adjustment_block_announced: bool = False
         self._last_adjustment_validation_alert_at: Optional[datetime] = None
 
+    def process_tick(self):
+        """Called by the service loop each tick."""
+        now = datetime.now()
+
+        # Daily reset
+        if self._last_date != now.date():
+            self.state.adjustments_today = 0
+            self.state.total_trades_today = 0
+            self.state.entered_today = False
+            self._last_date = now.date()
+            logger.info(f"Daily counters reset for {self.name}")
+
+        self.state.current_time = now
+        self._update_time_context(now)
+
+        # --- NEW: Reconcile pending orders ---
+        self._reconcile_pending_orders()
+
+        # Update market data (including leg data)
+        self._update_market_data()
+
+        # Check exits first
+        exit_action = self.exit_engine.check_exits(now)
+        if exit_action and exit_action != "profit_step_adj":
+            self._execute_exit(exit_action, source=exit_action)
+            return
+
+        # Check entry (if not already entered today)
+        if not self.state.entered_today and self._should_enter(now):
+            self._execute_entry()
+
+        # Check adjustments (unchanged)
+        if self._adjustment_block_until and now < self._adjustment_block_until:
+            if not self._adjustment_block_announced:
+                logger.warning(
+                    "Adjustment dispatch temporarily blocked for %s until %s due to validation guard: %s",
+                    self.name,
+                    self._adjustment_block_until.strftime("%H:%M:%S"),
+                    self._adjustment_block_reason,
+                )
+                self._adjustment_block_announced = True
+        else:
+            if self._adjustment_block_until and now >= self._adjustment_block_until:
+                self._adjustment_block_until = None
+                self._adjustment_block_reason = ""
+                self._adjustment_block_announced = False
+            pre_adjustment_legs = copy.deepcopy(self.state.legs)
+            pre_adjustments_today = self.state.adjustments_today
+            pre_lifetime_adjustments = self.state.lifetime_adjustments
+            pre_last_adjustment_time = self.state.last_adjustment_time
+            actions = self.adjustment_engine.check_and_apply(now)
+            for action in actions:
+                logger.info(f"Adjustment: {action}")
+            if actions:
+                if not self._dispatch_adjustment_orders(pre_adjustment_legs):
+                    # Roll back local state if broker rejected adjustment orders.
+                    self.state.legs = pre_adjustment_legs
+                    self.state.adjustments_today = pre_adjustments_today
+                    self.state.lifetime_adjustments = pre_lifetime_adjustments
+                    self.state.last_adjustment_time = pre_last_adjustment_time
+                    logger.error(f"Adjustment rollback applied for {self.name}")
+                else:
+                    self.persistence.save(self.state, str(self.state_file))
+
+        # Broker reconciliation (every 5 minutes) – unchanged
+        if now.second == 0 and now.minute % 5 == 0 and not self._resolve_test_mode():
+            try:
+                broker_view = getattr(self.bot, "broker_view", None)
+                if broker_view is not None:
+                    warnings = self.reconciliation.reconcile_from_broker(broker_view)
+                    if warnings:
+                        logger.warning(f"RECONCILE [{self.name}]: {len(warnings)} mismatch(es) corrected")
+            except Exception as e:
+                logger.error(f"Broker reconciliation failed for {self.name}: {e}")
+
+        # Persist state periodically (every minute)
+        if now.second == 0:
+            self.persistence.save(self.state, str(self.state_file))
+
+    # ==================== NEW METHODS ====================
+
+    def _reconcile_pending_orders(self):
+        """Query repository for orders and update pending legs."""
+        if not hasattr(self.bot, "order_repo"):
+            return
+
+        # Get all orders for this strategy with non‑final status
+        orders = self.bot.order_repo.get_open_orders_by_strategy(self.name)
+
+        for leg in list(self.state.legs.values()):
+            if leg.order_status != "PENDING":
+                continue
+
+            # Find matching order by symbol and side
+            matching_order = None
+            for o in orders:
+                if o.symbol == leg.symbol and o.side == leg.side.value:
+                    matching_order = o
+                    break
+
+            if matching_order:
+                leg.command_id = matching_order.command_id
+                leg.order_id = matching_order.broker_order_id
+
+                if matching_order.status == "EXECUTED":
+                    leg.order_status = "FILLED"
+                    leg.is_active = True
+                    leg.filled_qty = matching_order.quantity  # quantity in contracts; convert to lots if needed
+                    logger.info(f"FILLED via reconciliation | {leg.tag}")
+                elif matching_order.status in ("FAILED", "CANCELLED", "REJECTED"):
+                    leg.order_status = "FAILED"
+                    leg.is_active = False
+                    logger.warning(f"FAILED via reconciliation | {leg.tag}")
+                # else SENT_TO_BROKER or CREATED – remain pending
+            else:
+                # No matching order – check timeout
+                if leg.order_placed_at and (datetime.now() - leg.order_placed_at).total_seconds() > 60:
+                    logger.warning(f"PENDING TIMEOUT | {leg.tag} – marking FAILED and removing")
+                    leg.order_status = "FAILED"
+                    leg.is_active = False
+                    del self.state.legs[leg.tag]
+
+    def notify_fill(self, symbol: str, side: str, qty: int, price: float,
+                    delta: Optional[float], broker_order_id: str, command_id: Optional[str] = None):
+        """Immediate fill notification from OrderWatcher."""
+        for leg in self.state.legs.values():
+            if leg.order_status == "PENDING" and leg.symbol == symbol and leg.side.value == side:
+                leg.order_status = "FILLED"
+                leg.is_active = True
+                leg.order_id = broker_order_id
+                leg.command_id = command_id
+                leg.filled_qty = qty  # qty in contracts; may need conversion to lots
+                leg.entry_price = price
+                leg.ltp = price
+                leg.delta = delta if delta is not None else leg.delta
+                logger.info(f"FILL NOTIFIED | {self.name} | {symbol} {side} {qty} @ {price}")
+                return
+        logger.warning(f"FILL NOTIFICATION: No matching pending leg for {symbol} {side}")
+
+    # ==================== MODIFIED EXISTING METHODS ====================
+
+    def _update_market_data(self):
+        """Refresh spot, ATM, and per‑leg data, but only for filled legs."""
+        self.state.spot_price = self.market.get_spot_price(self._cycle_expiry_date)
+        if not self.state.spot_open and self.state.spot_price:
+            self.state.spot_open = self.state.spot_price
+        self.state.atm_strike = self.market.get_atm_strike(self._cycle_expiry_date)
+        self.state.fut_ltp = self.market.get_fut_ltp(self._cycle_expiry_date)
+        chain_metrics = self.market.get_chain_metrics(self._cycle_expiry_date)
+        self.state.pcr = float(chain_metrics.get("pcr", 0.0) or 0.0)
+        self.state.pcr_volume = float(chain_metrics.get("pcr_volume", 0.0) or 0.0)
+        self.state.max_pain_strike = float(chain_metrics.get("max_pain_strike", 0.0) or 0.0)
+        self.state.total_oi_ce = float(chain_metrics.get("total_oi_ce", 0.0) or 0.0)
+        self.state.total_oi_pe = float(chain_metrics.get("total_oi_pe", 0.0) or 0.0)
+        self.state.oi_buildup_ce = float(chain_metrics.get("oi_buildup_ce", 0.0) or 0.0)
+        self.state.oi_buildup_pe = float(chain_metrics.get("oi_buildup_pe", 0.0) or 0.0)
+
+        # Update each active leg – only if it is FILLED
+        for leg in self.state.legs.values():
+            if not leg.is_active or leg.order_status != "FILLED":
+                continue
+            if leg.instrument == InstrumentType.OPT:
+                if leg.strike is None or leg.option_type is None:
+                    logger.warning(f"Leg {leg.tag} is active but missing strike or option_type")
+                    continue
+                opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, leg.expiry)
+                if opt_data:
+                    leg.ltp = opt_data.get("ltp", leg.ltp)
+                    leg.delta = opt_data.get("delta", leg.delta)
+                    leg.gamma = opt_data.get("gamma", leg.gamma)
+                    leg.theta = opt_data.get("theta", leg.theta)
+                    leg.vega = opt_data.get("vega", leg.vega)
+                    leg.iv = opt_data.get("iv", leg.iv)
+                    leg.oi = opt_data.get("oi", leg.oi)
+                    leg.volume = opt_data.get("volume", leg.volume)
+            # For futures legs, we could update via a different method, but not implemented here
+
+    def _execute_entry(self):
+        """Run entry engine and send orders via bot."""
+        symbol = self.config["identity"]["underlying"]
+        default_expiry = self._cycle_expiry_date
+        new_legs = self.entry_engine.process_entry(
+            self.config["entry"], symbol, default_expiry
+        )
+        if not new_legs:
+            return
+
+        identity = self.config.get("identity", {})
+        product_type = identity.get("product_type", "NRML")
+
+        # Convert each LegState to an alert leg. Leg qty is tracked in lots internally;
+        # alert payload qty must be broker contract quantity.
+        alert_legs = []
+        for leg in new_legs:
+            payload = self._build_alert_leg(
+                leg=leg,
+                direction=leg.side.value,
+                qty=int(leg.qty),
+            )
+            payload["product_type"] = product_type
+            alert_legs.append(payload)
+
+        alert = {
+            "secret_key": self._resolve_webhook_secret(),
+            "execution_type": "ENTRY",
+            "strategy_name": self.name,
+            "exchange": identity.get("exchange", "NFO"),
+            "legs": alert_legs,
+            "test_mode": self._resolve_test_mode(),
+        }
+
+        result = self.bot.process_alert(alert)
+        if self._is_failure_status((result or {}).get("status")):
+            logger.error(f"Entry failed: {result}")
+            return
+
+        # --- MODIFIED: mark legs as PENDING, not active ---
+        now = datetime.now()
+        for leg in new_legs:
+            leg.order_status = "PENDING"
+            leg.is_active = False
+            leg.order_placed_at = now
+            self.state.legs[leg.tag] = leg
+
+        self.state.entered_today = True
+        self.state.entry_time = now
+        self.cycle_completed = False
+        logger.info(f"Entry pending for {self.name}: {len(new_legs)} legs")
+
     def _extract_expiry_from_db_file(self, config: Dict[str, Any]) -> Optional[str]:
         """
         Extract concrete expiry date from configured DB filename, if present.
@@ -990,85 +1227,6 @@ class PerStrategyExecutor:
             )
             return self.market.resolve_expiry_mode("weekly_current")
 
-    def process_tick(self):
-        """Called by the service loop each tick."""
-        now = datetime.now()
-
-        # Daily reset
-        if self._last_date != now.date():
-            self.state.adjustments_today = 0
-            self.state.total_trades_today = 0
-            self.state.entered_today = False
-            self._last_date = now.date()
-            logger.info(f"Daily counters reset for {self.name}")
-
-        self.state.current_time = now
-        self._update_time_context(now)
-
-        # Update market data (including leg data)
-        self._update_market_data()
-
-        # Check exits first
-        exit_action = self.exit_engine.check_exits(now)
-        if exit_action and exit_action != "profit_step_adj":
-            self._execute_exit(exit_action, source=exit_action)
-            return
-
-        # Check entry (if not already entered today)
-        if not self.state.entered_today and self._should_enter(now):
-            self._execute_entry()
-
-        # Check adjustments
-        if self._adjustment_block_until and now < self._adjustment_block_until:
-            if not self._adjustment_block_announced:
-                logger.warning(
-                    "Adjustment dispatch temporarily blocked for %s until %s due to validation guard: %s",
-                    self.name,
-                    self._adjustment_block_until.strftime("%H:%M:%S"),
-                    self._adjustment_block_reason,
-                )
-                self._adjustment_block_announced = True
-        else:
-            if self._adjustment_block_until and now >= self._adjustment_block_until:
-                self._adjustment_block_until = None
-                self._adjustment_block_reason = ""
-                self._adjustment_block_announced = False
-            pre_adjustment_legs = copy.deepcopy(self.state.legs)
-            pre_adjustments_today = self.state.adjustments_today
-            pre_lifetime_adjustments = self.state.lifetime_adjustments
-            pre_last_adjustment_time = self.state.last_adjustment_time
-            actions = self.adjustment_engine.check_and_apply(now)
-            for action in actions:
-                logger.info(f"Adjustment: {action}")
-            if actions:
-                if not self._dispatch_adjustment_orders(pre_adjustment_legs):
-                    # Roll back local state if broker rejected adjustment orders.
-                    self.state.legs = pre_adjustment_legs
-                    self.state.adjustments_today = pre_adjustments_today
-                    self.state.lifetime_adjustments = pre_lifetime_adjustments
-                    self.state.last_adjustment_time = pre_last_adjustment_time
-                    logger.error(f"Adjustment rollback applied for {self.name}")
-                else:
-                    self.persistence.save(self.state, str(self.state_file))
-
-        # BUG-012 FIX: Run broker reconciliation every 5 minutes to catch drift
-        # between strategy state and live broker positions (e.g. manual broker exits,
-        # partial fills, session restarts). Previously reconcile() compared state
-        # against itself — it never actually contacted the broker.
-        if now.second == 0 and now.minute % 5 == 0 and not self._resolve_test_mode():
-            try:
-                broker_view = getattr(self.bot, "broker_view", None)
-                if broker_view is not None:
-                    warnings = self.reconciliation.reconcile_from_broker(broker_view)
-                    if warnings:
-                        logger.warning(f"RECONCILE [{self.name}]: {len(warnings)} mismatch(es) corrected")
-            except Exception as e:
-                logger.error(f"Broker reconciliation failed for {self.name}: {e}")
-
-        # Persist state periodically (every minute)
-        if now.second == 0:
-            self.persistence.save(self.state, str(self.state_file))
-
     def _update_time_context(self, now: datetime) -> None:
         """Refresh runtime time fields consumed by condition parameters."""
         exit_time_str = (
@@ -1090,43 +1248,6 @@ class PerStrategyExecutor:
                 )
         except Exception:
             self.state.minutes_to_exit = 0
-
-    def _update_market_data(self):
-        """Refresh spot, ATM, and per‑leg data."""
-        # Keep strategy-level reads pinned to one concrete expiry for full run.
-        self.state.spot_price = self.market.get_spot_price(self._cycle_expiry_date)
-        if not self.state.spot_open and self.state.spot_price:
-            self.state.spot_open = self.state.spot_price
-        self.state.atm_strike = self.market.get_atm_strike(self._cycle_expiry_date)
-        self.state.fut_ltp = self.market.get_fut_ltp(self._cycle_expiry_date)
-        chain_metrics = self.market.get_chain_metrics(self._cycle_expiry_date)
-        self.state.pcr = float(chain_metrics.get("pcr", 0.0) or 0.0)
-        self.state.pcr_volume = float(chain_metrics.get("pcr_volume", 0.0) or 0.0)
-        self.state.max_pain_strike = float(chain_metrics.get("max_pain_strike", 0.0) or 0.0)
-        self.state.total_oi_ce = float(chain_metrics.get("total_oi_ce", 0.0) or 0.0)
-        self.state.total_oi_pe = float(chain_metrics.get("total_oi_pe", 0.0) or 0.0)
-        self.state.oi_buildup_ce = float(chain_metrics.get("oi_buildup_ce", 0.0) or 0.0)
-        self.state.oi_buildup_pe = float(chain_metrics.get("oi_buildup_pe", 0.0) or 0.0)
-        # Update each active leg
-        for leg in self.state.legs.values():
-            if not leg.is_active:
-                continue
-            if leg.instrument == InstrumentType.OPT:
-                # For option legs, strike and option_type must be present
-                if leg.strike is None or leg.option_type is None:
-                    logger.warning(f"Leg {leg.tag} is active but missing strike or option_type")
-                    continue
-                opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, leg.expiry)
-                if opt_data:
-                    leg.ltp = opt_data.get("ltp", leg.ltp)
-                    leg.delta = opt_data.get("delta", leg.delta)
-                    leg.gamma = opt_data.get("gamma", leg.gamma)
-                    leg.theta = opt_data.get("theta", leg.theta)
-                    leg.vega = opt_data.get("vega", leg.vega)
-                    leg.iv = opt_data.get("iv", leg.iv)
-                    leg.oi = opt_data.get("oi", leg.oi)
-                    leg.volume = opt_data.get("volume", leg.volume)
-            # For futures legs, we could update via a different method, but not implemented here
 
     def _should_enter(self, now: datetime) -> bool:
         """Check if within entry window."""
@@ -1150,53 +1271,6 @@ class PerStrategyExecutor:
             if day_name not in [str(d).lower()[:3] for d in active_days]:
                 return False
         return True
-
-    def _execute_entry(self):
-        """Run entry engine and send orders via bot."""
-        symbol = self.config["identity"]["underlying"]
-        default_expiry = self._cycle_expiry_date
-        new_legs = self.entry_engine.process_entry(
-            self.config["entry"], symbol, default_expiry
-        )
-        if not new_legs:
-            return
-
-        identity = self.config.get("identity", {})
-        product_type = identity.get("product_type", "NRML")
-
-        # Convert each LegState to an alert leg. Leg qty is tracked in lots internally;
-        # alert payload qty must be broker contract quantity.
-        alert_legs = []
-        for leg in new_legs:
-            payload = self._build_alert_leg(
-                leg=leg,
-                direction=leg.side.value,
-                qty=int(leg.qty),
-            )
-            payload["product_type"] = product_type
-            alert_legs.append(payload)
-
-        alert = {
-            "secret_key": self._resolve_webhook_secret(),
-            "execution_type": "ENTRY",
-            "strategy_name": self.name,
-            "exchange": identity.get("exchange", "NFO"),
-            "legs": alert_legs,
-            "test_mode": self._resolve_test_mode(),
-        }
-
-        result = self.bot.process_alert(alert)
-        if self._is_failure_status((result or {}).get("status")):
-            logger.error(f"Entry failed: {result}")
-            return
-
-        # Update state
-        for leg in new_legs:
-            self.state.legs[leg.tag] = leg
-        self.state.entered_today = True
-        self.state.entry_time = datetime.now()
-        self.cycle_completed = False
-        logger.info(f"Entry executed for {self.name}")
 
     def _execute_exit(self, action: str, source: str = "unknown"):
         """Execute exit via bot."""

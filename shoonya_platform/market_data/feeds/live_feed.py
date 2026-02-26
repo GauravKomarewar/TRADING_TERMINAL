@@ -54,11 +54,6 @@ config = FeedConfig()
 # ===============================
 
 # Global State (Thread-Safe)
-# Global State (Thread-Safe)
-# BUG-035 FIX: tick_data_store was a plain defaultdict(dict) that grew forever.
-# In NFO with thousands of option strikes subscribed, this accumulated ~100MB/session.
-# TTLCache(maxsize=10_000, ttl=300) auto-evicts stale ticks and caps memory.
-# TTLCache is NOT thread-safe; all access must be protected by _tick_store_lock.
 _TICK_TTL_SECONDS = 300   # evict ticks older than 5 minutes
 _TICK_MAX_TOKENS  = 10_000
 
@@ -208,7 +203,6 @@ def event_handler_feed_update(tick_data: dict) -> None:
         # Normalize tick
         normalized = normalize_tick(tick_data)
 
-        # BUG-035 FIX: use _tick_store_lock (not _state_lock) since TTLCache is not thread-safe
         with _tick_store_lock:
             existing = tick_data_store.get(token, {})
             existing.update(normalized)
@@ -648,6 +642,7 @@ def get_feed_stats() -> Dict[str, Any]:
     """
     with _state_lock:
         num_subscribed = len(subscribed_tokens)
+    with _tick_store_lock:
         num_ticks = len(tick_data_store)
     
     with _tick_counter_lock:
@@ -671,7 +666,6 @@ def get_feed_stats() -> Dict[str, Any]:
         "seconds_since_last_tick": seconds_since_last_tick,
         "feed_stale": stale,
     }
-
 
 def check_feed_health() -> Dict[str, Any]:
     """

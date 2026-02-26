@@ -45,6 +45,22 @@ MATCH_PARAM_TO_SQL = {
     "moneyness": "strike",
 }
 
+# Fallback lot sizes when DB and ScriptMaster lookups fail.
+# This dict should be extended as needed; final fallback is 1.
+DEFAULT_LOT_SIZES = {
+    "NIFTY": 50,
+    "BANKNIFTY": 25,
+    "FINNIFTY": 40,
+    "MIDCPNIFTY": 75,
+    "SENSEX": 10,
+    "CRUDEOIL": 100,
+    "CRUDEOILM": 100,
+    "GOLD": 1,
+    "GOLDM": 1,
+    "SILVER": 1,
+    "SILVERM": 1,
+}
+
 
 class MarketReader:
     """
@@ -63,7 +79,8 @@ class MarketReader:
         self.exchange = exchange.upper()
         self.symbol = symbol.upper()
         self.max_stale_seconds = max_stale_seconds
-        self._conns: Dict[str, Optional[sqlite3.Connection]] = {}
+        # Store connection info per expiry key: {key: {'conn': conn, 'path': str, 'mtime': float}}
+        self._conn_info: Dict[str, Dict] = {}
         self._strike_step_cache: Dict[str, float] = {}  # expiry -> strike step
 
     # ----------------------------------------------------------------------
@@ -119,19 +136,33 @@ class MarketReader:
 
     def _get_connection(self, expiry: Optional[str] = None) -> Optional[sqlite3.Connection]:
         key = expiry or "default"
-        # Try to reuse an existing connection
-        conn = self._conns.get(key)
-        if conn is not None:
-            try:
-                conn.execute("SELECT 1")
-                return conn
-            except Exception:
-                self._close_connection(key)
-
+        # Resolve the expected database path
         path = self._resolve_db_path(expiry)
         if not path:
             return None
 
+        # Check if we have a cached connection for this key with the same path
+        if key in self._conn_info:
+            info = self._conn_info[key]
+            if info['path'] == path:
+                # Same path – check if file modification time changed
+                try:
+                    current_mtime = Path(path).stat().st_mtime
+                    if current_mtime == info['mtime']:
+                        # Also verify connection is alive
+                        info['conn'].execute("SELECT 1")
+                        return info['conn']
+                except Exception:
+                    # File missing, stat error, or connection dead – will close and reopen
+                    pass
+            # If we reach here, the cached connection is stale – close it
+            try:
+                info['conn'].close()
+            except Exception:
+                pass
+            del self._conn_info[key]
+
+        # Open a new connection
         path_obj = Path(path)
         if not path_obj.exists() or path_obj.stat().st_size < 1024:
             logger.error(f"DB file missing or too small: {path}")
@@ -158,23 +189,26 @@ class MarketReader:
                 conn.close()
                 return None
 
+            # Get file modification time
+            mtime = path_obj.stat().st_mtime
+
             logger.info(f"Connected to DB: {path_obj.name} ({row_count} rows)")
-            self._conns[key] = conn
+            self._conn_info[key] = {'conn': conn, 'path': path, 'mtime': mtime}
             return conn
         except Exception as e:
             logger.error(f"Connection failed: {path} | {e}")
             return None
 
     def _close_connection(self, key: str):
-        conn = self._conns.pop(key, None)
-        if conn:
+        if key in self._conn_info:
             try:
-                conn.close()
+                self._conn_info[key]['conn'].close()
             except Exception:
                 pass
+            del self._conn_info[key]
 
     def close_all(self):
-        for key in list(self._conns.keys()):
+        for key in list(self._conn_info.keys()):
             self._close_connection(key)
 
     def __del__(self):
@@ -310,9 +344,8 @@ class MarketReader:
         except Exception:
             pass
 
-        # Final static fallback for safety.
-        from shoonya_platform.strategy_runner.config_schema import LOT_SIZES
-        return LOT_SIZES.get(self.symbol, 1)
+        # Final static fallback.
+        return DEFAULT_LOT_SIZES.get(self.symbol, 1)
 
     def get_full_chain(self, expiry: Optional[str] = None) -> List[Dict[str, Any]]:
         self._check_freshness(expiry)   # optional safety

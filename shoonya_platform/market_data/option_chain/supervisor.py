@@ -45,6 +45,7 @@ from scripts.scriptmaster import refresh_scriptmaster
 from shoonya_platform.market_data.feeds.live_feed import (
     restart_feed,
     check_feed_health,
+    subscribe_livedata,
 )
 from shoonya_platform.market_data.instruments.instruments import get_expiry
 
@@ -320,7 +321,6 @@ class OptionChainSupervisor:
     # --------------------------------------------------
     # INTERNAL: START ONE CHAIN (WITH RETRY)
     # --------------------------------------------------
-
     def _start_chain(
         self, 
         exchange: str, 
@@ -328,44 +328,21 @@ class OptionChainSupervisor:
         expiry: str,
         retry: bool = True,
     ) -> bool:
-        """
-        🔥 IMPROVED: Start option chain with retry logic and failure tracking.
-        
-        Args:
-            exchange: NFO / BFO / MCX
-            symbol: Underlying symbol
-            expiry: Option expiry
-            retry: Enable retry with exponential backoff
-            
-        Returns:
-            True if successful, False otherwise
-        """
         key = f"{exchange}:{symbol}:{expiry}"
 
         with self._lock:
             if key in self._chains:
                 return True
             
-            # 🔥 NEW: Check if recently failed
             if key in self._failed_chains:
                 last_attempt, attempt_count = self._failed_chains[key]
-                
-                # Exponential backoff: 2s, 4s, 8s, 16s, 32s
                 backoff = min(CHAIN_RETRY_BASE_DELAY * (2 ** min(attempt_count, 5)), 60)
-                
                 if time.time() - last_attempt < backoff:
-                    logger.debug(
-                        "Chain %s in backoff period (%.0fs remaining)",
-                        key, backoff - (time.time() - last_attempt)
-                    )
+                    logger.debug("Chain %s in backoff period", key)
                     return False
 
-        logger.info(
-            "🚀 Starting option chain | %s %s | Expiry=%s",
-            exchange, symbol, expiry
-        )
+        logger.info("🚀 Starting option chain | %s %s | Expiry=%s", exchange, symbol, expiry)
 
-        # 🔥 NEW: Retry logic with exponential backoff
         max_attempts = MAX_CHAIN_RETRY_ATTEMPTS if retry else 1
         
         for attempt in range(1, max_attempts + 1):
@@ -375,17 +352,20 @@ class OptionChainSupervisor:
                     exchange=exchange,
                     symbol=symbol,
                     expiry=expiry,
-                    auto_start_feed=False,  # Feed is owned by ShoonyaBot
+                    auto_start_feed=False,
                 )
                 
-                # Success!
-                db_path = (
-                    DB_BASE_DIR / f"{exchange}_{symbol}_{expiry}.sqlite"
-                )
-
+                db_path = DB_BASE_DIR / f"{exchange}_{symbol}_{expiry}.sqlite"
                 store = OptionChainStore(db_path)
 
+                # ⚠️ CRITICAL: Re-acquire lock and check if another thread beat us
                 with self._lock:
+                    if key in self._chains:
+                        # Another thread already started this chain – clean up ours
+                        oc.cleanup()
+                        store.close()
+                        return True
+                    
                     self._chains[key] = {
                         "oc": oc,
                         "store": store,
@@ -393,37 +373,29 @@ class OptionChainSupervisor:
                         "start_time": time.time(),
                         "last_health_check": time.time(),
                     }
-                    
-                    # Clear from failed chains
                     self._failed_chains.pop(key, None)
                 
                 logger.info("✅ Option chain started | %s", key)
                 return True
 
             except Exception as e:
-                logger.warning(
-                    "⚠️ Chain start attempt %d/%d failed | %s | %s",
-                    attempt, max_attempts, key, str(e)
-                )
+                logger.warning("⚠️ Chain start attempt %d/%d failed | %s | %s", attempt, max_attempts, key, str(e))
                 
                 if attempt < max_attempts:
                     delay = CHAIN_RETRY_BASE_DELAY * (2 ** (attempt - 1))
                     logger.info("Retrying in %.0fs...", delay)
                     time.sleep(delay)
                 else:
-                    # All attempts failed
                     with self._lock:
                         if key in self._failed_chains:
                             _, count = self._failed_chains[key]
                             self._failed_chains[key] = (time.time(), count + 1)
                         else:
                             self._failed_chains[key] = (time.time(), 1)
-                    
                     logger.error("❌ Chain failed after %d attempts | %s", max_attempts, key)
                     return False
 
         return False
-
     # --------------------------------------------------
     # PUBLIC: ADD CHAIN (DASHBOARD / STRATEGY REQUEST)
     # --------------------------------------------------
@@ -448,10 +420,9 @@ class OptionChainSupervisor:
     # --------------------------------------------------
     # 🔥 NEW: FEED RECOVERY
     # --------------------------------------------------
-
     def _recover_from_feed_stall(self) -> bool:
         """
-        🔥 NEW: Attempt to recover from feed stall.
+        Attempt to recover from feed stall.
         
         Returns:
             True if recovery successful, False otherwise
@@ -489,18 +460,39 @@ class OptionChainSupervisor:
 
     def _resubscribe_all_chains(self) -> None:
         """
-        🔥 NEW: Resubscribe all chains after feed recovery.
+        Resubscribe all option tokens for every active chain after feed recovery.
         """
         with self._lock:
-            chain_count = len(self._chains)
+            # Copy the list of chains to avoid holding lock while subscribing
+            chains = list(self._chains.values())
         
-        if chain_count == 0:
+        if not chains:
+            logger.debug("No active chains to resubscribe")
             return
         
-        logger.info("🔄 Resubscribing %d chains...", chain_count)
+        logger.info("🔄 Resubscribing %d chains...", len(chains))
         
-        # Note: Chains handle their own resubscription via client
-        # This is just a notification/tracking step
+        # Group tokens by exchange to minimize subscribe calls
+        by_exchange = {}
+        for bundle in chains:
+            oc = bundle["oc"]
+            exchange = oc._exchange or oc.get_stats().get("exchange")
+            if not exchange:
+                logger.warning("Chain missing exchange, skipping resubscription")
+                continue
+            
+            tokens = oc.get_tokens()
+            if tokens:
+                by_exchange.setdefault(exchange, []).extend(tokens)
+        
+        # Subscribe each exchange's tokens
+        for exchange, tokens in by_exchange.items():
+            if tokens:
+                logger.debug("Resubscribing %d tokens for %s", len(tokens), exchange)
+                try:
+                    subscribe_livedata(self.api_client, tokens, exchange=exchange)
+                except Exception as e:
+                    logger.error("Failed to resubscribe %s tokens: %s", exchange, e)
         
         logger.info("✅ Chain resubscription complete")
 

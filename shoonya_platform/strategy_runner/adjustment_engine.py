@@ -185,6 +185,10 @@ class AdjustmentEngine:
                     or old_leg.trading_symbol
                 ),
             )
+            # 🔒 Mark as pending – will become active only after fill
+            new_leg.is_active = False
+            new_leg.order_status = "PENDING"
+            new_leg.order_placed_at = datetime.now()
             self.state.legs[new_tag] = new_leg
 
         elif action_type == "convert_to_spread":
@@ -236,11 +240,9 @@ class AdjustmentEngine:
             rounding=leg_cfg.get("rounding")
         )
 
-        # ✅ BUG-016 FIX: symbol was hardcoded to "NIFTY" regardless of strategy symbol.
-        # Derive from the first active leg; fall back to any leg in state; final fallback
-        # is None (the market reader will raise a clear error rather than silently trade NIFTY).
-        symbol = None
-        expiry = None
+        # Determine symbol and expiry from existing legs
+        symbol: Optional[str] = None
+        expiry: Optional[str] = None
         for leg in self.state.legs.values():
             if leg.is_active:
                 symbol = leg.symbol
@@ -251,9 +253,11 @@ class AdjustmentEngine:
             for leg in self.state.legs.values():
                 symbol = leg.symbol
                 break
-        # If no active leg, use a default expiry (the engine should handle this)
+        # If still no symbol, we cannot proceed
+        if symbol is None:
+            raise ValueError("Cannot determine symbol for adjustment leg: no active or existing leg found.")
         if expiry is None:
-            expiry = "current"
+            expiry = "current"   # market reader should resolve this
 
         # For match_leg, we may need a reference leg
         reference_leg = None
@@ -275,6 +279,7 @@ class AdjustmentEngine:
             tag = f"{base_tag}_{counter}"
             counter += 1
 
+        # Create the new leg
         leg = LegState(
             tag=tag,
             symbol=symbol,
@@ -298,6 +303,12 @@ class AdjustmentEngine:
                 or ""
             ),
         )
+
+        # 🔒 Mark as pending, not active – will become active only after fill
+        leg.is_active = False
+        leg.order_status = "PENDING"
+        leg.order_placed_at = datetime.now()
+
         self.state.legs[tag] = leg
 
     def _resolve_close_tag(self, close_tag: Optional[str]) -> Optional[str]:

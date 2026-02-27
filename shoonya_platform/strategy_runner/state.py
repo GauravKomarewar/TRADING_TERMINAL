@@ -452,7 +452,6 @@ class StrategyState:
 
     def set_index_ticks(self, ticks: Dict[str, Dict[str, float]]):
         """
-        Compatibility helper for legacy tests/adapters.
         Accepts broker-style keys and normalizes to index_data metrics used by conditions.
         """
         normalized: Dict[str, Dict[str, float]] = {}

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Legacy compatibility models import path.
+Compatibility models import path.
 
-Kept for older tests/utilities expecting shoonya_platform.domain.models.
+Kept for tests/utilities expecting shoonya_platform.domain.models.
 """
 
 from shoonya_platform.domain.business_models import AlertData, LegData

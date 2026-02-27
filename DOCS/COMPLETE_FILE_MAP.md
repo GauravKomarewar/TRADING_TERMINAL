@@ -213,21 +213,21 @@ execution/order_watcher.py [★ SOLE EXIT EXECUTOR ★]
 ├─ run() (Line 213)
 │  └─ while _running:
 │     ├─ _reconcile_broker_orders()
-│     └─ _process_orders()
+│     └─ _reconcile_broker_orders()
 │
 ├─ _reconcile_broker_orders() (Line 100) [★ CRITICAL ★]
 │  ├─ Fetch broker order book
 │  ├─ Update local OrderRecord status
 │  └─ Create shadow record for orphan orders
 │
-├─ _process_orders() (Line 236) [★ CRITICAL ★]
+├─ _reconcile_broker_orders() (Line 236) [★ CRITICAL ★]
 │  ├─ Get open ENTRY orders
 │  ├─ For each: Fetch live LTP
 │  ├─ Check: SL triggered?
 │  ├─ Check: Trailing stop triggered?
-│  └─ If YES: _fire_exit()
+│  └─ If YES: handle_exit_intent()
 │
-└─ _fire_exit() (Line 313) [★ EXIT TRIGGER ★]
+└─ handle_exit_intent() (Line 313) [★ EXIT TRIGGER ★]
    ├─ Determine exit_side
    ├─ Determine order_type (LIMIT/MARKET)
    ├─ Create UniversalOrderCommand
@@ -433,7 +433,7 @@ scripts/scriptmaster.py
 │
 └─ Used by:
    ├─ process_leg() (validate)
-   └─ order_watcher._fire_exit() (enforce)
+   └─ order_watcher.handle_exit_intent() (enforce)
 ```
 
 ---
@@ -595,7 +595,7 @@ Dashboard Strategy EXIT:
   → trading_bot.py:request_exit()
   → command_service.py:register() [queued]
   ↓ (async, next watcher cycle)
-  order_watcher.py:_process_orders()
+  order_watcher.py:_reconcile_broker_orders()
   → order_watcher.py executes it
 
 Risk Manager EXIT:
@@ -603,15 +603,15 @@ Risk Manager EXIT:
   → trading_bot.py:request_force_exit()
   → command_service.py:register() [queued]
   ↓ (async, next watcher cycle)
-  order_watcher.py:_process_orders()
+  order_watcher.py:_reconcile_broker_orders()
 
 SL/Trailing EXIT:
-  order_watcher.py:_process_orders()
+  order_watcher.py:_reconcile_broker_orders()
   → (check SL/Trailing)
-  → order_watcher.py:_fire_exit()
+  → order_watcher.py:handle_exit_intent()
   → command_service.py:register() [queued]
   ↓ (async, next watcher cycle)
-  order_watcher.py:_process_orders()
+  order_watcher.py:_reconcile_broker_orders()
   → (executes registered exit)
 ```
 

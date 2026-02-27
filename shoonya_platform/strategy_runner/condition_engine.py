@@ -321,7 +321,7 @@ class ConditionEngine:
         if param == "pcr_volume":
             return self.state.pcr_volume
 
-        # Legacy CE/PE parameter handling
+        # CE/PE parameter handling
         if param.startswith("ce_") or param.startswith("pe_"):
             opt_type = "CE" if param.startswith("ce_") else "PE"
             attr = param[3:]  # remove ce_ or pe_
@@ -422,9 +422,9 @@ class ConditionEngine:
                 idx_map = self.state.index_data.get(idx)
                 if isinstance(idx_map, dict):
                     return idx_map.get(attr, 0.0)
-                legacy_key = f"{idx}_{attr}"
-                if legacy_key in self.state.index_data:
-                    return self.state.index_data.get(legacy_key, 0.0)
+                fallback_key = f"{idx}_{attr}"
+                if fallback_key in self.state.index_data:
+                    return self.state.index_data.get(fallback_key, 0.0)
             return 0.0
         elif param.startswith("tag."):
             match = re.match(r"tag\.([^.]+)\.(.+)", param)
@@ -451,7 +451,7 @@ class ConditionEngine:
             return getattr(self.state, param, 0.0)
 
     def _find_leg_by_option_type(self, opt_type: str):
-        """Helper to find first leg with given option type (for CE/PE‑centric legacy params)."""
+        """Helper to find first leg with given option type (for CE/PE-centric params)."""
         for leg in self.state.legs.values():
             if leg.option_type and leg.option_type.value == opt_type:
                 return leg
@@ -459,7 +459,7 @@ class ConditionEngine:
 
 def evaluate_condition(condition_dict: Dict[str, Any], state: StrategyState) -> bool:
     """
-    Backward-compatible helper for legacy modules/tests that evaluate one condition dict.
+    Helper for modules/tests that evaluate one condition dict.
     """
     engine = ConditionEngine(state)
     cond = Condition(
@@ -470,4 +470,3 @@ def evaluate_condition(condition_dict: Dict[str, Any], state: StrategyState) -> 
         join=JoinOperator(condition_dict["join"]) if condition_dict.get("join") else None,
     )
     return engine.evaluate([cond])
-

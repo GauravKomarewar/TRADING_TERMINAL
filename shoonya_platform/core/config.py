@@ -447,7 +447,7 @@ class Config:
         }
 
     def get_shoonya_config(self) -> Dict[str, str]:
-        """Legacy-compatible alias for get_shoonya_credentials()."""
+        """Compatibility alias for get_shoonya_credentials()."""
         return self.get_shoonya_credentials()
 
     def get_server_config(self) -> Dict[str, Any]:

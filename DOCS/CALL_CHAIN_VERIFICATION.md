@@ -7,7 +7,7 @@ External Order Source (Webhook / Dashboard / System)
     │
     └─→ ShoonyaBot.process_alert()
         └─→ ShoonyaBot.process_leg()
-            └─→ CommandService.register_intent() OR CommandService.register()
+            └─→ CommandService.submit() OR CommandService.register()
                 └─→ OrderRepository.create()
                     └─→ DB: INSERT INTO orders (status='CREATED')
                     

@@ -31,7 +31,7 @@ This is the **complete mapping** of:
 | 1 | `api/dashboard/api/intent_router.py` | `submit_generic_intent()` | User clicks "Sell" on dashboard |
 | 2 | `api/dashboard/api/intent_router.py` | `submit_strategy_intent()` | User clicks strategy "EXIT" button |
 | 3 | `risk/supreme_risk.py` | `request_force_exit()` | Daily loss exceeds limit |
-| 4 | `execution/order_watcher.py` | `_fire_exit()` | Stop loss or trailing stop triggered |
+| 4 | `execution/order_watcher.py` | `handle_exit_intent()` | Stop loss or trailing stop triggered |
 
 ---
 
@@ -275,7 +275,7 @@ For each ENTRY order in pending:
   Check: LTP <= stop_loss_level?
   Check: Trailing stop triggered?
     ↓ (YES to either)
-_fire_exit()
+handle_exit_intent()
     ↓
 Create UniversalOrderCommand (execution_type=EXIT)
 Determine exit_side, order_type (LIMIT vs MARKET)

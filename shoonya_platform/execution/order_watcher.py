@@ -30,13 +30,10 @@ Invariants:
 import time
 import logging
 import threading
-from types import SimpleNamespace
 from typing import Dict, Optional
 
 from shoonya_platform.logging.logger_config import get_component_logger
 from shoonya_platform.persistence.repository import OrderRepository
-from shoonya_platform.execution.intent import UniversalOrderCommand
-from scripts.scriptmaster import requires_limit_order
 
 logger = get_component_logger('order_watcher')
 
@@ -88,7 +85,6 @@ class OrderWatcherEngine(threading.Thread):
         while self._running:
             self.bot._ensure_login()
             self._reconcile_broker_orders()  # STEP 6: Poll broker & update to EXECUTED/FAILED
-            self._process_open_intents()     # Legacy support for pre-submitted intents
             time.sleep(self.poll_interval)
 
     # ==================================================
@@ -303,71 +299,11 @@ class OrderWatcherEngine(threading.Thread):
                     record.command_id,
                 )
 
-            # Get all live strategies and call on_fill on each
-            # (they'll ignore fills that aren't theirs)
-            intents = self._collect_fill_callbacks(
-                symbol=symbol,
-                side=side,
-                qty=qty,
-                price=price,
-                delta=delta,
-                strategy_name=record.strategy_name,
-            )
-
-            # Route collected intents through CommandService
-            for intent in intents:
-                try:
-                    self.bot.command_service.submit(intent, execution_type="ADJUSTMENT")
-                    logger.info(
-                        f"FILL_INTENT_ROUTED | cmd_id={record.command_id} | "
-                        f"intent={intent.side} {intent.symbol}"
-                    )
-                except Exception:
-                    logger.exception(
-                        "OrderWatcher: failed to route fill intent | cmd_id=%s",
-                        record.command_id,
-                    )
-
         except Exception:
             logger.exception(
                 "OrderWatcher: _notify_strategy_fill failed | cmd_id=%s",
                 record.command_id,
             )
-
-    def _collect_fill_callbacks(
-        self, symbol: str, side: str, qty: int, price: float, delta: Optional[float], strategy_name: str
-    ) -> list:
-        intents = []
-        with self.bot._live_strategies_lock:
-            strategies = list(self.bot._live_strategies.items())
-
-        for strat_name, value in strategies:
-            if strategy_name and strat_name != strategy_name:
-                continue
-            # value can be tuple (legacy) or dict (executor service)
-            if isinstance(value, tuple) and len(value) == 2:
-                strategy, market = value
-            else:
-                continue  # skip executor‑service entries (they have no on_fill)
-
-            if not hasattr(strategy, "on_fill"):
-                continue
-
-            try:
-                result = strategy.on_fill(
-                    symbol=symbol,
-                    side=side,
-                    price=price,
-                    qty=qty,
-                    delta=delta,
-                )
-                if result:
-                    intents.extend(result)
-                    logger.info(f"Strategy on_fill returned {len(result)} intents | {strat_name}")
-            except Exception:
-                logger.exception("OrderWatcher: strategy.on_fill() failed | strategy=%s | symbol=%s", strat_name, symbol)
-
-        return intents
 
     # --------------------------------------------------
     # Direction-aware broker map (ExecutionGuard v1.3)
@@ -423,182 +359,3 @@ class OrderWatcherEngine(threading.Thread):
         with lock:
             tracked = positions.get(strategy_name) or {}
             return set(tracked.keys())
-
-    # ==================================================
-    # LEGACY SUPPORT: Intent execution (RARELY USED)
-    # ==================================================
-
-    def _process_open_intents(self):
-        """
-        ⚠️ LEGACY: This is for rare cases where CREATED orders exist.
-        Normal flow: CommandService.submit() → execute_command() handles Steps 1-5
-        
-        This only executes orders that:
-        1. Have status=CREATED (not yet sent to broker)
-        2. Don't have broker_order_id yet
-        """
-        intents = self.repo.get_open_orders()
-        if not intents:
-            return
-
-        for record in intents:
-            # Handle CREATED orders that were never submitted
-            if record.status == "CREATED" and not record.broker_order_id:
-                logger.info(
-                    f"LEGACY_INTENT_EXECUTION | cmd_id={record.command_id} | {record.symbol}"
-                )
-                
-                # This should be rare - normally execute_command would have handled this
-                # But for compatibility, submit it now
-                try:
-                    self._execute_legacy_intent(record)
-                except Exception:
-                    logger.exception(
-                        "OrderWatcher: legacy intent execution failed | cmd_id=%s",
-                        record.command_id,
-                    )
-
-    def _execute_legacy_intent(self, record):
-        """
-        Execute a legacy intent (rare case where CREATED order wasn't submitted).
-        Follows the 6-step flow within this call.
-        """
-        # --------------------------------------------------
-        # ScriptMaster — order type LAW
-        # --------------------------------------------------
-        must_use_limit = requires_limit_order(
-            exchange=record.exchange,
-            tradingsymbol=record.symbol,
-        )
-
-        order_type = "LIMIT" if must_use_limit else "MARKET"
-        price = 0.0
-
-        if must_use_limit:
-            ltp = self.bot.api.get_ltp(record.exchange, record.symbol)
-            if not ltp:
-                return
-
-            # Aggressive but legal (LMT-as-MKT)
-            price = float(ltp)
-
-        # --------------------------------------------------
-        # Build canonical execution command
-        # --------------------------------------------------
-        cmd = UniversalOrderCommand.from_record(
-            record,
-            order_type=order_type,
-            price=price,
-            source="ORDER_WATCHER",
-        )
-
-        # --------------------------------------------------
-        # Submit via execute_command (which does Steps 2-5)
-        # --------------------------------------------------
-        try:
-            result = self.bot.execute_command(cmd)
-        except Exception:
-            logger.exception(
-                "OrderWatcher: execution crash | cmd_id=%s",
-                record.command_id,
-            )
-            return
-
-        # Normalize result to a simple object with attributes
-        # Use SimpleNamespace to avoid type errors
-        if isinstance(result, dict):
-            ns = SimpleNamespace()
-            ns.success = result.get("success", result.get("ok", False))
-            ns.error_message = (
-                result.get("error_message")
-                or result.get("error")
-                or result.get("emsg")
-            )
-            ns.order_id = (
-                result.get("order_id")
-                or result.get("norenordno")
-                or result.get("broker_id")
-            )
-            result = ns
-
-        if not getattr(result, "success", False):
-            logger.error(
-                "OrderWatcher: legacy submission failed | cmd_id=%s error=%s",
-                record.command_id,
-                getattr(result, "error_message", None),
-            )
-            return
-
-        logger.info(
-            "OrderWatcher: legacy intent submitted | cmd_id=%s broker_id=%s type=%s",
-            record.command_id,
-            result.order_id,
-            order_type,
-        )
-
-    # -----------------------------------------------------------------
-    # Compatibility shims for older tests / callers
-    # -----------------------------------------------------------------
-    def _process_orders(self):
-        """
-        Backwards-compatible alias for older code/tests that called
-        `_process_orders`. Delegates to `_process_open_intents`.
-        """
-        return self._process_open_intents()
-
-    def _fire_exit(self, order):
-        """
-        Backwards-compatible exit trigger. Builds a minimal exit command
-        and delegates to the `CommandService` for submission.
-        """
-        try:
-            # Build minimal params if Mock/struct-like
-            sym = getattr(order, 'symbol', None) or (order.get('symbol') if isinstance(order, dict) else None)
-            qty = getattr(order, 'quantity', None) or (order.get('quantity') if isinstance(order, dict) else None)
-            exch = getattr(order, 'exchange', None) or (order.get('exchange') if isinstance(order, dict) else None) or "NFO"
-            side = getattr(order, 'side', None) or (order.get('side') if isinstance(order, dict) else None)
-            product = getattr(order, 'product', None) or (order.get('product') if isinstance(order, dict) else None) or "M"
-
-            # Determine correct exit direction (opposite of position side)
-            if side and side.upper() == "BUY":
-                exit_direction = "SELL"
-            elif side and side.upper() == "SELL":
-                exit_direction = "BUY"
-            else:
-                exit_direction = "SELL"  # Default fallback
-
-            params = {
-                "exchange": exch,
-                "tradingsymbol": sym,
-                "quantity": qty or 0,
-                "direction": exit_direction,
-                "product": product,
-                "order_type": "MARKET",
-                "price": None,
-            }
-
-            cmd = UniversalOrderCommand.from_order_params(order_params=params, source="ORDER_WATCHER", user=self.bot.client_id)
-
-            # Submit via command service (OrderWatcher expects CommandService to exist on bot)
-            try:
-                self.bot.command_service.register(cmd)
-            except Exception:
-                # best-effort: fall back to direct execute_command
-                try:
-                    self.bot.execute_command(cmd)
-                except Exception:
-                    logger.exception("OrderWatcher: failed to fire exit for %s", sym)
-
-        except Exception:
-            logger.exception("OrderWatcher: _fire_exit failed")
-
-    def register(self, record):
-        """Register an intent/order with OrderWatcher (compat shim).
-
-        Older callers used `order_watcher.register(...)`; provide a thin
-        wrapper that persists the record to repository.
-        """
-        try:
-            self.repo.create(record)
-        except Exception:
-            logger.exception("OrderWatcher: register failed")

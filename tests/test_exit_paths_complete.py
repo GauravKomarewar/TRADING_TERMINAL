@@ -90,12 +90,12 @@ class TestExitPath1TradingViewWebhook:
         assert remaining == 25
 
     def test_webhook_exit_registers_with_order_watcher(self, trading_bot):
-        """Test exit is registered with OrderWatcherEngine"""
-        trading_bot.order_watcher.register = Mock(return_value=None)
+        """Test exit is registered via CommandService"""
+        trading_bot.command_service.register = Mock(return_value=None)
         
-        trading_bot.order_watcher.register(Mock())
+        trading_bot.command_service.register(Mock())
         
-        assert trading_bot.order_watcher.register.called
+        assert trading_bot.command_service.register.called
 
     def test_webhook_exit_deferred_execution(self, trading_bot):
         """Test webhook exit is deferred via CommandService.register()"""
@@ -233,11 +233,11 @@ class TestExitPath3OrderWatcher:
 
     def test_order_watcher_polling_loop(self, order_watcher):
         """Test OrderWatcher continuously polls orders"""
-        order_watcher._process_orders.return_value = None
+        order_watcher._reconcile_broker_orders.return_value = None
         
-        order_watcher._process_orders()
+        order_watcher._reconcile_broker_orders()
         
-        assert order_watcher._process_orders.called
+        assert order_watcher._reconcile_broker_orders.called
 
     def test_order_watcher_gets_open_orders(self, order_watcher):
         """Test OrderWatcher retrieves open orders from DB"""
@@ -334,39 +334,38 @@ class TestExitPath3OrderWatcher:
 
     def test_order_watcher_executes_exit_on_sl_breach(self, order_watcher):
         """Test OrderWatcher executes exit when SL breached"""
-        order_watcher._fire_exit = Mock()
+        order_watcher.bot.command_service.register = Mock()
         
-        order_watcher._fire_exit(Mock(symbol="NIFTY50"))
+        order_watcher.bot.command_service.register(Mock(symbol="NIFTY50"))
         
-        assert order_watcher._fire_exit.called
+        assert order_watcher.bot.command_service.register.called
 
     def test_order_watcher_executes_exit_on_target_breach(self, order_watcher):
         """Test OrderWatcher executes exit when target breached"""
-        order_watcher._fire_exit = Mock()
+        order_watcher.bot.command_service.register = Mock()
         
-        order_watcher._fire_exit(Mock(symbol="NIFTY50"))
+        order_watcher.bot.command_service.register(Mock(symbol="NIFTY50"))
         
-        assert order_watcher._fire_exit.called
+        assert order_watcher.bot.command_service.register.called
 
     def test_order_watcher_executes_exit_on_trailing_breach(self, order_watcher):
         """Test OrderWatcher executes exit when trailing breached"""
-        order_watcher._fire_exit = Mock()
+        order_watcher.bot.command_service.register = Mock()
         
-        order_watcher._fire_exit(Mock(symbol="NIFTY50"))
+        order_watcher.bot.command_service.register(Mock(symbol="NIFTY50"))
         
-        assert order_watcher._fire_exit.called
+        assert order_watcher.bot.command_service.register.called
 
-    def test_order_watcher_fire_exit_logic(self, order_watcher):
-        """Test _fire_exit creates correct exit command"""
+    def test_order_watcher_exit_registration_logic(self, order_watcher):
+        """Test exit registration uses command service"""
         order = Mock(
             symbol="NIFTY50",
             quantity=50,
             execution_type="EXIT"
         )
-        
-        order_watcher._fire_exit(order)
-        
-        assert order_watcher._fire_exit.called
+        order_watcher.bot.command_service.register = Mock()
+        order_watcher.bot.command_service.register(order)
+        assert order_watcher.bot.command_service.register.called
 
     def test_order_watcher_multiple_orders_processing(self, order_watcher):
         """Test OrderWatcher processes multiple orders"""

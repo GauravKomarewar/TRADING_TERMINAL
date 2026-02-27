@@ -146,7 +146,7 @@ OrderWatcherEngine monitors
 - Entry: `api/http/execution_app.py:webhook()` (line ~74)
 - Processor: `execution/trading_bot.py:process_alert()` (line ~784)
 - Executor: `execution/command_service.py:submit()` (line ~100)
-- Monitor: `execution/order_watcher.py:_process_orders()` (line ~236)
+- Monitor: `execution/order_watcher.py:_reconcile_broker_orders()` (line ~236)
 
 ---
 
@@ -562,7 +562,7 @@ CommandService.register()
         ▼
 OrderWatcherEngine monitoring
         │
-_process_orders() polls repository
+_reconcile_broker_orders() polls repository
         │
 Finds new EXIT order
         │
@@ -585,7 +585,7 @@ Finds new EXIT order
 - Intent Consumer: `execution/strategy_control_consumer.py:StrategyControlConsumer` (class)
 - Exit Requester: `execution/trading_bot.py:request_exit()` (line ~360)
 - Registration: `execution/command_service.py:register()` (line ~45)
-- Executor: `execution/order_watcher.py:_process_orders()` (line ~236)
+- Executor: `execution/order_watcher.py:_reconcile_broker_orders()` (line ~236)
 
 ---
 
@@ -649,7 +649,7 @@ Trading halted for cooldown period
 - Risk Check: `risk/supreme_risk.py:heartbeat()` (line ~???)
 - Exit Trigger: `execution/trading_bot.py:request_emergency_exit()` (line ~1394)
 - Registration: `execution/command_service.py:register()` (line ~45)
-- Executor: `execution/order_watcher.py:_process_orders()` (line ~236)
+- Executor: `execution/order_watcher.py:_reconcile_broker_orders()` (line ~236)
 
 ---
 
@@ -663,7 +663,7 @@ OrderWatcherEngine
         ▼
 while _running:
     _reconcile_broker_orders()
-    _process_orders()
+    _reconcile_broker_orders()
     sleep(1 second)
         │
         ├─ Every reconcile cycle:
@@ -674,7 +674,7 @@ while _running:
         └─ Every process cycle:
            │
            ▼
-        _process_orders()
+        _reconcile_broker_orders()
         (line ~236)
            │
         Get open ENTRY orders
@@ -704,7 +704,7 @@ while _running:
            └─ If exit triggered:
               │
               ▼
-           _fire_exit()
+           handle_exit_intent()
            (line ~313)
               │
               ├─ Determine exit_side
@@ -732,7 +732,7 @@ while _running:
               (prevent double-trigger)
                  │
               Next polling cycle:
-              _process_orders()
+              _reconcile_broker_orders()
               │
               Finds new EXIT order
               Executes to broker
@@ -749,8 +749,8 @@ while _running:
 ```
 
 **Key Files:**
-- Monitoring: `execution/order_watcher.py:_process_orders()` (line ~236)
-- Exit Trigger: `execution/order_watcher.py:_fire_exit()` (line ~313)
+- Monitoring: `execution/order_watcher.py:_reconcile_broker_orders()` (line ~236)
+- Exit Trigger: `execution/order_watcher.py:handle_exit_intent()` (line ~313)
 - Registration: `execution/command_service.py:register()` (line ~45)
 
 ---
@@ -768,7 +768,7 @@ ENTRY-Basket        │ intent_router.py        │ submit_basket_intent()    �
 EXIT-Dashboard      │ intent_router.py        │ submit_generic_intent()   │ GenericConsumer  │ control_intents
 EXIT-Strategy       │ intent_router.py        │ submit_strategy_intent()  │ StrategyConsumer │ control_intents
 EXIT-Risk           │ supreme_risk.py         │ request_force_exit()      │ OrderWatcher     │ OrderRecord
-EXIT-SL/Trailing    │ order_watcher.py        │ _fire_exit()              │ (self)           │ OrderRecord
+EXIT-SL/Trailing    │ order_watcher.py        │ handle_exit_intent()              │ (self)           │ OrderRecord
 ```
 
 ---

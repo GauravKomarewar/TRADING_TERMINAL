@@ -22,15 +22,15 @@
    - Changed: `from shoonya_platform.execution.db_market` 
    - To: `from shoonya_platform.strategies.market`
 
-2. ✅ `strategies/legacy/run.py`
+2. ✅ `strategy_runner/run.py`
    - Changed: `from shoonya_platform.execution.market import LiveMarket`
    - To: `from shoonya_platform.strategies.market import LiveMarket`
 
-3. ✅ `strategies/legacy/db_run.py`
+3. ✅ `strategy_runner/db_run.py`
    - Changed: `from shoonya_platform.execution.db_market import DBBackedMarket`
    - To: `from shoonya_platform.strategies.market import DBBackedMarket`
 
-4. ✅ `strategies/legacy/db_based_run.py`
+4. ✅ `strategy_runner/db_based_run.py`
    - Changed: `from shoonya_platform.execution.db_market import DBBackedMarket`
    - To: `from shoonya_platform.strategies.market import DBBackedMarket`
 
@@ -57,7 +57,7 @@ Result: No matches found (across all .py files)
 **Folder Verification** ✅
 - execution/ no longer has market files
 - strategies/market/ contains: market.py, db_market.py, __init__.py
-- All legacy strategies updated to import from new location
+- All retired strategies updated to import from new location
 
 ### Final Architecture
 
@@ -90,7 +90,7 @@ strategies/ (UNIFIED - ALL STRATEGY CODE)
 │   → Thread-safe execution
 │   → Error isolation
 ├── strategy_registry.py   ✅ Strategy registration
-├── legacy/                ⏳ Old implementations (updated imports)
+├── retired/                ⏳ Old implementations (updated imports)
 └── saved_configs/         ✅ Config JSONs (dnss_nifty.json, etc)
 ```
 
@@ -167,7 +167,7 @@ git add -A
 git commit -m "refactor(market): Move market data providers from execution/ to strategies/market/
 
 - Relocate market.py and db_market.py to strategies/market/ for clean separation
-- Update all imports across legacy and delta_neutral strategies
+- Update all imports across retired and delta_neutral strategies
 - Update strategy_control_consumer.py to import from new location
 - Delete old market files from execution/
 - execution/ now contains only OMS code (orders, positions, risk)

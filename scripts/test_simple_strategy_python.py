@@ -2,7 +2,7 @@
 """
 Simple strategy_runner smoke script.
 
-Legacy simple strategy standalone module was part of the removed strategies folder.
+A simple strategy standalone module was part of the removed strategies folder.
 This script now validates a strategy_runner config file and exits.
 """
 

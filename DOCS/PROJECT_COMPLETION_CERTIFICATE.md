@@ -14,7 +14,7 @@
 ## 📋 ALL REQUIREMENTS MET
 
 ### Requirement 1: Clean Folder Structure
-- ✅ Deleted legacy files (test_strategy_form.html, strategy.html)
+- ✅ Deleted retired files (test_strategy_form.html, strategy.html)
 - ✅ Kept single production HTML (strategy_new.html)
 - ✅ All Python files properly organized
 - ✅ Zero confusion about which files to use
@@ -278,7 +278,7 @@
 All three user decisions executed:
 1. ✅ Keep strategy_new.html
 2. ✅ Full stack implementation
-3. ✅ Delete legacy files
+3. ✅ Delete retired files
 
 ### Quality Gate: ✅ PASS
 - All code reviewed

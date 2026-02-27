@@ -334,7 +334,7 @@ TIME
 - [✅] Clears guard on failures
 - [✅] Reconciles guard on success
 - [✅] Idempotency checks
-- [✅] Legacy intent support
+- [✅] retired intent support
 
 ### Repository (`repository.py`)
 - [✅] update_tag() method added

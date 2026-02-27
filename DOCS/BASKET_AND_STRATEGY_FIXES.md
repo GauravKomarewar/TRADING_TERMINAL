@@ -92,7 +92,7 @@ Expected:
 Multiple issues:
 1. **Missing config validation** → Cryptic errors
 2. **Subprocess failures not properly caught** → Silent failures
-3. **Legacy endpoint** (`/strategy/start`) → Limited error info
+3. **retired endpoint** (`/strategy/start`) → Limited error info
 4. **New endpoint** (`/intent/strategy/entry`) → Missing field validation
 
 ### The Fixes Applied
@@ -124,7 +124,7 @@ if missing:
     )
 ```
 
-#### Fix 2: Legacy Endpoint Better Error Handling  
+#### Fix 2: retired Endpoint Better Error Handling  
 **File**: `router.py` `/strategy/start` endpoint
 
 ```python
@@ -201,7 +201,7 @@ POST /dashboard/intent/strategy
 }
 ```
 
-#### Method 2: Legacy Subprocess (Backward Compatibility)
+#### Method 2: retired Subprocess (Backward Compatibility)
 ```bash
 POST /strategy/start
 {
@@ -241,7 +241,7 @@ If Failed:
    - "Failed to build universal config" → Check field values (times, numbers)
 ```
 
-**Test Case 2: Legacy Subprocess Start**
+**Test Case 2: retired Subprocess Start**
 ```
 curl -X POST http://localhost:8000/strategy/start \
   -H "Content-Type: application/json" \
@@ -347,7 +347,7 @@ After applying fixes, verify:
   - [ ] Strategy lifecycle shows RUNNING
   - [ ] Monitor panel shows positions/greeks
 
-- [ ] **Strategy Start (Legacy)**
+- [ ] **Strategy Start (retired)**
   - [ ] Process spawns with correct PID
   - [ ] PID file created in temp dir
   - [ ] Strategy process visible in `ps` output

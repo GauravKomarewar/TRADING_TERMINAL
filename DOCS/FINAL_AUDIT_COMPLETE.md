@@ -7,7 +7,7 @@
 
 ## 📊 AUDIT SUMMARY
 
-### ✅ **CLEAN** - No confusion, no legacy files
+### ✅ **CLEAN** - No confusion, no retired files
 
 **Strategies Folder Status: EXCELLENT**
 ```
@@ -80,7 +80,7 @@ results = runner.load_strategies_from_json(
 
 ## 🛠️ IMPLEMENTATION ROADMAP
 
-### **Priority 1: Delete Legacy Files (5 min)**
+### **Priority 1: Delete retired Files (5 min)**
 ```bash
 # Delete confusing test file from root
 DELETE: test_strategy_form.html
@@ -405,7 +405,7 @@ all_logs = manager.get_all_logs_combined(lines=200)
 ### Status: ✅ **CLEAN AND READY**
 
 Your strategies folder is **production-ready** with:
-- ✅ No legacy files
+- ✅ No retired files
 - ✅ No confusion
 - ✅ Clean structure
 - ✅ Validation system (NEW)

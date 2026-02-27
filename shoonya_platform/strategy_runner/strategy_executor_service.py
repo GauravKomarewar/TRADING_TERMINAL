@@ -66,7 +66,7 @@ class ExecutionState:
 
 class StateManager:
     """
-    Minimal SQLite-backed state store for legacy strategy lifecycle compatibility.
+    Minimal SQLite-backed state store for strategy lifecycle state.
     """
 
     def __init__(self, db_path: str):
@@ -321,7 +321,6 @@ class StateManager:
 class StrategyExecutorService:
     """
     Service that manages multiple strategies using the Universal Engine.
-    Compatible with the old interface expected by ShoonyaBot.
     """
 
     def __init__(self, bot, state_db_path: str):
@@ -331,7 +330,6 @@ class StrategyExecutorService:
         self._strategies: Dict[str, Dict] = {}          # name -> config
         self._executors: Dict[str, 'PerStrategyExecutor'] = {}
         self._exec_states: Dict[str, StrategyState] = {}  # name -> live state
-        self._engine_states = self._exec_states  # legacy alias expected by dashboard/tests
         self._lock = threading.RLock()
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -794,7 +792,7 @@ class StrategyExecutorService:
         qty: int,
     ) -> bool:
         """
-        Legacy roll helper used by hardening tests and old adjustment flow.
+        Roll helper used by hardening tests and adjustment flow.
         """
         leg_key = leg.strip().upper()
         if leg_key not in ("CE", "PE"):
@@ -1029,7 +1027,7 @@ class PerStrategyExecutor:
         # NOTE: this excludes EXECUTED/FAILED rows by contract, so pending legs
         # must also reconcile through command_id / broker_order_id lookups.
         orders = self.bot.order_repo.get_open_orders_by_strategy(self.name)
-        open_order_map = {(o.symbol, o.side): o for o in orders}
+        open_order_map = {(str(o.symbol or "").strip(), str(o.side or "").upper()): o for o in orders}
 
         broker_positions = None
         if not self._resolve_test_mode():
@@ -1045,8 +1043,13 @@ class PerStrategyExecutor:
             if leg.order_status != "PENDING":
                 continue
 
+            leg_symbols = self._leg_symbols(leg)
             # Prefer symbol+side for open orders, then exact command/broker IDs for terminal statuses.
-            matching_order = open_order_map.get((leg.symbol, leg.side.value))
+            matching_order = None
+            for sym in leg_symbols:
+                matching_order = open_order_map.get((sym, leg.side.value))
+                if matching_order is not None:
+                    break
             if matching_order is None and getattr(leg, "command_id", None):
                 matching_order = self.bot.order_repo.get_by_id(leg.command_id)
             if matching_order is None and getattr(leg, "order_id", None):
@@ -1071,8 +1074,8 @@ class PerStrategyExecutor:
                 # treat pending leg as filled to keep monitor state aligned with live account.
                 if broker_positions:
                     for p in broker_positions:
-                        sym = p.get("tsym")
-                        if sym != leg.symbol:
+                        sym = str(p.get("tsym") or "").strip()
+                        if sym not in leg_symbols:
                             continue
                         netqty = int(p.get("netqty", 0) or 0)
                         if netqty == 0:
@@ -1086,7 +1089,7 @@ class PerStrategyExecutor:
                             logger.warning(
                                 "FILLED via broker-position fallback | %s | symbol=%s qty=%s",
                                 leg.tag,
-                                leg.symbol,
+                                sym,
                                 abs(netqty),
                             )
                             break
@@ -1099,7 +1102,7 @@ class PerStrategyExecutor:
                             logger.warning(
                                 "FILLED via broker-position fallback | %s | symbol=%s qty=%s",
                                 leg.tag,
-                                leg.symbol,
+                                sym,
                                 abs(netqty),
                             )
                             break
@@ -1114,19 +1117,35 @@ class PerStrategyExecutor:
     def notify_fill(self, symbol: str, side: str, qty: int, price: float,
                     delta: Optional[float], broker_order_id: str, command_id: Optional[str] = None):
         """Immediate fill notification from OrderWatcher."""
+        fill_symbol = str(symbol or "").strip()
+        fill_side = str(side or "").upper()
         for leg in self.state.legs.values():
-            if leg.order_status == "PENDING" and leg.symbol == symbol and leg.side.value == side:
-                leg.order_status = "FILLED"
-                leg.is_active = True
-                leg.order_id = broker_order_id
-                leg.command_id = command_id
-                leg.filled_qty = qty  # qty in contracts; may need conversion to lots
-                leg.entry_price = price
-                leg.ltp = price
-                leg.delta = delta if delta is not None else leg.delta
-                logger.info(f"FILL NOTIFIED | {self.name} | {symbol} {side} {qty} @ {price}")
-                return
+            if leg.order_status != "PENDING":
+                continue
+            if leg.side.value != fill_side:
+                continue
+            if fill_symbol not in self._leg_symbols(leg):
+                continue
+            leg.order_status = "FILLED"
+            leg.is_active = True
+            leg.order_id = broker_order_id
+            leg.command_id = command_id
+            leg.filled_qty = qty  # qty in contracts; may need conversion to lots
+            leg.entry_price = price
+            leg.ltp = price
+            leg.delta = delta if delta is not None else leg.delta
+            logger.info(f"FILL NOTIFIED | {self.name} | {symbol} {side} {qty} @ {price}")
+            return
         logger.warning(f"FILL NOTIFICATION: No matching pending leg for {symbol} {side}")
+
+    @staticmethod
+    def _leg_symbols(leg: LegState) -> set:
+        out = set()
+        if getattr(leg, "symbol", None):
+            out.add(str(leg.symbol).strip())
+        if getattr(leg, "trading_symbol", None):
+            out.add(str(leg.trading_symbol).strip())
+        return {s for s in out if s}
 
     # ==================== MODIFIED EXISTING METHODS ====================
 

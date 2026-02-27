@@ -76,17 +76,11 @@ class AdjustmentEngine:
 
     def _check_guards(self, rule: Dict[str, Any], current_time: Optional[datetime] = None) -> bool:
         cooldown = rule.get("cooldown_sec", 0)
-        rule_name = rule.get("name") or str(id(rule))  # fallback if name missing
+        rule_name = rule.get("name") or str(id(rule))
         now = current_time or datetime.now()
         self._last_guard_reason = "ok"
 
-        # Per‑rule cooldown
-        if cooldown > 0 and self.state.last_adjustment_time:
-            if (now - self.state.last_adjustment_time).total_seconds() < cooldown:
-                self._last_guard_reason = "cooldown"
-                return False
-
-        # Per-rule fallback cooldown (used when only rule-local fire time exists)
+        # ✅ Per‑rule cooldown (only)
         if cooldown > 0 and rule_name in self._rule_last_fired:
             if (now - self._rule_last_fired[rule_name]).total_seconds() < cooldown:
                 self._last_guard_reason = "cooldown"
@@ -165,7 +159,6 @@ class AdjustmentEngine:
             # At this point, old_leg.option_type is guaranteed to be not None
             assert old_leg.option_type is not None, "Option leg must have option_type"
 
-            old_leg.is_active = False
             new_expiry = self._resolve_next_expiry(target_expiry, old_leg.expiry)
 
             # Determine new strike and option data
@@ -186,7 +179,6 @@ class AdjustmentEngine:
                     new_atm, old_leg.option_type, expiry=new_expiry
                 )
             elif same_strike == "delta":
-                # old_leg.option_type is already asserted not None
                 opt_data = self.market.find_option_by_delta(
                     old_leg.option_type, abs(old_leg.delta), expiry=new_expiry
                 )
@@ -198,15 +190,16 @@ class AdjustmentEngine:
             if opt_data is None:
                 raise ValueError(f"Could not resolve option for roll: {leg_tag} -> {new_expiry}")
 
-            # ✅ BUG-015 FIX: Tag collision on multiple rolls — e.g. "LEG_ROLLED_ROLLED".
-            # Use a numeric counter suffix to guarantee uniqueness.
-            base_tag = leg_tag.split("_ROLLED")[0]  # strip any existing _ROLLED suffix
+            # ✅ BUG-015 FIX: Tag collision on multiple rolls — use numeric counter
+            base_tag = leg_tag.split("_ROLLED")[0]
             roll_num = 1
             candidate = f"{base_tag}_ROLLED_{roll_num}"
             while candidate in self.state.legs:
                 roll_num += 1
                 candidate = f"{base_tag}_ROLLED_{roll_num}"
             new_tag = candidate
+
+            # Create new leg first (still pending)
             new_leg = LegState(
                 tag=new_tag,
                 symbol=old_leg.symbol,
@@ -230,11 +223,15 @@ class AdjustmentEngine:
                     or old_leg.trading_symbol
                 ),
             )
-            # 🔒 Mark as pending – will become active only after fill
             new_leg.is_active = False
             new_leg.order_status = "PENDING"
             new_leg.order_placed_at = datetime.now()
+
+            # Add new leg to state
             self.state.legs[new_tag] = new_leg
+
+            # **Now** deactivate the old leg
+            old_leg.is_active = False
 
         elif action_type == "convert_to_spread":
             wing_cfg = action_cfg.get("wing_leg", {})

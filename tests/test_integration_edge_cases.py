@@ -58,14 +58,14 @@ class TestCompleteEntryToExitFlow:
         
         assert _entry_result["status"] == "entry_executed"
         
-        # Step 2: OrderWatcher registers order
-        bot.order_watcher.register.return_value = None
-        bot.order_watcher.register(Mock(
+        # Step 2: Exit intent registration path
+        bot.command_service.register.return_value = None
+        bot.command_service.register(Mock(
             symbol="NIFTY50",
             stop_loss=90.0
         ))
         
-        assert bot.order_watcher.register.called
+        assert bot.command_service.register.called
         
         # Step 3: SL breach
         bot.api.get_ltp.return_value = 89.5
@@ -74,11 +74,11 @@ class TestCompleteEntryToExitFlow:
         sl_breached = ltp <= 90.0
         assert sl_breached == True
         
-        # Step 4: Exit executed
-        bot.order_watcher._fire_exit.return_value = None
-        bot.order_watcher._fire_exit(Mock(symbol="NIFTY50"))
+        # Step 4: Exit executed via command service
+        bot.command_service.register.return_value = None
+        bot.command_service.register(Mock(symbol="NIFTY50"))
         
-        assert bot.order_watcher._fire_exit.called
+        assert bot.command_service.register.called
 
     def test_dashboard_entry_to_target_exit(self, trading_bot_full_setup):
         """Test complete: dashboard generic entry → target trigger → exit"""

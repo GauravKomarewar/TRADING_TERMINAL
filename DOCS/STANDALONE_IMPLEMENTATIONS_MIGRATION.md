@@ -48,7 +48,7 @@ strategies/
 
 ### 3. **Support All Execution Paths**
    - **Dashboard Path**: `UniversalStrategyConfig` → `adapter` → strategy
-   - **Standalone Path**: JSON config → strategy directly (legacy support)
+   - **Standalone Path**: JSON config → strategy directly (retired support)
    - **Direct Import**: Via adapter functions in Python
 
 ---
@@ -173,7 +173,7 @@ The system doesn't care about filesystem paths for strategy selection. All routi
 
 ## Next Steps (Optional)
 
-1. **If keeping legacy CLI support**: 
+1. **If keeping retired CLI support**: 
    - Create new `__main__.py` in `standalone_implementations/` that can run any strategy
    - Reference delta_neutral as example
 

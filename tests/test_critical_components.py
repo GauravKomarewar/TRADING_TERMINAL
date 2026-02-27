@@ -407,12 +407,12 @@ class TestConcurrencyAndThreadSafety:
     def test_order_watcher_thread_safe_polling(self):
         """Test OrderWatcher can poll while commands execute"""
         watcher = Mock(spec=OrderWatcherEngine)
-        watcher._process_orders = Mock()
+        watcher._reconcile_broker_orders = Mock()
         
         # Should be able to poll
-        watcher._process_orders()
+        watcher._reconcile_broker_orders()
         
-        assert watcher._process_orders.called
+        assert watcher._reconcile_broker_orders.called
 
     def test_pending_commands_thread_safe_access(self):
         """Test pending_commands list is thread-safe"""

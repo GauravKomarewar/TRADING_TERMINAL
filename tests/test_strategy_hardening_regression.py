@@ -19,7 +19,7 @@ def test_shutdown_handles_none_strategy_runner_without_error():
     bot._shutdown_event = threading.Event()
     bot.order_watcher = Mock()
     bot.option_supervisor = Mock()
-    bot.strategy_runner = None  # Legacy path disabled
+    bot.strategy_runner = None  # strategy_runner path disabled
     bot.strategy_executor_service = Mock()
     bot.telegram_enabled = False
     bot.api = Mock()

@@ -124,7 +124,7 @@ from shoonya_platform.strategies.standalone_implementations.delta_neutral import
 ```
 File: strategies/delta_neutral/__main__.py.DEPRECATED
 Size: 465 lines
-Purpose: Legacy standalone runner
+Purpose: retired standalone runner
 Status: NOT IMPORTED ANYWHERE ✅
 
 References Found:

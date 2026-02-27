@@ -21,7 +21,7 @@
 | 2 | No unified strategy API | HIGH | api/dashboard/api/ | No centralized strategy management |
 | 3 | Web UI incomplete | HIGH | strategy.html, strategy_new.html | Users can't create/validate strategies |
 | 4 | No strategy logging system | MEDIUM | strategies/ | No visibility into what's happening |
-| 5 | Legacy HTML files confusing | MEDIUM | test_strategy_form.html | Users don't know which UI to use |
+| 5 | retired HTML files confusing | MEDIUM | test_strategy_form.html | Users don't know which UI to use |
 
 ---
 
@@ -57,7 +57,7 @@ shoonya_platform/strategies/
 └── __init__.py
 ```
 
-**Assessment:** ✅ **VERY CLEAN - No legacy files to remove**
+**Assessment:** ✅ **VERY CLEAN - No retired files to remove**
 
 ---
 
@@ -96,7 +96,7 @@ Root directory:
 - No real-time execution status
 - No error messages from failed strategies
 
-### Legacy File
+### retired File
 ```
 test_strategy_form.html - TEST FILE IN ROOT
 - Location: Root directory (confusing)
@@ -205,7 +205,7 @@ POST /dashboard/orders/cancel/system    ORDER CANCEL (exists)
 
 ### 🎯 Phase 1: Clean & Standardize (Immediate)
 
-**1.1 Delete Legacy Files**
+**1.1 Delete retired Files**
 ```
 DELETE: test_strategy_form.html (in root)
 REASON: Confusing, should be in tests/ if needed
@@ -841,7 +841,7 @@ stopButton.addEventListener('click', async () => {
 
 ### ⚠️ What Needs Fixing (Priority Order)
 
-**1. Delete Legacy Files (5 min)**
+**1. Delete retired Files (5 min)**
 - test_strategy_form.html
 
 **2. Decide on HTML Files (2 min)**
@@ -890,7 +890,7 @@ After implementation, you'll have:
 ✅ **One validation:** Smart parameter checking with clear errors  
 ✅ **One logging:** All strategies visible in real-time  
 ✅ **No confusion:** All controls in one place  
-✅ **No legacy:** Clean, modern, production-ready  
+✅ **No retired:** Clean, modern, production-ready  
 
 **Result:** Anyone can pick up the system and understand it instantly.
 

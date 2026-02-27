@@ -206,7 +206,7 @@ class OrderRepository:
         records = []
         for r in rows:
             d = dict(r)
-            d.pop("id", None)   # 🔒 drop legacy column
+            d.pop("id", None)   # 🔒 drop historical PK column
             d.pop("client_id", None)  # 🔒 drop client_id (handled by repo)
             records.append(OrderRecord(**d))
         return records
@@ -502,7 +502,7 @@ class OrderRepository:
         records = []
         for r in rows:
             d = dict(r)
-            d.pop("id", None)  # legacy safety
+            d.pop("id", None)  # historical schema safety
             d.pop("client_id", None)  # 🔒 drop client_id (handled by repo)
             records.append(OrderRecord(**d))
 

@@ -9,7 +9,7 @@
 
 ✅ **Can Run Independently**: YES  
 ✅ **Blocks Other Strategies**: NO  
-✅ **Intentionally Kept as Legacy**: Partially (hybrid design)  
+✅ **Intentionally Kept as retired**: Partially (hybrid design)  
 ✅ **Alternative Execution Path**: YES  
 
 **Conclusion**: `delta_neutral/` folder is **fully independent, non-blocking, and completely optional**. It can be deleted without affecting any other system components.
@@ -22,7 +22,7 @@
 delta_neutral/
 ├── dnss.py                    # Modern: Strategy implementation (1036 lines)
 ├── adapter.py                 # Modern: UniversalStrategyConfig bridge (223 lines)
-├── __main__.py.DEPRECATED     # Legacy: Standalone direct run (465 lines)
+├── __main__.py.DEPRECATED     # retired: Standalone direct run (465 lines)
 └── __init__.py                # Empty
 ```
 
@@ -44,9 +44,9 @@ delta_neutral/
 - **Dependencies**: `delta_neutral/dnss.py`, `universal_config`
 - **Blocking**: ❌ NO - optional integration layer
 
-**`__main__.py.DEPRECATED`** (LEGACY DIRECT RUN)
+**`__main__.py.DEPRECATED`** (retired DIRECT RUN)
 - **Purpose**: Allows standalone execution: `python -m shoonya_platform.strategies.delta_neutral --config config.json`
-- **Type**: Legacy direct runner
+- **Type**: retired direct runner
 - **Status**: ⚠️ DEPRECATED (marked by filename)
 - **Dependencies**: `dnss.py`, `Config`, `DBBackedMarket`
 - **Blocking**: ❌ NO - not imported by system
@@ -184,7 +184,7 @@ OrderWatcher polls broker
 
 ---
 
-## 4. LEGACY vs MODERN DESIGN
+## 4. retired vs MODERN DESIGN
 
 ### 4.1 Hybrid Design
 
@@ -201,7 +201,7 @@ StrategyRunner.register_with_config()
 Multiple strategies: DNSS, Iron-Condor, etc.
 ```
 
-**Legacy Path** (Marked Deprecated):
+**retired Path** (Marked Deprecated):
 ```
 Command Line: python -m delta_neutral --config config.json
     ↓
@@ -227,7 +227,7 @@ Standalone execution loop (no StrategyRunner)
 **Answer**: YES, exactly!
 
 - **Modern Path**: Dashboard → UniversalStrategyConfig → adapter → StrategyRunner
-- **Legacy Path**: Direct .py execution with config file → standalone __main__.py
+- **retired Path**: Direct .py execution with config file → standalone __main__.py
 
 **Both run the same strategy logic** (dnss.py):
 - Same order logic
@@ -264,7 +264,7 @@ strategy = DeltaNeutralShortStrangleStrategy(...)
 runner.register(name="strategy1", strategy=strategy, market=market)
 ```
 
-**Way 3: Standalone Execution** (Legacy)
+**Way 3: Standalone Execution** (retired)
 ```bash
 python -m shoonya_platform.strategies.delta_neutral \
     --config ./saved_configs/dnss_nifty.json
@@ -307,7 +307,7 @@ No one blocks anyone! ✅
 | Type Hints | ✅ PASS | Full type annotations |
 | Logging | ✅ PASS | Strategic logger integration |
 
-### 6.2 Legacy Compatibility
+### 6.2 retired Compatibility
 
 | Aspect | Status | Notes |
 |--------|--------|-------|
@@ -334,7 +334,7 @@ No one blocks anyone! ✅
 **What breaks if deleted**:
 - ❌ Nothing in system (verified)
 - ✅ DNSS strategy stops being available (expected)
-- ✅ Legacy standalone --config option stops working (expected)
+- ✅ retired standalone --config option stops working (expected)
 
 **Recommendation**: Keep because:
 - ✅ Working production strategy
@@ -346,13 +346,13 @@ No one blocks anyone! ✅
 
 ## 8. HYBRID DESIGN JUSTIFICATION
 
-**Why Keep Both Modern & Legacy?**
+**Why Keep Both Modern & retired?**
 
 1. **Modern Path** (`adapter.py` + `StrategyRunner`)
    - Benefit: Dashboard integration, multi-strategy, standardized
    - Use: Dashboard-triggered strategies
 
-2. **Legacy Path** (`__main__.py.DEPRECATED`)
+2. **retired Path** (`__main__.py.DEPRECATED`)
    - Benefit: Standalone testing, debugging, direct execution
    - Use: Development, one-off testing, CLI runners
 
@@ -369,9 +369,9 @@ No one blocks anyone! ✅
 | **Has Circular Dependencies** | ❌ NO | imports checked in both directions |
 | **Safe to Delete** | ✅ YES | Zero external references |
 | **Modern Code** | ✅ YES | Intent-only, OMS-native |
-| **Legacy Support** | ✅ YES | __main__.py.DEPRECATED marked |
-| **Alternative Execution Path** | ✅ YES | Dashboard + Legacy both work |
-| **Intentionally Kept as Legacy** | ⚠️ HYBRID | Both modern & legacy coexist |
+| **retired Support** | ✅ YES | __main__.py.DEPRECATED marked |
+| **Alternative Execution Path** | ✅ YES | Dashboard + retired both work |
+| **Intentionally Kept as retired** | ⚠️ HYBRID | Both modern & retired coexist |
 
 ---
 
@@ -392,7 +392,7 @@ No one blocks anyone! ✅
 3. ✅ **Backwards Compatible**
    - Old config files still load
    - Existing deployments still work
-   - Legacy runners still function
+   - retired runners still function
 
 ### If Adding New Strategies:
 
@@ -401,11 +401,11 @@ Model them exactly like delta_neutral/:
 iron_condor/
 ├── iron_condor.py         # Strategy class
 ├── adapter.py             # UniversalStrategyConfig bridge
-├── __main__.py.DEPRECATED # Optional legacy runner
+├── __main__.py.DEPRECATED # Optional retired runner
 └── __init__.py
 ```
 
-### If Removing Legacy Direct Execution:
+### If Removing retired Direct Execution:
 
 Safe to delete ONLY:
 - ❌ `__main__.py.DEPRECATED` (won't break anything)
@@ -418,7 +418,7 @@ Safe to delete ONLY:
 The `delta_neutral/` folder represents a **hybrid-compatible design**:
 
 - **Modern layer**: Fully integrated with StrategyRunner, UniversalStrategyConfig, dashboard
-- **Legacy layer**: Standalone __main__.py for direct execution
+- **retired layer**: Standalone __main__.py for direct execution
 
 **Neither blocks the other. Both work independently. Both are optional technologies in parallel execution paths.**
 
@@ -431,4 +431,4 @@ The folder is **100% safe** in its current state and serves as an excellent temp
 **Status**: Production Ready  
 **Blocking**: None  
 **Impact on System**: Zero  
-**Recommendation**: Use modern path (dashboard), keep legacy path for debugging
+**Recommendation**: Use modern path (dashboard), keep retired path for debugging

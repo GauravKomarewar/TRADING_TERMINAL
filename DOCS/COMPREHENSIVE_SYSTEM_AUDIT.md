@@ -30,7 +30,7 @@
 - Line 120: Called `order_watcher.register_exit()` method which doesn't exist
 
 **Root Cause:**
-PositionExitService was using non-existent methods. ExecutionGuard only has `validate_and_prepare()` and OrderWatcherEngine has `_fire_exit()` (private).
+PositionExitService was using non-existent methods. ExecutionGuard only has `validate_and_prepare()` and OrderWatcherEngine has `handle_exit_intent()` (private).
 
 **Solution:**
 Rewrote PositionExitService to:
@@ -227,7 +227,7 @@ Execution Time: 6.81s
 ```
 To:
 ```
-- ✅ `order_watcher._fire_exit()` - Exit execution (internal)
+- ✅ `order_watcher.handle_exit_intent()` - Exit execution (internal)
 - ✅ `position_exit_service._register_exit_order()` - Order registration
 ```
 

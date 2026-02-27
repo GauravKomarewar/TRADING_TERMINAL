@@ -18,8 +18,8 @@ class BrokerReconciliation:
     def reconcile(self, broker_positions: List[Dict[str, Any]]) -> List[str]:
         """
         Reconcile state legs against a list of positions that have 'tag' fields.
-        This is the legacy method used for internal position snapshots.
-        For live broker reconciliation, use reconcile_from_broker() instead.
+        Use this for internal position snapshots.
+        For live broker reconciliation, use reconcile_from_broker().
         """
         warnings = []
         broker_tags = {p.get("tag") for p in broker_positions if p.get("tag")}

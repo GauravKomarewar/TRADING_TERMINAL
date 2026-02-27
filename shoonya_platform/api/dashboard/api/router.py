@@ -16,7 +16,7 @@
 ## NOTE: sqlite3 & time used only by option-chain endpoint
 # DO NOT MODIFY WITHOUT FULL OMS + CONSUMER RE-AUDIT
 # ======================================================================
-import threading  # used for _symbols_service_lock, _supervisor_service_lock, _runner_instances_lock
+import threading  # used for _symbols_service_lock and _runner_instances_lock
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status, WebSocket
 from typing import List, Optional, Any, Dict
 import logging
@@ -35,7 +35,6 @@ from shoonya_platform.api.dashboard.services.broker_service import BrokerService
 from shoonya_platform.api.dashboard.services.system_service import SystemTruthService
 from shoonya_platform.api.dashboard.services.symbols_utility import DashboardSymbolService
 from shoonya_platform.api.dashboard.services.intent_utility import DashboardIntentService
-from shoonya_platform.api.dashboard.services.supervisor_service import SupervisorService
 from shoonya_platform.api.dashboard.services.option_chain_service import (
     get_active_expiries,
     get_active_symbols,
@@ -138,8 +137,6 @@ def get_intent(ctx=Depends(require_dashboard_auth)):
 _symbols_service_instance: Optional[DashboardSymbolService] = None
 _symbols_service_lock = threading.Lock()
 
-_supervisor_service_instance: Optional[SupervisorService] = None
-_supervisor_service_lock = threading.Lock()
 
 def get_symbols() -> DashboardSymbolService:
     global _symbols_service_instance
@@ -148,14 +145,6 @@ def get_symbols() -> DashboardSymbolService:
             if _symbols_service_instance is None:
                 _symbols_service_instance = DashboardSymbolService()
     return _symbols_service_instance
-
-def get_supervisor() -> SupervisorService:
-    global _supervisor_service_instance
-    if _supervisor_service_instance is None:
-        with _supervisor_service_lock:
-            if _supervisor_service_instance is None:
-                _supervisor_service_instance = SupervisorService()
-    return _supervisor_service_instance
 
 # ==================================================
 # 🔎 SYMBOL DISCOVERY
@@ -865,57 +854,6 @@ def list_available_strategies(ctx=Depends(require_dashboard_auth)):
         "predefined": templates,
     }
 
-
-@router.post("/strategy/start")
-def start_strategy(
-    payload: dict = Body(...),
-    svc: SupervisorService = Depends(get_supervisor),
-):
-    """Start a strategy runner subprocess from dashboard.
-
-    payload: {"config_path": "delta_neutral.configs.nifty"}
-    
-    LEGACY: For backward compatibility only.
-    NEW: Use /intent/strategy/entry for intent-based control
-    
-    Returns:
-    - { "started": true, "pid": 12345 } on success
-    - HTTPException with error details on failure
-    """
-    cfg = payload.get("config_path")
-    if not cfg:
-        logger.error("🔥 Strategy start failed: config_path required")
-        raise HTTPException(status_code=400, detail="config_path required")
-    
-    try:
-        svc.start(cfg)
-        return {"started": True, "config_path": cfg}
-    except Exception as e:
-        logger.exception("Legacy strategy/start endpoint is retired | config_path=%s", cfg)
-        raise HTTPException(
-            status_code=410,
-            detail=f"Legacy subprocess strategy start is retired: {e}",
-        )
-
-
-@router.post("/strategy/stop")
-def stop_strategy(
-    payload: dict = Body(...),
-    svc: SupervisorService = Depends(get_supervisor),
-):
-    """Stop a previously started strategy. Accepts `config_path` or `pid`.
-    
-    LEGACY: For backward compatibility only.
-    NEW: Use /intent/strategy with action=FORCE_EXIT
-    """
-    cfg = payload.get("config_path")
-    pid = payload.get("pid")
-    try:
-        res = svc.stop(config_path=cfg, pid=pid)
-        return {"stopped": True, **res}
-    except Exception as e:
-        logger.exception("Legacy strategy/stop endpoint failed")
-        raise HTTPException(status_code=410, detail=f"Legacy subprocess strategy stop is retired: {e}")
 
 # ==================================================
 # PER-STRATEGY RUNNER CONTROL (Individual Start/Stop)

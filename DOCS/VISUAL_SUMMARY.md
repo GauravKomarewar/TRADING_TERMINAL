@@ -124,10 +124,10 @@
 │ EXIT SOURCE 4: ORDERWATCHER SL/TRAILING                                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ File: execution/order_watcher.py                                            │
-│ Function: _process_orders() [Line 236] → _fire_exit() [Line 313]            │
+│ Function: _reconcile_broker_orders() [Line 236] → handle_exit_intent() [Line 313]            │
 │ Trigger: LTP reaches stop_loss or trailing_stop threshold (continuous)      │
 │ Speed: CONTINUOUS MONITORING, TRIGGERED EXECUTION                           │
-│ Process: Poll open ENTRYs → Check LTP → If threshold hit → _fire_exit()     │
+│ Process: Poll open ENTRYs → Check LTP → If threshold hit → handle_exit_intent()     │
 │           → register() → Next cycle: execute                                │
 │ Execution: Broker order placed (MARKET or LIMIT per rules)                  │
 │ Special: Sole executor of SL/Trailing, no other path can trigger these      │
@@ -221,7 +221,7 @@ Broker executes, watcher updates
 | 1 | Dashboard Direct | intent_router.py | submit_generic_intent() | NO | Medium |
 | 2 | Dashboard Strategy | intent_router.py | submit_strategy_intent() | NO | Slow |
 | 3 | Risk Manager | supreme_risk.py | request_force_exit() | YES | Fast |
-| 4 | SL/Trailing | order_watcher.py | _fire_exit() | YES | Fast |
+| 4 | SL/Trailing | order_watcher.py | handle_exit_intent() | YES | Fast |
 
 ---
 

@@ -136,7 +136,7 @@ shoonya_platform/strategies/
 
 ### Before (Confusing)
 ```
-strategies/delta_neutral/  ← What is this? Custom market adapter? Unique strategy? Legacy?
+strategies/delta_neutral/  ← What is this? Custom market adapter? Unique strategy? retired?
 ```
 
 ### After (Clear)

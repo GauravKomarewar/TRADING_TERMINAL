@@ -389,4 +389,4 @@ To (Failure):
 - [✅] Telegram alerts for critical failures
 - [✅] Risk limits enforced BEFORE broker
 - [✅] Guard state protected by locks
-- [✅] Legacy order support maintained
+- [✅] retired order support maintained

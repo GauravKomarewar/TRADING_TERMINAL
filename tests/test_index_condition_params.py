@@ -4,37 +4,27 @@ from shoonya_platform.strategy_runner.config_schema import validate_config
 
 def _minimal_config_with_param(param: str):
     return {
-        "schema_version": "3.0",
+        "schema_version": "4.0",
         "name": "IDX_PARAM_TEST",
-        "basic": {
+        "identity": {
             "exchange": "NFO",
             "underlying": "NIFTY",
-            "expiry_mode": "weekly_current",
-            "lots": 1,
+            "product_type": "NRML",
+            "order_type": "MARKET",
         },
         "timing": {
-            "entry_time": "09:20",
-            "exit_time": "15:20",
+            "entry_window_start": "09:20",
+            "entry_window_end": "15:20",
         },
+        "schedule": {"expiry_mode": "weekly_current", "active_days": ["mon", "tue", "wed", "thu", "fri"]},
         "entry": {
-            "rule_type": "if_then",
-            "conditions": {
-                "operator": "AND",
-                "rules": [
+            "global_conditions": [
                     {"parameter": param, "comparator": ">=", "value": 1},
-                ],
-            },
-            "action": {
-                "type": "short_both",
-            },
-        },
-        "exit": {
-            "rule_type": "if_any",
-            "conditions": [
-                {"parameter": "time_current", "comparator": ">=", "value": "15:20"},
             ],
-            "action": {"type": "close_all_positions"},
+            "legs": [],
         },
+        "adjustment": {"rules": []},
+        "exit": {},
     }
 
 

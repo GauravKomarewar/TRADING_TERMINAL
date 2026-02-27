@@ -13,7 +13,7 @@ Complete test suite for strategy discovery, market adapters, strategy execution,
 - ✅ DeltaNeutralShortStrangleStrategy is discovered
 - ✅ Registry excludes universal_settings folder
 - ✅ Registry excludes market adapters
-- ✅ Registry excludes system folders (__pycache__, legacy)
+- ✅ Registry excludes system folders (__pycache__, retired)
 - ✅ Module paths are importable
 - ✅ Template IDs are unique
 - ✅ Slugs match file names

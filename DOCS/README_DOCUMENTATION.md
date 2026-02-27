@@ -220,7 +220,7 @@ Entry Points → Intent Generation → Async Queue → Consumers → Execution �
 
 ### Executors:
 - Entry: `brokers/shoonya/client.py:place_order()`
-- Exit: `execution/order_watcher.py:_process_orders()` → `_fire_exit()`
+- Exit: `execution/order_watcher.py:_reconcile_broker_orders()` → `handle_exit_intent()`
 
 ### Storage:
 - Intents: `persistence/repository.py` → `persistence/models.py:OrderRecord`

@@ -26,7 +26,7 @@ strategies/ (Disorganized)
 │   ├── adapter.py
 │   ├── __main__.py.DEPRECATED  ← Dead code
 │   └── __main__.py             ← Separate runner (confusion!)
-├── legacy/                     ← Old code still has bad imports
+├── retired/                     ← Old code still has bad imports
 │   ├── run.py              imports from execution.market ❌
 │   ├── db_run.py           imports from execution.db_market ❌
 │   └── db_based_run.py     imports from execution.db_market ❌
@@ -78,7 +78,7 @@ strategies/ (UNIFIED - ALL STRATEGY CODE)
 │   ├── adapter.py         → Convert UniversalStrategyConfig → DNSS config
 │   └── [other DNSS components]
 │
-├── legacy/                ✅ OLD IMPLEMENTATIONS (now using correct imports)
+├── retired/                ✅ OLD IMPLEMENTATIONS (now using correct imports)
 │   ├── run.py             imports from strategies.market ✅
 │   ├── db_run.py          imports from strategies.market ✅
 │   └── db_based_run.py    imports from strategies.market ✅
@@ -110,7 +110,7 @@ from shoonya_platform.execution.db_market import DBBackedMarket
 from shoonya_platform.strategies.market import DBBackedMarket
 ```
 
-### File: `strategies/legacy/run.py`
+### File: `strategy_runner/run.py`
 ```python
 # BEFORE ❌
 from shoonya_platform.execution.market import LiveMarket
@@ -119,7 +119,7 @@ from shoonya_platform.execution.market import LiveMarket
 from shoonya_platform.strategies.market import LiveMarket
 ```
 
-### File: `strategies/legacy/db_run.py`
+### File: `strategy_runner/db_run.py`
 ```python
 # BEFORE ❌
 from shoonya_platform.execution.db_market import DBBackedMarket
@@ -128,7 +128,7 @@ from shoonya_platform.execution.db_market import DBBackedMarket
 from shoonya_platform.strategies.market import DBBackedMarket
 ```
 
-### File: `strategies/legacy/db_based_run.py`
+### File: `strategy_runner/db_based_run.py`
 ```python
 # BEFORE ❌
 from shoonya_platform.execution.db_market import DBBackedMarket
@@ -186,7 +186,7 @@ git add -A
 git commit -m "refactor(market): Move market data providers from execution/ to strategies/
 
 - Relocate market.py and db_market.py to strategies/market/
-- Update all imports in execution/ and legacy strategies
+- Update all imports in execution/ and retired strategies
 - Delete old market files from execution/ (now clean OMS-only)
 - Update strategies/__init__.py with proper exports
 

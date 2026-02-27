@@ -30,9 +30,9 @@ shoonya_platform/
 └── shoonya_platform/
     └── strategies/
         ├── strategy_runner.py       ✅ Active
-        ├── run.py                    ⚠️ Legacy mixed with active
-        ├── db_run.py                 ⚠️ Legacy mixed with active
-        ├── db_based_run.py           ⚠️ Legacy mixed with active
+        ├── run.py                    ⚠️ retired mixed with active
+        ├── db_run.py                 ⚠️ retired mixed with active
+        ├── db_based_run.py           ⚠️ retired mixed with active
         └── delta_neutral/
 ```
 
@@ -41,7 +41,7 @@ shoonya_platform/
 - ⚠️ Test files mixed with production code
 - ⚠️ Documentation scattered in root
 - ⚠️ Deployment files not grouped
-- ⚠️ Legacy strategy code mixed with active code
+- ⚠️ retired strategy code mixed with active code
 - ❌ Obsolete log files
 
 ---
@@ -95,7 +95,7 @@ shoonya_platform/
         ├── reporting/               ✅ Active
         ├── runner_adv/              ✅ Active
         ├── universal_config/        ✅ Active
-        └── legacy/                  📦 Archived
+        └── retired/                  📦 Archived
             ├── README.md (migration guide)
             ├── run.py
             ├── db_run.py
@@ -108,7 +108,7 @@ shoonya_platform/
 - ✅ All deployment files in `deployment/`
 - ✅ Test files properly in `tests/`
 - ✅ Scripts organized in `scripts/`
-- ✅ Legacy code clearly separated
+- ✅ retired code clearly separated
 - ✅ Obsolete logs removed
 
 ---
@@ -122,7 +122,7 @@ shoonya_platform/
 | **Deployment files in root** | 5 files | 0 files | **100% organized** |
 | **Test files in root** | 2 files | 0 files | **100% organized** |
 | **Scripts in root** | 2 files | 0 files | **100% organized** |
-| **Strategy legacy files visible** | 3 mixed | 0 mixed | **100% separated** |
+| **Strategy retired files visible** | 3 mixed | 0 mixed | **100% separated** |
 
 ---
 

@@ -239,7 +239,7 @@ class OptionChainSupervisor:
         exch = str(exchange or "").upper()
         session = EXCHANGE_MARKET_HOURS.get(exch)
         if not session:
-            # Unknown exchanges keep legacy behavior (check staleness always).
+            # Unknown exchanges keep permissive behavior (check staleness always).
             return True
 
         now = datetime.now()
@@ -874,4 +874,3 @@ class OptionChainSupervisor:
             logger.error("Failed to remove heartbeat file: %s", e)
         
         logger.info("✅ Shutdown complete")
-

@@ -2,7 +2,7 @@
 """
 Direct strategy_runner execution helper.
 
-This utility replaces legacy direct execution from the old strategy package.
+This utility replaces direct execution from the retired strategy package.
 """
 
 import argparse

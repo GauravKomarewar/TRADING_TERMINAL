@@ -9,7 +9,7 @@
 
 Your strategies folder is now **PRODUCTION-READY** with a complete end-to-end system:
 
-✅ **No Legacy Files** - Clean folder structure  
+✅ **No retired Files** - Clean folder structure  
 ✅ **12 New API Endpoints** - Full CRUD + control + logging  
 ✅ **Enhanced Web UI** - Production-grade interface  
 ✅ **Validation System** - Smart config checking before save  
@@ -23,7 +23,7 @@ Your strategies folder is now **PRODUCTION-READY** with a complete end-to-end sy
 ### 1. **Cleanup & Organization** ✅
 ```
 DELETED:
-  ❌ test_strategy_form.html (root - legacy)
+  ❌ test_strategy_form.html (root - retired)
   ❌ strategy.html (old version)
 
 KEPT:
@@ -547,7 +547,7 @@ Solution:
 **System Status:** PRODUCTION READY ✅
 
 **Delivered:**
-- ✅ Legacy files deleted
+- ✅ retired files deleted
 - ✅ 12 API endpoints functional
 - ✅ Web UI fully operational
 - ✅ Validation system integrated

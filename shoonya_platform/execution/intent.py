@@ -81,7 +81,7 @@ class UniversalOrderCommand:
     MUST flow through this structure.
     """
 
-    # Legacy compatibility field (some tests pass 'intent')
+    # Compatibility field (some tests pass 'intent')
     intent: Optional[str] = None
 
     # ---- Identity / Audit ----

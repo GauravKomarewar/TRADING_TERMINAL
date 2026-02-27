@@ -45,7 +45,7 @@ from shoonya_platform.strategies.standalone_implementations.delta_neutral import
 ## Deleted Files
 
 ❌ `__main__.py.DEPRECATED` (465 lines)
-- Legacy standalone runner
+- retired standalone runner
 - Not imported by any system files
 - Safe to delete (verified)
 - Alternative: Use new unified runner from StrategyRunner

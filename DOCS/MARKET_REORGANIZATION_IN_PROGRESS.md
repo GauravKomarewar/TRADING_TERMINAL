@@ -35,12 +35,12 @@ Files with updated internal imports within new folders:
 All 12 files importing from old locations have been updated to new locations:
 
 ### In strategies/
-- ✅ strategies/legacy/run.py (lines 29, 33)
+- ✅ strategy_runner/run.py (lines 29, 33)
   - LiveMarket: strategies.market → strategies.live_feed_market
   - option_chain: market_data.option_chain → strategies.live_feed_market.option_chain
-- ✅ strategies/legacy/db_run.py (line 26)
+- ✅ strategy_runner/db_run.py (line 26)
   - DBBackedMarket: strategies.market → strategies.database_market
-- ✅ strategies/legacy/db_based_run.py (line 29)
+- ✅ strategy_runner/db_based_run.py (line 29)
   - DBBackedMarket: strategies.market → strategies.database_market
 - ✅ strategies/market/db_market.py (line 18)
   - OptionChainDBReader: market_data.option_chain.db_access → strategies.database_market.db_access
@@ -83,7 +83,7 @@ All 12 files importing from old locations have been updated to new locations:
 ## Files Modified - Summary
 
 **Total files updated: 18**
-- 5 in strategies/legacy/
+- 5 in strategy_runner/
 - 2 in strategies/market/
 - 2 in strategies/database_market/internal
 - 2 in execution/
@@ -137,9 +137,9 @@ Old files in market_data/ folder can remain as:
 ### Next Steps (User Decision)
 
 1. **Delete strategies/market/ folder** (now redundant with new structure)
-2. **Optional: Keep market_data/ as legacy backup** (until after testing)
+2. **Optional: Keep market_data/ as retired backup** (until after testing)
 3. **Commit all changes to git**
-4. **Test: Run a legacy strategy** to verify imports work
+4. **Test: Run a retired strategy** to verify imports work
 5. **Test: Start execution service** to verify market data feeds
 
 ---

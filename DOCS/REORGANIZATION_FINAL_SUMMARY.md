@@ -27,9 +27,9 @@
 | File | Change |
 |------|--------|
 | `execution/strategy_control_consumer.py` | `execution.db_market` → `strategies.market` |
-| `strategies/legacy/run.py` | `execution.market` → `strategies.market` |
-| `strategies/legacy/db_run.py` | `execution.db_market` → `strategies.market` |
-| `strategies/legacy/db_based_run.py` | `execution.db_market` → `strategies.market` |
+| `strategy_runner/run.py` | `execution.market` → `strategies.market` |
+| `strategy_runner/db_run.py` | `execution.db_market` → `strategies.market` |
+| `strategy_runner/db_based_run.py` | `execution.db_market` → `strategies.market` |
 | `strategies/delta_neutral/__main__.py.DEPRECATED` | `execution.db_market` → `strategies.market` |
 | `strategies/delta_neutral/adapter.py` | Docstring example updated |
 | `strategies/__init__.py` | Added exports for market + universal_config |
@@ -49,8 +49,8 @@
 execution/                          strategies/
 ├── broker.py ✅                      ├── strategy_runner.py ✅
 ├── trading_bot.py ✅                 ├── delta_neutral/ ✅
-├── market.py ❌ (strategy code!)      ├── legacy/
-├── db_market.py ❌ (strategy code!)   └── (legacy has bad imports)
+├── market.py ❌ (strategy code!)      ├── retired/
+├── db_market.py ❌ (strategy code!)   └── (retired has bad imports)
 └── [other OMS]
 ```
 **Problem:** Market providers in OMS folder, confusing responsibility
@@ -65,7 +65,7 @@ execution/                          strategies/
 └── [pure OMS code]                  ├── strategy_runner.py ✅
                                      ├── universal_config/ ✅
                                      ├── delta_neutral/ ✅
-                                     ├── legacy/ ✅ (fixed imports)
+                                     ├── retired/ ✅ (fixed imports)
                                      └── saved_configs/
 ```
 **Benefit:** Unified strategy infrastructure - all market code in one place
@@ -88,7 +88,7 @@ execution/                          strategies/
 **Before:**
 - "Should DBBackedMarket be in execution/ or strategies/?" ❌ Unclear
 - Market code scattered between folders
-- Legacy code importing from execution/ (wrong location)
+- retired code importing from execution/ (wrong location)
 
 **After:**
 - DBBackedMarket lives in strategies/market/ ✅ Clear
@@ -122,9 +122,9 @@ Modified:
   - strategies/__init__.py                        (add exports)
   - strategies/delta_neutral/__main__.py.DEPRECATED (import update)
   - strategies/delta_neutral/adapter.py           (docstring update)
-  - strategies/legacy/db_based_run.py             (import update)
-  - strategies/legacy/db_run.py                   (import update)
-  - strategies/legacy/run.py                      (import update)
+  - strategy_runner/db_based_run.py             (import update)
+  - strategy_runner/db_run.py                   (import update)
+  - strategy_runner/run.py                      (import update)
 
 New:
   - strategies/market/               (directory with 3 files)
@@ -166,9 +166,9 @@ MOVED:
 
 UPDATED IMPORTS:
   - execution/strategy_control_consumer.py (DBBackedMarket)
-  - strategies/legacy/run.py (LiveMarket)
-  - strategies/legacy/db_run.py (DBBackedMarket)
-  - strategies/legacy/db_based_run.py (DBBackedMarket)
+  - strategy_runner/run.py (LiveMarket)
+  - strategy_runner/db_run.py (DBBackedMarket)
+  - strategy_runner/db_based_run.py (DBBackedMarket)
   - strategies/delta_neutral/* (adapter.py, __main__.py.DEPRECATED)
 
 ADDED EXPORTS:

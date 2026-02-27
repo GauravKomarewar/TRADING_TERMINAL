@@ -20,16 +20,16 @@ Both methods support:
 
 ## Method 1: Direct Python Execution
 
-### 1.1 Quick Start (Legacy Bot)
+### 1.1 Quick Start (retired Bot)
 
-**File:** `shoonya_platform/strategies/legacy/run.py`
+**File:** `shoonya_platform/strategy_runner/run.py`
 
 ```bash
 # Activate environment
 .\venv\Scripts\Activate.ps1
 
 # Run with strategy module path
-python shoonya_platform/strategies/legacy/run.py \
+python shoonya_platform/strategy_runner/run.py \
   "delta_neutral.dnss"
 ```
 
@@ -645,7 +645,7 @@ Each runs independently with own state tracking and risk limits.
 ## Resources
 
 - **Strategy Code:** `shoonya_platform/strategies/delta_neutral/dnss.py`
-- **Legacy Runner:** `shoonya_platform/strategies/legacy/run.py`
+- **retired Runner:** `shoonya_platform/strategy_runner/run.py`
 - **Web Integration:** `shoonya_platform/api/dashboard/web/strategy.html`
 - **API Router:** `shoonya_platform/api/dashboard/api/router.py`
 - **Execution Consumer:** `shoonya_platform/execution/strategy_control_consumer.py`

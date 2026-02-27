@@ -113,14 +113,14 @@ CREATED (initial)
 
 ## ⚠️ PENDING ITEMS (NON-CRITICAL)
 
-### 1. command_service.register_intent() Idempotency
+### 1. command_service.submit() Idempotency
 **Issue**: If order already registered in DB (via _register_all_orders), calling this again would duplicate.  
 **Current State**: Added check for existing record (line ~105 of command_service.py)  
 **Status**: NEEDS CODE INSERTION - Add idempotency check before creating new record
 
 **What to do**:
 ```python
-# In register_intent():
+# In submit():
 existing = self.bot.order_repo.get_by_id(cmd.command_id)
 if existing:
     logger.info(f"Order already registered | {cmd.command_id}")
@@ -144,7 +144,7 @@ if result.success:
 ### 3. Command Service Register (EXIT) Method
 **Location**: command_service.py:register()  
 **Issue**: EXIT path doesn't check idempotency before creating  
-**Status**: SHOULD ADD IDEMPOTENCY CHECK (same as register_intent)
+**Status**: SHOULD ADD IDEMPOTENCY CHECK (same as submit)
 
 ---
 
@@ -209,7 +209,7 @@ if result.success:
                │               └─✅ UNIQUE
                │                   └─→ process_leg() for each
                │                       │
-               │                       └─→ command_service.register_intent()
+               │                       └─→ command_service.submit()
                │                           (idempotent - order already exists)
                │                           │
                │                           └─→ OrderWatcherEngine._process_open_intents()

@@ -34,7 +34,7 @@ The system is built on a **3-layer architecture**:
 | **Dashboard UI** | `api/dashboard/api/intent_router.py` | `/intent/generic` with exit action | Generic EXIT |
 | **Strategy Execution** | `execution/trading_bot.py` | `process_alert()` with exit execution | Strategy EXIT |
 | **Risk Manager** | `risk/supreme_risk.py` | `request_force_exit()` | Risk-driven EXIT |
-| **OrderWatcherEngine** | `execution/order_watcher.py` | `_fire_exit()` | SL/Trailing EXIT |
+| **OrderWatcherEngine** | `execution/order_watcher.py` | `handle_exit_intent()` | SL/Trailing EXIT |
 
 ---
 
@@ -83,7 +83,7 @@ OrderWatcherEngine monitors for:
 - Intent Creation: `execution/trading_bot.py:process_alert()`
 - Command Routing: `execution/command_service.py:submit()`
 - Execution: `brokers/shoonya/client.py:place_order()`
-- Monitoring: `execution/order_watcher.py:_process_orders()`
+- Monitoring: `execution/order_watcher.py:_reconcile_broker_orders()`
 
 ---
 
@@ -353,15 +353,15 @@ Track: OrderRecord with tag="RISK_FORCE_EXIT"
 
 ```
 OrderWatcherEngine polling loop [execution/order_watcher.py]
-    ├─ Every 1 second: _process_orders()
+    ├─ Every 1 second: _reconcile_broker_orders()
     ├─ Fetch open ENTRY orders
     ├─ Get live LTP for each symbol
     └─ For each ENTRY order:
         ├─ Check: stop_loss triggered?
         ├─ Check: trailing_stop triggered?
-        └─ If YES: _fire_exit()
+        └─ If YES: handle_exit_intent()
     ↓
-_fire_exit() [order_watcher.py]
+handle_exit_intent() [order_watcher.py]
     ├─ Determine exit direction (SELL if BUY, vice versa)
     ├─ Determine order_type (LIMIT if required, MARKET else)
     ├─ Create UniversalOrderCommand (execution_type="EXIT")
@@ -385,8 +385,8 @@ Status tracking:
 ```
 
 **Key Files:**
-- Monitoring: `execution/order_watcher.py:_process_orders()`
-- Exit Trigger: `execution/order_watcher.py:_fire_exit()`
+- Monitoring: `execution/order_watcher.py:_reconcile_broker_orders()`
+- Exit Trigger: `execution/order_watcher.py:handle_exit_intent()`
 - Registration: `execution/command_service.py:register()`
 - Rules Validation: `scripts/scriptmaster.py:requires_limit_order()`
 
@@ -440,7 +440,7 @@ Shadow Record Purpose:
 | `intent_router.py` | `submit_strategy_intent()` | Dashboard UI (EXIT action) | DASH-STR-{random} | orders.db → control_intents |
 | `trading_bot.py` | `request_exit()` | Dashboard/Strategy | Auto (via command_service) | orders.db → OrderRecord |
 | `supreme_risk.py` | `request_force_exit()` | Risk violation | Auto (via trading_bot) | orders.db → OrderRecord |
-| `order_watcher.py` | `_fire_exit()` | SL/Trailing trigger | Auto (via command_service) | orders.db → OrderRecord |
+| `order_watcher.py` | `handle_exit_intent()` | SL/Trailing trigger | Auto (via command_service) | orders.db → OrderRecord |
 
 ---
 
@@ -830,7 +830,7 @@ Line: ~45
 
 **4. OrderWatcherEngine SL/Trailing EXIT Path:**
 ```
-File: execution/order_watcher.py:_process_orders()
+File: execution/order_watcher.py:_reconcile_broker_orders()
 Line: ~236
 ↓
 Gets: open ENTRY orders from pending_commands or OrderRepository
@@ -842,7 +842,7 @@ Fetches: LTP via bot.api.get_ltp()
 Checks: stop_loss or trailing_stop triggered
 Lines: ~300-340
 ↓
-If triggered: Calls _fire_exit()
+If triggered: Calls handle_exit_intent()
 Line: ~313
 ↓
 Creates: UniversalOrderCommand (execution_type=EXIT)
@@ -867,7 +867,7 @@ Line: ~45
 | **EXIT - Dashboard Direct** | intent_router.py | submit_generic_intent() | ~48 | orders.db → control_intents |
 | **EXIT - Dashboard Strategy** | intent_router.py | submit_strategy_intent() | ~67 | orders.db → control_intents |
 | **EXIT - Risk Manager** | supreme_risk.py | request_force_exit() | ~? | orders.db → OrderRecord |
-| **EXIT - SL/Trailing** | order_watcher.py | _fire_exit() | ~313 | orders.db → OrderRecord |
+| **EXIT - SL/Trailing** | order_watcher.py | handle_exit_intent() | ~313 | orders.db → OrderRecord |
 
 ---
 

@@ -31,9 +31,9 @@ execution/engine_no_recovery.py ❌ DELETED
 ### ✅ Imports Updated (11 total)
 - 7 files updated with market imports (completed earlier)
 - 4 files updated with engine imports (just completed):
-  - `strategies/legacy/run.py` - Uses EngineWithRecovery
-  - `strategies/legacy/db_run.py` - Uses EngineNoRecovery
-  - `strategies/legacy/db_based_run.py` - Uses EngineWithRecovery
+  - `strategy_runner/run.py` - Uses EngineWithRecovery
+  - `strategy_runner/db_run.py` - Uses EngineNoRecovery
+  - `strategy_runner/db_based_run.py` - Uses EngineWithRecovery
   - (adapter.py had docstring example already consolidated)
 
 ---
@@ -80,7 +80,7 @@ STRATEGIES/ (UNIFIED STRATEGY INFRASTRUCTURE)
 │   ├── adapter.py             → Config converter
 │   └── [other DNSS code]
 │
-├── legacy/                    ✅ OLD IMPLEMENTATIONS (updated imports)
+├── retired/                    ✅ OLD IMPLEMENTATIONS (updated imports)
 │   ├── run.py                 imports from strategies.engine ✅
 │   ├── db_run.py              imports from strategies.engine ✅
 │   └── db_based_run.py        imports from strategies.engine ✅
@@ -175,9 +175,9 @@ Modified (11 files - import updates):
   M shoonya_platform/strategies/__init__.py
   M shoonya_platform/strategies/delta_neutral/__main__.py.DEPRECATED
   M shoonya_platform/strategies/delta_neutral/adapter.py
-  M shoonya_platform/strategies/legacy/db_based_run.py
-  M shoonya_platform/strategies/legacy/db_run.py
-  M shoonya_platform/strategies/legacy/run.py
+  M shoonya_platform/strategy_runner/db_based_run.py
+  M shoonya_platform/strategy_runner/db_run.py
+  M shoonya_platform/strategy_runner/run.py
 
 New Folders/Files:
   ?? shoonya_platform/strategies/engine/        (with 3 files)
@@ -192,7 +192,7 @@ New Folders/Files:
 - ✅ Market files moved to strategies/market/
 - ✅ Engine files moved to strategies/engine/
 - ✅ All old files deleted from execution/
-- ✅ Import paths updated (4 legacy strategy files)
+- ✅ Import paths updated (4 retired strategy files)
 - ✅ __init__.py created for strategies/engine/
 - ✅ No old import paths remaining (verified with grep)
 - ✅ Python syntax valid (Pylance verified)
@@ -216,9 +216,9 @@ MOVED FILES:
 
 UPDATED IMPORTS:
   - execution/strategy_control_consumer.py (now imports from strategies.market)
-  - strategies/legacy/run.py (imports from strategies.engine)
-  - strategies/legacy/db_run.py (imports from strategies.engine)
-  - strategies/legacy/db_based_run.py (imports from strategies.engine)
+  - strategy_runner/run.py (imports from strategies.engine)
+  - strategy_runner/db_run.py (imports from strategies.engine)
+  - strategy_runner/db_based_run.py (imports from strategies.engine)
   - strategies/delta_neutral/adapter.py (docstring updated)
   - strategies/__init__.py (added exports)
 
@@ -307,5 +307,5 @@ execution/              strategies/
 **Type**: Architecture reorganization  
 **Scope**: Market + Engine infrastructure consolidation  
 **Status**: ✅ COMPLETE  
-**Blocker Risk**: None - all imports updated, legacy code fixed  
+**Blocker Risk**: None - all imports updated, retired code fixed  
 **Ready**: Yes - production deployment ready

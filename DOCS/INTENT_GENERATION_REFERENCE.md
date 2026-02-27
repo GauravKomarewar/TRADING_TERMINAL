@@ -296,14 +296,14 @@ No new trades allowed for duration
 
 #### 4. **OrderWatcherEngine Auto-EXIT (SL/Trailing)**
 - **File**: `execution/order_watcher.py`
-- **Function**: `_fire_exit()` (called by `_process_orders()`)
+- **Function**: `handle_exit_intent()` (called by `_reconcile_broker_orders()`)
 - **Line**: ~313
 - **Trigger**: ENTRY order's SL/Trailing threshold breached
 - **Intent Generation**:
-  - `_process_orders()` polls open ENTRY orders
+  - `_reconcile_broker_orders()` polls open ENTRY orders
   - Fetches live LTP
   - Checks against `stop_loss` or `trailing_stop` values
-  - If threshold breached, calls `_fire_exit()`
+  - If threshold breached, calls `handle_exit_intent()`
   - Creates `UniversalOrderCommand` (execution_type=EXIT)
   - Calls `CommandService.register()`
 - **Database**: `OrderRecord` table
@@ -311,7 +311,7 @@ No new trades allowed for duration
 
 ```python
 # order_watcher.py line ~313
-def _fire_exit(self, cmd, ...):
+def handle_exit_intent(self, cmd, ...):
     # Determine exit direction
     exit_side = "SELL" if cmd.side == "BUY" else "BUY"
     
@@ -356,7 +356,7 @@ For each ENTRY order:
 | Dashboard Direct | `intent_router.py` | `submit_generic_intent()` | POST `/intent/generic` | control_intents | Async | DASH-GEN-{10} |
 | Dashboard Strategy | `intent_router.py` | `submit_strategy_intent()` | POST `/intent/strategy` | control_intents | Async | DASH-STR-{10} |
 | Risk Manager | `supreme_risk.py` | `request_force_exit()` | heartbeat() trigger | OrderRecord | Sync Reg | Auto |
-| SL/Trailing | `order_watcher.py` | `_fire_exit()` | LTP threshold | OrderRecord | Sync Reg | Auto |
+| SL/Trailing | `order_watcher.py` | `handle_exit_intent()` | LTP threshold | OrderRecord | Sync Reg | Auto |
 
 ---
 
@@ -385,8 +385,8 @@ grep -r "command_service.register" --include="*.py"
 # Search for request_exit calls
 grep -r "request_exit" --include="*.py"
 
-# Search for _fire_exit (SL/Trailing exits)
-grep -r "_fire_exit" --include="*.py"
+# Search for handle_exit_intent (SL/Trailing exits)
+grep -r "handle_exit_intent" --include="*.py"
 
 # Search for FORCE_EXIT
 grep -r "FORCE_EXIT\|force_exit" --include="*.py"

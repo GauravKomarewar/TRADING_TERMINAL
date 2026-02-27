@@ -61,7 +61,7 @@ market_data/
 │   ├── db_access.py                 (DB reader)
 │   ├── store.py                     (DB writer)
 │   ├── supervisor.py                (lifecycle)
-│   ├── db_access.py                 (legacy backcompat)
+│   ├── db_access.py                 (retired backcompat)
 │   └── data/                        (SQLite files)
 │
 ├── feeds/                           📁 LIVE FEED MARKET DATA
@@ -78,7 +78,7 @@ market_data/
 ## Actions Completed
 
 ### ✅ Deleted
-- `strategies/legacy/` - All old legacy runners removed
+- `strategy_runner/` - All old retired runners removed
 - `strategies/market/` - Duplicate market code folder
 - `strategies/universal_config/` - Moved to universal_settings/
 
@@ -178,7 +178,7 @@ from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleS
 | **Flexible Backend** | Same strategy runs on DB or live feeds via config param |
 | **Clean Organization** | market_data/ (market code) vs strategies/ (config & orchestration) vs execution/ (OMS) |
 | **Easy to Extend** | Add new strategies/configs without touching market code |
-| **Production Ready** | Removed all legacy code, single strategy_runner |
+| **Production Ready** | Removed all retired code, single strategy_runner |
 
 ---
 
@@ -187,7 +187,7 @@ from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleS
 | Check | Result |
 |-------|--------|
 | **No code duplication** | ✅ market_data/ on only source |
-| **Legacy removed** | ✅ strategies/legacy/ deleted |
+| **retired removed** | ✅ strategy_runner/ deleted |
 | **Structure clean** | ✅ 6 top-level folders (as designed) |
 | **__init__.py files** | ✅ Created for all new folders |
 | **Imports restored** | ✅ All pointing to market_data/ |
@@ -203,7 +203,7 @@ Everything is now organized as requested:
 3. ✅ saved_config - Strategy configs
 4. ✅ universal_settings - Universal infrastructure
 5. ✅ Single strategy_runner - Routes to market_type
-6. ✅ Legacy/old runners removed - Clean & fresh
+6. ✅ retired/old runners removed - Clean & fresh
 7. ✅ market_data untouched - Still authoritative
 
 **Ready for immediate deployment!** 🚀

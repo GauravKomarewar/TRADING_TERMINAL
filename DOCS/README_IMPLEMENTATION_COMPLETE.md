@@ -195,7 +195,7 @@ for order in open_orders:
    - Telegram alerts for critical events
 
 ✅ **Backward Compatibility**
-   - Legacy code still supported
+   - retired code still supported
    - No breaking changes
    - Existing tests should pass
    - Safe to deploy

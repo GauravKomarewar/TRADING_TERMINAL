@@ -7,7 +7,7 @@ Successfully reorganized `strategies/` folder to support both database-backed an
 - **market_data/** folder remains **UNTOUCHED** (single source of truth for market code)
 - **strategies/** folder contains **configuration and orchestration** only
 - Single **strategy_runner.py** manages strategy lifecycle
-- Removed **legacy/** folder and duplicate runners
+- Removed **retired/** folder and duplicate runners
 
 ---
 
@@ -56,7 +56,7 @@ strategies/
 ## What Changed
 
 ### ✅ Removed (Cleanup)
-- `strategies/legacy/` - All legacy runners deleted
+- `strategy_runner/` - All retired runners deleted
 - `strategies/market/` - Market code folder (duplicates were in market_data/)
 - Individual market runner files
 
@@ -125,7 +125,7 @@ Broker (execution/broker)
 | **Market Agnostic** | Same strategy runs on DB or live feeds with different config |
 | **Universal Configuration** | UniversalStrategyConfig works for all strategy types |
 | **Clean Separation** | OMS (execution/) vs Market Data (market_data/) vs Strategy Orchestration (strategies/) |
-| **No Legacy Code** | Removed all legacy runners, single strategy_runner.py |
+| **No retired Code** | Removed all retired runners, single strategy_runner.py |
 | **Flexible Deployment** | Can switch market backend via config parameter |
 
 ---
@@ -207,7 +207,7 @@ from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleS
 | **Market Data** | ✅ Untouched in market_data/ |
 | **Config Folders** | ✅ Created (database_market, live_feed_market) |
 | **Universal Settings** | ✅ All subfolders with __init__.py |
-| **Legacy Cleanup** | ✅ Removed old runners |
+| **retired Cleanup** | ✅ Removed old runners |
 | **Imports** | ✅ All restored to market_data/ |
 | **Strategy Runner** | ✅ Existing runner can select market type |
 
@@ -232,7 +232,7 @@ from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleS
    - `writer/` - Add output writers
 
 4. **Verify Integration:**
-   - Run legacy strategies with new structure
+   - Run retired strategies with new structure
    - Test both market types
    - Verify recovery works
 
@@ -241,7 +241,7 @@ from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleS
 ## Key Files Modified
 
 **Reverted** (imports restored to market_data/):
-- strategies/legacy/*.py (then deleted)
+- strategy_runner/*.py (then deleted)
 - execution/trading_bot.py
 - execution/strategy_control_consumer.py
 - api/dashboard/services/option_chain_service.py
@@ -249,7 +249,7 @@ from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleS
 - scripts/weekend_market_check.py
 
 **Deleted** (cleanup):
-- strategies/legacy/ (entire folder)
+- strategy_runner/ (entire folder)
 - strategies/market/ (duplicated market code)
 
 **Created** (new structure):
@@ -269,7 +269,7 @@ from shoonya_platform.strategies.delta_neutral import DeltaNeutralShortStrangleS
 ✅ **Clean Separation** - Config folders vs. Market Code vs. OMS  
 ✅ **Flexible Backend** - Strategy works on DB or live feeds  
 ✅ **Easy to Extend** - Add new strategies without duplication  
-✅ **Production Ready** - Removed all legacy code  
+✅ **Production Ready** - Removed all retired code  
 ✅ **Future Proof** - Universal settings support new strategy types  
 
 ---

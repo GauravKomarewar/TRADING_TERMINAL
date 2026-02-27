@@ -20,9 +20,9 @@ execution/db_market.py    → strategies/market/db_market.py    ✅ MOVED
 ```
 7 files updated:
   - execution/strategy_control_consumer.py
-  - strategies/legacy/run.py
-  - strategies/legacy/db_run.py
-  - strategies/legacy/db_based_run.py
+  - strategy_runner/run.py
+  - strategy_runner/db_run.py
+  - strategy_runner/db_based_run.py
   - strategies/delta_neutral/__main__.py.DEPRECATED
   - strategies/delta_neutral/adapter.py
   - strategies/__init__.py
@@ -62,7 +62,7 @@ execution/ (OMS)                strategies/ (Strategies)
 ├── trading_bot.py ✅            ├── strategy_runner.py ✅
 ├── command_service.py ✅        ├── universal_config/ ✅
 │                                ├── delta_neutral/ ✅
-├── models.py ⚠️ shared          ├── legacy/ ✅
+├── models.py ⚠️ shared          ├── retired/ ✅
 ├── intent.py ⚠️ shared          └── saved_configs/
 ├── execution_guard.py ⚠️ shared
 └── [other OMS]

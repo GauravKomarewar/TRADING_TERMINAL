@@ -26,7 +26,7 @@ KEPT & ENHANCED:
 ### ✅ Q2: Implementation Priority → **FULL STACK**
 ```
 COMPLETED IN ORDER:
-  1️⃣ Delete legacy files (5 min)
+  1️⃣ Delete retired files (5 min)
   2️⃣ Create 12 API endpoints (3 hours)
   3️⃣ Update strategy_new.html UI (4 hours)
   4️⃣ Integrate validator into API (1 hour)
@@ -35,7 +35,7 @@ COMPLETED IN ORDER:
   Total: ~13 hours of development
 ```
 
-### ✅ Q3: Delete Legacy File → **YES**
+### ✅ Q3: Delete retired File → **YES**
 ```
 DELETED:
   test_strategy_form.html ✓ Removed
@@ -367,7 +367,7 @@ runner.start()
 **Time Invested:** ~13 hours
 **Files Created:** 2 (validator, logger)
 **Files Updated:** 3 (router, runner, HTML)
-**Files Deleted:** 2 (legacy HTML)
+**Files Deleted:** 2 (retired HTML)
 **API Endpoints:** 12 (fully functional)
 **Code Lines Added:** ~1800
 **Documentation:** 4 comprehensive guides

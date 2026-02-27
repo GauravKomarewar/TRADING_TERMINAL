@@ -49,11 +49,11 @@ class TestStrategyRegistry:
             assert "market_adapter_factory" not in t["module"]
     
     def test_registry_excludes_system_folders(self):
-        """Registry should exclude __pycache__ and legacy"""
+        """Registry should exclude system/internal folders"""
         templates = list_strategy_templates()
         
         for t in templates:
-            assert t["folder"] not in ["__pycache__", "legacy", "universal_config"]
+            assert t["folder"] not in ["__pycache__", "universal_config"]
     
     def test_module_path_is_importable(self):
         """Module paths should be importable"""

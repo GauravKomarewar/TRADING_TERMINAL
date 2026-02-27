@@ -30,7 +30,7 @@ strategies/strategy_runner.py
 strategies/universal_config/
   └─ class UniversalStrategyConfig ✅
 
-strategies/legacy/
+strategy_runner/
   ├─ run.py (imports from strategies.engine) ✅
   ├─ db_run.py (imports from strategies.engine) ✅
   └─ db_based_run.py (imports from strategies.engine) ✅
@@ -107,17 +107,17 @@ Result: ❌ NO MATCHES (all imports updated correctly)
 from shoonya_platform.strategies.market import DBBackedMarket  ✅ CORRECT
 ```
 
-**In strategies/legacy/run.py:**
+**In strategy_runner/run.py:**
 ```python
 from shoonya_platform.strategies.engine import EngineWithRecovery as Engine  ✅ CORRECT
 ```
 
-**In strategies/legacy/db_run.py:**
+**In strategy_runner/db_run.py:**
 ```python
 from shoonya_platform.strategies.engine import EngineNoRecovery as Engine  ✅ CORRECT
 ```
 
-**In strategies/legacy/db_based_run.py:**
+**In strategy_runner/db_based_run.py:**
 ```python
 from shoonya_platform.strategies.engine import EngineWithRecovery as Engine  ✅ CORRECT
 ```
@@ -173,7 +173,7 @@ Checked:
 - persistence/ - ✅ No imports of moved files
 
 ### Only Expected Files Reference New Locations ✅
-- strategies/legacy/* - ✅ Updated to new locations
+- strategy_runner/* - ✅ Updated to new locations
 - execution/strategy_control_consumer.py - ✅ Updated to new locations
 - strategies/*.py files - ✅ Use new locations
 
@@ -253,9 +253,9 @@ strategies/
   ✅ __init__.py (added exports)
   ✅ delta_neutral/__main__.py.DEPRECATED (docstring updated)
   ✅ delta_neutral/adapter.py (docstring updated)
-  ✅ legacy/run.py (imports EngineWithRecovery from strategies.engine)
-  ✅ legacy/db_run.py (imports EngineNoRecovery from strategies.engine)
-  ✅ legacy/db_based_run.py (imports EngineWithRecovery from strategies.engine)
+  ✅ retired/run.py (imports EngineWithRecovery from strategies.engine)
+  ✅ retired/db_run.py (imports EngineNoRecovery from strategies.engine)
+  ✅ retired/db_based_run.py (imports EngineWithRecovery from strategies.engine)
 
 Documentation:
   ✅ market/__init__.py (new)

@@ -2,7 +2,7 @@
 # database.py is PRODUCTION FROZEN.
 
 # - Orders schema preserved
-# - Legacy migrations handled
+# - Historical schema migrations handled
 # - Dashboard control_intents schema aligned
 # - No execution-path impact
 # - Restart-safe, concurrency-safe
@@ -251,7 +251,7 @@ def get_connection():
                     conn.commit()
 
                 elif not required_cols.issubset(col_names):
-                    # Legacy schema → migrate
+                    # Older schema → migrate
                     conn.execute("BEGIN")
 
                     cur.execute("ALTER TABLE control_intents RENAME TO control_intents_old")
@@ -273,7 +273,7 @@ def get_connection():
                         """
                     )
 
-                    # Best-effort copy (legacy rows get client_id='LEGACY')
+                    # Best-effort copy (migrated rows get client_id='MIGRATED')
                     cur.execute(
                         """
                         INSERT INTO control_intents (
@@ -282,11 +282,11 @@ def get_connection():
                         )
                         SELECT
                             COALESCE(id, hex(randomblob(16))),
-                            'LEGACY',
+                            'MIGRATED',
                             NULL,
                             type,
                             payload,
-                            'LEGACY',
+                            'MIGRATED',
                             status,
                             created_at
                         FROM control_intents_old

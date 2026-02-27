@@ -51,6 +51,7 @@ import logging
 import os
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
@@ -444,7 +445,7 @@ class ShoonyaBot:
         # -------------------------------------------------
         # ðŸ“ˆ STRATEGY REGISTRY (THREAD-SAFE)
         # -------------------------------------------------
-        self._live_strategies = {}  # strategy_name -> (strategy, market)
+        self._live_strategies = {}  # strategy_name -> runtime metadata
         self._live_strategies_lock = threading.Lock()  # ðŸ”’ Thread-safe access
 
         # -------------------------------------------------
@@ -462,7 +463,7 @@ class ShoonyaBot:
         # ðŸ“ˆ STRATEGY RUNNER (CLOCK + DISPATCHER ONLY)
         # -------------------------------------------------
         self.strategy_runner = None
-        logger.info("StrategyRunner legacy path disabled; using StrategyExecutorService only")
+        logger.info("StrategyRunner path disabled; using StrategyExecutorService only")
 
         # -------------------------------------------------
         # ðŸš€ START STRATEGY RUNNER
@@ -485,15 +486,10 @@ class ShoonyaBot:
 
     def register_live_strategy(self, strategy_name, strategy, market):
         with self._live_strategies_lock:
-            if strategy_name in self._live_strategies:
-                logger.warning(f"âš ï¸ Strategy already registered: {strategy_name}")
-                return
-            """
-            READ-ONLY registration for reporting only.
-            NO trading, NO execution, NO mutation.
-            """
-            self._live_strategies[strategy_name] = (strategy, market)
-            logger.info(f"ðŸ“¡ Registered live strategy for reporting: {strategy_name}")
+            logger.warning(
+                "register_live_strategy is retired; use start_strategy_executor | strategy=%s",
+                strategy_name,
+            )
 
     def _announce_startup_complete(self) -> None:
         """Emit one canonical startup-complete message to logs and Telegram."""
@@ -652,26 +648,8 @@ class ShoonyaBot:
             except KeyError:
                 logger.error("Request ENTRY failed: strategy not registered: %s", strategy_name)
                 raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
-        if isinstance(value, dict):
-            logger.info("Request ENTRY handled by StrategyExecutorService | %s", strategy_name)
-            return
-        strategy, market = value
-
-        try:
-            # warm prepare
-            if hasattr(market, "snapshot"):
-                strategy.prepare(market.snapshot())
-            else:
-                try:
-                    strategy.prepare(market)
-                except Exception:
-                    pass
-
-            intents = strategy.on_tick(datetime.now()) or []
-            self._process_strategy_intents(strategy_name, strategy, market, intents)
-
-        except Exception:
-            logger.exception("Strategy ENTRY failed | %s", strategy_name)
+        logger.info("Request ENTRY handled by StrategyExecutorService | %s", strategy_name)
+        return
 
     def request_adjust(self, strategy_name: str):
         with self._live_strategies_lock:
@@ -680,25 +658,8 @@ class ShoonyaBot:
             except KeyError:
                 logger.error("Request ADJUST failed: strategy not registered: %s", strategy_name)
                 raise RuntimeError(f"Strategy not registered on this bot: {strategy_name}")
-        if isinstance(value, dict):
-            logger.info("Request ADJUST handled by StrategyExecutorService | %s", strategy_name)
-            return
-        strategy, market = value
-
-        try:
-            if hasattr(market, "snapshot"):
-                strategy.prepare(market.snapshot())
-            else:
-                try:
-                    strategy.prepare(market)
-                except Exception:
-                    pass
-
-            intents = strategy.on_tick(datetime.now()) or []
-            self._process_strategy_intents(strategy_name, strategy, market, intents)
-
-        except Exception:
-            logger.exception("Strategy ADJUST failed | %s", strategy_name)
+        logger.info("Request ADJUST handled by StrategyExecutorService | %s", strategy_name)
+        return
 
     def request_exit(
         self,
@@ -1450,17 +1411,21 @@ class ShoonyaBot:
                     logger.warning(f"Failed to send order placing message: {e}")
 
             # =================================================
-            # ðŸ”’ REGISTER INTENT ONLY
+            # Execute through single command-service path.
+            # EXIT remains intent-only; ENTRY/ADJUST submits immediately.
             # =================================================
             if execution_type == "EXIT":
                 self.command_service.register(cmd)
             else:
-                self.command_service.register_intent(cmd, execution_type=execution_type)
+                if test_mode:
+                    # Persist explicit test marker so downstream execution can run
+                    # the same OMS flow while simulating broker behavior.
+                    marker = f"TEST_MODE_{str(test_mode).upper()}"
+                    prior = str(cmd.comment or "")
+                    cmd = replace(cmd, comment=f"{prior}|{marker}" if prior else marker)
+                self.command_service.submit(cmd, execution_type=execution_type)
 
             if test_mode:
-                # Persist explicit test marker so downstream execution can run
-                # the same OMS flow while simulating broker behavior.
-                self.order_repo.update_tag(cmd.command_id, f"TEST_MODE_{str(test_mode).upper()}")
                 logger.warning(f"ðŸ§ª TEST MODE | {leg_data.tradingsymbol}")
 
             logger.info(
@@ -1842,14 +1807,9 @@ class ShoonyaBot:
         market_cls,
         market_config,
     ):
-        """
-        Legacy compatibility bridge.
-
-        The old strategies/ runtime has been deprecated.
-        Route all start calls into StrategyExecutorService.
-        """
+        """Route start calls into StrategyExecutorService."""
         logger.warning(
-            "Legacy start_strategy called; routing to start_strategy_executor | strategy=%s",
+            "start_strategy called; routing to start_strategy_executor | strategy=%s",
             strategy_name,
         )
         resolved = (
@@ -2682,6 +2642,3 @@ class ShoonyaBot:
         except Exception as e:
             elapsed = time.time() - shutdown_start
             logger.error(f"âŒ Shutdown error after {elapsed:.1f}s: {e}")
-
-
-

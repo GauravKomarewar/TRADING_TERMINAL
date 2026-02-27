@@ -33,14 +33,14 @@ Market infrastructure has been successfully reorganized from a flat `market_data
 
 ### Strategies Folder (5 files)
 ```
-✅ strategies/legacy/run.py
+✅ strategy_runner/run.py
    Line 29: LiveMarket import updated
    Line 33: option_chain import updated
 
-✅ strategies/legacy/db_run.py  
+✅ strategy_runner/db_run.py  
    Line 26: DBBackedMarket import updated
 
-✅ strategies/legacy/db_based_run.py
+✅ strategy_runner/db_based_run.py
    Line 29: DBBackedMarket import updated
 
 ✅ strategies/market/db_market.py
@@ -117,9 +117,9 @@ Market infrastructure has been successfully reorganized from a flat `market_data
 | **Circular Dependencies** | ✅ NONE detected |
 
 ### Files Verified (Zero Errors):
-1. strategies/legacy/run.py
-2. strategies/legacy/db_run.py
-3. strategies/legacy/db_based_run.py
+1. strategy_runner/run.py
+2. strategy_runner/db_run.py
+3. strategy_runner/db_based_run.py
 4. strategies/market/db_market.py
 5. execution/strategy_control_consumer.py
 6. execution/trading_bot.py
@@ -200,7 +200,7 @@ shoonya_platform/
 │   │   ├── live_feed.py        (websocket core)
 │   │   └── index_tokens_subscriber.py
 │   │
-│   ├── legacy/                 (legacy runners)
+│   ├── retired/                 (retired runners)
 │   ├── engine/                 (strategy engines)
 │   └── ...
 │
@@ -210,7 +210,7 @@ shoonya_platform/
 │           ├── option_chain_service.py  ✅ Uses strategies/database_market
 │           └── ...
 │
-└── market_data/        (Legacy/transition - can be removed after testing)
+└── market_data/        (retired/transition - can be removed after testing)
     ├── option_chain/
     └── feeds/
 ```
@@ -245,7 +245,7 @@ shoonya_platform/
 
 ### Testing Recommendations:
 
-1. **Legacy strategy runner** - Test db_based_run.py execution
+1. **retired strategy runner** - Test db_based_run.py execution
 2. **Live market runner** - Test run.py with websocket feeds
 3. **Dashboard services** - Verify option chain service loads data
 4. **Trading bot** - Verify market data feeds initialize

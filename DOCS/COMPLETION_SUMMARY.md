@@ -104,7 +104,7 @@ Navigation guide to all documentation.
 ✅ Dashboard Direct EXIT (`api/dashboard/api/intent_router.py:submit_generic_intent()` with execution_type=EXIT)
 ✅ Dashboard Strategy EXIT (`api/dashboard/api/intent_router.py:submit_strategy_intent()` with action=EXIT)
 ✅ Risk Manager Force EXIT (`risk/supreme_risk.py:request_force_exit()`)
-✅ OrderWatcherEngine SL/Trailing (`execution/order_watcher.py:_fire_exit()` line 313)
+✅ OrderWatcherEngine SL/Trailing (`execution/order_watcher.py:handle_exit_intent()` line 313)
 
 ### **FILES GENERATING INTENTS (11 Total)**
 
@@ -121,7 +121,7 @@ Navigation guide to all documentation.
 1. `api/dashboard/api/intent_router.py` (direct exit variant)
 2. `api/dashboard/api/intent_router.py` (strategy exit variant)
 3. `risk/supreme_risk.py:request_force_exit()`
-4. `execution/order_watcher.py:_fire_exit()`
+4. `execution/order_watcher.py:handle_exit_intent()`
 
 ### **KEY SUPPORTING FILES**
 ✅ `execution/trading_bot.py` - Core processor

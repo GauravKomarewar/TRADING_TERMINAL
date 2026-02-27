@@ -43,7 +43,7 @@ class OptionChainDBReader:
     - Safe for concurrent readers
     """
 
-    # ✅ BUG-031 FIX: Guard against the legacy option_chain.db which uses an
+    # ✅ BUG-031 FIX: Guard against old option_chain.db which uses an
     # incompatible wide-format schema (no `meta` table, no per-contract rows).
     # If pointed at this file, fail immediately with a clear error rather than
     # crashing inside read() with "no such table: meta".
@@ -53,7 +53,7 @@ class OptionChainDBReader:
         path = Path(db_path)
         if path.name.lower() in self._FORBIDDEN_NAMES:
             raise ValueError(
-                f"OptionChainDBReader: '{path.name}' is the legacy wide-format DB "
+                f"OptionChainDBReader: '{path.name}' is the old wide-format DB "
                 f"and is incompatible with this reader (no `meta` table). "
                 f"Rename it to 'option_chain_legacy.db' and use the per-symbol DBs "
                 f"(e.g. NFO_NIFTY_17-FEB-2026.sqlite) instead."

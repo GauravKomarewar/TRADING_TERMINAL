@@ -154,13 +154,13 @@ POST /dashboard/intent/generic with action=EXIT
 
 #### 3. OrderWatcher Stop-Loss/Target/Trailing Exit
 **File**: [execution/order_watcher.py](shoonya_platform/execution/order_watcher.py)
-**Function**: `_fire_exit()`
+**Function**: `handle_exit_intent()`
 **Flow**:
 ```
-OrderWatcherEngine._process_orders()
+OrderWatcherEngine._reconcile_broker_orders()
   → Check SL/Target/Trailing conditions
   → Monitor LTP from broker
-  → Condition met → _fire_exit()
+  → Condition met → handle_exit_intent()
   → CommandService.register()
   → Market order execution
 ```
@@ -240,7 +240,7 @@ POST /dashboard/intent/adjustment
 **Function**: Trailing stop update logic
 **Flow**:
 ```
-OrderWatcherEngine._process_orders()
+OrderWatcherEngine._reconcile_broker_orders()
   → Monitor position price
   → If new high > previous high:
     → Calculate new trailing_stop

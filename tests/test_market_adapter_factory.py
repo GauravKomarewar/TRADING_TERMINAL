@@ -12,18 +12,31 @@ from shoonya_platform.strategy_runner.config_schema import (
 def _valid_config():
     return {
         "name": "NIFTY_DNSS",
-        "schema_version": "3.0",
-        "basic": {
+        "schema_version": "4.0",
+        "identity": {
             "exchange": "NFO",
             "underlying": "NIFTY",
-            "expiry_mode": "weekly_current",
+            "product_type": "NRML",
+            "order_type": "MARKET",
         },
-        "timing": {"entry_time": "09:20", "exit_time": "15:20"},
-        "entry": {"enabled": True, "action": "entry_both_legs", "conditions": []},
-        "exit": {
-            "enabled": True,
-            "conditions": [{"parameter": "spot_ltp", "comparator": ">", "value": 0}],
+        "timing": {"entry_window_start": "09:20", "entry_window_end": "15:20", "eod_exit_time": "15:20"},
+        "schedule": {"expiry_mode": "weekly_current", "active_days": ["mon", "tue", "wed", "thu", "fri"]},
+        "entry": {
+            "global_conditions": [],
+            "legs": [
+                {
+                    "tag": "ce",
+                    "instrument": "OPT",
+                    "side": "SELL",
+                    "option_type": "CE",
+                    "lots": 1,
+                    "strike_mode": "standard",
+                    "strike_selection": "atm",
+                }
+            ],
         },
+        "adjustment": {"rules": []},
+        "exit": {},
     }
 
 
@@ -36,8 +49,9 @@ def test_validate_config_success():
 def test_validate_config_missing_required_sections():
     is_valid, issues = validate_config({"name": "BROKEN"})
     assert not is_valid
-    assert any(i.path == "basic" for i in issues)
+    assert any(i.path == "identity" for i in issues)
     assert any(i.path == "timing" for i in issues)
+    assert any(i.path == "schedule" for i in issues)
     assert any(i.path == "entry" for i in issues)
     assert any(i.path == "exit" for i in issues)
 

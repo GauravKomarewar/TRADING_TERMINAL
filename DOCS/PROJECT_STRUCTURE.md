@@ -39,12 +39,12 @@ deployment/
 
 ### 3. Strategy Files Cleanup
 
-**Created `shoonya_platform/strategies/legacy/` folder:**
+**Created `shoonya_platform/strategy_runner/` folder:**
 
-**Moved legacy files:**
-- ✅ `run.py` → `legacy/run.py` (deprecated runner)
-- ✅ `db_run.py` → `legacy/db_run.py` (old DB runner)
-- ✅ `db_based_run.py` → `legacy/db_based_run.py` (old DB-based runner)
+**Moved retired files:**
+- ✅ `run.py` → `retired/run.py` (deprecated runner)
+- ✅ `db_run.py` → `retired/db_run.py` (old DB runner)
+- ✅ `db_based_run.py` → `retired/db_based_run.py` (old DB-based runner)
 
 **Active strategy files (kept in main folder):**
 - ✅ `strategy_runner.py` - Production OMS-compliant runner
@@ -122,7 +122,7 @@ shoonya_platform/
 │   │   ├── reporting/                   # ✅ Reporting
 │   │   ├── runner_adv/                  # ✅ Advanced runner
 │   │   ├── universal_config/            # ✅ Config system
-│   │   └── legacy/                      # 🆕 Deprecated files
+│   │   └── retired/                      # 🆕 Deprecated files
 │   │       ├── README.md                # Migration guide
 │   │       ├── run.py
 │   │       ├── db_run.py
@@ -143,11 +143,11 @@ shoonya_platform/
 - ✅ Root folder is now clean and focused on essential files
 - ✅ All documentation centralized in `DOCS/`
 - ✅ Deployment files grouped in `deployment/`
-- ✅ Legacy code clearly separated from active code
+- ✅ retired code clearly separated from active code
 
 ### Maintainability
 - ✅ Easy to identify which strategy files are in active use
-- ✅ Clear migration path documented in `legacy/README.md`
+- ✅ Clear migration path documented in `retired/README.md`
 - ✅ All deployment scripts in one place
 - ✅ Test files properly organized in `tests/`
 

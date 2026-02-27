@@ -183,17 +183,6 @@ def validate_config(config: Dict[str, Any]) -> Tuple[bool, List[ValidationError]
         errors.append(ValidationError("root", "Config must be a JSON object"))
         return False, errors
 
-    # Backward-compatibility path for legacy v3 schema used by older tests/tools.
-    if "identity" not in config and (
-        "basic" in config
-        or str(config.get("schema_version", "")).startswith("3")
-        or any(k in config for k in ("timing", "entry", "exit"))
-        or "schedule" not in config
-    ):
-        _validate_legacy_v3(config, errors)
-        is_valid = not any(e.severity == "error" for e in errors)
-        return is_valid, errors
-
     # Top level fields
     _validate_top_level(config, errors)
 
@@ -292,61 +281,6 @@ def coerce_config_numerics(config: Any) -> Any:
             except ValueError:
                 return config
     return config
-
-
-def _validate_legacy_v3(config: Dict[str, Any], errors: List[ValidationError]):
-    """
-    Lightweight validator for older v3-style configs.
-    """
-    _validate_top_level(config, errors)
-
-    for section in ("basic", "timing", "entry", "exit"):
-        if section not in config:
-            errors.append(ValidationError(section, f"Missing required section '{section}'"))
-
-    basic = config.get("basic", {})
-    if isinstance(basic, dict):
-        if not basic.get("exchange"):
-            errors.append(ValidationError("basic.exchange", "Missing exchange"))
-        if not basic.get("underlying"):
-            errors.append(ValidationError("basic.underlying", "Missing underlying"))
-    elif "basic" in config:
-        errors.append(ValidationError("basic", "basic must be an object"))
-
-    timing = config.get("timing", {})
-    if isinstance(timing, dict):
-        for key in ("entry_time", "exit_time"):
-            val = timing.get(key)
-            if not val:
-                errors.append(ValidationError(f"timing.{key}", f"Missing {key}"))
-            elif not _is_valid_time(val):
-                errors.append(ValidationError(f"timing.{key}", f"Invalid time format '{val}'. Expected HH:MM"))
-    elif "timing" in config:
-        errors.append(ValidationError("timing", "timing must be an object"))
-
-    entry = config.get("entry", {})
-    if isinstance(entry, dict):
-        conds = entry.get("conditions")
-        if isinstance(conds, dict) and isinstance(conds.get("rules"), list):
-            for i, c in enumerate(conds.get("rules", [])):
-                _validate_condition(c, f"entry.conditions.rules[{i}]", errors)
-        elif isinstance(conds, list):
-            for i, c in enumerate(conds):
-                _validate_condition(c, f"entry.conditions[{i}]", errors)
-    elif "entry" in config:
-        errors.append(ValidationError("entry", "entry must be an object"))
-
-    exit_cfg = config.get("exit", {})
-    if isinstance(exit_cfg, dict):
-        conds = exit_cfg.get("conditions")
-        if isinstance(conds, list):
-            for i, c in enumerate(conds):
-                _validate_condition(c, f"exit.conditions[{i}]", errors)
-        elif isinstance(conds, dict) and isinstance(conds.get("rules"), list):
-            for i, c in enumerate(conds.get("rules", [])):
-                _validate_condition(c, f"exit.conditions.rules[{i}]", errors)
-    elif "exit" in config:
-        errors.append(ValidationError("exit", "exit must be an object"))
 
 # =============================================================================
 # SECTION VALIDATORS

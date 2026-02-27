@@ -101,7 +101,7 @@ Current:
 if execution_type == "EXIT":
     self.command_service.register(cmd)  # ← writes CREATED to DB
 else:
-    self.command_service.register_intent(cmd, execution_type="ENTRY")  # ← writes CREATED to DB
+    self.command_service.submit(cmd, execution_type="ENTRY")  # ← writes CREATED to DB
 ```
 
 Issue: Orders are registered late in the flow (inside process_leg), not at entry point.  
@@ -235,7 +235,7 @@ else:
   - Call `_register_order_in_db()` right after parsing
   - Then apply blockers to update tag/status
 
-- [ ] Modify `command_service.register_intent()` flow
+- [ ] Modify `command_service.submit()` flow
   - Should get command_id from already-registered record
   - Do NOT re-register if already in DB
 
@@ -261,7 +261,7 @@ else:
 
 **Problem**: Orders get registered twice:
 1. In `_record_blocked_alert()` for blocked orders
-2. In `command_service.register()` / `register_intent()` for allowed orders
+2. In `command_service.register()` / `submit()` for allowed orders
 
 **Solution**: Single registration in `process_alert()` before any checks.
 

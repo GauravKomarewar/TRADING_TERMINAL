@@ -182,7 +182,7 @@ Comprehensive audit of the Shoonya Platform codebase identified and fixed **8 cr
 ### Exit Paths (All Verified ✓)
 1. ✅ **TradingView Webhook Exit** - [execution/trading_bot.py](shoonya_platform/execution/trading_bot.py) - Exit detection
 2. ✅ **Dashboard Exit Intent** - [api/dashboard/services/intent_utility.py](shoonya_platform/api/dashboard/services/intent_utility.py) - Exit submission
-3. ✅ **OrderWatcher Stop-Loss/Target/Trailing** - [execution/order_watcher.py](shoonya_platform/execution/order_watcher.py) - `_fire_exit()`
+3. ✅ **OrderWatcher Stop-Loss/Target/Trailing** - [execution/order_watcher.py](shoonya_platform/execution/order_watcher.py) - `handle_exit_intent()`
 4. ✅ **Risk Manager Force Exit** - [risk/supreme_risk.py](shoonya_platform/risk/supreme_risk.py) - `request_force_exit()` / Emergency exit
 
 ### Adjustment Paths (All Verified ✓)

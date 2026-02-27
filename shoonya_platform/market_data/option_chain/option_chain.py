@@ -623,29 +623,29 @@ class OptionChainData:
             
             # ✅ BUG-033 FIX: Rebuild mask lookup INSIDE the lock — the DF may have
             # changed between the first lock release and this second acquisition (TOCTOU).
+            # 🔥 OPTIMIZATION: Build token -> list of indices for O(1) updates instead of boolean masks
             if self._df is not None:
-                token_to_mask = {
-                    token: self._df["token"] == token
-                    for token in self._token_set
-                }
+                df_tokens = self._df["token"].reset_index(drop=True)
+                token_to_indices = {}
+                for idx, tok in df_tokens.items():
+                    token_to_indices.setdefault(tok, []).append(idx)
             else:
                 return updated_count
 
-            for returned_token, tick in ticks.items():
+            for returned_token, tick_data in ticks.items():
                 # Normalize token (handle both plain and prefixed)
                 normalized = returned_token.split("|")[-1] if "|" in returned_token else returned_token
                 
-                if normalized not in token_to_mask:
+                if normalized not in token_to_indices:
                     continue
                 
-                mask = token_to_mask[normalized]
-                
-                for src, col in field_mapping.items():
-                    if src in tick and tick[src] is not None:
-                        self._df.loc[mask, col] = tick[src]
-                
-                self._df.loc[mask, "last_update"] = tick.get("tt", datetime.now())
-                updated_count += 1
+                indices = token_to_indices[normalized]
+                for idx in indices:
+                    for src, col in field_mapping.items():
+                        if src in tick_data and tick_data[src] is not None:
+                            self._df.at[idx, col] = tick_data[src]
+                    self._df.at[idx, "last_update"] = tick_data.get("tt", datetime.now())
+                    updated_count += 1
 
             # Track pull statistics (inside same lock — avoids third lock acquisition)
             self._last_pull_time = time.time()

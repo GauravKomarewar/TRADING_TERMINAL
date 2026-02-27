@@ -40,7 +40,7 @@ from shoonya_platform.market_data.feeds.live_feed import (
     get_tick_data,
     get_tick_data_batch,
 )
-
+import threading
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -109,7 +109,7 @@ MAJOR_INDICES = [
 
 # Internal state
 _subscribed_indices: Set[str] = set()
-
+_subscription_lock = threading.Lock()
 
 # =============================================================================
 # DYNAMIC FUTURES TOKEN RESOLUTION
@@ -239,7 +239,8 @@ def subscribe_index_tokens(
             continue
         tokens_to_subscribe.append(token)
         valid_symbols.append(symbol)
-        _subscribed_indices.add(symbol)
+        with _subscription_lock:
+            _subscribed_indices.add(symbol)
     
     if not tokens_to_subscribe:
         logger.warning("No valid indices to subscribe")
@@ -291,8 +292,8 @@ def get_subscribed_indices() -> List[str]:
     Returns:
         List of subscribed index names (e.g., ['NIFTY', 'BANKNIFTY', 'SENSEX'])
     """
-    global _subscribed_indices
-    return sorted(list(_subscribed_indices))
+    with _subscription_lock:
+        return sorted(list(_subscribed_indices))
 
 
 # =============================================================================
@@ -510,7 +511,8 @@ def reset_subscriptions():
     Use after unsubscribing from live_feed.
     """
     global _subscribed_indices
-    _subscribed_indices.clear()
+    with _subscription_lock:
+        _subscribed_indices.clear()
     logger.info("Index subscriptions reset")
 
 

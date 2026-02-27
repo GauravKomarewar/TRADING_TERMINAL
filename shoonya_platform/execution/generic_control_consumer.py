@@ -186,54 +186,53 @@ class GenericControlIntentConsumer:
     def _handle_broker_control_intent(self, intent_type: str, payload: dict, intent_id: str) -> str:
         """
         Handle broker-level control intents emitted by dashboard.
-        Converts them into OMS-safe EXIT / MODIFY flows.
+        Converts them into OMS-safe EXIT flows or rejects modifications.
         """
 
         # ----------------------------
-        # CANCEL BROKER ORDER
+        # CANCEL BROKER ORDER → EXIT POSITION
         # ----------------------------
         if intent_type == "CANCEL_BROKER_ORDER":
             broker_order_id = payload.get("broker_order_id")
             if not broker_order_id:
                 raise RuntimeError("Missing broker_order_id")
 
+            # Fetch the order record to get the symbol and strategy
+            record = self.bot.order_repo.get_by_broker_id(broker_order_id)
+            if not record:
+                raise RuntimeError(f"Order record not found for {broker_order_id}")
+
             logger.critical(
-                "🛑 DASHBOARD BROKER CANCEL | order_id=%s | intent=%s",
+                "🛑 DASHBOARD BROKER CANCEL → EXIT | order_id=%s symbol=%s strategy=%s",
                 broker_order_id,
-                intent_id,
+                record.symbol,
+                record.strategy_name,
             )
 
-            # 🔒 REGISTER EXIT VIA OMS (OrderWatcher will execute)
-            self.bot.command_service.register_exit_intent(
-                broker_order_id=broker_order_id,
+            # Exit the position for that symbol using PositionExitService
+            self.bot.command_service.position_exit_service.exit_positions(
+                scope="SYMBOLS",
+                symbols=[record.symbol],
+                product_scope="ALL",
                 reason="DASHBOARD_CANCEL",
                 source="DASHBOARD",
+                strategy_name=record.strategy_name,   # optional – helps scope exit
             )
 
             return "ACCEPTED"
 
         # ----------------------------
-        # MODIFY BROKER ORDER
+        # MODIFY BROKER ORDER – NOT SUPPORTED
         # ----------------------------
         if intent_type == "MODIFY_BROKER_ORDER":
-            logger.critical(
-                "✏️ DASHBOARD BROKER MODIFY | intent=%s | payload=%s",
+            logger.warning(
+                "⚠️ MODIFY_BROKER_ORDER not supported – rejecting | intent=%s",
                 intent_id,
-                payload,
             )
+            return "REJECTED"
 
-            # 🔒 Register MODIFY intent only (watcher handles execution)
-            self.bot.command_service.register_modify_intent(
-                broker_order_id=payload["broker_order_id"],
-                order_type=payload.get("order_type"),
-                price=payload.get("price"),
-                quantity=payload.get("quantity"),
-                source="DASHBOARD",
-                intent_id=intent_id,
-            )
-
-            return "ACCEPTED"
-
+        # If we reach here, the intent type was not handled
+        logger.error("Unknown broker control intent type: %s", intent_type)
         return "REJECTED"
 
     # ==================================================

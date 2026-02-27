@@ -354,27 +354,32 @@ class OptionChainSupervisor:
                     expiry=expiry,
                     auto_start_feed=False,
                 )
-                
+
                 db_path = DB_BASE_DIR / f"{exchange}_{symbol}_{expiry}.sqlite"
                 store = OptionChainStore(db_path)
 
-                # ⚠️ CRITICAL: Re-acquire lock and check if another thread beat us
-                with self._lock:
-                    if key in self._chains:
-                        # Another thread already started this chain – clean up ours
-                        oc.cleanup()
-                        store.close()
-                        return True
-                    
-                    self._chains[key] = {
-                        "oc": oc,
-                        "store": store,
-                        "db_path": db_path,
-                        "start_time": time.time(),
-                        "last_health_check": time.time(),
-                    }
-                    self._failed_chains.pop(key, None)
-                
+                try:
+                    with self._lock:
+                        if key in self._chains:
+                            # Another thread already started this chain – clean up ours
+                            oc.cleanup()
+                            store.close()
+                            return True
+
+                        self._chains[key] = {
+                            "oc": oc,
+                            "store": store,
+                            "db_path": db_path,
+                            "start_time": time.time(),
+                            "last_health_check": time.time(),
+                        }
+                        self._failed_chains.pop(key, None)
+                except Exception:
+                    # Clean up if something went wrong before adding to _chains
+                    store.close()
+                    oc.cleanup()
+                    raise
+
                 logger.info("✅ Option chain started | %s", key)
                 return True
 

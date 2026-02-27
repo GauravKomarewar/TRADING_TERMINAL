@@ -209,7 +209,8 @@ def event_handler_feed_update(tick_data: dict) -> None:
             tick_data_store[token] = existing
         
         # Update heartbeat
-        _last_tick_time = time.time()
+        with _state_lock:
+            _last_tick_time = time.time()
             
         # Throttled logging to reduce verbosity
         with _tick_counter_lock:
@@ -398,46 +399,36 @@ def subscribe_livedata(
     """
     global subscribed_tokens
 
-    # Validate client session
     if not api_client.is_logged_in():
         logger.error("❌ Cannot subscribe - client not logged in")
         return False
 
     try:
-        formatted = []
-        for t in token_list:
-            t = str(t)
-            key = f"{exchange}|{t}"
-            
-            with _state_lock:
-                if key not in subscribed_tokens:
-                    formatted.append(key)
+        # Prepare tokens with exchange prefix
+        formatted = [f"{exchange}|{str(t)}" for t in token_list]
 
-        if not formatted:
+        # Get already subscribed tokens
+        with _state_lock:
+            already = subscribed_tokens.copy()
+        new_tokens = [k for k in formatted if k not in already]
+
+        if not new_tokens:
             logger.info("⚠️ All tokens already subscribed.")
             return True
 
-        # Subscribe via API (client handles thread safety)
-        api_client.subscribe(formatted)
-        
-        with _state_lock:
-            subscribed_tokens.update(formatted)
+        # Subscribe via API
+        api_client.subscribe(new_tokens)
 
-        # Log summary for large lists
-        if len(formatted) > 10:
-            logger.info(
-                f"{Fore.MAGENTA}🔔 Subscribed to {len(formatted)} tokens. "
-                f"First 5: {formatted[:5]}{Style.RESET_ALL}"
-            )
-        else:
-            logger.info(f"{Fore.MAGENTA}🔔 Subscribed to: {formatted}{Style.RESET_ALL}")
-            
+        # Update local state only on success
+        with _state_lock:
+            subscribed_tokens.update(new_tokens)
+
+        logger.info(f"{Fore.MAGENTA}🔔 Subscribed to {len(new_tokens)} new tokens{Style.RESET_ALL}")
         return True
-        
+
     except Exception as e:
         logger.error(f"Error subscribing to tokens: {e}", exc_info=True)
         return False
-
 
 # ===============================
 # ⛔ Unsubscribe
@@ -460,46 +451,42 @@ def unsubscribe_livedata(
     """
     global subscribed_tokens
 
-    # Session check
     if not api_client.is_logged_in():
         logger.warning("Client not logged in, skipping unsubscribe")
         return False
 
     try:
-        # Format tokens with exchange prefix
-        formatted_tokens = []
-        for t in token_list:
-            t = str(t)
-            key = f"{exchange}|{t}"
-            
-            with _state_lock:
-                if key in subscribed_tokens:
-                    formatted_tokens.append(key)
+        formatted = [f"{exchange}|{str(t)}" for t in token_list]
 
-        if not formatted_tokens:
+        # Get current subscriptions
+        with _state_lock:
+            current = subscribed_tokens.copy()
+        to_unsub = [k for k in formatted if k in current]
+
+        if not to_unsub:
             logger.info("No tokens to unsubscribe")
             return True
 
         # Unsubscribe via API
-        api_client.unsubscribe(formatted_tokens)
+        api_client.unsubscribe(to_unsub)
 
+        # Update local state only on success
         with _state_lock:
-            for token in formatted_tokens:
+            for token in to_unsub:
                 subscribed_tokens.discard(token)
 
-        # BUG-035: tick_data_store has its own lock
+        # Remove from tick store
         with _tick_store_lock:
-            for token in formatted_tokens:
+            for token in to_unsub:
                 plain_token = _extract_token(token)
                 tick_data_store.pop(plain_token, None)
 
-        logger.info(f"Unsubscribed from {len(formatted_tokens)} tokens")
+        logger.info(f"Unsubscribed from {len(to_unsub)} tokens")
         return True
-        
+
     except Exception as e:
         logger.error(f"Error unsubscribing tokens: {e}", exc_info=True)
         return False
-
 
 # ===============================
 # 📊 Data Retrieval Functions (PULL-BASED)

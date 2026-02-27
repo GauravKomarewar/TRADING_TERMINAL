@@ -147,7 +147,7 @@ def run_dashboard():
             dashboard_port = _dashboard_port
             config_uv = uvicorn.Config(
                 app=app,
-                host="0.0.0.0",
+                host="127.0.0.1",
                 port=dashboard_port,
                 log_level="info",
                 loop="asyncio",

@@ -235,7 +235,7 @@ class UniversalOrderCommand:
 
             # ---- meta ----
             strategy_name=record.strategy_name,
-            comment=None,
+            comment=str(record.tag) if getattr(record, "tag", None) else None,
         )
 
     def to_broker_params(self) -> dict:

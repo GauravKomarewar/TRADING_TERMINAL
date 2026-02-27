@@ -1365,33 +1365,6 @@ class ShoonyaBot:
         - OrderWatcherEngine executes
         """
 
-        # =================================================
-        # ðŸ§ª TEST MODE â€” NO BROKER, NO DB
-        # =================================================
-        if test_mode:
-            fake_order_id = f"TEST_{strategy_name}_{leg_data.tradingsymbol}_{int(time.time()*1000)}"
-            logger.warning(f"ðŸ§ª TEST MODE | {leg_data.tradingsymbol}")
-
-            self.trade_records.append(
-                TradeRecord(
-                    timestamp=datetime.now().isoformat(),
-                    strategy_name=strategy_name,
-                    execution_type=execution_type,
-                    symbol=leg_data.tradingsymbol,
-                    direction=leg_data.direction,
-                    quantity=leg_data.qty,
-                    price=leg_data.price or 0.0,
-                    order_id=fake_order_id,
-                    status="INTENT_ONLY",
-                )
-            )
-
-            return LegResult(
-                leg_data=leg_data,
-                order_result=OrderResult(success=True, order_id=fake_order_id),
-                order_params=None,  # TEST MODE - no actual params
-            )
-
         try:
             # =================================================
             # BASIC VALIDATION
@@ -1481,6 +1454,12 @@ class ShoonyaBot:
                 self.command_service.register(cmd)
             else:
                 self.command_service.register_intent(cmd, execution_type=execution_type)
+
+            if test_mode:
+                # Persist explicit test marker so downstream execution can run
+                # the same OMS flow while simulating broker behavior.
+                self.order_repo.update_tag(cmd.command_id, f"TEST_MODE_{str(test_mode).upper()}")
+                logger.warning(f"ðŸ§ª TEST MODE | {leg_data.tradingsymbol}")
 
             logger.info(
                 "INTENT_REGISTERED | %s | %s | %s | qty=%s | type=%s",
@@ -1999,7 +1978,49 @@ class ShoonyaBot:
         """Inner execution logic, called under _cmd_lock."""
         try:
             self._ensure_login()
+
+            strategy_id = getattr(command, 'strategy_name', 'UNKNOWN')
+
+            # Resolve MOCK behavior from explicit test marker or strategy mode.
+            comment = str(getattr(command, "comment", "") or "").upper()
+            explicit_mock_success = "TEST_MODE_SUCCESS" in comment
+            explicit_mock_failure = "TEST_MODE_FAILURE" in comment
+            is_mock_execution = explicit_mock_success or explicit_mock_failure
+            if not is_mock_execution:
+                try:
+                    svc = getattr(self, "strategy_executor_service", None)
+                    mode_getter = getattr(svc, "get_strategy_mode", None) if svc else None
+                    if callable(mode_getter) and strategy_id and strategy_id != "UNKNOWN":
+                        is_mock_execution = str(mode_getter(strategy_id) or "LIVE").upper() == "MOCK"
+                except Exception:
+                    is_mock_execution = False
             
+            # Detection: intent field (set by from_record / with_intent) OR command_id prefix
+            # (set by PositionExitService for risk-triggered exits).
+            is_exit_order = (
+                getattr(command, 'intent', None) == 'EXIT'
+                or (hasattr(command, 'command_id') and str(command.command_id).startswith('EXIT_'))
+            )
+
+            # Resolve canonical execution_type from persisted order record first.
+            # OrderWatcher commands do not carry execution_type on the command object.
+            order_rec = None
+            execution_type = "EXIT" if is_exit_order else "ENTRY"
+            try:
+                order_rec = self.order_repo.get_by_id(command.command_id)
+                rec_type = str(getattr(order_rec, "execution_type", "") or "").upper()
+                if rec_type:
+                    execution_type = rec_type
+                elif hasattr(command, "execution_type"):
+                    execution_type = str(getattr(command, "execution_type", "") or execution_type).upper()
+            except Exception:
+                if hasattr(command, "execution_type"):
+                    execution_type = str(getattr(command, "execution_type", "") or execution_type).upper()
+
+            # Normalize to ENTRY/ADJUSTMENT/EXIT family for guard checks.
+            if execution_type not in {"ENTRY", "ADJUSTMENT", "ADJUST", "EXIT"}:
+                execution_type = "EXIT" if is_exit_order else "ENTRY"
+
             # ==================================================
             # STEP 2: SYSTEM BLOCKERS CHECK (BEFORE EXECUTION)
             # ==================================================
@@ -2011,12 +2032,6 @@ class ShoonyaBot:
             # EXIT orders ALWAYS bypass risk checks â€” they REDUCE risk, not add it.
             # Without this bypass, RMS exit orders block themselves when daily_loss_hit=True.
             #
-            # Detection: intent field (set by from_record / with_intent) OR command_id prefix
-            # (set by PositionExitService for risk-triggered exits).
-            is_exit_order = (
-                getattr(command, 'intent', None) == 'EXIT'
-                or (hasattr(command, 'command_id') and str(command.command_id).startswith('EXIT_'))
-            )
             if is_exit_order:
                 logger.info(
                     f"RISK_BYPASS_EXIT | cmd_id={command.command_id} | {command.symbol} | "
@@ -2037,10 +2052,12 @@ class ShoonyaBot:
             
             # ðŸ›¡ï¸ Check 2B: EXECUTION GUARD (strategy tracking)
             # Check if strategy already has an ENTRY (prevent duplicate entries)
-            strategy_id = getattr(command, 'strategy_name', 'UNKNOWN')
             if self.execution_guard.has_strategy(strategy_id):
-                # Strategy already has positions, allow only EXITs
-                if getattr(command, 'execution_type', 'ENTRY').upper() == "ENTRY":
+                # Strategy pipeline ENTRY legs are pre-approved in process_alert()
+                # via ExecutionGuard.validate_and_prepare(). Do not re-block them.
+                source_upper = str(getattr(command, "source", "") or "").upper()
+                strategy_pipeline = source_upper in {"ORDER_WATCHER", "STRATEGY"}
+                if execution_type == "ENTRY" and not strategy_pipeline:
                     reason = "EXECUTION_GUARD_BLOCKED"
                     logger.warning(
                         f"BLOCKER_GUARD | cmd_id={command.command_id} | {command.symbol} | "
@@ -2056,7 +2073,7 @@ class ShoonyaBot:
             
             # ðŸ›¡ï¸ Check 2C: DUPLICATE DETECTION (live orders by symbol)
             # EXIT orders skip duplicate check â€” multiple exit legs for same symbol are valid
-            if not is_exit_order:
+            if execution_type != "EXIT":
                 open_orders = self.order_repo.get_open_orders_by_strategy(strategy_id)
                 
                 for order in open_orders:
@@ -2109,8 +2126,20 @@ class ShoonyaBot:
                 f"type={order_params.get('price_type')}"
             )
 
-            # ðŸ”¥ Single broker touchpoint
-            result = self.api.place_order(order_params)
+            if is_mock_execution:
+                logger.info(
+                    "STEP_4_MOCK_EXECUTION | cmd_id=%s | strategy=%s | mode=MOCK",
+                    command.command_id,
+                    strategy_id,
+                )
+                if explicit_mock_failure:
+                    result = OrderResult(success=False, error_message="MOCK_TEST_FAILURE")
+                else:
+                    mock_order_id = f"MOCK_{int(time.time() * 1000)}_{command.command_id[:8]}"
+                    result = OrderResult(success=True, order_id=mock_order_id, status="MOCK_EXECUTED")
+            else:
+                # ðŸ”¥ Single broker touchpoint
+                result = self.api.place_order(order_params)
             
             # ==================================================
             # STEP 5: UPDATE DB BASED ON BROKER RESULT
@@ -2131,22 +2160,50 @@ class ShoonyaBot:
                             f"broker_id={broker_id} | status=SENT_TO_BROKER"
                         )
                         
-                        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                        # ðŸ”„ INVALIDATE BROKER CACHE (NEW)
-                        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                        # After successful order placement, force fresh data on next poll
-                        # Ensures OrderWatcher and dashboard see new broker state immediately
-                        try:
-                            self.broker_view.invalidate_cache(target="positions")
-                            self.broker_view.invalidate_cache(target="orders")
-                            logger.debug(
-                                f"CACHE_INVALIDATED | cmd_id={command.command_id} | "
-                                f"targets=['positions', 'orders']"
+                        if is_mock_execution:
+                            fill_price = float(command.price or 0.0)
+                            if fill_price <= 0:
+                                try:
+                                    fill_price = float(self.api.get_ltp(command.exchange, command.symbol) or 0.0)
+                                except Exception:
+                                    fill_price = 0.0
+                            self.order_repo.update_status(command.command_id, "EXECUTED")
+                            self.notify_fill(
+                                strategy_name=strategy_id,
+                                symbol=command.symbol,
+                                side=command.side,
+                                qty=int(command.quantity),
+                                price=fill_price,
+                                delta=None,
+                                broker_order_id=broker_id,
+                                command_id=command.command_id,
                             )
-                        except Exception as cache_err:
-                            # Non-critical - cache will expire naturally in 1.5s
-                            logger.debug(f"Cache invalidation warning (non-critical): {cache_err}")
-                        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                            logger.info(
+                                "MOCK_EXECUTED | cmd_id=%s | strategy=%s | symbol=%s | side=%s | qty=%s | price=%s",
+                                command.command_id,
+                                strategy_id,
+                                command.symbol,
+                                command.side,
+                                command.quantity,
+                                fill_price,
+                            )
+                        else:
+                            # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                            # ðŸ”„ INVALIDATE BROKER CACHE (NEW)
+                            # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                            # After successful order placement, force fresh data on next poll
+                            # Ensures OrderWatcher and dashboard see new broker state immediately
+                            try:
+                                self.broker_view.invalidate_cache(target="positions")
+                                self.broker_view.invalidate_cache(target="orders")
+                                logger.debug(
+                                    f"CACHE_INVALIDATED | cmd_id={command.command_id} | "
+                                    f"targets=['positions', 'orders']"
+                                )
+                            except Exception as cache_err:
+                                # Non-critical - cache will expire naturally in 1.5s
+                                logger.debug(f"Cache invalidation warning (non-critical): {cache_err}")
+                            # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                         
                     except Exception as db_err:
                         logger.error(f"STEP_5 WARNING: Failed to persist broker_id: {db_err}")
@@ -2165,7 +2222,8 @@ class ShoonyaBot:
                 try:
                     self.order_repo.update_status(command.command_id, "FAILED")
                     if hasattr(self.order_repo, 'update_tag'):
-                        self.order_repo.update_tag(command.command_id, "BROKER_REJECTED")
+                        fail_tag = "MOCK_TEST_FAILURE" if is_mock_execution else "BROKER_REJECTED"
+                        self.order_repo.update_tag(command.command_id, fail_tag)
                     logger.info(f"DB_UPDATED_FAILED | cmd_id={command.command_id} | status=FAILED")
                 except Exception as db_err:
                     logger.error(f"STEP_5 ERROR: Failed to update DB on broker rejection: {db_err}")
@@ -2622,10 +2680,6 @@ class ShoonyaBot:
         except Exception as e:
             elapsed = time.time() - shutdown_start
             logger.error(f"âŒ Shutdown error after {elapsed:.1f}s: {e}")
-
-
-
-
 
 
 

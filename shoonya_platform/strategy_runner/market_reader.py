@@ -875,9 +875,7 @@ class MarketReader:
                   SUM(CASE WHEN option_type='CE' THEN COALESCE(oi,0) ELSE 0 END) AS ce_oi,
                   SUM(CASE WHEN option_type='PE' THEN COALESCE(oi,0) ELSE 0 END) AS pe_oi,
                   SUM(CASE WHEN option_type='CE' THEN COALESCE(volume,0) ELSE 0 END) AS ce_vol,
-                  SUM(CASE WHEN option_type='PE' THEN COALESCE(volume,0) ELSE 0 END) AS pe_vol,
-                  SUM(CASE WHEN option_type='CE' THEN COALESCE(oi_change,0) ELSE 0 END) AS ce_oi_change,
-                  SUM(CASE WHEN option_type='PE' THEN COALESCE(oi_change,0) ELSE 0 END) AS pe_oi_change
+                  SUM(CASE WHEN option_type='PE' THEN COALESCE(volume,0) ELSE 0 END) AS pe_vol
                 FROM option_chain
                 """
             )
@@ -897,13 +895,11 @@ class MarketReader:
             pe_oi = float(row["pe_oi"] or 0.0)
             ce_vol = float(row["ce_vol"] or 0.0)
             pe_vol = float(row["pe_vol"] or 0.0)
-            ce_oi_change = float(row["ce_oi_change"] or 0.0)
-            pe_oi_change = float(row["pe_oi_change"] or 0.0)
 
             pcr = (pe_oi / ce_oi) if ce_oi > 0 else 0.0
             pcr_volume = (pe_vol / ce_vol) if ce_vol > 0 else 0.0
-            oi_buildup_ce = (ce_oi_change / ce_oi * 100.0) if ce_oi > 0 else 0.0
-            oi_buildup_pe = (pe_oi_change / pe_oi * 100.0) if pe_oi > 0 else 0.0
+            oi_buildup_ce = 0.0
+            oi_buildup_pe = 0.0
 
             return {
                 "pcr": pcr,

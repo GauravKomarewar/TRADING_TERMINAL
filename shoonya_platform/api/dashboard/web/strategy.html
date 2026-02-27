@@ -709,6 +709,7 @@ function renderStrategies() {
     const enabled = s.enabled !== false;
     const status = s.status || 'IDLE';
     const isRunning = status === 'RUNNING';
+    const mode = String(s.mode || 'LIVE').toUpperCase() === 'MOCK' ? 'MOCK' : 'LIVE';
     
     return `
       <div class="strat-card">
@@ -717,7 +718,7 @@ function renderStrategies() {
             <span class="status-dot ${status.toLowerCase()}"></span>
             ${escHtml(s.name)}
             ${
-              s.mode === 'LIVE'
+              mode === 'LIVE'
                 ? '<span class="badge badge-mode badge-live" id="mode-badge-' + escHtml(s.name) + '">⚡ LIVE</span>'
                 : '<span class="badge badge-mode badge-mock" id="mode-badge-' + escHtml(s.name) + '">🧪 MOCK</span>'
             }
@@ -732,7 +733,7 @@ function renderStrategies() {
               onclick="toggleMode('${escHtml(s.name)}')"
               ${s.can_change_mode === false ? 'disabled' : ''}
               title="${s.can_change_mode === false ? escHtml(s.mode_change_reason || 'Cannot change mode') : ''}">
-              ${s.mode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE'}
+              ${mode === 'LIVE' ? 'Switch to MOCK' : 'Switch to LIVE'}
             </button>
             
 ${!isRunning ? `<button class="btn btn-success btn-sm" onclick="startStrategy('${escHtml(s.name)}')">Start</button>` : ''}
@@ -1537,23 +1538,25 @@ async function toggleMode(name) {
     const newMode = currentMode === 'LIVE' ? 'MOCK' : 'LIVE';
 
     btn.textContent = 'Switching...';
+    const res = await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
+    const appliedMode = String(res.new_mode || newMode).toUpperCase() === 'MOCK' ? 'MOCK' : 'LIVE';
 
-    await api('POST', `/strategy/${encodeURIComponent(name)}/mode`, { mode: newMode });
-
-    // Update local data immediately to avoid waiting for reload
-    const strategy = allStrategies.find(s => s.name === name);
-    if (strategy) {
-      strategy.mode = newMode;
-      // Also update can_change (should now be the opposite, but we don't know)
-      strategy.can_change_mode = !strategy.can_change_mode; // approximate, but fine for UI
+    // Reload from backend truth to avoid stale/mixed UI state.
+    await loadStrategies();
+    if (document.getElementById('monitor-tab')?.classList.contains('active') ||
+        document.getElementById('analytics-tab')?.classList.contains('active')) {
+      await loadLiveMonitor();
     }
-    renderStrategies(); // re-render immediately
 
-    toast(`Mode changed to ${newMode}`, 'success');
+    toast(`Mode changed: ${currentMode} → ${appliedMode}`, 'success');
   } catch (e) {
     toast('Mode change failed: ' + e.message, 'error');
-    btn.disabled = false;
-    btn.textContent = originalText;
+  } finally {
+    const refreshedBtn = document.getElementById('mode-btn-' + name);
+    if (refreshedBtn) {
+      refreshedBtn.disabled = false;
+      if (refreshedBtn.textContent === 'Switching...') refreshedBtn.textContent = originalText;
+    }
   }
 }
 
@@ -1596,6 +1599,4 @@ document.querySelectorAll('.modal').forEach((modalEl) => {
 </script>
 </body>
 </html>
-
-
 

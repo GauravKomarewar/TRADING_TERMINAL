@@ -1013,19 +1013,32 @@ class PerStrategyExecutor:
         if not hasattr(self.bot, "order_repo"):
             return
 
-        # Get all orders for this strategy with non‑final status
+        # Get all orders for this strategy with non-final status.
+        # NOTE: this excludes EXECUTED/FAILED rows by contract, so pending legs
+        # must also reconcile through command_id / broker_order_id lookups.
         orders = self.bot.order_repo.get_open_orders_by_strategy(self.name)
+        open_order_map = {(o.symbol, o.side): o for o in orders}
+
+        broker_positions = None
+        if not self._resolve_test_mode():
+            try:
+                broker_view = getattr(self.bot, "broker_view", None)
+                if broker_view is not None:
+                    broker_view.invalidate_cache("positions")
+                    broker_positions = broker_view.get_positions(force_refresh=True) or []
+            except Exception:
+                broker_positions = None
 
         for leg in list(self.state.legs.values()):
             if leg.order_status != "PENDING":
                 continue
 
-            # Find matching order by symbol and side
-            matching_order = None
-            for o in orders:
-                if o.symbol == leg.symbol and o.side == leg.side.value:
-                    matching_order = o
-                    break
+            # Prefer symbol+side for open orders, then exact command/broker IDs for terminal statuses.
+            matching_order = open_order_map.get((leg.symbol, leg.side.value))
+            if matching_order is None and getattr(leg, "command_id", None):
+                matching_order = self.bot.order_repo.get_by_id(leg.command_id)
+            if matching_order is None and getattr(leg, "order_id", None):
+                matching_order = self.bot.order_repo.get_by_broker_id(leg.order_id)
 
             if matching_order:
                 leg.command_id = matching_order.command_id
@@ -1034,7 +1047,7 @@ class PerStrategyExecutor:
                 if matching_order.status == "EXECUTED":
                     leg.order_status = "FILLED"
                     leg.is_active = True
-                    leg.filled_qty = matching_order.quantity  # quantity in contracts; convert to lots if needed
+                    leg.filled_qty = int(matching_order.quantity or 0)
                     logger.info(f"FILLED via reconciliation | {leg.tag}")
                 elif matching_order.status in ("FAILED", "CANCELLED", "REJECTED"):
                     leg.order_status = "FAILED"
@@ -1042,12 +1055,49 @@ class PerStrategyExecutor:
                     logger.warning(f"FAILED via reconciliation | {leg.tag}")
                 # else SENT_TO_BROKER or CREATED – remain pending
             else:
+                # Final fallback from broker truth: if position exists for leg symbol+direction,
+                # treat pending leg as filled to keep monitor state aligned with live account.
+                if broker_positions:
+                    for p in broker_positions:
+                        sym = p.get("tsym")
+                        if sym != leg.symbol:
+                            continue
+                        netqty = int(p.get("netqty", 0) or 0)
+                        if netqty == 0:
+                            continue
+                        if leg.side.value == "SELL" and netqty < 0:
+                            leg.order_status = "FILLED"
+                            leg.is_active = True
+                            leg.filled_qty = abs(netqty)
+                            leg.entry_price = float(p.get("avgprc", leg.entry_price) or leg.entry_price)
+                            leg.ltp = float(p.get("lp", leg.ltp) or leg.ltp)
+                            logger.warning(
+                                "FILLED via broker-position fallback | %s | symbol=%s qty=%s",
+                                leg.tag,
+                                leg.symbol,
+                                abs(netqty),
+                            )
+                            break
+                        if leg.side.value == "BUY" and netqty > 0:
+                            leg.order_status = "FILLED"
+                            leg.is_active = True
+                            leg.filled_qty = abs(netqty)
+                            leg.entry_price = float(p.get("avgprc", leg.entry_price) or leg.entry_price)
+                            leg.ltp = float(p.get("lp", leg.ltp) or leg.ltp)
+                            logger.warning(
+                                "FILLED via broker-position fallback | %s | symbol=%s qty=%s",
+                                leg.tag,
+                                leg.symbol,
+                                abs(netqty),
+                            )
+                            break
+                if leg.order_status != "PENDING":
+                    continue
                 # No matching order – check timeout
                 if leg.order_placed_at and (datetime.now() - leg.order_placed_at).total_seconds() > 60:
-                    logger.warning(f"PENDING TIMEOUT | {leg.tag} – marking FAILED and removing")
+                    logger.warning(f"PENDING TIMEOUT | {leg.tag} – marking FAILED")
                     leg.order_status = "FAILED"
                     leg.is_active = False
-                    del self.state.legs[leg.tag]
 
     def notify_fill(self, symbol: str, side: str, qty: int, price: float,
                     delta: Optional[float], broker_order_id: str, command_id: Optional[str] = None):

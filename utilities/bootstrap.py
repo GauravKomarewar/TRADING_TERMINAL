@@ -46,14 +46,14 @@ from typing import List
 # CONFIGURATION (INTENTIONALLY EXPLICIT)
 # =============================================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 VENV_DIR = PROJECT_ROOT / "venv"
 
-REQUIREMENTS_FILE = PROJECT_ROOT / "requirements" / "requirements.txt"
+REQUIREMENTS_FILE = PROJECT_ROOT / "utilities" / "requirements" / "requirements.txt"
 
 # Strict Python compatibility boundary
-ALLOWED_PYTHON_VERSIONS = {(3, 9), (3, 10)}
+ALLOWED_PYTHON_VERSIONS = {(3, 9), (3, 10), (3, 12)}
 
 # GitHub Release hosting binary dependencies
 GITHUB_RELEASE_BASE = (
@@ -173,7 +173,7 @@ def main() -> None:
     # SETUP CLEANUP UTILITY (CROSS-PLATFORM)
     # -------------------------------------------------------------------------
     print("\n🧹 Setting up cleanup utility...")
-    cleanup_script = PROJECT_ROOT / "shoonya_platform" / "tools" / "cleanup_shoonya_platform.py"
+    cleanup_script = PROJECT_ROOT / "shoonya_platform" / "tools" / "cleanup.py"
     
     if is_windows():
         # Create batch wrapper for Windows

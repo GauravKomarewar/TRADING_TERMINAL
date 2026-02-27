@@ -188,12 +188,15 @@ class OrderWatcherEngine(threading.Thread):
                     )
 
                 # 🔒 BROKER-TRUTH CONVERGENCE POINT
-                self._reconcile_execution_guard(record.strategy_name)
+                self._reconcile_execution_guard(
+                    strategy_name=record.strategy_name,
+                    executed_symbol=record.symbol,
+                )
 
     # --------------------------------------------------
     # ExecutionGuard reconciliation (BROKER-DRIVEN ONLY)
     # --------------------------------------------------
-    def _reconcile_execution_guard(self, strategy_name: str) -> None:
+    def _reconcile_execution_guard(self, strategy_name: str, executed_symbol: str) -> None:
         """
         Reconcile ExecutionGuard AFTER broker EXECUTED confirmation.
 
@@ -202,17 +205,18 @@ class OrderWatcherEngine(threading.Thread):
         - Strategy cleanup is allowed
         """
         try:
-            broker_map = self._build_broker_map()
+            symbols = self._get_strategy_symbols(strategy_name)
+            if executed_symbol:
+                symbols.add(executed_symbol)
+            broker_map = self._build_broker_map(symbol_filter=symbols or None)
 
             self.bot.execution_guard.reconcile_with_broker(
                 strategy_id=strategy_name,
                 broker_positions=broker_map,
             )
 
-            # ✅ FIX: call force_close_strategy only if strategy still exists
-            if self.bot.execution_guard.has_strategy(strategy_name):
-                self.bot.execution_guard.force_close_strategy(strategy_name)
-
+            # Closed means reconciliation removed all tracked legs for this strategy.
+            if not self.bot.execution_guard.has_strategy(strategy_name):
                 logger.info(
                     "OrderWatcher: strategy fully closed | strategy=%s",
                     strategy_name,
@@ -280,6 +284,25 @@ class OrderWatcherEngine(threading.Thread):
                 f"{symbol} {side} {qty} @ {price} | delta={delta}"
             )
 
+            # Keep StrategyExecutorService state in sync immediately on broker fill.
+            # This avoids pending-timeout drift between OMS and monitor view.
+            try:
+                self.bot.notify_fill(
+                    strategy_name=record.strategy_name,
+                    symbol=symbol,
+                    side=side,
+                    qty=qty,
+                    price=price,
+                    delta=delta,
+                    broker_order_id=record.broker_order_id,
+                    command_id=record.command_id,
+                )
+            except Exception:
+                logger.exception(
+                    "OrderWatcher: bot.notify_fill failed | cmd_id=%s",
+                    record.command_id,
+                )
+
             # Get all live strategies and call on_fill on each
             # (they'll ignore fills that aren't theirs)
             intents = self._collect_fill_callbacks(
@@ -290,8 +313,6 @@ class OrderWatcherEngine(threading.Thread):
                 delta=delta,
                 strategy_name=record.strategy_name,
             )
-
-            # ✅ FIX: Remove redundant bot.notify_fill to avoid double notification
 
             # Route collected intents through CommandService
             for intent in intents:
@@ -352,7 +373,7 @@ class OrderWatcherEngine(threading.Thread):
     # Direction-aware broker map (ExecutionGuard v1.3)
     # --------------------------------------------------
 
-    def _build_broker_map(self) -> Dict[str, Dict[str, int]]:
+    def _build_broker_map(self, symbol_filter: Optional[set] = None) -> Dict[str, Dict[str, int]]:
         """
         Build direction-aware broker map.
 
@@ -373,6 +394,8 @@ class OrderWatcherEngine(threading.Thread):
 
             if not sym or net == 0:
                 continue
+            if symbol_filter is not None and sym not in symbol_filter:
+                continue
 
             broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
 
@@ -382,6 +405,24 @@ class OrderWatcherEngine(threading.Thread):
                 broker_map[sym]["SELL"] = abs(net)
 
         return broker_map
+
+    def _get_strategy_symbols(self, strategy_name: str) -> set:
+        """
+        Best-effort fetch of currently tracked symbols for a strategy.
+        Used to scope reconciliation to strategy-relevant broker positions only.
+        """
+        guard = getattr(self.bot, "execution_guard", None)
+        if guard is None:
+            return set()
+
+        lock = getattr(guard, "_lock", None)
+        positions = getattr(guard, "_strategy_positions", None)
+        if lock is None or not isinstance(positions, dict):
+            return set()
+
+        with lock:
+            tracked = positions.get(strategy_name) or {}
+            return set(tracked.keys())
 
     # ==================================================
     # LEGACY SUPPORT: Intent execution (RARELY USED)

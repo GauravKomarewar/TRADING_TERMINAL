@@ -924,6 +924,7 @@ def stop_strategy(
 @router.post("/strategy/{strategy_name}/start-execution")
 def start_strategy_execution(
     strategy_name: str,
+    payload: dict = Body(default={}),
     ctx=Depends(require_dashboard_auth)
 ):
     """
@@ -960,16 +961,17 @@ def start_strategy_execution(
                 "timestamp": datetime.now().isoformat()
             }
 
-        # Explicit start from UI should begin a fresh runtime cycle.
-        # Remove stale persisted executor state that can block re-entry
-        # (e.g. entered_today=True after previous run/restart).
-        try:
-            sf = _strategy_state_file(service, strategy_key)
-            if sf.exists():
-                sf.unlink()
-                logger.info("Cleared stale strategy state file: %s", sf)
-        except Exception as se:
-            logger.warning("Could not clear state file for %s: %s", strategy_key, se)
+        # Default behavior is resume-safe for live reliability.
+        # Fresh-cycle reset is opt-in via payload {"fresh_start": true}.
+        fresh_start = bool((payload or {}).get("fresh_start", False))
+        if fresh_start:
+            try:
+                sf = _strategy_state_file(service, strategy_key)
+                if sf.exists():
+                    sf.unlink()
+                    logger.info("Cleared strategy state file for fresh start: %s", sf)
+            except Exception as se:
+                logger.warning("Could not clear state file for %s: %s", strategy_key, se)
 
         config = json.loads(strategy_file.read_text(encoding="utf-8"))
         bot.start_strategy_executor(strategy_name=strategy_key, config=config)
@@ -995,6 +997,7 @@ def start_strategy_execution(
             "success": True,
             "strategy_name": strategy_key,
             "requested_strategy_name": requested_key,
+            "fresh_start": fresh_start,
             "message": f"Strategy {strategy_key} started",
             "timestamp": datetime.now().isoformat()
         }
@@ -1154,6 +1157,37 @@ def _resolve_strategy_config_file(strategy_name: str) -> Optional[Path]:
     return None
 
 
+def _mode_from_config_dict(config: Dict[str, Any]) -> str:
+    """Return LIVE/MOCK from config paper/test flags."""
+    cfg = config or {}
+    identity = cfg.get("identity", {}) or {}
+    is_mock = bool(
+        cfg.get("paper_mode")
+        or identity.get("paper_mode")
+        or cfg.get("is_paper")
+        or cfg.get("test_mode")
+        or identity.get("test_mode")
+    )
+    return "MOCK" if is_mock else "LIVE"
+
+
+def _mode_from_saved_file(strategy_name: str) -> str:
+    """
+    Resolve strategy mode directly from saved config on disk.
+    This avoids incorrect LIVE defaults when strategy is not loaded in memory.
+    """
+    try:
+        path = _resolve_strategy_config_file(strategy_name)
+        if not path:
+            path = STRATEGY_CONFIG_DIR / f"{_slugify(strategy_name)}.json"
+        if not path.exists():
+            return "LIVE"
+        cfg = json.loads(path.read_text(encoding="utf-8-sig"))
+        return _mode_from_config_dict(cfg)
+    except Exception:
+        return "LIVE"
+
+
 def _get_runtime_running_slugs(ctx: dict) -> set[str]:
     """
     Read currently running strategy keys from StrategyExecutorService.
@@ -1251,15 +1285,27 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
             effective_status = "RUNNING" if slug in runtime_running else ("IDLE" if file_status == "RUNNING" else file_status)
 
             # ---- mode and can_change ----
-            mode = "LIVE"
+            mode = _mode_from_config_dict(data)
             can_change = True
             mode_change_reason = None
             if service:
-                mode = service.get_strategy_mode(slug) if hasattr(service, "get_strategy_mode") else "LIVE"
-                has_pos = service.has_position(slug) if hasattr(service, "has_position") else False
-                if has_pos:
-                    can_change = False
-                    mode_change_reason = "Strategy has active positions"
+                try:
+                    if hasattr(service, "_strategies") and slug in getattr(service, "_strategies", {}):
+                        mode = service.get_strategy_mode(slug) if hasattr(service, "get_strategy_mode") else mode
+                except Exception:
+                    pass
+                try:
+                    if hasattr(service, "_validate_mode_change_allowed"):
+                        allowed, reason = service._validate_mode_change_allowed(slug)
+                        can_change = bool(allowed)
+                        mode_change_reason = reason or None
+                    else:
+                        has_pos = service.has_position(slug) if hasattr(service, "has_position") else False
+                        if has_pos:
+                            can_change = False
+                            mode_change_reason = "Strategy has active positions"
+                except Exception:
+                    pass
             # -----------------------------
 
             configs.append({
@@ -2396,10 +2442,12 @@ def get_live_positions_overview(
 
             qty = abs(netqty)
             side = "BUY" if netqty > 0 else "SELL"
-            ltp = float(pos.get("ltp", 0) or 0)
-            avg = float(pos.get("avgprc", 0) or 0)
-            rpnl = float(pos.get("rpnl", 0) or 0)
-            upnl = float(pos.get("upnl", 0) or 0)
+            # Shoonya payloads can vary by endpoint/session:
+            # ltp may come as `ltp` or `lp`; unrealized may come as `upnl` or `urmtom`.
+            ltp = float(pos.get("ltp", pos.get("lp", 0)) or 0)
+            avg = float(pos.get("avgprc", pos.get("avg_price", 0)) or 0)
+            rpnl = float(pos.get("rpnl", pos.get("realized_pnl", 0)) or 0)
+            upnl = float(pos.get("upnl", pos.get("urmtom", 0)) or 0)
             total_pnl = rpnl + upnl
 
             item = {
@@ -2528,9 +2576,23 @@ def get_live_positions_overview(
                 if callable(completed_getter):
                     result = completed_getter(limit=50)
                     if isinstance(result, list):
+                        for row in result:
+                            if isinstance(row, dict):
+                                strat_name = str(row.get("strategy_name", "") or "")
+                                mode_val = str(row.get("mode", "") or "").upper()
+                                if mode_val not in {"LIVE", "MOCK"} and strat_name:
+                                    row["mode"] = _mode_from_saved_file(strat_name)
                         completed_strategy_groups = result
             except Exception as history_err:
                 logger.debug("Could not fetch completed strategy monitor history: %s", history_err)
+
+        def _group_mode(strategy_name: str) -> str:
+            known = str(strategy_modes.get(strategy_name, "") or "").upper()
+            if known in {"LIVE", "MOCK"}:
+                return known
+            resolved = _mode_from_saved_file(strategy_name)
+            strategy_modes[strategy_name] = resolved
+            return resolved
 
         by_strategy: dict[str, dict[str, Any]] = {}
         for p in strategy_positions:
@@ -2538,7 +2600,7 @@ def get_live_positions_overview(
             if strat not in by_strategy:
                 by_strategy[strat] = {
                     "strategy_name": strat,
-                    "mode": strategy_modes.get(strat, "LIVE"),
+                    "mode": _group_mode(strat),
                     "active": strat in active_strategies,
                     "adjustments_today": 0,
                     "lifetime_adjustments": 0,
@@ -2574,7 +2636,7 @@ def get_live_positions_overview(
             if strat not in by_strategy:
                 by_strategy[strat] = {
                     "strategy_name": strat,
-                    "mode": strategy_modes.get(strat, "LIVE"),
+                    "mode": _group_mode(strat),
                     "active": strat in active_strategies,
                     "adjustments_today": 0,
                     "lifetime_adjustments": 0,
@@ -2689,7 +2751,8 @@ def get_live_positions_overview(
                     "updated_at": p.get("updated_at") or "",
                 })
             group["all_legs"] = fallback_legs
-            group["mode"] = group.get("mode") or strategy_modes.get(group.get("strategy_name") or "", "LIVE")
+            if not str(group.get("mode", "")).strip():
+                group["mode"] = _group_mode(group.get("strategy_name") or "")
             group["active_leg_rows"] = [l for l in fallback_legs if str(l.get("status", "")).upper() == "ACTIVE"]
             group["closed_leg_rows"] = [l for l in fallback_legs if str(l.get("status", "")).upper() == "CLOSED"]
             group["runtime_seconds"] = 0
@@ -3793,17 +3856,12 @@ def get_strategy_mode(
         # Determine current mode
         identity = config.get("identity", {}) or {}
         paper_mode = bool(
-            config.get("paper_mode") or 
-            identity.get("paper_mode") or 
-            config.get("is_paper")
+            config.get("paper_mode")
+            or identity.get("paper_mode")
+            or config.get("is_paper")
         )
-        
-        test_mode = (
-            config.get("test_mode") or 
-            identity.get("test_mode")
-        )
-        
-        mode = "MOCK" if (paper_mode or test_mode) else "LIVE"
+        test_mode = config.get("test_mode") or identity.get("test_mode")
+        mode = _mode_from_config_dict(config)
         
         # Check if mode can be changed (no active positions)
         can_change = True
@@ -3902,13 +3960,12 @@ def set_strategy_mode(
         # Get current mode
         identity = config.get("identity", {}) or {}
         paper_mode = bool(
-            config.get("paper_mode") or 
-            identity.get("paper_mode") or 
-            config.get("is_paper")
+            config.get("paper_mode")
+            or identity.get("paper_mode")
+            or config.get("is_paper")
         )
         test_mode = config.get("test_mode") or identity.get("test_mode")
-        
-        previous_mode = "MOCK" if (paper_mode or test_mode) else "LIVE"
+        previous_mode = _mode_from_config_dict(config)
         
         # No change needed
         if previous_mode == new_mode:

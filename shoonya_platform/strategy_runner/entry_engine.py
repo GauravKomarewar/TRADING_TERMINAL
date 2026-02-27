@@ -25,6 +25,11 @@ class EntryEngine:
         global_conds = entry_config.get("global_conditions", [])
         cond_objs = [self._dict_to_condition(c) for c in global_conds]
         if not self.condition_engine.evaluate(cond_objs):
+            logger.info(
+                "ENTRY_SKIPPED_GLOBAL_CONDITIONS | strategy_symbol=%s | conditions=%s",
+                symbol,
+                self._condition_summary(global_conds),
+            )
             return []  # global gate blocks entry
 
         # 2. Process each leg
@@ -41,6 +46,12 @@ class EntryEngine:
                     # For now, we just continue.
                     logger.warning("Sequential entry mode is not fully implemented; legs are being placed together.")
 
+        if not new_legs:
+            logger.info(
+                "ENTRY_SKIPPED_ALL_LEGS_FILTERED | strategy_symbol=%s | leg_count=%s",
+                symbol,
+                len(legs_config),
+            )
         return new_legs
 
     def _process_single_leg(self, leg_cfg: Dict[str, Any], symbol: str, default_expiry: str) -> Optional[LegState]:
@@ -61,10 +72,21 @@ class EntryEngine:
             else_conds = leg_cfg.get("else_conditions", [])
             else_cond_objs = [self._dict_to_condition(c) for c in else_conds]
             if not self.condition_engine.evaluate(else_cond_objs):
+                logger.info(
+                    "ENTRY_LEG_SKIPPED | tag=%s | reason=ELSE_CONDITIONS_FALSE | if_conditions=%s | else_conditions=%s",
+                    tag,
+                    self._condition_summary(if_conds),
+                    self._condition_summary(else_conds),
+                )
                 return None
             exec_config = leg_cfg.get("else_action", {})
         else:
             if not if_condition_true:
+                logger.info(
+                    "ENTRY_LEG_SKIPPED | tag=%s | reason=IF_CONDITIONS_FALSE | conditions=%s",
+                    tag,
+                    self._condition_summary(if_conds),
+                )
                 return None
             exec_config = leg_cfg
 
@@ -168,3 +190,24 @@ class EntryEngine:
             value2=d.get("value2"),
             join=JoinOperator(d["join"]) if d.get("join") else None
         )
+
+    @staticmethod
+    def _condition_summary(conditions: List[Dict[str, Any]]) -> str:
+        if not conditions:
+            return "[]"
+        parts: List[str] = []
+        for c in conditions:
+            if not isinstance(c, dict):
+                continue
+            param = c.get("parameter", "?")
+            comp = c.get("comparator", "?")
+            value = c.get("value")
+            value2 = c.get("value2")
+            join = c.get("join")
+            expr = f"{param} {comp} {value}"
+            if value2 is not None:
+                expr += f", {value2}"
+            if join:
+                expr += f" [{join}]"
+            parts.append(expr)
+        return "; ".join(parts) if parts else "[]"

@@ -13,6 +13,7 @@ class ExitEngine:
         self.condition_engine = ConditionEngine(state)
         self.exit_config = {}
         self.last_triggered_leg_rule: Optional[Dict[str, Any]] = None
+        self.last_exit_reason: str = ""
 
     def load_config(self, exit_config: Dict[str, Any]):
         self.exit_config = exit_config
@@ -35,6 +36,7 @@ class ExitEngine:
 
     def check_exits(self, current_time: datetime) -> Optional[str]:
         self.last_triggered_leg_rule = None
+        self.last_exit_reason = ""
         # 1. Profit target
         action = self._check_profit_target()
         if action:
@@ -67,6 +69,7 @@ class ExitEngine:
             if rules:
                 cond_objs = [self._dict_to_condition(c) for c in rules]
                 if self.condition_engine.evaluate(cond_objs):
+                    self.last_exit_reason = "combined_conditions_or"
                     return "combined_conditions"
         elif combined.get("operator") == "AND":
             # ✅ BUG-011 FIX: AND operator was silently ignored — all conditions must hold
@@ -74,6 +77,7 @@ class ExitEngine:
             if rules:
                 cond_objs = [self._dict_to_condition(c) for c in rules]
                 if all(self.condition_engine.evaluate([c]) for c in cond_objs):
+                    self.last_exit_reason = "combined_conditions_and"
                     return "combined_conditions"
 
         # 7. Per-leg exit rules
@@ -81,6 +85,7 @@ class ExitEngine:
         for rule in leg_rules:
             if self._check_leg_rule(rule):
                 self.last_triggered_leg_rule = rule
+                self.last_exit_reason = f"leg_rule:{rule.get('name') or rule.get('action')}"
                 return f"leg_rule_{rule.get('action')}"
 
         return None
@@ -90,8 +95,10 @@ class ExitEngine:
         amount = self._to_float(cfg.get("amount"))
         pct = self._to_float(cfg.get("pct"))
         if amount is not None and self.state.combined_pnl >= amount:
+            self.last_exit_reason = f"profit_target_amount:{amount}"
             return cfg.get("action", "exit_all")
         if pct is not None and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) >= pct:
+            self.last_exit_reason = f"profit_target_pct:{pct}"
             return cfg.get("action", "exit_all")
         return None
 
@@ -102,8 +109,10 @@ class ExitEngine:
         # ✅ BUG-010 FIX: `if amount` is False when amount=0. Use `is not None` so
         # a zero stop-loss (lock breakeven) correctly triggers.
         if amount is not None and self.state.combined_pnl <= -amount:
+            self.last_exit_reason = f"stop_loss_amount:{amount}"
             return cfg.get("action", "exit_all")
         if pct is not None and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) <= -pct:
+            self.last_exit_reason = f"stop_loss_pct:{pct}"
             return cfg.get("action", "exit_all")
         return None
 
@@ -130,6 +139,9 @@ class ExitEngine:
                 self.state.trailing_stop_level = self.state.peak_pnl - trail_amt
 
             if current_pnl <= self.state.trailing_stop_level:
+                self.last_exit_reason = (
+                    f"trailing_stop_hit:level={self.state.trailing_stop_level:.2f},pnl={current_pnl:.2f}"
+                )
                 return "exit_all"
 
         return None
@@ -148,6 +160,7 @@ class ExitEngine:
             step = int(max_steps)
         if step > self.state.current_profit_step:
             self.state.current_profit_step = step
+            self.last_exit_reason = f"profit_step:{step}"
             return f"profit_step_{action}"
         return None
 
@@ -157,6 +170,7 @@ class ExitEngine:
             try:
                 exit_t = datetime.strptime(exit_time_str, "%H:%M").time()
                 if current_time.time() >= exit_t:
+                    self.last_exit_reason = f"time_exit:{exit_time_str}"
                     return "exit_all"
             except ValueError:
                 pass
@@ -194,4 +208,3 @@ class ExitEngine:
             value2=d.get("value2"),
             join=JoinOperator(d["join"]) if d.get("join") else None
         )
-

@@ -15,8 +15,8 @@
     "lots": 1,
     "db_file": "NFO_NIFTY_02-MAR-2026.sqlite",
     "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_02-MAR-2026.sqlite",
-    "paper_mode": false,
-    "test_mode": null
+    "paper_mode": true,
+    "test_mode": "SUCCESS"
   },
   "timing": {
     "entry_window_start": "09:18",
@@ -230,9 +230,9 @@
     "schema_version": "4.0",
     "created_at": "2026-02-26T09:44:35.873Z"
   },
-  "paper_mode": false,
-  "test_mode": null,
+  "paper_mode": true,
+  "test_mode": "SUCCESS",
   "created_at": "2026-02-27T12:53:41",
-  "updated_at": "2026-02-27T14:07:27",
-  "status_updated_at": "2026-02-27T14:40:16.227121"
+  "updated_at": "2026-02-27T15:05:07",
+  "status_updated_at": "2026-02-27T15:14:15.857760"
 }

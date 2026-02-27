@@ -19,6 +19,8 @@ class AdjustmentEngine:
         self.rules_config = []
 
         self._rule_last_fired: Dict[str, datetime] = {}
+        self._rule_last_skip_log: Dict[str, datetime] = {}
+        self._last_guard_reason: str = "ok"
 
     def load_rules(self, rules_config: List[Dict[str, Any]]):
         self.rules_config = sorted(rules_config, key=lambda r: r.get("priority", 999))
@@ -26,7 +28,11 @@ class AdjustmentEngine:
     def check_and_apply(self, current_time: datetime) -> List[str]:
         actions_taken = []
         for rule in self.rules_config:
-            if not self._check_guards(rule, current_time):
+            rule_name = str(rule.get("name") or str(id(rule)))
+            guards_ok = self._check_guards(rule, current_time)
+            if not guards_ok:
+                guard_reason = self._last_guard_reason or "guard_blocked"
+                self._log_rule_skip(rule_name, f"GUARD_BLOCKED:{guard_reason}", current_time)
                 continue
 
             if_conds = rule.get("conditions", [])
@@ -35,11 +41,15 @@ class AdjustmentEngine:
                 action = rule["action"]
                 self._execute_action(action, "if", rule)
                 actions_taken.append(f"Rule {rule.get('name')}: IF triggered")
-                rule_name = rule.get("name") or str(id(rule))
                 self._rule_last_fired[rule_name] = current_time
                 self.state.last_adjustment_time = current_time
                 self.state.adjustments_today += 1
                 self.state.lifetime_adjustments += 1
+                logger.info(
+                    "ADJUSTMENT_TRIGGERED | rule=%s | branch=IF | action=%s",
+                    rule_name,
+                    action.get("type"),
+                )
 
             elif rule.get("else_enabled"):
                 else_conds = rule.get("else_conditions", [])
@@ -48,11 +58,19 @@ class AdjustmentEngine:
                     else_action = rule["else_action"]
                     self._execute_action(else_action, "else", rule)
                     actions_taken.append(f"Rule {rule.get('name')}: ELSE triggered")
-                    rule_name = rule.get("name") or str(id(rule))
                     self._rule_last_fired[rule_name] = current_time
                     self.state.last_adjustment_time = current_time
                     self.state.adjustments_today += 1
                     self.state.lifetime_adjustments += 1
+                    logger.info(
+                        "ADJUSTMENT_TRIGGERED | rule=%s | branch=ELSE | action=%s",
+                        rule_name,
+                        else_action.get("type"),
+                    )
+                else:
+                    self._log_rule_skip(rule_name, "ELSE_CONDITIONS_FALSE", current_time)
+            else:
+                self._log_rule_skip(rule_name, "IF_CONDITIONS_FALSE", current_time)
 
         return actions_taken
 
@@ -60,27 +78,45 @@ class AdjustmentEngine:
         cooldown = rule.get("cooldown_sec", 0)
         rule_name = rule.get("name") or str(id(rule))  # fallback if name missing
         now = current_time or datetime.now()
+        self._last_guard_reason = "ok"
 
         # Per‑rule cooldown
+        if cooldown > 0 and self.state.last_adjustment_time:
+            if (now - self.state.last_adjustment_time).total_seconds() < cooldown:
+                self._last_guard_reason = "cooldown"
+                return False
+
+        # Per-rule fallback cooldown (used when only rule-local fire time exists)
         if cooldown > 0 and rule_name in self._rule_last_fired:
             if (now - self._rule_last_fired[rule_name]).total_seconds() < cooldown:
+                self._last_guard_reason = "cooldown"
                 return False
 
         max_day = rule.get("max_per_day")
         if max_day and self.state.adjustments_today >= max_day:
+            self._last_guard_reason = "max_per_day"
             return False
 
         max_total = rule.get("max_total")
         if max_total and self.state.lifetime_adjustments >= max_total:
+            self._last_guard_reason = "max_total"
             return False
 
         leg_guard = rule.get("leg_guard")
         if leg_guard:
             leg = self.state.legs.get(leg_guard)
             if not leg or not leg.is_active:
+                self._last_guard_reason = f"leg_guard_inactive:{leg_guard}"
                 return False
 
         return True
+
+    def _log_rule_skip(self, rule_name: str, reason: str, now: datetime) -> None:
+        last = self._rule_last_skip_log.get(rule_name)
+        if last and (now - last).total_seconds() < 60:
+            return
+        self._rule_last_skip_log[rule_name] = now
+        logger.info("ADJUSTMENT_SKIPPED | rule=%s | reason=%s", rule_name, reason)
 
     def _execute_action(self, action_cfg: Dict[str, Any], branch: str, rule: Dict[str, Any]):
         action_type = action_cfg["type"]

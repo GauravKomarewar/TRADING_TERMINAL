@@ -926,6 +926,8 @@ class PerStrategyExecutor:
         self._adjustment_block_reason: str = ""
         self._adjustment_block_announced: bool = False
         self._last_adjustment_validation_alert_at: Optional[datetime] = None
+        self._last_entry_skip_reason: str = ""
+        self._last_entry_skip_log_at: Optional[datetime] = None
 
     def process_tick(self):
         """Called by the service loop each tick."""
@@ -951,12 +953,22 @@ class PerStrategyExecutor:
         # Check exits first
         exit_action = self.exit_engine.check_exits(now)
         if exit_action and exit_action != "profit_step_adj":
+            logger.info(
+                "EXIT_TRIGGERED | strategy=%s | action=%s | reason=%s",
+                self.name,
+                exit_action,
+                self.exit_engine.last_exit_reason or "unspecified",
+            )
             self._execute_exit(exit_action, source=exit_action)
             return
 
         # Check entry (if not already entered today)
-        if not self.state.entered_today and self._should_enter(now):
-            self._execute_entry()
+        if not self.state.entered_today:
+            should_enter, reason = self._should_enter_with_reason(now)
+            if should_enter:
+                self._execute_entry()
+            else:
+                self._log_entry_skip(reason, now)
 
         # Check adjustments (unchanged)
         if self._adjustment_block_until and now < self._adjustment_block_until:
@@ -1125,7 +1137,16 @@ class PerStrategyExecutor:
             self.state.spot_open = self.state.spot_price
         self.state.atm_strike = self.market.get_atm_strike(self._cycle_expiry_date)
         self.state.fut_ltp = self.market.get_fut_ltp(self._cycle_expiry_date)
-        chain_metrics = self.market.get_chain_metrics(self._cycle_expiry_date)
+        try:
+            chain_metrics = self.market.get_chain_metrics(self._cycle_expiry_date)
+        except Exception as e:
+            logger.warning(
+                "MARKET_METRICS_UNAVAILABLE | strategy=%s | expiry=%s | error=%s",
+                self.name,
+                self._cycle_expiry_date,
+                e,
+            )
+            chain_metrics = {}
         self.state.pcr = float(chain_metrics.get("pcr", 0.0) or 0.0)
         self.state.pcr_volume = float(chain_metrics.get("pcr_volume", 0.0) or 0.0)
         self.state.max_pain_strike = float(chain_metrics.get("max_pain_strike", 0.0) or 0.0)
@@ -1162,6 +1183,10 @@ class PerStrategyExecutor:
             self.config["entry"], symbol, default_expiry
         )
         if not new_legs:
+            logger.info(
+                "ENTRY_NOT_PLACED | strategy=%s | reason=entry_engine_returned_zero_legs",
+                self.name,
+            )
             return
 
         identity = self.config.get("identity", {})
@@ -1190,7 +1215,11 @@ class PerStrategyExecutor:
 
         result = self.bot.process_alert(alert)
         if self._is_failure_status((result or {}).get("status")):
-            logger.error(f"Entry failed: {result}")
+            logger.error(
+                "ENTRY_REJECTED | strategy=%s | reason=alert_rejected | result=%s",
+                self.name,
+                result,
+            )
             return
 
         # --- MODIFIED: mark legs as PENDING, not active ---
@@ -1204,7 +1233,11 @@ class PerStrategyExecutor:
         self.state.entered_today = True
         self.state.entry_time = now
         self.cycle_completed = False
-        logger.info(f"Entry pending for {self.name}: {len(new_legs)} legs")
+        logger.info(
+            "ENTRY_PLACED | strategy=%s | legs=%s | status=PENDING",
+            self.name,
+            len(new_legs),
+        )
 
     def _extract_expiry_from_db_file(self, config: Dict[str, Any]) -> Optional[str]:
         """
@@ -1299,10 +1332,10 @@ class PerStrategyExecutor:
         except Exception:
             self.state.minutes_to_exit = 0
 
-    def _should_enter(self, now: datetime) -> bool:
-        """Check if within entry window."""
+    def _should_enter_with_reason(self, now: datetime) -> Tuple[bool, str]:
+        """Check if entry is allowed and return explicit reason."""
         if self.state.entered_today:
-            return False
+            return False, "already_entered_today"
         timing = self.config.get("timing", {})
         entry_start = timing.get("entry_window_start", "09:15")
         entry_end = timing.get("entry_window_end", "14:00")
@@ -1310,17 +1343,38 @@ class PerStrategyExecutor:
             start_t = datetime.strptime(entry_start, "%H:%M").time()
             end_t = datetime.strptime(entry_end, "%H:%M").time()
         except ValueError:
-            return False
+            return False, f"invalid_entry_window:{entry_start}-{entry_end}"
         if not (start_t <= now.time() <= end_t):
-            return False
+            return False, f"outside_entry_window:{entry_start}-{entry_end}"
 
         # Respect configured trading days from schedule.
         active_days = self.config.get("schedule", {}).get("active_days", [])
         if active_days:
             day_name = now.strftime("%a").lower()[:3]
             if day_name not in [str(d).lower()[:3] for d in active_days]:
-                return False
-        return True
+                return False, f"inactive_day:{day_name}"
+        return True, "ok"
+
+    def _should_enter(self, now: datetime) -> bool:
+        allowed, _ = self._should_enter_with_reason(now)
+        return allowed
+
+    def _log_entry_skip(self, reason: str, now: datetime) -> None:
+        same_reason = reason == self._last_entry_skip_reason
+        if (
+            same_reason
+            and self._last_entry_skip_log_at is not None
+            and (now - self._last_entry_skip_log_at).total_seconds() < 60
+        ):
+            return
+        self._last_entry_skip_reason = reason
+        self._last_entry_skip_log_at = now
+        logger.info(
+            "ENTRY_SKIPPED | strategy=%s | reason=%s | time=%s",
+            self.name,
+            reason,
+            now.strftime("%H:%M:%S"),
+        )
 
     def _execute_exit(self, action: str, source: str = "unknown"):
         """Execute exit via bot."""

@@ -498,9 +498,10 @@ class ShoonyaBot:
     def _announce_startup_complete(self) -> None:
         """Emit one canonical startup-complete message to logs and Telegram."""
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        client = str(getattr(self, "client_id", "unknown"))
         logger.info(
             "\u2705 BOT STARTUP COMPLETE | client=%s | ts=%s | telegram=%s",
-            self.client_id,
+            client,
             ts,
             self.telegram_enabled,
         )
@@ -509,7 +510,7 @@ class ShoonyaBot:
                 self.send_telegram(
                     "\U0001F680 <b>BOT STARTED</b>\n"
                     f"\U0001F4C5 {ts}\n"
-                    f"\U0001F464 Client: <code>{self.client_id}</code>\n"
+                    f"\U0001F464 Client: <code>{client}</code>\n"
                     "\u2705 Systems initialized and ready"
                 )
             except Exception as e:
@@ -518,9 +519,10 @@ class ShoonyaBot:
     def _announce_shutdown_start(self) -> None:
         """Emit one canonical shutdown-start message to logs and Telegram."""
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        client = str(getattr(self, "client_id", "unknown"))
         logger.info(
             "\U0001F6D1 BOT SHUTDOWN STARTED | client=%s | ts=%s",
-            self.client_id,
+            client,
             ts,
         )
         if self.telegram_enabled:
@@ -528,7 +530,7 @@ class ShoonyaBot:
                 self.send_telegram(
                     "\U0001F6D1 <b>BOT SHUTDOWN STARTED</b>\n"
                     f"\U0001F4C5 {ts}\n"
-                    f"\U0001F464 Client: <code>{self.client_id}</code>\n"
+                    f"\U0001F464 Client: <code>{client}</code>\n"
                     "\u2139\ufe0f Graceful shutdown in progress"
                 )
             except Exception as e:
@@ -2680,7 +2682,6 @@ class ShoonyaBot:
         except Exception as e:
             elapsed = time.time() - shutdown_start
             logger.error(f"âŒ Shutdown error after {elapsed:.1f}s: {e}")
-
 
 
 

@@ -964,14 +964,53 @@ def start_strategy_execution(
         # Default behavior is resume-safe for live reliability.
         # Fresh-cycle reset is opt-in via payload {"fresh_start": true}.
         fresh_start = bool((payload or {}).get("fresh_start", False))
+        stale_state_reset = False
         if fresh_start:
             try:
                 sf = _strategy_state_file(service, strategy_key)
                 if sf.exists():
                     sf.unlink()
                     logger.info("Cleared strategy state file for fresh start: %s", sf)
+                if hasattr(service, "state_mgr"):
+                    try:
+                        service.state_mgr.clear_monitor_snapshot(strategy_key)
+                        logger.info("Cleared monitor snapshot for fresh start: %s", strategy_key)
+                    except Exception as clear_err:
+                        logger.warning("Could not clear monitor snapshot for %s: %s", strategy_key, clear_err)
             except Exception as se:
                 logger.warning("Could not clear state file for %s: %s", strategy_key, se)
+        else:
+            # Auto-heal stale state files that can block explicit manual start.
+            # Common stale signature: entered_today=True but no active/pending legs.
+            try:
+                sf = _strategy_state_file(service, strategy_key)
+                if sf.exists():
+                    raw = json.loads(sf.read_text(encoding="utf-8"))
+                    entered_today = bool(raw.get("entered_today"))
+                    legs_raw = raw.get("legs") or {}
+                    has_open_legs = False
+                    if isinstance(legs_raw, dict):
+                        for leg in legs_raw.values():
+                            if not isinstance(leg, dict):
+                                continue
+                            if bool(leg.get("is_active")):
+                                has_open_legs = True
+                                break
+                            if str(leg.get("order_status", "")).upper() == "PENDING":
+                                has_open_legs = True
+                                break
+                    if entered_today and not has_open_legs:
+                        sf.unlink()
+                        stale_state_reset = True
+                        logger.info("Cleared stale blocked state file: %s", sf)
+                        if hasattr(service, "state_mgr"):
+                            try:
+                                service.state_mgr.clear_monitor_snapshot(strategy_key)
+                                logger.info("Cleared stale monitor snapshot for %s", strategy_key)
+                            except Exception as clear_err:
+                                logger.warning("Could not clear monitor snapshot for %s: %s", strategy_key, clear_err)
+            except Exception as stale_err:
+                logger.warning("Could not evaluate stale state for %s: %s", strategy_key, stale_err)
 
         config = json.loads(strategy_file.read_text(encoding="utf-8"))
         bot.start_strategy_executor(strategy_name=strategy_key, config=config)
@@ -998,6 +1037,7 @@ def start_strategy_execution(
             "strategy_name": strategy_key,
             "requested_strategy_name": requested_key,
             "fresh_start": fresh_start,
+            "stale_state_reset": stale_state_reset,
             "message": f"Strategy {strategy_key} started",
             "timestamp": datetime.now().isoformat()
         }

@@ -139,21 +139,22 @@ class RecoveryBootstrap:
     # --------------------------------------------------
     def _detect_strategies(self) -> List[str]:
         """
-        Strategy ownership is stored in `user` column.
+        Strategy ownership is stored in `strategy_name` column.
         Recovers ALL active strategies (both pending and filled).
         """
         db = get_connection()
         rows = db.execute(
             """
-            SELECT DISTINCT user
+            SELECT DISTINCT strategy_name
             FROM orders
             WHERE status IN ('SENT_TO_BROKER', 'EXECUTED')
-              AND user IS NOT NULL
+              AND strategy_name IS NOT NULL
+              AND strategy_name != ''
               AND client_id = ?
             """,
             (self.bot.client_id,)
         ).fetchall()
-        return [r["user"] for r in rows]
+        return [r["strategy_name"] for r in rows]
 
     # --------------------------------------------------
     # STRATEGY RECOVERY
@@ -229,6 +230,9 @@ class RecoveryBootstrap:
                 self.recovery_log["errors"].append({"strategy": strategy_name, "symbol": symbol, "reason": "no_db_record"})
                 return
 
+            # Convert sqlite3.Row to dict for safe .get() access
+            original = dict(original)
+
             # Build order params from original + broker
             order_params = {
                 "exchange": pos["exchange"],
@@ -262,15 +266,16 @@ class RecoveryBootstrap:
                 f"qty={pos['qty']} | broker_id={original.get('broker_order_id')}"
             )
 
-        # Update ExecutionGuard (outside lock)
+        # Update ExecutionGuard (outside lock) using reconcile_with_broker
         try:
-            self.bot.execution_guard.confirm_execution(
+            broker_map = {}
+            broker_map[symbol] = {"BUY": 0, "SELL": 0}
+            broker_map[symbol][pos["side"]] = pos["qty"]
+            self.bot.execution_guard.reconcile_with_broker(
                 strategy_id=strategy_name,
-                symbol=symbol,
-                direction=pos["side"],
-                qty=pos["qty"],
+                broker_positions=broker_map,
             )
             self.recovery_log["recovered"].append({"strategy": strategy_name, "symbol": symbol})
         except Exception as e:
-            logger.exception("Failed to confirm execution guard for %s %s", strategy_name, symbol)
+            logger.exception("Failed to reconcile execution guard for %s %s", strategy_name, symbol)
             self.recovery_log["errors"].append({"strategy": strategy_name, "symbol": symbol, "error": str(e)})

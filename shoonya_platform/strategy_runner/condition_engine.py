@@ -451,9 +451,10 @@ class ConditionEngine:
             return getattr(self.state, param, 0.0)
 
     def _find_leg_by_option_type(self, opt_type: str):
-        """Helper to find first leg with given option type (for CE/PE-centric params)."""
+        """Helper to find first active leg with given option type (for CE/PE-centric params)."""
+        # ✅ BUG FIX: Filter for is_active to avoid returning stale data from closed legs
         for leg in self.state.legs.values():
-            if leg.option_type and leg.option_type.value == opt_type:
+            if leg.is_active and leg.option_type and leg.option_type.value == opt_type:
                 return leg
         return None
 

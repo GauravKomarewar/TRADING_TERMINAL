@@ -291,21 +291,56 @@ class StrategyExecutor:
         logger.info(f"Entered {len(new_legs)} legs")
 
     def _execute_exit(self, action: str):
-        if action.startswith("exit_all"):
+        if action.startswith("exit_all") or action in ("combined_conditions", "time_exit"):
+            # ✅ BUG FIX: Capture PnL BEFORE deactivating legs.
+            # combined_pnl only sums active legs; reading after deactivation returns 0.
+            pnl_snapshot = self.state.combined_pnl
             for leg in self.state.legs.values():
                 leg.is_active = False
-            self.state.cumulative_daily_pnl += self.state.combined_pnl
+            self.state.cumulative_daily_pnl += pnl_snapshot
             # Check if re-entry allowed (from stop loss config)
             sl_cfg = self.exit_engine.exit_config.get("stop_loss", {})
             if sl_cfg.get("allow_reentry"):
                 self.state.entered_today = False
             else:
                 self.state.entered_today = True  # prevent re-entry
+        elif action.startswith("leg_rule_"):
+            # ✅ BUG FIX: Handle per-leg exit rule actions.
+            rule = self.exit_engine.last_triggered_leg_rule
+            if rule:
+                leg_action = rule.get("action", "close_leg")
+                ref = rule.get("exit_leg_ref")
+                group = rule.get("group")
+                if leg_action == "close_leg":
+                    targets = self._resolve_exit_targets(ref, group)
+                    for leg in targets:
+                        leg.is_active = False
+                elif leg_action == "close_all":
+                    pnl_snapshot = self.state.combined_pnl
+                    for leg in self.state.legs.values():
+                        leg.is_active = False
+                    self.state.cumulative_daily_pnl += pnl_snapshot
+                else:
+                    logger.warning(f"Unhandled leg_rule action: {leg_action}")
+            else:
+                logger.warning("leg_rule exit triggered but no rule context available")
         elif action.startswith("partial_"):
             # Handle partial exits (simplified) - could update state if needed
             logger.info(f"Partial exit triggered: {action}")
             # Actual execution with broker should be overridden in subclass
-        # other actions can be added
+        else:
+            logger.warning(f"Unhandled exit action: {action}")
+
+    def _resolve_exit_targets(self, ref, group):
+        """Resolve which legs an exit rule applies to."""
+        if ref == "all":
+            return [leg for leg in self.state.legs.values() if leg.is_active]
+        elif ref == "group" and group:
+            return [leg for leg in self.state.legs.values() if leg.is_active and leg.group == group]
+        elif ref in self.state.legs:
+            leg = self.state.legs[ref]
+            return [leg] if leg.is_active else []
+        return []
 
     def _save_state(self):
         StatePersistence.save(self.state, self.state_path)

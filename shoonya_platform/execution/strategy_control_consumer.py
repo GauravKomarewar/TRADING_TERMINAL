@@ -46,17 +46,10 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
+from shoonya_platform.persistence.database import get_connection
+
 logger = logging.getLogger("EXECUTION.CONTROL")
 
-# Cross-platform database path
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = str(
-    _PROJECT_ROOT
-    / "shoonya_platform"
-    / "persistence"
-    / "data"
-    / "orders.db"
-)
 POLL_INTERVAL_SEC = 1.0
 
 
@@ -377,7 +370,7 @@ class StrategyControlConsumer:
     # CLAIM NEXT STRATEGY INTENT (ATOMIC)
     # ==================================================
     def _claim_next_strategy_intent(self) -> Optional[Tuple[str, str]]:
-        conn = sqlite3.connect(DB_PATH, timeout=5, isolation_level=None)
+        conn = get_connection()
         cur = conn.cursor()
 
         try:
@@ -489,7 +482,7 @@ class StrategyControlConsumer:
     # UPDATE STATUS
     # ==================================================
     def _update_status(self, intent_id: str, status: str):
-        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn = get_connection()
         cur = conn.cursor()
         try:
             cur.execute(

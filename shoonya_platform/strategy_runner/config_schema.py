@@ -753,17 +753,38 @@ def _validate_condition(cond: Dict, path: str, errors: List[ValidationError]):
         if "value" not in cond:
             errors.append(ValidationError(f"{path}.value", "Missing value"))
 
-    # For between/not_between, value must be an array of two numbers
+    # For between/not_between, runtime uses separate 'value' and 'value2' fields.
+    # ✅ BUG FIX: Schema was validating value as [min, max] list, but _dict_to_condition
+    # reads d["value"] and d.get("value2") as separate fields. Accept both formats.
     if comp in ("between", "not_between"):
         val = cond.get("value")
-        if not isinstance(val, (list, tuple)) or len(val) != 2:
-            errors.append(ValidationError(f"{path}.value", f"Comparator '{comp}' requires value to be [min, max]"))
+        val2 = cond.get("value2")
+        if isinstance(val, (list, tuple)):
+            # Legacy array format [min, max] — accepted but runtime needs value+value2
+            if len(val) != 2:
+                errors.append(ValidationError(f"{path}.value", f"Comparator '{comp}' array must have exactly 2 elements"))
+            else:
+                try:
+                    float(val[0])
+                    float(val[1])
+                except (TypeError, ValueError):
+                    errors.append(ValidationError(f"{path}.value", "Both elements of value must be numbers"))
         else:
-            try:
-                float(val[0])
-                float(val[1])
-            except (TypeError, ValueError):
-                errors.append(ValidationError(f"{path}.value", "Both elements of value must be numbers"))
+            # Preferred format: value + value2 as separate fields
+            if val is None:
+                errors.append(ValidationError(f"{path}.value", f"Comparator '{comp}' requires value"))
+            else:
+                try:
+                    float(val)
+                except (TypeError, ValueError):
+                    errors.append(ValidationError(f"{path}.value", "value must be a number"))
+            if val2 is None:
+                errors.append(ValidationError(f"{path}.value2", f"Comparator '{comp}' requires value2"))
+            else:
+                try:
+                    float(val2)
+                except (TypeError, ValueError):
+                    errors.append(ValidationError(f"{path}.value2", "value2 must be a number"))
 
     # For ~=, tolerance is optional but if present should be number
     if comp == "~=" and "tolerance" in cond:

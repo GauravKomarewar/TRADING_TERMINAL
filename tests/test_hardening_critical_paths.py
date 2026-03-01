@@ -20,7 +20,8 @@ class TestHardeningCriticalPaths(unittest.TestCase):
         )
         self.assertIn("def _check_guards(self, rule: Dict[str, Any], current_time: Optional[datetime] = None)", text)
         self.assertIn("now = current_time or datetime.now()", text)
-        self.assertIn("(now - self.state.last_adjustment_time).total_seconds()", text)
+        # Per-rule cooldown: uses _rule_last_fired dict instead of global state.last_adjustment_time
+        self.assertIn("(now - self._rule_last_fired[rule_name]).total_seconds()", text)
 
     def test_test_mode_exit_does_not_require_broker_netqty(self):
         text = Path("shoonya_platform/execution/trading_bot.py").read_text(

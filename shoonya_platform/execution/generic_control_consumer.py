@@ -44,17 +44,10 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, Tuple
 
+from shoonya_platform.persistence.database import get_connection
+
 logger = logging.getLogger("EXECUTION.CONTROL")
 
-# Cross-platform database path
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = str(
-    _PROJECT_ROOT
-    / "shoonya_platform"
-    / "persistence"
-    / "data"
-    / "orders.db"
-)
 POLL_INTERVAL_SEC = 1.0
 
 
@@ -417,7 +410,7 @@ class GenericControlIntentConsumer:
         return True
 
     def _cancel_system_order(self, command_id: str):
-        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn = get_connection()
         cur = conn.cursor()
 
         cur.execute(
@@ -430,7 +423,7 @@ class GenericControlIntentConsumer:
             AND status = 'CREATED'
             AND source = 'MANUAL'
             """,
-            (command_id, self.bot.config.client_id),
+            (command_id, self.bot.client_id),
         )
 
         if cur.rowcount == 0:
@@ -465,9 +458,9 @@ class GenericControlIntentConsumer:
             return
 
         fields.append("updated_at = CURRENT_TIMESTAMP")
-        values.extend([command_id, self.bot.config.client_id])
+        values.extend([command_id, self.bot.client_id])
 
-        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn = get_connection()
         cur = conn.cursor()
 
         cur.execute(
@@ -492,7 +485,7 @@ class GenericControlIntentConsumer:
         conn.close()
 
     def _cancel_all_system_orders(self):
-        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn = get_connection()
         cur = conn.cursor()
 
         cur.execute(
@@ -504,7 +497,7 @@ class GenericControlIntentConsumer:
             AND source = 'MANUAL'
             AND client_id = ?
             """,
-            (self.bot.config.client_id,),
+            (self.bot.client_id,),
         )
 
         logger.critical(
@@ -519,7 +512,7 @@ class GenericControlIntentConsumer:
     # CLAIM NEXT INTENT (ATOMIC)
     # ==================================================
     def _claim_next_intent(self) -> Optional[Tuple[str, str, str]]:
-        conn = sqlite3.connect(DB_PATH, timeout=5, isolation_level=None)
+        conn = get_connection()
         cur = conn.cursor()
 
         try:
@@ -559,7 +552,7 @@ class GenericControlIntentConsumer:
     # UPDATE STATUS
     # ==================================================
     def _update_status(self, intent_id: str, status: str):
-        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn = get_connection()
         cur = conn.cursor()
         try:
             cur.execute(

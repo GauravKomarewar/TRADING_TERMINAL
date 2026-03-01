@@ -20,11 +20,13 @@ class TestAdjustmentGuards(unittest.TestCase):
         }
         self.engine.rules_config = [rule]
         now = datetime.now()
-        self.state.last_adjustment_time = now - timedelta(seconds=5)
+        # Simulate rule having fired 5s ago (per-rule cooldown tracking)
+        self.engine._rule_last_fired["test"] = now - timedelta(seconds=5)
         # cooldown not passed
         self.assertFalse(self.engine._check_guards(rule, now))
 
-        self.state.last_adjustment_time = now - timedelta(seconds=15)
+        # Simulate rule having fired 15s ago
+        self.engine._rule_last_fired["test"] = now - timedelta(seconds=15)
         self.assertTrue(self.engine._check_guards(rule, now))
 
     def test_max_per_day(self):
@@ -48,10 +50,10 @@ class TestAdjustmentGuards(unittest.TestCase):
             "conditions": [],
             "action": {"type": "close_leg"}
         }
-        # Set last adjustment far in future relative to wall clock to ensure
-        # deterministic behavior depends only on supplied current_time.
+        # Set per-rule last fired time to ensure deterministic behavior
+        # depends only on supplied current_time.
         base = datetime(2026, 2, 22, 10, 0, 0)
-        self.state.last_adjustment_time = base
+        self.engine._rule_last_fired["test"] = base
         # 5s later -> still in cooldown.
         self.assertFalse(self.engine._check_guards(rule, base + timedelta(seconds=5)))
         # 15s later -> cooldown over.

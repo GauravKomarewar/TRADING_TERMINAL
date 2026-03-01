@@ -335,20 +335,21 @@ class OrderRepository:
 
         positions = []
         for r in rows:
+            rd = dict(r)  # Convert sqlite3.Row to dict for safe .get() access
             positions.append({
-                "exchange": r["exchange"],
-                "symbol": r["symbol"],
-                "product": r.get("product"),
-                "qty": int(r["quantity"]),
-                "side": r["side"],
-                "price": r.get("price"),
-                "source": r.get("source"),
-                "tag": r.get("tag"),
-                "stop_loss": r.get("stop_loss"),
-                "target": r.get("target"),
-                "trailing_type": r.get("trailing_type"),
-                "trailing_value": r.get("trailing_value"),
-                "broker_order_id": r.get("broker_order_id"),
+                "exchange": rd["exchange"],
+                "symbol": rd["symbol"],
+                "product": rd.get("product"),
+                "qty": int(rd["quantity"]),
+                "side": rd["side"],
+                "price": rd.get("price"),
+                "source": rd.get("source"),
+                "tag": rd.get("tag"),
+                "stop_loss": rd.get("stop_loss"),
+                "target": rd.get("target"),
+                "trailing_type": rd.get("trailing_type"),
+                "trailing_value": rd.get("trailing_value"),
+                "broker_order_id": rd.get("broker_order_id"),
             })
 
         return positions

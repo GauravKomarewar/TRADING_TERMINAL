@@ -191,7 +191,7 @@ def run_dashboard():
 # MAIN (PRODUCTION ONLY)
 # ---------------------------------------------------------------------
 def main():
-    global bot_instance, logger, dashboard_thread
+    global bot_instance, logger, dashboard_thread, _dashboard_port
 
     # -------------------------------------------------
     # CLI ARGUMENT PARSING (MULTI-CLIENT SUPPORT)

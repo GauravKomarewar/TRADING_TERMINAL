@@ -1140,10 +1140,7 @@ def _mode_from_config_dict(config: Dict[str, Any]) -> str:
     cfg = config or {}
     identity = cfg.get("identity", {}) or {}
     is_mock = bool(
-        cfg.get("paper_mode")
-        or identity.get("paper_mode")
-        or cfg.get("is_paper")
-        or cfg.get("test_mode")
+        identity.get("paper_mode")
         or identity.get("test_mode")
     )
     return "MOCK" if is_mock else "LIVE"
@@ -2469,7 +2466,7 @@ def get_live_positions_overview(
                         mode = "MOCK" if bool(getattr(svc, "_is_paper_mode")(cfg)) else "LIVE"
                     except Exception:
                         identity_cfg = cfg.get("identity", {}) or {}
-                        mode = "MOCK" if bool(cfg.get("paper_mode") or identity_cfg.get("paper_mode") or cfg.get("test_mode") or identity_cfg.get("test_mode")) else "LIVE"
+                        mode = "MOCK" if bool(identity_cfg.get("paper_mode") or identity_cfg.get("test_mode")) else "LIVE"
 
                     owner_type = "strategy_active" if strat_name in active_strategies else "strategy_inactive"
                     now_iso = datetime.now().isoformat()
@@ -3834,11 +3831,9 @@ def get_strategy_mode(
         # Determine current mode
         identity = config.get("identity", {}) or {}
         paper_mode = bool(
-            config.get("paper_mode")
-            or identity.get("paper_mode")
-            or config.get("is_paper")
+            identity.get("paper_mode")
         )
-        test_mode = config.get("test_mode") or identity.get("test_mode")
+        test_mode = identity.get("test_mode")
         mode = _mode_from_config_dict(config)
         
         # Check if mode can be changed (no active positions)
@@ -3938,11 +3933,9 @@ def set_strategy_mode(
         # Get current mode
         identity = config.get("identity", {}) or {}
         paper_mode = bool(
-            config.get("paper_mode")
-            or identity.get("paper_mode")
-            or config.get("is_paper")
+            identity.get("paper_mode")
         )
-        test_mode = config.get("test_mode") or identity.get("test_mode")
+        test_mode = identity.get("test_mode")
         previous_mode = _mode_from_config_dict(config)
         
         # No change needed
@@ -3961,14 +3954,10 @@ def set_strategy_mode(
             config["identity"] = {}
         
         if new_mode == "MOCK":
-            config["paper_mode"] = True
             config["identity"]["paper_mode"] = True
-            config["test_mode"] = "SUCCESS"
             config["identity"]["test_mode"] = "SUCCESS"
         else:  # LIVE
-            config["paper_mode"] = False
             config["identity"]["paper_mode"] = False
-            config["test_mode"] = None
             config["identity"]["test_mode"] = None
         
         # Save config

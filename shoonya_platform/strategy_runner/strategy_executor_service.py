@@ -456,10 +456,7 @@ class StrategyExecutorService:
     def _is_paper_mode(self, config: Dict[str, Any]) -> bool:
         identity = config.get("identity", {}) or {}
         return bool(
-            config.get("paper_mode")
-            or identity.get("paper_mode")
-            or config.get("is_paper")
-            or config.get("test_mode")
+            identity.get("paper_mode")
             or identity.get("test_mode")
         )
 
@@ -1781,8 +1778,6 @@ class PerStrategyExecutor:
 
     def _resolve_test_mode(self) -> Optional[str]:
         """Return test_mode if paper mode is enabled."""
-        if self.config.get("paper_mode"):
-            return "SUCCESS"
         identity = self.config.get("identity", {})
         if identity.get("paper_mode"):
             return "SUCCESS"

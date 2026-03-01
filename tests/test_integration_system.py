@@ -68,9 +68,9 @@ def test_registry_and_validation_integration():
             "product_type": "NRML",
             "order_type": "MARKET",
         },
-        "timing": {"entry_window_start": "09:20", "entry_window_end": "15:20"},
+        "timing": {"entry_window_start": "09:20", "entry_window_end": "15:20", "eod_exit_time": "15:15"},
         "schedule": {"expiry_mode": "weekly_current", "active_days": ["mon", "tue", "wed", "thu", "fri"]},
-        "entry": {"global_conditions": [], "legs": []},
+        "entry": {"global_conditions": [], "legs": [{"tag": "L1", "side": "SELL", "option_type": "CE", "lots": 1, "strike_mode": "standard", "strike_selection": "ATM"}]},
         "adjustment": {"rules": []},
         "exit": {},
     }

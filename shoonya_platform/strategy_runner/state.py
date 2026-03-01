@@ -249,6 +249,7 @@ class StrategyState:
             return None
 
         def moneyness(leg):
+            # Positive = OTM, Negative = ITM for both CE and PE
             if leg.option_type is None or leg.strike is None or self.spot_price == 0:
                 return 0.0
             if leg.option_type == OptionType.CE:
@@ -256,7 +257,8 @@ class StrategyState:
             else:
                 return (self.spot_price - leg.strike) / self.spot_price
 
-        return max(active, key=moneyness).tag
+        # ✅ BUG FIX: min() picks most negative moneyness = deepest ITM
+        return min(active, key=moneyness).tag
 
     @property
     def most_otm_leg(self) -> Optional[str]:
@@ -265,6 +267,7 @@ class StrategyState:
             return None
 
         def moneyness(leg):
+            # Positive = OTM, Negative = ITM for both CE and PE
             if leg.option_type is None or leg.strike is None or self.spot_price == 0:
                 return 0.0
             if leg.option_type == OptionType.CE:
@@ -272,7 +275,8 @@ class StrategyState:
             else:
                 return (self.spot_price - leg.strike) / self.spot_price
 
-        return min(active, key=moneyness).tag
+        # ✅ BUG FIX: max() picks most positive moneyness = most OTM
+        return max(active, key=moneyness).tag
 
     # New computed properties
     @property

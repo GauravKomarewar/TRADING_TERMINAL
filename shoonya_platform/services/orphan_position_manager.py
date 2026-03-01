@@ -103,10 +103,10 @@ class OrphanPositionManager:
             positions = self.bot.api.get_positions() or []
             
             # Get strategy-owned symbols (exclude from orphan management)
-            orders = self.bot.order_repo.get_all_orders() or []
+            orders = self.bot.order_repo.get_all() or []
             strategy_symbols = set(
-                o.get("symbol") for o in orders 
-                if o.get("user") and o.get("user") not in ["", None]
+                o.symbol for o in orders 
+                if getattr(o, "user", None) and o.user not in ["", None]
             )
             
             executed_count = 0
@@ -134,15 +134,15 @@ class OrphanPositionManager:
                     # Check and execute rule
                     if rule_type == "PRICE":
                         if self._check_price_rule(rule, relevant_positions):
-                            executed_count += self._execute_rule(rule, relevant_positions)
+                            executed_count += self._execute_rule(rule, relevant_positions, db_rule_id=rule_id)
                     
                     elif rule_type == "GREEK":
                         if self._check_greek_rule(rule, positions, strategy_symbols):
-                            executed_count += self._execute_rule(rule, relevant_positions)
+                            executed_count += self._execute_rule(rule, relevant_positions, db_rule_id=rule_id)
                     
                     elif rule_type == "COMBINED":
                         if self._check_combined_rule(rule, relevant_positions):
-                            executed_count += self._execute_rule(rule, relevant_positions)
+                            executed_count += self._execute_rule(rule, relevant_positions, db_rule_id=rule_id)
                 
                 except Exception as e:
                     logger.exception(f"Error checking rule {rule_id}: {e}")
@@ -297,7 +297,7 @@ class OrphanPositionManager:
     # RULE EXECUTION
     # ==================================================
     
-    def _execute_rule(self, rule: dict, positions: List) -> int:
+    def _execute_rule(self, rule: dict, positions: List, db_rule_id: str = "UNKNOWN") -> int:
         """
         Execute the action specified in the rule.
         
@@ -305,7 +305,7 @@ class OrphanPositionManager:
         - EXIT: Full exit of all positions
         - REDUCE: Reduce qty by specified amount
         """
-        rule_id = rule.get("rule_id", "UNKNOWN")
+        rule_id = db_rule_id
         action = rule.get("action", "EXIT")
         reduce_qty = rule.get("reduce_qty", 0)
         

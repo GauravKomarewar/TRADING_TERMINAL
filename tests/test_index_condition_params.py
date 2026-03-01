@@ -15,13 +15,14 @@ def _minimal_config_with_param(param: str):
         "timing": {
             "entry_window_start": "09:20",
             "entry_window_end": "15:20",
+            "eod_exit_time": "15:15",
         },
         "schedule": {"expiry_mode": "weekly_current", "active_days": ["mon", "tue", "wed", "thu", "fri"]},
         "entry": {
             "global_conditions": [
                     {"parameter": param, "comparator": ">=", "value": 1},
             ],
-            "legs": [],
+            "legs": [{"tag": "L1", "side": "SELL", "option_type": "CE", "lots": 1, "strike_mode": "standard", "strike_selection": "ATM"}],
         },
         "adjustment": {"rules": []},
         "exit": {},

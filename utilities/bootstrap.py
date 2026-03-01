@@ -444,7 +444,8 @@ def step_install_deps(args: argparse.Namespace) -> None:
         run([str(venv_pip()), "install", "-r", str(REQUIREMENTS_FILE)])
 
     print(f"  📦 Installing {WHEEL_NAME} ...")
-    run([str(venv_pip()), "install", "--force-reinstall", str(WHEEL_PATH)])
+    # --no-deps prevents overriding pinned versions from requirements.txt
+    run([str(venv_pip()), "install", "--force-reinstall", "--no-deps", str(WHEEL_PATH)])
 
     # Verify critical imports
     print("  🔍 Verifying installation ...")

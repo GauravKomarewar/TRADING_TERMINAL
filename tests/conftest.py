@@ -1,6 +1,7 @@
 import pytest
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from shoonya_platform.execution.order_watcher import OrderWatcherEngine
@@ -10,6 +11,14 @@ from shoonya_platform.persistence.repository import OrderRepository
 from shoonya_platform.execution.command_service import CommandService
 
 from .fake_broker import FakeBroker
+
+# Exclude non-Python files and standalone scripts from pytest collection
+collect_ignore_glob = ["*.txt", "*.bat", "*.ps1"]
+collect_ignore = [
+    "test_endpoints.py",      # Standalone API test script (run directly, not via pytest)
+    "test_place_order.py",    # Standalone order test script
+    "test_webhook.py",        # Standalone webhook test script
+]
 
 # Global temp directory for test state files
 _TEST_TEMP_DIR = tempfile.mkdtemp(prefix="shoonya_test_")

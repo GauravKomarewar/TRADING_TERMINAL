@@ -1,0 +1,15 @@
+[Unit]
+Description=Trading Platform Auto-Start Timer (Mon-Fri 8:45 AM IST)
+Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+
+[Timer]
+# Start at 8:45 AM Monday through Friday (IST)
+OnCalendar=Mon-Fri *-*-* 08:45:00
+Timezone=Asia/Kolkata
+# Catch up and fire if the system was down during scheduled time
+Persistent=true
+# Controls timing precision / allows timer coalescing for power efficiency
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

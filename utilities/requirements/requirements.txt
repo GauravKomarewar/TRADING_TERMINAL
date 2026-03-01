@@ -110,5 +110,6 @@ sentry-sdk==2.51.0
 # -------------------------------
 # Shoonya / Noren API broker SDK
 # (pure-python wheel, cross-platform)
+# Installed separately by bootstrap.py from:
+#   utilities/requirements/NorenRestApi-0.0.30-py2.py3-none-any.whl
 # -------------------------------
-./requirements/NorenRestApi-0.0.30-py2.py3-none-any.whl

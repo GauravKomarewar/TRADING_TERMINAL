@@ -1,0 +1,15 @@
+[Unit]
+Description=Trading Platform Auto-Stop Timer (Mon-Fri 4:00 PM IST)
+Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+
+[Timer]
+# Stop at 4:00 PM Monday through Friday after market close (IST)
+OnCalendar=Mon-Fri *-*-* 16:00:00
+Timezone=Asia/Kolkata
+Unit=trading_stop.service
+# Catch up and fire if the system was down during scheduled time
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

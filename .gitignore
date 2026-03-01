@@ -41,8 +41,9 @@ cookies.txt
 # ===============================
 # Installers / binary artifacts
 # ===============================
+# Installers / binary artifacts
+# ===============================
 python-3.9.13-amd64.exe
-requirements/*.whl
 
 # ===============================
 # Compiled / native artifacts

@@ -107,10 +107,19 @@ def setup_logging(log_file: str = 'webhook_bot.log',
 
 
 def validate_webhook_signature(payload: str, signature: str, secret_key: str) -> bool:
-    """Validate webhook signature for security"""
+    """
+    Validate webhook HMAC signature (optional layer).
+    
+    SECURITY MODEL:
+    - X-Signature header is OPTIONAL (TradingView doesn't support HMAC)
+    - When absent: returns True → authentication falls through to body-level secret_key check
+    - When present: validates HMAC-SHA256 using constant-time comparison
+    - Body-level secret_key validation in parse_alert_data() is the MANDATORY auth layer
+    """
     if not signature:
-        logger.warning("No signature provided")
-        return True  # Allow if no signature verification needed
+        # No HMAC signature provided — this is expected for TradingView webhooks.
+        # Authentication is enforced by parse_alert_data() validating secret_key in body.
+        return True
     
     try:
         expected_signature = hmac.new(

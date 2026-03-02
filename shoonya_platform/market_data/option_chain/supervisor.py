@@ -352,6 +352,7 @@ class OptionChainSupervisor:
                     exchange=exchange,
                     symbol=symbol,
                     expiry=expiry,
+                    count=15,
                     auto_start_feed=False,
                 )
 

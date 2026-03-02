@@ -45,6 +45,20 @@ MATCH_PARAM_TO_SQL = {
     "moneyness": "strike",
 }
 
+# Adaptive tolerance for find_option_by_criteria depending on the Greek/attribute.
+# None → proportional: max(base, |target| * fraction).  Keeps match_leg reliable
+# for ANY parameter, not just delta.
+def _adaptive_tolerance(param: str, target_value: float) -> float:
+    _FIXED = {
+        "delta": 0.15, "abs_delta": 0.15,
+        "gamma": 0.0005, "theta": 5.0, "abs_theta": 5.0,
+        "vega": 2.0, "iv": 10.0,
+    }
+    if param in _FIXED:
+        return _FIXED[param]
+    # Proportional for ltp, oi, volume, strike, moneyness
+    return max(50.0, abs(target_value) * 0.25)
+
 # Fallback lot sizes when DB and ScriptMaster lookups fail.
 # This dict should be extended as needed; final fallback is 1.
 DEFAULT_LOT_SIZES = {
@@ -390,6 +404,17 @@ class MarketReader:
         tolerance: float = 0.05,
         expiry: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
+        """
+        Find the option with delta closest to target_delta for the given option_type.
+
+        Delta sign convention:
+        - CE deltas are positive (0 to +1)
+        - PE deltas are negative (-1 to 0)
+
+        The search compares ABS(delta) against target_delta so that callers
+        can simply pass e.g. 0.5 for both CE and PE.  Within a single
+        option_type the ABS comparison yields a correct, monotonic ranking.
+        """
         self._check_freshness(expiry)
         if isinstance(option_type, OptionType):
             option_type = option_type.value
@@ -444,6 +469,94 @@ class MarketReader:
             logger.error(f"find_option_by_delta error: {e}")
             return None
 
+    def find_straddle_strike_by_delta(
+        self,
+        option_type: Union[str, OptionType],
+        target_delta: float,
+        expiry: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        For straddle/strangle strategies, find the best strike where BOTH CE and
+        PE deltas are optimally balanced around the target delta at the SAME strike.
+
+        For a proper straddle with target_delta=0.5:
+        - CE delta should be ≈ +0.5
+        - PE delta should be ≈ -0.5
+
+        The method reads all strikes that have both CE and PE data, computes a
+        combined delta error for each, and returns the option data for the
+        requested ``option_type`` at the strike with the smallest combined error.
+        """
+        self._check_freshness(expiry)
+        if isinstance(option_type, OptionType):
+            opt_type = option_type.value
+        else:
+            opt_type = option_type.upper()
+
+        conn = self._get_connection(expiry)
+        if not conn:
+            return None
+
+        try:
+            cur = conn.cursor()
+            # Step 1: Fetch CE rows with delta
+            cur.execute("""
+                SELECT strike, delta FROM option_chain
+                WHERE option_type = 'CE' AND delta IS NOT NULL AND ltp > 0
+            """)
+            ce_map = {row["strike"]: row["delta"] for row in cur.fetchall()}
+
+            # Step 2: Fetch PE rows with delta
+            cur.execute("""
+                SELECT strike, delta FROM option_chain
+                WHERE option_type = 'PE' AND delta IS NOT NULL AND ltp > 0
+            """)
+            pe_map = {row["strike"]: row["delta"] for row in cur.fetchall()}
+
+            # Step 3: Find strikes present in both
+            common_strikes = set(ce_map.keys()) & set(pe_map.keys())
+            if not common_strikes:
+                logger.warning("Straddle delta matching: no strikes with both CE and PE data")
+                return None
+
+            # Step 4: Score each common strike
+            best_strike: Optional[float] = None
+            best_error = float("inf")
+
+            for strike in sorted(common_strikes):
+                ce_delta = ce_map[strike]
+                pe_delta = pe_map[strike]
+
+                # For a balanced straddle:
+                # CE should be at +target_delta, PE should be at -target_delta
+                ce_error = abs(abs(ce_delta) - target_delta)
+                pe_error = abs(abs(pe_delta) - target_delta)
+                combined_error = ce_error + pe_error
+
+                if combined_error < best_error:
+                    best_error = combined_error
+                    best_strike = strike
+
+            if best_strike is None:
+                return None
+
+            logger.info(
+                "Straddle delta=%.4f: Selected strike %s (combined_error=%.4f) for %s",
+                target_delta, best_strike, best_error, opt_type,
+            )
+
+            # Step 5: Fetch full option data for the requested type at that strike
+            cur.execute("""
+                SELECT * FROM option_chain
+                WHERE strike = ? AND option_type = ? AND delta IS NOT NULL AND ltp > 0
+            """, (best_strike, opt_type))
+            result = cur.fetchone()
+            return dict(result) if result else None
+
+        except Exception as e:
+            logger.error(f"find_straddle_strike_by_delta error: {e}")
+            return None
+
     def find_option_by_premium(
         self,
         option_type: Union[str, OptionType],
@@ -469,7 +582,27 @@ class MarketReader:
                 LIMIT 1
             """, (option_type.upper(), target_premium, tolerance, target_premium))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if row:
+                return dict(row)
+
+            # Fallback: nearest premium without tolerance filter
+            cur.execute("""
+                SELECT * FROM option_chain
+                WHERE option_type = ? AND ltp > 0
+                ORDER BY ABS(ltp - ?) ASC
+                LIMIT 1
+            """, (option_type.upper(), target_premium))
+            row = cur.fetchone()
+            if row:
+                best = dict(row)
+                logger.warning(
+                    "Premium target %.2f not within tolerance %.2f for %s; "
+                    "using nearest strike=%s ltp=%s",
+                    target_premium, tolerance, option_type.upper(),
+                    best.get("strike"), best.get("ltp"),
+                )
+                return best
+            return None
         except Exception as e:
             logger.error(f"find_option_by_premium error: {e}")
             return None
@@ -500,7 +633,27 @@ class MarketReader:
                 LIMIT 1
             """, (option_type.upper(), target_iv, tolerance, target_iv))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if row:
+                return dict(row)
+
+            # Fallback: nearest IV without tolerance filter
+            cur.execute("""
+                SELECT * FROM option_chain
+                WHERE option_type = ? AND iv IS NOT NULL AND iv > 0 AND ltp > 0
+                ORDER BY ABS(iv - ?) ASC
+                LIMIT 1
+            """, (option_type.upper(), target_iv))
+            row = cur.fetchone()
+            if row:
+                best = dict(row)
+                logger.warning(
+                    "IV target %.2f not within tolerance %.2f for %s; "
+                    "using nearest strike=%s iv=%s",
+                    target_iv, tolerance, option_type.upper(),
+                    best.get("strike"), best.get("iv"),
+                )
+                return best
+            return None
         except Exception as e:
             logger.error(f"find_option_by_iv error: {e}")
             return None
@@ -542,7 +695,30 @@ class MarketReader:
             """
             cur.execute(query, (option_type.upper(), target_value, tolerance, target_value))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if row:
+                return dict(row)
+
+            # Fallback: nearest match without tolerance (keeps sparse chains alive)
+            fallback_query = f"""
+                SELECT * FROM option_chain
+                WHERE option_type = ?
+                  AND {sql_expr} IS NOT NULL
+                  AND ltp > 0
+                ORDER BY ABS({sql_expr} - ?) ASC
+                LIMIT 1
+            """
+            cur.execute(fallback_query, (option_type.upper(), target_value))
+            row = cur.fetchone()
+            if row:
+                best = dict(row)
+                logger.warning(
+                    "%s target %.6f not within tolerance %.4f for %s; "
+                    "using nearest strike=%s value=%s",
+                    target_attr, target_value, tolerance, option_type.upper(),
+                    best.get("strike"), best.get(target_attr, best.get("strike")),
+                )
+                return best
+            return None
         except Exception as e:
             logger.error(f"find_option_by_criteria error: {e}")
             return None
@@ -566,10 +742,21 @@ class MarketReader:
         symbol: str,  # kept for interface compatibility
         expiry: Optional[str] = None,
         reference_leg_state=None,
+        is_straddle_context: bool = False,
     ) -> Tuple[float, Dict[str, Any]]:
         """
         Resolve strike and option data from StrikeConfig.
-        Raises RuntimeError if snapshot too old or data not found.
+        
+        Args:
+            config: Strike configuration
+            symbol: Symbol (for compatibility)
+            expiry: Expiry date
+            reference_leg_state: Reference leg for match_leg mode
+            is_straddle_context: If True and using delta selection, use straddle-aware matching
+                               that finds the strike with balanced CE/PE deltas at same strike
+        
+        Raises:
+            RuntimeError if snapshot too old or data not found.
         """
         # Freshness check
         self._check_freshness(expiry)
@@ -586,6 +773,7 @@ class MarketReader:
             sel = config.strike_selection
             if sel is None:
                 raise ValueError("Standard strike mode requires 'strike_selection'")
+            sel = sel.lower().strip()
 
             val = config.strike_value
 
@@ -600,27 +788,53 @@ class MarketReader:
                     strike = atm + offset * step
                 else:
                     raise ValueError(f"Malformed atm offset: {sel}")
-            elif sel == "delta":
+            elif sel in ("delta", "straddle_delta"):
                 target = float(val) if val else 0.3
-                opt_data = self.find_option_by_delta(opt_type, target, expiry=expiry)
+                # Use straddle-aware matching if explicitly requested or auto-detected
+                if is_straddle_context or sel == "straddle_delta":
+                    opt_data = self.find_straddle_strike_by_delta(opt_type, target, expiry=expiry)
+                    if opt_data is None:
+                        logger.warning(
+                            f"Straddle delta matching failed for {opt_type} delta={target}; "
+                            f"falling back to independent delta search"
+                        )
+                        opt_data = self.find_option_by_delta(opt_type, target, expiry=expiry)
+                else:
+                    opt_data = self.find_option_by_delta(opt_type, target, expiry=expiry)
+                
                 if opt_data is None:
                     raise ValueError(f"No option found for delta={target}")
                 strike = opt_data["strike"]
             elif sel == "theta":
-                target = float(val) if val else 0.0
-                opt_data = self.find_option_by_criteria(opt_type, "theta", target, tolerance=5.0, expiry=expiry)
+                # Theta is always negative for options. Users naturally enter
+                # positive values (e.g. "15" meaning "theta around -15").  We
+                # search by ABS(theta) so the sign doesn't matter.
+                target = abs(float(val)) if val else 10.0
+                opt_data = self.find_option_by_criteria(
+                    opt_type, "abs_theta", target,
+                    tolerance=_adaptive_tolerance("abs_theta", target),
+                    expiry=expiry,
+                )
                 if opt_data is None:
-                    raise ValueError(f"No option found for theta={target}")
+                    raise ValueError(f"No option found for theta≈{target}")
                 strike = opt_data["strike"]
             elif sel == "vega":
-                target = float(val) if val else 0.0
-                opt_data = self.find_option_by_criteria(opt_type, "vega", target, tolerance=5.0, expiry=expiry)
+                target = float(val) if val else 5.0
+                opt_data = self.find_option_by_criteria(
+                    opt_type, "vega", target,
+                    tolerance=_adaptive_tolerance("vega", target),
+                    expiry=expiry,
+                )
                 if opt_data is None:
                     raise ValueError(f"No option found for vega={target}")
                 strike = opt_data["strike"]
             elif sel == "gamma":
-                target = float(val) if val else 0.0
-                opt_data = self.find_option_by_criteria(opt_type, "gamma", target, tolerance=5.0, expiry=expiry)
+                target = float(val) if val else 0.0003
+                opt_data = self.find_option_by_criteria(
+                    opt_type, "gamma", target,
+                    tolerance=_adaptive_tolerance("gamma", target),
+                    expiry=expiry,
+                )
                 if opt_data is None:
                     raise ValueError(f"No option found for gamma={target}")
                 strike = opt_data["strike"]
@@ -737,15 +951,16 @@ class MarketReader:
                 )
             attr_value = getattr(reference_leg_state, match_param)
             target = attr_value * config.match_multiplier + config.match_offset
+            tol = _adaptive_tolerance(match_param, target)
             opt_data = self.find_option_by_criteria(
                 opt_type,
                 match_param,
                 target,
-                tolerance=0.1,
+                tolerance=tol,
                 expiry=expiry
             )
             if opt_data is None:
-                raise ValueError(f"No option found matching {match_param}={target}")
+                raise ValueError(f"No option found matching {match_param}={target} (tol={tol:.4f})")
             strike = opt_data["strike"]
 
         else:
@@ -1122,9 +1337,28 @@ class MockMarketReader(MarketReader):
             opt_type = option_type.value
         else:
             opt_type = option_type
-        # Crude linear approximation
-        strike = self._atm - (target_delta * 2000) if opt_type.upper() == "CE" else self._atm + (target_delta * 2000)
+        # Mock: for delta=0.5 both CE and PE return ATM
+        # Higher delta → deeper ITM → lower CE strike / higher PE strike
+        step = 50  # default step
+        delta_offset = (target_delta - 0.5) * 10  # how many steps from ATM
+        if opt_type.upper() == "CE":
+            strike = self._atm - (delta_offset * step)
+        else:
+            strike = self._atm + (delta_offset * step)
         return self.get_option_at_strike(strike, opt_type)
+
+    def find_straddle_strike_by_delta(
+        self,
+        option_type: Union[str, OptionType],
+        target_delta: float,
+        expiry: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if isinstance(option_type, OptionType):
+            opt_type = option_type.value
+        else:
+            opt_type = option_type
+        # For straddle: both legs at ATM when delta=0.5
+        return self.get_option_at_strike(self._atm, opt_type)
 
     def find_option_by_premium(
         self,
@@ -1173,9 +1407,11 @@ class MockMarketReader(MarketReader):
         symbol: str,
         expiry: Optional[str] = None,
         reference_leg_state=None,
+        is_straddle_context: bool = False,
     ) -> Tuple[float, Dict[str, Any]]:
         if config.mode == StrikeMode.STANDARD:
             sel = (config.strike_selection or "atm").lower()
+            val = config.strike_value
             if sel == "atm":
                 strike = self._atm
             elif sel.startswith("atm+") or sel.startswith("atm-"):
@@ -1183,6 +1419,26 @@ class MockMarketReader(MarketReader):
                 step = float(config.rounding or 50)
                 off = int(m.group(1)) if m else 0
                 strike = self._atm + (off * step)
+            elif sel in ("delta", "straddle_delta"):
+                target = float(val) if val else 0.3
+                if is_straddle_context or sel == "straddle_delta":
+                    opt_data = self.find_straddle_strike_by_delta(config.option_type, target)
+                else:
+                    opt_data = self.find_option_by_delta(config.option_type, target)
+                if opt_data:
+                    return opt_data["strike"], opt_data
+                strike = self._atm
+            elif sel == "theta":
+                target = abs(float(val)) if val else 10.0
+                opt_data = self.find_option_by_criteria(config.option_type, "abs_theta", target)
+                if opt_data:
+                    return opt_data["strike"], opt_data
+                strike = self._atm
+            elif sel in ("vega", "gamma", "premium", "iv", "oi", "volume"):
+                opt_data = self.find_option_by_criteria(config.option_type, sel, float(val) if val else 0.0)
+                if opt_data:
+                    return opt_data["strike"], opt_data
+                strike = self._atm
             else:
                 strike = self._atm
         elif config.mode == StrikeMode.EXACT:

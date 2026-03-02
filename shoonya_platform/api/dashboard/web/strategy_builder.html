@@ -738,13 +738,15 @@ const MATCH_PARAMS=[
 const ALL_STRIKE_SELECTIONS=[
   'atm','atm+1','atm-1','atm+2','atm-2','atm+3','atm-3',
   'atm+4','atm-4','atm+5','atm-5',
-  'atm_points','atm_pct',   /* new: point/% offset from ATM */
-  'exact_strike',            /* new: literal strike price */
-  'delta','iv','theta','vega','premium','oi','volume','otm_pct',
-  'max_pain',               /* new: closest to max pain */
-  'pcr_inflection',         /* new: strike where PCR flips */
+  'atm_points','atm_pct',   /* point/% offset from ATM */
+  'exact_strike',            /* literal strike price */
+  'delta',                   /* delta-based (independent per leg) */
+  'straddle_delta',          /* delta-based: same strike for CE & PE */
+  'gamma','iv','theta','vega','premium','oi','volume','otm_pct',
+  'max_pain',               /* closest to max pain */
+  'pcr_inflection',         /* strike where PCR flips */
 ];
-const MATCH_STRIKE_SELECTIONS=['delta','abs_delta','iv','theta','vega','premium','oi','volume','otm_pct','strike','moneyness'];
+const MATCH_STRIKE_SELECTIONS=['delta','abs_delta','iv','theta','abs_theta','vega','gamma','premium','oi','volume','otm_pct','strike','moneyness'];
 
 const ACTION_TYPES=[
   {v:'simple_close_open_new',l:'Close &amp; Open New (Roll / Shift)'},
@@ -1138,7 +1140,8 @@ function paramOpts(cur=''){
   return h;
 }
 function opOpts(cur='>'){return OPERATORS.map(o=>`<option value="${o.v}"${o.v===cur?' selected':''}>${esc(o.l)}</option>`).join('');}
-function strikeOpts(cur='atm',pool=ALL_STRIKE_SELECTIONS){return pool.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('');}
+const STRIKE_LABELS={straddle_delta:'straddle_delta (same strike CE+PE)',gamma:'gamma',abs_theta:'|theta| (abs)',atm_points:'atm_points (fixed offset)',atm_pct:'atm_pct (% offset)',exact_strike:'exact_strike (literal)',otm_pct:'otm_pct (% OTM)',max_pain:'max_pain',pcr_inflection:'pcr_inflection'};
+function strikeOpts(cur='atm',pool=ALL_STRIKE_SELECTIONS){return pool.map(s=>`<option value="${s}"${s===cur?' selected':''}>${STRIKE_LABELS[s]||s}</option>`).join('');}
 function matchParamOpts(cur='delta'){return MATCH_PARAMS.map(p=>`<option value="${p.v}"${p.v===cur?' selected':''}>${esc(p.l)}</option>`).join('');}
 
 /* ========== TAG MANAGEMENT ========== */
@@ -1257,8 +1260,8 @@ function strikeModeHtml(prefix, excludeClose='', showMatch=true){
           <select class="f-select" data-role="${prefix}-stk-sel">${strikeOpts('atm')}</select>
         </div>
         <div class="f-group"><label class="f-label">Value / Target</label>
-          <input class="f-input" data-role="${prefix}-stk-val" placeholder="e.g. 0.3 for delta, 80 for premium">
-          <div class="helper-text">Empty for ATM±n. Numeric target for delta/premium/oi/iv.</div>
+          <input class="f-input" data-role="${prefix}-stk-val" placeholder="e.g. 0.5 for delta, 80 for premium">
+          <div class="helper-text">Empty for ATM±n. delta/straddle_delta: 0.5 | theta: 15 (positive, auto sign) | gamma: 0.0003 | iv: 60 | premium: 100</div>
         </div>
         <div class="f-group"><label class="f-label">Order Type</label>
           <select class="f-select" data-role="${prefix}-order"><option value="">Default</option><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option></select>
@@ -1564,8 +1567,8 @@ function addEntryLeg(){
         <div id="entry_stk_extra_${id}">
           <div class="f-row c2" style="margin-bottom:0;">
             <div class="f-group"><label class="f-label">Strike Value / Target</label>
-              <input class="f-input" data-role="strike-val" placeholder="e.g. 0.3 for delta, 80 for premium">
-              <div class="helper-text">Leave empty for ATM±n. Enter target for delta/iv/premium methods.</div>
+              <input class="f-input" data-role="strike-val" placeholder="e.g. 0.5 for delta, 80 for premium">
+              <div class="helper-text">delta/straddle_delta: 0.5 | theta: 15 (positive) | gamma: 0.0003 | iv: 60</div>
             </div>
           </div>
         </div>
@@ -1646,7 +1649,7 @@ function onEntryStrikeModeChange(id,mode){
   if(!mainGrp||!extraGrp) return;
   if(mode==='standard'){
     mainGrp.style.display='';
-    extraGrp.innerHTML=`<div class="f-row c2" style="margin-bottom:0;"><div class="f-group"><label class="f-label">Strike Value / Target</label><input class="f-input" data-role="strike-val" placeholder="e.g. 0.3 for delta, 80 for premium"><div class="helper-text">Leave empty for ATM±n.</div></div></div>`;
+    extraGrp.innerHTML=`<div class="f-row c2" style="margin-bottom:0;"><div class="f-group"><label class="f-label">Strike Value / Target</label><input class="f-input" data-role="strike-val" placeholder="e.g. 0.5 for delta, 80 for premium"><div class="helper-text">delta/straddle_delta: 0.5 | theta: 15 (positive, auto sign) | gamma: 0.0003</div></div></div>`;
   }else if(mode==='exact'){
     mainGrp.style.display='none';
     extraGrp.innerHTML=`<div class="info-box ib-orange" style="font-size:11px;margin-top:8px;">Enter exact strike (e.g. 25700 for skewed straddle bias).</div><div class="f-row c2" style="margin-bottom:0;"><div class="f-group"><label class="f-label">Exact Strike</label><input class="f-input" data-role="strike-val" type="number" placeholder="e.g. 25700" step="50"></div><div class="f-group"><label class="f-label">Rounding (pts)</label><input class="f-input" data-role="strike-round" type="number" value="50"></div></div>`;

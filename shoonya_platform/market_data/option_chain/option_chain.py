@@ -154,7 +154,7 @@ class OptionChainData:
         symbol: str,
         expiry: str,
         atm_strike: int,
-        count: int = 10,
+        count: int = 15,
         spot_ltp: Optional[float] = None,
         fut_ltp: Optional[float] = None,
     ) -> bool:
@@ -1144,7 +1144,7 @@ def option_chain(
     expiry: Optional[str] = None,
     expiry_index: int = 0,
     atm_strike: Optional[int] = None,
-    count: int = 10,
+    count: int = 15,
 ) -> OptionChainData:
     """
     🔥 IMPROVED: High-level factory with session validation.
@@ -1602,7 +1602,7 @@ def live_option_chain(
     expiry: Optional[str] = None,
     expiry_index: int = 0,
     atm_strike: Optional[int] = None,
-    count: int = 10,
+    count: int = 15,
     auto_start_feed: bool = True,
     with_greeks: bool = True
 ) -> OptionChainData:

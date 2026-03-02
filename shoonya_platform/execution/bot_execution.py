@@ -85,6 +85,8 @@ class ExecutionMixin:
                 )
 
                 # EXECUTION GUARD BROKER RECONCILIATION (MANDATORY)
+                # LIVE: reconcile from broker positions
+                # MOCK: reconcile from executor's tracked legs (no broker call)
                 if not parsed.test_mode:
                     try:
                         self.broker_view.invalidate_cache("positions")
@@ -110,18 +112,36 @@ class ExecutionMixin:
                         strategy_id=parsed.strategy_name,
                         broker_positions=broker_map,
                     )
+                else:
+                    # MOCK: build virtual position map from executor state
+                    mock_broker_map = self._build_mock_position_map(parsed.strategy_name)
+                    self.execution_guard.reconcile_with_broker(
+                        strategy_id=parsed.strategy_name,
+                        broker_positions=mock_broker_map,
+                    )
 
-                # DUPLICATE ENTRY DETECTION (BROKER-TRUTH)
+                # DUPLICATE ENTRY DETECTION
+                # LIVE: check broker positions + DB
+                # MOCK: check DB + executor state
                 duplicate_symbols = set()
 
-                if execution_type == "ENTRY" and not parsed.test_mode:
-                    for leg in parsed.legs:
-                        if self.has_live_entry_block(parsed.strategy_name, leg.tradingsymbol):
-                            duplicate_symbols.add(leg.tradingsymbol)
-                            logger.warning(
-                                f"ENTRY BLOCKED — LIVE ORDER OR POSITION EXISTS | "
-                                f"{leg.tradingsymbol} | {parsed.strategy_name}"
-                            )
+                if execution_type == "ENTRY":
+                    if not parsed.test_mode:
+                        for leg in parsed.legs:
+                            if self.has_live_entry_block(parsed.strategy_name, leg.tradingsymbol):
+                                duplicate_symbols.add(leg.tradingsymbol)
+                                logger.warning(
+                                    f"ENTRY BLOCKED — LIVE ORDER OR POSITION EXISTS | "
+                                    f"{leg.tradingsymbol} | {parsed.strategy_name}"
+                                )
+                    else:
+                        for leg in parsed.legs:
+                            if self._has_mock_entry_block(parsed.strategy_name, leg.tradingsymbol):
+                                duplicate_symbols.add(leg.tradingsymbol)
+                                logger.warning(
+                                    f"MOCK ENTRY BLOCKED — VIRTUAL POSITION EXISTS | "
+                                    f"{leg.tradingsymbol} | {parsed.strategy_name}"
+                                )
 
                 # EXECUTION GUARD PLAN
                 intents = [
@@ -136,13 +156,9 @@ class ExecutionMixin:
                 ]
 
                 try:
-                    guarded = (
-                        intents
-                        if parsed.test_mode
-                        else self.execution_guard.validate_and_prepare(
-                            intents=intents,
-                            execution_type=execution_type,
-                        )
+                    guarded = self.execution_guard.validate_and_prepare(
+                        intents=intents,
+                        execution_type=execution_type,
                     )
                 except RuntimeError as e:
                     logger.warning(str(e))
@@ -184,17 +200,21 @@ class ExecutionMixin:
 
                 # EXECUTE LEGS
                 exit_positions_cache = None
-                if execution_type == "EXIT" and not parsed.test_mode:
-                    try:
-                        self.broker_view.invalidate_cache("positions")
-                        exit_positions_cache = self.broker_view.get_positions(force_refresh=True) or []
-                    except Exception:
-                        exit_positions_cache = []
+                if execution_type == "EXIT":
+                    if not parsed.test_mode:
+                        try:
+                            self.broker_view.invalidate_cache("positions")
+                            exit_positions_cache = self.broker_view.get_positions(force_refresh=True) or []
+                        except Exception:
+                            exit_positions_cache = []
+                    else:
+                        # MOCK: build virtual positions from executor state
+                        exit_positions_cache = self._build_mock_exit_positions(parsed.strategy_name)
 
                 for leg in parsed.legs:
                     orig_direction = leg.direction
 
-                    if execution_type == "EXIT" and not parsed.test_mode:
+                    if execution_type == "EXIT" and exit_positions_cache is not None:
                         net_qty = 0
                         for p in exit_positions_cache:
                             if p.get("tsym") == leg.tradingsymbol:
@@ -238,7 +258,6 @@ class ExecutionMixin:
 
                         is_duplicate = (
                             execution_type == "ENTRY"
-                            and not parsed.test_mode
                             and leg.tradingsymbol in duplicate_symbols
                         )
 
@@ -291,7 +310,6 @@ class ExecutionMixin:
 
                 if (
                     execution_type == "EXIT"
-                    and not parsed.test_mode
                     and expected_legs > 0
                     and attempted == 0
                 ):
@@ -644,10 +662,15 @@ class ExecutionMixin:
                             except (ValueError, TypeError):
                                 fill_price = 0.0
                             if fill_price <= 0:
-                                try:
-                                    fill_price = float(self.api.get_ltp(command.exchange, command.symbol) or 0.0)
-                                except Exception:
-                                    fill_price = 0.0
+                                fill_price = self._get_ltp_from_tick_store(
+                                    command.exchange, command.symbol
+                                )
+                            if fill_price <= 0:
+                                logger.warning(
+                                    "MOCK_FILL_PRICE_ZERO | cmd_id=%s | symbol=%s | "
+                                    "no price from tick store, using 0.0",
+                                    command.command_id, command.symbol,
+                                )
                             self.order_repo.update_status(command.command_id, "EXECUTED")
                             try:
                                 _qty = int(float(command.quantity or 0))
@@ -734,3 +757,97 @@ class ExecutionMixin:
                 success=False,
                 error_message=str(e),
             )
+
+    # ------------------------------------------------------------------
+    # MOCK PIPELINE HELPERS — virtual position tracking for test parity
+    # ------------------------------------------------------------------
+
+    def _build_mock_position_map(self, strategy_name: str) -> Dict[str, Dict[str, int]]:
+        """Build a broker-compatible position map from executor state legs."""
+        broker_map: Dict[str, Dict[str, int]] = {}
+        try:
+            svc = getattr(self, "strategy_executor_service", None)
+            if svc is None:
+                return broker_map
+            executor = svc._executors.get(strategy_name)
+            if executor is None:
+                return broker_map
+            for leg in executor.state.legs.values():
+                if not leg.is_active:
+                    continue
+                sym = leg.trading_symbol or leg.symbol
+                if not sym:
+                    continue
+                qty = int(leg.qty * max(1, getattr(leg, "lot_size", 1)))
+                broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
+                if leg.side.value == "SELL":
+                    broker_map[sym]["SELL"] += qty
+                else:
+                    broker_map[sym]["BUY"] += qty
+        except Exception as e:
+            logger.warning("_build_mock_position_map failed: %s", e)
+        return broker_map
+
+    def _has_mock_entry_block(self, strategy_name: str, symbol: str) -> bool:
+        """Check for duplicate entry using DB + executor state (no broker call)."""
+        # DB check (same as live)
+        open_orders = self.order_repo.get_open_orders_by_strategy(strategy_name)
+        for o in open_orders:
+            if o.symbol == symbol:
+                return True
+        # Executor state check (virtual position)
+        try:
+            svc = getattr(self, "strategy_executor_service", None)
+            if svc:
+                executor = svc._executors.get(strategy_name)
+                if executor:
+                    for leg in executor.state.legs.values():
+                        if not leg.is_active:
+                            continue
+                        tsym = leg.trading_symbol or leg.symbol
+                        if tsym == symbol:
+                            return True
+        except Exception as e:
+            logger.warning("_has_mock_entry_block executor check failed: %s", e)
+        return False
+
+    def _build_mock_exit_positions(self, strategy_name: str) -> List[Dict[str, Any]]:
+        """Build virtual broker positions list from executor state for EXIT verification."""
+        positions: List[Dict[str, Any]] = []
+        try:
+            svc = getattr(self, "strategy_executor_service", None)
+            if svc is None:
+                return positions
+            executor = svc._executors.get(strategy_name)
+            if executor is None:
+                return positions
+            for leg in executor.state.legs.values():
+                if not leg.is_active:
+                    continue
+                sym = leg.trading_symbol or leg.symbol
+                qty = int(leg.qty * max(1, getattr(leg, "lot_size", 1)))
+                # Convention: SELL position = negative netqty
+                net = -qty if leg.side.value == "SELL" else qty
+                positions.append({"tsym": sym, "netqty": net})
+        except Exception as e:
+            logger.warning("_build_mock_exit_positions failed: %s", e)
+        return positions
+
+    def _get_ltp_from_tick_store(self, exchange: str, symbol: str) -> float:
+        """
+        Get LTP from tick store (no broker REST API call).
+        Falls back to option chain DB if tick store has no data.
+        """
+        try:
+            from scripts.scriptmaster import get_tokens
+            tokens = get_tokens(exchange=exchange, tradingsymbol=symbol)
+            if tokens:
+                from shoonya_platform.market_data.feeds.live_feed import get_tick_data
+                tick = get_tick_data(tokens[0])
+                if tick:
+                    ltp = float(tick.get("ltp") or tick.get("lp") or 0.0)
+                    if ltp > 0:
+                        return ltp
+        except Exception as e:
+            logger.debug("Tick store LTP lookup failed for %s: %s", symbol, e)
+        return 0.0

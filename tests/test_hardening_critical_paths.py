@@ -26,12 +26,15 @@ class TestHardeningCriticalPaths(unittest.TestCase):
         # Per-rule cooldown: uses _rule_last_fired dict instead of global state.last_adjustment_time
         self.assertIn("(now - self._rule_last_fired[rule_name]).total_seconds()", text)
 
-    def test_test_mode_exit_does_not_require_broker_netqty(self):
-        # After mixin split, process_alert lives in bot_execution.py
+    def test_test_mode_exit_uses_executor_state(self):
+        # MOCK mode now runs full pipeline using executor state (no broker skip)
         text = Path("shoonya_platform/execution/bot_execution.py").read_text(
             encoding="utf-8", errors="replace"
         )
-        self.assertIn("if execution_type == \"EXIT\" and not parsed.test_mode:", text)
+        # MOCK builds virtual positions from executor state
+        self.assertIn("_build_mock_exit_positions", text)
+        # validate_and_prepare runs for both MOCK and LIVE
+        self.assertIn("guarded = self.execution_guard.validate_and_prepare(", text)
 
 
 if __name__ == "__main__":

@@ -62,6 +62,7 @@ class StatePersistence:
                     "order_status": leg.order_status,
                     "filled_qty": leg.filled_qty,
                     "order_placed_at": leg.order_placed_at.isoformat() if leg.order_placed_at else None,
+                    "lot_size": getattr(leg, "lot_size", 1),
                 } for tag, leg in state.legs.items()
             },
             "spot_price": state.spot_price,
@@ -116,6 +117,7 @@ class StatePersistence:
                 order_status=leg_data.get("order_status", "PENDING"),
                 filled_qty=leg_data.get("filled_qty", 0),
                 order_placed_at=datetime.fromisoformat(leg_data["order_placed_at"]) if leg_data.get("order_placed_at") else None,
+                lot_size=leg_data.get("lot_size", 1),
             )
             legs[tag] = leg
 

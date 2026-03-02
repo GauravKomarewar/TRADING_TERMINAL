@@ -36,19 +36,27 @@ class LegState:
     order_status: str = "PENDING"           # PENDING, FILLED, FAILED, CANCELLED
     filled_qty: int = 0                      # filled quantity in contracts (or lots)
     order_placed_at: Optional[datetime] = None
-    
+    lot_size: int = 1                        # contract lot size (e.g. 75 for NIFTY, 25 for BANKNIFTY, 10 for CRUDEOILM)
+
+    @property
+    def order_qty(self) -> int:
+        """Broker contract quantity = lots * lot_size."""
+        return self.qty * max(1, self.lot_size)
+
     @property
     def pnl(self) -> float:
+        """PnL in absolute currency terms (price_diff * lots * lot_size)."""
         if self.side == Side.BUY:
-            return (self.ltp - self.entry_price) * self.qty
+            return (self.ltp - self.entry_price) * self.order_qty
         else:
-            return (self.entry_price - self.ltp) * self.qty
+            return (self.entry_price - self.ltp) * self.order_qty
 
     @property
     def pnl_pct(self) -> float:
         if self.entry_price == 0:
             return 0.0
-        return (self.pnl / (self.entry_price * self.qty)) * 100
+        # lot_size cancels in numerator/denominator — percentage is per-unit
+        return ((self.pnl / (self.entry_price * self.order_qty)) * 100) if self.order_qty else 0.0
 
     @property
     def abs_delta(self) -> float:
@@ -146,9 +154,9 @@ class StrategyState:
         for leg in self.legs.values():
             if leg.is_active and leg.instrument == InstrumentType.OPT:
                 if leg.side == Side.SELL:
-                    total += leg.entry_price * leg.qty
+                    total += leg.entry_price * leg.order_qty
                 else:
-                    total -= leg.entry_price * leg.qty
+                    total -= leg.entry_price * leg.order_qty
         return total
 
     @property
@@ -157,7 +165,7 @@ class StrategyState:
 
     @property
     def total_cost_basis(self) -> float:
-        return sum((leg.entry_price * leg.qty) for leg in self.legs.values() if leg.is_active)
+        return sum((leg.entry_price * leg.order_qty) for leg in self.legs.values() if leg.is_active)
 
     @property
     def unrealised_pnl(self) -> float:
@@ -335,8 +343,8 @@ class StrategyState:
 
     @property
     def total_premium_decay_pct(self) -> float:
-        entry = sum((leg.entry_price * leg.qty) for leg in self.legs.values() if leg.is_active)
-        current = sum((leg.ltp * leg.qty) for leg in self.legs.values() if leg.is_active)
+        entry = sum((leg.entry_price * leg.order_qty) for leg in self.legs.values() if leg.is_active)
+        current = sum((leg.ltp * leg.order_qty) for leg in self.legs.values() if leg.is_active)
         if entry == 0:
             return 0.0
         return ((entry - current) / entry) * 100

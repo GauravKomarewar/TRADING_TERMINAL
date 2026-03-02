@@ -905,6 +905,15 @@ class PerStrategyExecutor:
 
         self.state_file = state_file
 
+        # Resolve lot_size once and stamp on any existing legs (recovery path).
+        try:
+            self._lot_size = max(1, int(self.market.get_lot_size(self._cycle_expiry_date)))
+        except Exception:
+            self._lot_size = 1
+        for leg in self.state.legs.values():
+            if getattr(leg, "lot_size", 1) <= 1 and self._lot_size > 1:
+                leg.lot_size = self._lot_size
+
         # Daily reset tracking
         self._last_date = datetime.now().date()
         self.cycle_completed = False
@@ -996,6 +1005,10 @@ class PerStrategyExecutor:
                     self.state.last_adjustment_time = pre_last_adjustment_time
                     logger.error(f"Adjustment rollback applied for {self.name}")
                 else:
+                    # Stamp lot_size on any newly created adjustment legs
+                    for leg in self.state.legs.values():
+                        if getattr(leg, "lot_size", 1) <= 1 and self._lot_size > 1:
+                            leg.lot_size = self._lot_size
                     self.persistence.save(self.state, str(self.state_file))
 
         # Broker reconciliation (every 5 minutes) – unchanged
@@ -1232,12 +1245,19 @@ class PerStrategyExecutor:
         identity = self.config.get("identity", {})
         product_type = identity.get("product_type", "NRML")
 
+        # Resolve lot_size and stamp on each leg for accurate PnL.
+        try:
+            lot_size = max(1, int(self.market.get_lot_size(self._cycle_expiry_date)))
+        except Exception:
+            lot_size = 1
+
         # --- Register legs in state FIRST so notify_fill() can find them ---
         # MOCK fills fire synchronously during process_alert(); if legs are
         # not yet in self.state.legs the fill notification is lost and legs
         # time-out to FAILED after 60 s.
         now = datetime.now()
         for leg in new_legs:
+            leg.lot_size = lot_size
             leg.order_status = "PENDING"
             leg.is_active = False
             leg.order_placed_at = now

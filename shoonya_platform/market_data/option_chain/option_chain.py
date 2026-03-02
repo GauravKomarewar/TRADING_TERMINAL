@@ -1494,19 +1494,17 @@ def refresh_greeks(
             logger.warning("Greek calculation invalidated by spot movement")
             return False
         
-        # ✅ BUG-037 FIX: Log NULL-delta contracts — deep ITM/OTM options skipped by
-        # the Black-Scholes solver will have NULL delta that silently corrupts hedge
-        # ratios downstream. Log them so the operator is aware.
+        # NULL-delta contracts are normal for deep ITM/OTM strikes skipped by
+        # the Black-Scholes solver. Log at DEBUG only — this fires on every Greek
+        # refresh cycle and is not actionable as a WARNING.
         try:
             delta_cols = [c for c in df_greeks.columns if "Delta" in str(c)]
             for dcol in delta_cols:
                 null_count = df_greeks[dcol].isna().sum()
                 if null_count > 0:
                     opt_type = dcol[1] if isinstance(dcol, tuple) else dcol
-                    logger.warning(
-                        "⚠️ BUG-037: %d %s contract(s) have NULL delta "
-                        "(deep ITM/OTM — Greeks skipped). "
-                        "Validate delta before using for hedge sizing.",
+                    logger.debug(
+                        "NULL delta: %d %s contract(s) (deep ITM/OTM, Greeks skipped)",
                         null_count, opt_type,
                     )
         except Exception:

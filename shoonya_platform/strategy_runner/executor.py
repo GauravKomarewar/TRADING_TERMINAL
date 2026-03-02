@@ -269,10 +269,23 @@ class StrategyExecutor:
             end_t = datetime.strptime(entry_end, "%H:%M").time()
         except Exception:
             return False
+
+        schedule = self.config.get("schedule", {})
+
+        # Respect entry_on_expiry_day flag (default: allow entry)
+        if not schedule.get("entry_on_expiry_day", True) and self.state.is_expiry_day:
+            return False
+
+        # Respect max_reentries_per_day (entered_today already blocks re-entry but
+        # keep a guard on total_trades_today for completeness)
+        max_reentries = schedule.get("max_reentries_per_day")
+        if max_reentries is not None and self.state.total_trades_today >= max_reentries:
+            return False
+
         if start_t <= now.time() <= end_t:
             # Also check active days
             day_name = now.strftime("%a").lower()[:3]
-            active_days = self.config.get("schedule", {}).get("active_days", [])
+            active_days = schedule.get("active_days", [])
             if day_name in active_days:
                 return True
         return False
@@ -287,6 +300,7 @@ class StrategyExecutor:
         for leg in new_legs:
             self.state.legs[leg.tag] = leg
         self.state.entered_today = True
+        self.state.total_trades_today += 1
         self.state.entry_time = datetime.now()
         logger.info(f"Entered {len(new_legs)} legs")
 

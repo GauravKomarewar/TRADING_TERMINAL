@@ -28,6 +28,7 @@ class LegState:
     oi: int = 0
     oi_change: int = 0
     volume: int = 0
+    bid_ask_spread: float = 0.0   # latest bid-ask spread (filled by market data feed)
     trading_symbol: str = ""      # ✅ BUG-002 FIX: resolved broker tradingsymbol (e.g. "NIFTY25FEB26C22000CE")
 
     order_id: Optional[str] = None          # broker order ID

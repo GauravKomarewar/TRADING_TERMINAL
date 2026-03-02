@@ -53,7 +53,8 @@ class StatusSchedulingMixin:
                         log_exception(f"strategy_report:{name}", e)
 
             try:
-                schedule.every(self.config.report_frequency).minutes.do(self.send_status_report)
+                # send_status_report disabled — 💓 SYSTEM HEARTBEAT is the only periodic status
+                # schedule.every(self.config.report_frequency).minutes.do(self.send_status_report)
                 schedule.every().day.at("09:00").do(self.send_daily_summary)
                 schedule.every().day.at("15:30").do(self.send_market_close_summary)
                 schedule.every(1).minutes.do(self.risk_manager.track_pnl_ohlc)

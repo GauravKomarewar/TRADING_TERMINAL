@@ -157,7 +157,7 @@ class TelegramNotifier:
             f"🔐 Attempting broker login...\n"
             f"🌐 Server: http://{host}:{port}\n"
             f"🔔 Telegram: ✅ Connected\n"
-            f"📊 Reports: Every {report_frequency} minutes\n\n"
+            f"� Heartbeat: Every 5 minutes\n\n"
             f"⏳ Please wait for READY confirmation..."
         )
         return self.send_message(message)
@@ -174,8 +174,7 @@ class TelegramNotifier:
             f"🔐 Login: ✅ Successful\n"
             f"📊 Market Data: ✅ Live\n"
             f"🌐 Dashboard: http://{host}:{port}\n"
-            f"💓 Heartbeat: Every 5 minutes\n"
-            f"📊 Reports: Every {report_frequency} minutes\n\n"
+            f"💓 Heartbeat: Every 5 minutes\n\n"
             f"🎯 <b>Status: Monitoring for trading signals...</b>\n\n"
             f"📖 <i>Available: Webhook | Dashboard | Live Feed</i>"
         )

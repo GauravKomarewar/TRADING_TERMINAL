@@ -41,7 +41,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 # -----------------SCRIPTMASTER---------
-from scripts.scriptmaster import requires_limit_order  # noqa: F401 (used by mixin)
+from scripts.scriptmaster import requires_limit_order, refresh_scriptmaster  # noqa: F401
 
 # ---------------- CORE ----------------
 from shoonya_platform.core.config import Config
@@ -289,6 +289,14 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
         # -------------------------------------------------
         self.broker_view = BrokerView(self.api_proxy)
         self.option_supervisor = OptionChainSupervisor(self.api_proxy)
+        # ScriptMaster MUST be loaded before bootstrap_defaults() so that
+        # expiry lookups inside it return real data (not empty dict).
+        logger.info("🔄 Loading ScriptMaster before option-chain bootstrap...")
+        try:
+            refresh_scriptmaster()
+            logger.info("✅ ScriptMaster loaded")
+        except Exception as _sm_err:
+            logger.error("ScriptMaster pre-load failed: %s", _sm_err)
         self.option_supervisor.bootstrap_defaults()
 
         def _start_option_supervisor():

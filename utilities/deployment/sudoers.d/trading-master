@@ -1,18 +1,5 @@
-# =============================================================================
-# Sudoers rule: allow the trading-master service (ubuntu user) to control
-# individual client services without a password prompt.
-#
-# Install:
-#   sudo cp utilities/deployment/sudoers.d/trading-master /etc/sudoers.d/
-#   sudo chmod 440 /etc/sudoers.d/trading-master
-#   sudo visudo -c    # verify syntax
-# =============================================================================
-
-# Allow ubuntu user to start/stop/restart/reload/status any trading@* unit,
-# plus the gateway and master services themselves.
-# NOPASSWD is safe here because the scope is narrowed to specific systemctl
-# commands and specific service name patterns only.
-
+# trading-master sudoers: allow ubuntu to control trading services
+# Install: sudo cp to /etc/sudoers.d/trading-master && sudo chmod 440
 ubuntu ALL=(root) NOPASSWD: \
     /usr/bin/systemctl start   trading@*, \
     /usr/bin/systemctl stop    trading@*, \

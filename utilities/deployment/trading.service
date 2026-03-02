@@ -1,8 +1,9 @@
 [Unit]
-Description=Trading Service
+Description=Trading Service (primary)
 Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
 After=network-online.target
 Wants=network-online.target
+After=gateway.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -17,7 +18,7 @@ Environment="PYTHONUNBUFFERED=1"
 Environment="LOG_LEVEL=INFO"
 Environment="PYTHONPATH=/home/ubuntu/shoonya_platform"
 
-ExecStart=/home/ubuntu/shoonya_platform/venv/bin/python /home/ubuntu/shoonya_platform/main.py
+ExecStart=/home/ubuntu/shoonya_platform/venv/bin/python /home/ubuntu/shoonya_platform/main.py --env config_env/primary.env
 
 Restart=always
 RestartSec=10

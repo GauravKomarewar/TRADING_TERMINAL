@@ -705,13 +705,33 @@ class OptionChainSupervisor:
                 self._monitor_all_chains()
 
                 # --------------------------------------------------
-                # 🔥 NEW: PERIODIC SCRIPTMASTER REFRESH (hourly)
+                # 🔥 NEW: RETRY FAILED CHAINS (with backoff)
+                # --------------------------------------------------
+                with self._lock:
+                    failed_keys = list(self._failed_chains.keys())
+                if failed_keys:
+                    for key in failed_keys:
+                        try:
+                            exchange, symbol, expiry = key.split(":", 2)
+                        except ValueError:
+                            continue
+                        # _start_chain checks backoff internally; safe to call
+                        self._start_chain(exchange, symbol, expiry)
                 # --------------------------------------------------
                 if now - last_scriptmaster_refresh > SCRIPTMASTER_REFRESH_INTERVAL:
                     try:
                         logger.info("🔄 Refreshing ScriptMaster...")
                         refresh_scriptmaster()
                         logger.info("✅ ScriptMaster refreshed")
+                        # If bootstrap failed at startup (no chains running),
+                        # retry now that ScriptMaster has fresh data.
+                        with self._lock:
+                            no_chains = len(self._chains) == 0
+                        if no_chains:
+                            logger.warning(
+                                "⚠️ No chains active — retrying bootstrap after ScriptMaster refresh"
+                            )
+                            self.bootstrap_defaults()
                     except Exception as e:
                         logger.error("ScriptMaster refresh failed: %s", e)
                     last_scriptmaster_refresh = now

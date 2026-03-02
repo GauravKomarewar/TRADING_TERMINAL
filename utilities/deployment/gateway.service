@@ -1,29 +1,8 @@
-# =============================================================================
-# MULTI-CLIENT GATEWAY — gateway.service
-# =============================================================================
-#
-# Routes incoming TradingView webhooks and dashboard traffic to the correct
-# client service based on URL alias (e.g. /FA14667/webhook → port 5001).
-#
-# Configure: config_env/gateway.env
-#   GATEWAY_HOST=127.0.0.1
-#   GATEWAY_PORT=7000
-#   GATEWAY_ROUTES_FILE=config_env/client_routes.json
-#
-# Install:
-#   sudo cp utilities/deployment/gateway.service /etc/systemd/system/
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable gateway
-#   sudo systemctl start gateway
-# =============================================================================
-
 [Unit]
-Description=Shoonya Multi-Client Gateway (Reverse Proxy)
+Description=Shoonya Multi-Client Gateway
 Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
 After=network-online.target
 Wants=network-online.target
-# Gateway should start before clients, but this is soft (clients tolerate absence)
-
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -37,13 +16,10 @@ Environment="PATH=/home/ubuntu/shoonya_platform/venv/bin:/usr/local/sbin:/usr/lo
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONPATH=/home/ubuntu/shoonya_platform"
 
-ExecStart=/home/ubuntu/shoonya_platform/venv/bin/python \
-    /home/ubuntu/shoonya_platform/gateway_main.py \
-    --env config_env/gateway.env
+ExecStart=/home/ubuntu/shoonya_platform/venv/bin/python /home/ubuntu/shoonya_platform/gateway_main.py --env config_env/gateway.env
 
 Restart=always
 RestartSec=5
-
 MemoryMax=512M
 CPUQuota=30%
 
@@ -51,12 +27,10 @@ PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectSystem=no
 ProtectHome=no
-ProtectKernelTunables=yes
 
 TimeoutStopSec=15
 KillSignal=SIGTERM
 SendSIGKILL=yes
-
 LimitNOFILE=65536
 
 StandardOutput=journal

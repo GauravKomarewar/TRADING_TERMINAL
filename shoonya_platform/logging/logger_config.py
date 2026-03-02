@@ -79,9 +79,9 @@ COMPONENT_NAMES = {
     'market_data':       'shoonya_platform.market_data',   # catches supervisor, store, option_chain, feeds, instruments
 
     # ---- Strategies ----
-    'strategy':          'STRATEGY_RUNNER',
-    'strategy_db':       'STRATEGY_RUNNER_DB',
-    'strategy_executor': 'STRATEGY_EXECUTOR',
+    'strategy':              'STRATEGY_RUNNER',
+    'strategy_db':           'STRATEGY_RUNNER_DB',
+    'strategy_executor':     'STRATEGY_EXECUTOR_SERVICE',   # matches logging.getLogger("STRATEGY_EXECUTOR_SERVICE")
 
     # ---- Broker / Engine ----
     'broker':            'shoonya_platform.brokers',       # catches shoonya client logs
@@ -89,7 +89,8 @@ COMPONENT_NAMES = {
     'execution_control': 'EXECUTION.CONTROL',
 
     # ---- Services ----
-    'services':          'shoonya_platform.services',      # catches service_manager, recovery_service via __name__
+    'services':              'shoonya_platform.services',      # catches service_manager, recovery_service via __name__
+    'copy_trading_service':  'shoonya_platform.services.copy_trading_service',
 
     # ---- Execution sub-modules (use __name__) ----
     'execution':         'shoonya_platform.execution',     # catches position_exit_service, intent_tracker, broker.py, etc.

@@ -1532,6 +1532,12 @@ class ShoonyaClient(NorenApi):
                 resp = super().get_quotes(exchange=exchange, token=token)
             
             if not resp or resp.get("stat") != "Ok":
+                if resp:
+                    logger.debug(
+                        "get_ltp non-Ok [%s %s]: stat=%s emsg=%s",
+                        exchange, token,
+                        resp.get("stat"), resp.get("emsg", ""),
+                    )
                 return None
 
             lp = resp.get("lp")

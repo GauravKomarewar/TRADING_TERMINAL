@@ -1105,6 +1105,30 @@ class PerStrategyExecutor:
                             break
                 if leg.order_status != "PENDING":
                     continue
+
+                # MOCK safety net: before timeout, search DB for any EXECUTED
+                # orders matching this leg's symbol+side (MOCK fills may have been
+                # committed to DB even if notify_fill was missed).
+                if self._resolve_test_mode():
+                    try:
+                        all_orders = self.bot.order_repo.get_open_orders_by_strategy(self.name)
+                        # get_open_orders_by_strategy only returns CREATED/SENT_TO_BROKER;
+                        # also try get_by_id for any command_id we may have.
+                        cid = getattr(leg, "command_id", None)
+                        if cid:
+                            db_order = self.bot.order_repo.get_by_id(cid)
+                            if db_order and db_order.status == "EXECUTED":
+                                leg.order_status = "FILLED"
+                                leg.is_active = True
+                                leg.filled_qty = int(db_order.quantity or 0)
+                                if db_order.executed_price:
+                                    leg.entry_price = float(db_order.executed_price)
+                                    leg.ltp = float(db_order.executed_price)
+                                logger.info("MOCK FILLED via DB reconciliation | %s", leg.tag)
+                                continue
+                    except Exception as mock_recon_err:
+                        logger.debug("MOCK reconciliation fallback failed: %s", mock_recon_err)
+
                 # No matching order – check timeout
                 if leg.order_placed_at and (datetime.now() - leg.order_placed_at).total_seconds() > 60:
                     logger.warning(f"PENDING TIMEOUT | {leg.tag} – marking FAILED")
@@ -1208,6 +1232,17 @@ class PerStrategyExecutor:
         identity = self.config.get("identity", {})
         product_type = identity.get("product_type", "NRML")
 
+        # --- Register legs in state FIRST so notify_fill() can find them ---
+        # MOCK fills fire synchronously during process_alert(); if legs are
+        # not yet in self.state.legs the fill notification is lost and legs
+        # time-out to FAILED after 60 s.
+        now = datetime.now()
+        for leg in new_legs:
+            leg.order_status = "PENDING"
+            leg.is_active = False
+            leg.order_placed_at = now
+            self.state.legs[leg.tag] = leg
+
         # Convert each LegState to an alert leg. Leg qty is tracked in lots internally;
         # alert payload qty must be broker contract quantity.
         alert_legs = []
@@ -1231,6 +1266,9 @@ class PerStrategyExecutor:
 
         result = self.bot.process_alert(alert)
         if self._is_failure_status((result or {}).get("status")):
+            # Rollback: remove legs we pre-registered
+            for leg in new_legs:
+                self.state.legs.pop(leg.tag, None)
             logger.error(
                 "ENTRY_REJECTED | strategy=%s | reason=alert_rejected | result=%s",
                 self.name,
@@ -1238,21 +1276,19 @@ class PerStrategyExecutor:
             )
             return
 
-        # --- MODIFIED: mark legs as PENDING, not active ---
-        now = datetime.now()
-        for leg in new_legs:
-            leg.order_status = "PENDING"
-            leg.is_active = False
-            leg.order_placed_at = now
-            self.state.legs[leg.tag] = leg
-
         self.state.entered_today = True
         self.state.entry_time = now
         self.cycle_completed = False
+
+        # Log final status of each leg (may already be FILLED via notify_fill)
+        filled = sum(1 for l in new_legs if l.order_status == "FILLED")
+        pending = sum(1 for l in new_legs if l.order_status == "PENDING")
         logger.info(
-            "ENTRY_PLACED | strategy=%s | legs=%s | status=PENDING",
+            "ENTRY_PLACED | strategy=%s | legs=%s | filled=%s | pending=%s",
             self.name,
             len(new_legs),
+            filled,
+            pending,
         )
 
     def _extract_expiry_from_db_file(self, config: Dict[str, Any]) -> Optional[str]:

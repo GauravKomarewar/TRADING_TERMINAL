@@ -141,7 +141,7 @@ class ShoonyaClient(NorenApi):
     
     SESSION_TIMEOUT_HOURS = 6
     MIN_LOGIN_INTERVAL_SECONDS = 2
-    SESSION_VALIDATION_INTERVAL_MINUTES = 2  # 🔧 FIXED: Reduced from 5 to 2 minutes
+    SESSION_VALIDATION_INTERVAL_MINUTES = 5  # Less frequent validation → fewer login() calls after-hours
     SESSION_MAX_IDLE_MINUTES = 5  # 🔧 NEW: Max time between API calls before revalidation
     
     # Rate limiting (configurable)

@@ -148,7 +148,7 @@ class ExecutionApp:
         @self.app.route("/health", methods=["GET"])
         def health():
             try:
-                logged_in = self.bot.api.logged_in or self.bot.login()
+                logged_in = self.bot.api.logged_in  # Read-only check; never trigger login()
                 stats = self.bot.get_bot_stats()
 
                 return jsonify(
@@ -177,9 +177,7 @@ class ExecutionApp:
         @self.app.route("/status", methods=["GET"])
         def status():
             try:
-                if not self.bot.api.logged_in:
-                    self.bot.login()
-
+                # Read-only: report current state without triggering login()
                 stats = self.bot.get_bot_stats()
                 account = self.bot.get_account_info()
 

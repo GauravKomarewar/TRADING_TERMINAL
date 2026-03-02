@@ -369,29 +369,88 @@ input:checked + .toggle-slider:before {
 }
 .mode-changing { opacity: 0.5; pointer-events: none; }
 .btn-mode { font-size: 11px; padding: 5px 10px; }
-.analytics-toolbar {
+/* ====== PERFORMANCE TAB ====== */
+.perf-summary {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:10px;
+  margin-bottom:16px;
+}
+.perf-card {
+  background:rgba(0,0,0,0.22);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:12px 14px;
+}
+.perf-card .k { font-size:11px; color:var(--muted); margin-bottom:4px; }
+.perf-card .v { font-size:18px; font-weight:700; }
+.perf-strats {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+  gap:12px;
+}
+.perf-strat-card {
+  background:rgba(0,0,0,0.18);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:14px;
+  transition:border-color 0.2s;
+}
+.perf-strat-card:hover { border-color:rgba(102,228,255,0.35); }
+.perf-strat-header {
   display:flex;
-  gap:8px;
+  justify-content:space-between;
   align-items:center;
-  flex-wrap:wrap;
   margin-bottom:10px;
+  gap:8px;
+  flex-wrap:wrap;
 }
-.analytics-toolbar .form-control {
-  width:auto;
-  min-width:170px;
+.perf-strat-name { font-size:14px; font-weight:700; color:var(--primary); font-family:var(--font-mono); }
+.perf-metrics {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:6px 12px;
+  font-size:12px;
 }
-.analytics-canvas-wrap {
+.perf-metric .label { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; }
+.perf-metric .val { font-weight:600; margin-top:2px; }
+.perf-greeks {
+  display:flex;
+  gap:12px;
+  margin-top:10px;
+  padding-top:8px;
+  border-top:1px solid var(--border);
+  font-size:11px;
+  color:var(--muted);
+  flex-wrap:wrap;
+}
+.perf-greeks span { display:flex; gap:4px; align-items:center; }
+.perf-greeks .gv { color:var(--text); font-weight:600; }
+.perf-pnl-bar {
+  height:6px;
+  border-radius:3px;
+  background:rgba(255,255,255,0.06);
+  margin-top:8px;
+  overflow:hidden;
+}
+.perf-pnl-fill {
+  height:100%;
+  border-radius:3px;
+  transition:width 0.4s ease;
+}
+.perf-timeline {
   background:rgba(0,0,0,0.22);
   border:1px solid var(--border);
   border-radius:8px;
   padding:8px;
+  margin-top:16px;
 }
-.analytics-canvas {
+.perf-canvas {
   width:100%;
-  height:360px;
+  height:280px;
   display:block;
 }
-.analytics-legend {
+.perf-legend {
   display:flex;
   gap:14px;
   align-items:center;
@@ -407,20 +466,6 @@ input:checked + .toggle-slider:before {
   display:inline-block;
   margin-right:6px;
 }
-.analytics-stats {
-  margin-top:10px;
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-  gap:8px;
-}
-.analytics-stat {
-  background:rgba(0,0,0,0.22);
-  border:1px solid var(--border);
-  border-radius:8px;
-  padding:8px;
-}
-.analytics-stat .k { font-size:11px; color:var(--muted); }
-.analytics-stat .v { font-size:16px; font-weight:700; margin-top:3px; }
 </style>
 </head>
 <body data-page="strategy">
@@ -437,7 +482,7 @@ input:checked + .toggle-slider:before {
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('list', this)">All Strategies</button>
     <button class="tab-btn" onclick="switchTab('monitor', this)">Live Monitor</button>
-    <button class="tab-btn" onclick="switchTab('analytics', this)">Analytics</button>
+    <button class="tab-btn" onclick="switchTab('performance', this)">Performance</button>
   </div>
 
   <!-- ====== TAB 1: ALL STRATEGIES ====== -->
@@ -500,41 +545,56 @@ input:checked + .toggle-slider:before {
     </div>
   </div>
 
-  <!-- ====== TAB 3: ANALYTICS ====== -->
-  <div id="analytics-tab" class="tab-content">
+  <!-- ====== TAB 3: PERFORMANCE ====== -->
+  <div id="performance-tab" class="tab-content">
     <div class="widget">
       <div class="widget-title">
-        <span>Strategy PnL vs Spot Timeline</span>
+        <span>Portfolio Performance</span>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-secondary btn-sm" onclick="clearAnalyticsSeries()">Clear Series</button>
-          <button class="btn btn-primary btn-sm" onclick="openOptionAnalyticsPage()">Option Analytics Page</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadPerformance()">Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="openOptionAnalyticsPage()">Option Analytics</button>
         </div>
       </div>
-      <div class="analytics-toolbar">
-        <select id="analytics-strategy-select" class="form-control" onchange="renderAnalyticsChart()"></select>
-        <select id="analytics-range-select" class="form-control" onchange="renderAnalyticsChart()">
-          <option value="900">Last 15m</option>
-          <option value="1800">Last 30m</option>
-          <option value="3600" selected>Last 1h</option>
-          <option value="10800">Last 3h</option>
-          <option value="0">All</option>
-        </select>
-        <input id="analytics-from" class="form-control" type="datetime-local" title="Replay from">
-        <input id="analytics-to" class="form-control" type="datetime-local" title="Replay to">
-        <button class="btn btn-secondary btn-sm" onclick="loadReplayHistory()">Load Replay</button>
-        <button class="btn btn-secondary btn-sm" id="replay-play-btn" onclick="toggleReplayPlayback()">Play</button>
+      <div id="perf-portfolio-summary" class="perf-summary"></div>
+    </div>
+
+    <div class="widget">
+      <div class="widget-title">
+        <span>Strategy Performance</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="perf-filter" class="form-control" style="width:auto;min-width:120px;" onchange="renderPerformanceCards()">
+            <option value="all">All</option>
+            <option value="active">Active Only</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
       </div>
-      <div class="analytics-canvas-wrap">
-        <canvas id="analytics-canvas" class="analytics-canvas"></canvas>
-        <div class="analytics-legend">
+      <div id="perf-strategy-cards" class="perf-strats"></div>
+    </div>
+
+    <div class="widget">
+      <div class="widget-title">
+        <span>PnL Timeline</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="perf-chart-strategy" class="form-control" style="width:auto;min-width:170px;" onchange="renderPerfChart()"></select>
+          <select id="perf-chart-range" class="form-control" style="width:auto;" onchange="renderPerfChart()">
+            <option value="900">15m</option>
+            <option value="1800">30m</option>
+            <option value="3600" selected>1h</option>
+            <option value="10800">3h</option>
+            <option value="0">All</option>
+          </select>
+        </div>
+      </div>
+      <div class="perf-timeline">
+        <canvas id="perf-canvas" class="perf-canvas"></canvas>
+        <div class="perf-legend">
           <span><span class="legend-swatch" style="background:#66e4ff;"></span>PnL</span>
           <span><span class="legend-swatch" style="background:#fbcb5c;"></span>Spot</span>
           <span><span class="legend-swatch" style="background:#4ade80;"></span>Entry</span>
-          <span><span class="legend-swatch" style="background:#fbcb5c;"></span>Adjustment</span>
           <span><span class="legend-swatch" style="background:#fb7185;"></span>Exit</span>
         </div>
       </div>
-      <div id="analytics-stats" class="analytics-stats"></div>
     </div>
   </div>
 </main>
@@ -595,16 +655,7 @@ const monitorRenderCache = {
 };
 let latestOverview = null;
 let latestIndexPrices = {};
-const analyticsSeries = {};
-const replayState = {
-  enabled: false,
-  playing: false,
-  strategy: '',
-  samples: [],
-  events: [],
-  idx: 0,
-  timer: null,
-};
+const perfSeries = {};
 
 // ====== UTILS ======
 const $ = id => document.getElementById(id);
@@ -645,7 +696,7 @@ function switchTab(name, btnEl=null) {
   const tabMap = {
     'list': 'list-tab',
     'monitor': 'monitor-tab',
-    'analytics': 'analytics-tab'
+    'performance': 'performance-tab'
   };
   
   const activeBtn = btnEl || document.querySelector(`.tab-btn[onclick*="switchTab('${name}'"]`);
@@ -654,7 +705,7 @@ function switchTab(name, btnEl=null) {
   
   if (name === 'list') loadStrategies();
   if (name === 'monitor') loadLiveMonitor();
-  if (name === 'analytics') renderAnalyticsChart();
+  if (name === 'performance') loadPerformance();
 }
 
 // ====== LOAD STRATEGIES ======
@@ -663,7 +714,7 @@ async function loadStrategies() {
     const r = await api('GET', '/strategy/configs');
     allStrategies = r.configs || r.strategies || [];
     renderStrategies();
-    refreshAnalyticsStrategyOptions();
+    refreshPerfStrategyOptions();
   } catch(e) {
     toast('Failed to load strategies: ' + e.message, 'error');
   }
@@ -975,7 +1026,7 @@ async function loadLiveMonitor() {
     const r = await api('GET', '/monitoring/live-positions-overview');
     latestOverview = r;
     await refreshIndexPrices();
-    captureAnalyticsSample(r);
+    capturePerfSample(r);
     const s = r.summary || {};
 
     const summaryHtml = `
@@ -1104,8 +1155,8 @@ async function loadLiveMonitor() {
       ${renderMonitorTable(collapseBySymbol(r.orphan_positions || []), true)}
     `;
     setHtmlIfChanged('monitor-orphans', 'orphans', orphansHtml);
-    if (document.getElementById('analytics-tab')?.classList.contains('active')) {
-      renderAnalyticsChart();
+    if (document.getElementById('performance-tab')?.classList.contains('active')) {
+      renderPerfChart();
     }
   } catch(e) {
     monitorRenderCache.summary = '';
@@ -1136,8 +1187,9 @@ async function refreshIndexPrices() {
   }
 }
 
-function refreshAnalyticsStrategyOptions() {
-  const sel = $('analytics-strategy-select');
+// ====== PERFORMANCE TAB ======
+function refreshPerfStrategyOptions() {
+  const sel = $('perf-chart-strategy');
   if (!sel) return;
   const prev = sel.value;
   const names = [...new Set(allStrategies.map(s => s.name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -1149,14 +1201,14 @@ function refreshAnalyticsStrategyOptions() {
   sel.value = names.includes(prev) ? prev : names[0];
 }
 
-function captureAnalyticsSample(overview) {
-  const groups = overview?.strategy_groups || [];
+function capturePerfSample(overview) {
+  const groups = [...(overview?.strategy_groups || []), ...(overview?.completed_strategy_groups || [])];
   const ts = Date.now();
   for (const g of groups) {
     const name = String(g.strategy_name || '').trim();
     if (!name) continue;
-    if (!analyticsSeries[name]) analyticsSeries[name] = { samples: [], events: [], last: null };
-    const data = analyticsSeries[name];
+    if (!perfSeries[name]) perfSeries[name] = { samples: [], events: [], last: null };
+    const data = perfSeries[name];
     const underlying = strategyUnderlying(name);
     const sample = {
       ts,
@@ -1174,134 +1226,167 @@ function captureAnalyticsSample(overview) {
     } else {
       if (!last.active && sample.active) data.events.push({ ts, type: 'entry', label: 'Entry' });
       if (last.active && !sample.active) data.events.push({ ts, type: 'exit', label: 'Exit' });
-      if (sample.adj > last.adj) data.events.push({ ts, type: 'adjustment', label: `Adjustment +${sample.adj - last.adj}` });
+      if (sample.adj > last.adj) data.events.push({ ts, type: 'adjustment', label: `Adj +${sample.adj - last.adj}` });
     }
     if (data.events.length > 300) data.events.shift();
     data.last = sample;
   }
 }
 
-function clearAnalyticsSeries() {
-  Object.keys(analyticsSeries).forEach(k => delete analyticsSeries[k]);
-  replayState.enabled = false;
-  replayState.playing = false;
-  replayState.samples = [];
-  replayState.events = [];
-  replayState.idx = 0;
-  if (replayState.timer) clearInterval(replayState.timer);
-  replayState.timer = null;
-  const btn = $('replay-play-btn');
-  if (btn) btn.textContent = 'Play';
-  renderAnalyticsChart();
-}
-
 function openOptionAnalyticsPage() {
   window.open('/dashboard/web/option_chain_analytics.html', '_blank');
 }
 
-function toIsoFromLocalInput(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  if (!Number.isFinite(d.getTime())) return null;
-  return d.toISOString();
-}
-
-async function loadReplayHistory() {
-  const strategy = $('analytics-strategy-select')?.value;
-  if (!strategy) return;
-
-  const fromIso = toIsoFromLocalInput($('analytics-from')?.value);
-  const toIso = toIsoFromLocalInput($('analytics-to')?.value);
-  const q = new URLSearchParams({ strategy_name: strategy, limit: '20000' });
-  if (fromIso) q.set('from_ts', fromIso);
-  if (toIso) q.set('to_ts', toIso);
-
+async function loadPerformance() {
   try {
-    const [samplesResp, eventsResp] = await Promise.all([
-      api('GET', `/analytics/history/strategy-samples?${q.toString()}`),
-      api('GET', `/analytics/history/strategy-events?${q.toString()}`),
-    ]);
-    replayState.enabled = true;
-    replayState.playing = false;
-    replayState.strategy = strategy;
-    replayState.samples = (samplesResp.rows || []).map(r => ({
-      ts: new Date(r.ts).getTime(),
-      pnl: Number(r.total_pnl || 0),
-      spot: Number(r.spot_price || 0),
-      active: Boolean(r.is_active),
-      adj: Number(r.lifetime_adjustments || 0),
-    })).filter(x => Number.isFinite(x.ts));
-    replayState.events = (eventsResp.rows || []).map(r => ({
-      ts: new Date(r.ts).getTime(),
-      type: String(r.event_type || '').toLowerCase(),
-      label: String(r.event_type || ''),
-    })).filter(x => Number.isFinite(x.ts));
-    // Start at full length so the loaded history renders immediately.
-    replayState.idx = replayState.samples.length;
-    if (replayState.timer) clearInterval(replayState.timer);
-    replayState.timer = null;
-    const btn = $('replay-play-btn');
-    if (btn) btn.textContent = 'Play';
-    renderAnalyticsChart();
+    if (!latestOverview) {
+      await loadLiveMonitor();
+    }
+    renderPortfolioSummary();
+    renderPerformanceCards();
+    refreshPerfStrategyOptions();
+    renderPerfChart();
   } catch (e) {
-    toast(`Replay load failed: ${e.message}`, 'error');
+    toast('Performance load failed: ' + e.message, 'error');
   }
 }
 
-function toggleReplayPlayback() {
-  if (!replayState.enabled || !replayState.samples.length) return;
-  const btn = $('replay-play-btn');
-  if (replayState.playing) {
-    replayState.playing = false;
-    if (replayState.timer) clearInterval(replayState.timer);
-    replayState.timer = null;
-    if (btn) btn.textContent = 'Play';
+function renderPortfolioSummary() {
+  const s = latestOverview?.summary || {};
+  const el = $('perf-portfolio-summary');
+  if (!el) return;
+
+  const totalPnl = Number(s.portfolio_total_pnl || 0);
+  const realized = Number(s.portfolio_realized_pnl || 0);
+  const unrealized = Number(s.portfolio_unrealized_pnl || 0);
+  const activeGroups = (latestOverview?.strategy_groups || []).filter(g => g.active);
+  const completedGroups = latestOverview?.completed_strategy_groups || [];
+
+  const winCount = [...(latestOverview?.strategy_groups || []), ...completedGroups]
+    .filter(g => Number(g.total_pnl || 0) > 0).length;
+  const totalCount = (latestOverview?.strategy_groups || []).length + completedGroups.length;
+
+  el.innerHTML = `
+    <div class="perf-card"><div class="k">Total PnL</div><div class="v" style="color:${totalPnl >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(totalPnl)}</div></div>
+    <div class="perf-card"><div class="k">Realized</div><div class="v" style="color:${realized >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(realized)}</div></div>
+    <div class="perf-card"><div class="k">Unrealized</div><div class="v" style="color:${unrealized >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(unrealized)}</div></div>
+    <div class="perf-card"><div class="k">Active Strategies</div><div class="v">${activeGroups.length}</div></div>
+    <div class="perf-card"><div class="k">Completed</div><div class="v">${completedGroups.length}</div></div>
+    <div class="perf-card"><div class="k">Win Rate</div><div class="v">${totalCount ? Math.round((winCount / totalCount) * 100) : 0}%</div></div>
+    <div class="perf-card"><div class="k">Net Delta</div><div class="v">${fmt2(s.portfolio_combined_delta)}</div></div>
+    <div class="perf-card"><div class="k">Net Theta</div><div class="v" style="color:${Number(s.portfolio_combined_theta||0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(s.portfolio_combined_theta)}</div></div>
+  `;
+}
+
+function renderPerformanceCards() {
+  const el = $('perf-strategy-cards');
+  if (!el) return;
+
+  const filter = $('perf-filter')?.value || 'all';
+  const activeGroups = latestOverview?.strategy_groups || [];
+  const completedGroups = latestOverview?.completed_strategy_groups || [];
+  
+  let groups = [];
+  if (filter === 'active') groups = activeGroups;
+  else if (filter === 'completed') groups = completedGroups;
+  else groups = [...activeGroups, ...completedGroups];
+
+  if (!groups.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:20px;text-align:center;">No strategy performance data yet. Start a strategy to see metrics here.</div>';
     return;
   }
-  replayState.playing = true;
-  if (btn) btn.textContent = 'Pause';
-  if (replayState.timer) clearInterval(replayState.timer);
-  replayState.timer = setInterval(() => {
-    if (!replayState.playing) return;
-    replayState.idx += 1;
-    if (replayState.idx >= replayState.samples.length) {
-      replayState.idx = replayState.samples.length;
-      replayState.playing = false;
-      clearInterval(replayState.timer);
-      replayState.timer = null;
-      const b = $('replay-play-btn');
-      if (b) b.textContent = 'Play';
-    }
-    renderAnalyticsChart();
-  }, 180);
+
+  el.innerHTML = groups.map(g => {
+    const pnl = Number(g.total_pnl || 0);
+    const realized = Number(g.realized_pnl || 0);
+    const unrealized = Number(g.unrealized_pnl || 0);
+    const activeLegCount = Number(g.active_legs || 0);
+    const closedLegCount = Number(g.closed_legs || 0);
+    const totalLegs = activeLegCount + closedLegCount;
+    const runtime = fmtRuntime(g.runtime_seconds);
+    const adjustments = Number(g.lifetime_adjustments || 0);
+    const isActive = Boolean(g.active);
+    const isLive = g.mode === 'LIVE';
+
+    // PnL bar — scale from -maxAbs to +maxAbs
+    const maxAbsPnl = Math.max(Math.abs(pnl), 1);
+    const barWidth = Math.min(100, (Math.abs(pnl) / maxAbsPnl) * 100);
+    const barColor = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+
+    return `
+      <div class="perf-strat-card">
+        <div class="perf-strat-header">
+          <div class="perf-strat-name">
+            ${escHtml(g.strategy_name)}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${isLive
+              ? '<span class="badge badge-mode badge-live">⚡ LIVE</span>'
+              : '<span class="badge badge-mode badge-mock">🧪 MOCK</span>'}
+            ${isActive
+              ? '<span class="badge badge-running">ACTIVE</span>'
+              : '<span class="badge badge-stopped">COMPLETED</span>'}
+          </div>
+        </div>
+        <div class="perf-metrics">
+          <div class="perf-metric">
+            <div class="label">Total PnL</div>
+            <div class="val" style="color:${pnl >= 0 ? 'var(--success)' : 'var(--danger)'}; font-size:16px;">${fmt2(pnl)}</div>
+          </div>
+          <div class="perf-metric">
+            <div class="label">Realized</div>
+            <div class="val" style="color:${realized >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(realized)}</div>
+          </div>
+          <div class="perf-metric">
+            <div class="label">Unrealized</div>
+            <div class="val" style="color:${unrealized >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(unrealized)}</div>
+          </div>
+          <div class="perf-metric">
+            <div class="label">Legs</div>
+            <div class="val">${activeLegCount} active / ${closedLegCount} closed</div>
+          </div>
+          <div class="perf-metric">
+            <div class="label">Runtime</div>
+            <div class="val">${runtime}</div>
+          </div>
+          <div class="perf-metric">
+            <div class="label">Adjustments</div>
+            <div class="val">${adjustments}</div>
+          </div>
+        </div>
+        <div class="perf-pnl-bar">
+          <div class="perf-pnl-fill" style="width:${barWidth}%;background:${barColor};"></div>
+        </div>
+        <div class="perf-greeks">
+          <span>Δ <span class="gv">${fmt2(g.combined_delta || g.delta)}</span></span>
+          <span>Γ <span class="gv">${fmt2(g.combined_gamma || g.gamma)}</span></span>
+          <span>Θ <span class="gv">${fmt2(g.combined_theta || g.theta)}</span></span>
+          <span>ν <span class="gv">${fmt2(g.combined_vega || g.vega)}</span></span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
-function renderAnalyticsChart() {
-  const canvas = $('analytics-canvas');
-  const stats = $('analytics-stats');
-  const sel = $('analytics-strategy-select');
-  const rangeSel = $('analytics-range-select');
-  if (!canvas || !stats || !sel || !rangeSel) return;
+function renderPerfChart() {
+  const canvas = $('perf-canvas');
+  const sel = $('perf-chart-strategy');
+  const rangeSel = $('perf-chart-range');
+  if (!canvas || !sel || !rangeSel) return;
 
   const strategy = sel.value;
-  let samples = [];
-  let events = [];
-  if (replayState.enabled && replayState.strategy === strategy) {
-    samples = replayState.samples.slice(0, Math.max(1, replayState.idx));
-    const lastTs = samples.length ? samples[samples.length - 1].ts : 0;
-    events = replayState.events.filter(e => e.ts <= lastTs);
-  } else {
-    const series = analyticsSeries[strategy] || { samples: [], events: [] };
-    const all = series.samples || [];
-    const rangeSec = Number(rangeSel.value || 0);
-    const now = Date.now();
-    samples = rangeSec > 0 ? all.filter(x => x.ts >= now - (rangeSec * 1000)) : all.slice();
-    events = rangeSec > 0 ? (series.events || []).filter(e => e.ts >= now - (rangeSec * 1000)) : (series.events || []);
-  }
+  const series = perfSeries[strategy] || { samples: [], events: [] };
+  const all = series.samples || [];
+  const rangeSec = Number(rangeSel.value || 0);
+  const now = Date.now();
+  const samples = rangeSec > 0 ? all.filter(x => x.ts >= now - (rangeSec * 1000)) : all.slice();
+  const events = rangeSec > 0
+    ? (series.events || []).filter(e => e.ts >= now - (rangeSec * 1000))
+    : (series.events || []);
 
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.clientWidth || 900;
-  const cssH = canvas.clientHeight || 360;
+  const cssH = canvas.clientHeight || 280;
   canvas.width = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
   const ctx = canvas.getContext('2d');
@@ -1311,8 +1396,7 @@ function renderAnalyticsChart() {
   ctx.font = '12px IBM Plex Mono, monospace';
 
   if (samples.length < 2) {
-    ctx.fillText('Waiting for live samples...', 12, 22);
-    stats.innerHTML = '<div class="analytics-stat"><div class="k">Status</div><div class="v">No samples</div></div>';
+    ctx.fillText('Collecting live samples... switch to this tab and wait.', 12, 22);
     return;
   }
 
@@ -1333,6 +1417,7 @@ function renderAnalyticsChart() {
   const yPnl = v => pad.t + (1 - ((v - pnlMin) / Math.max(1e-9, (pnlMax - pnlMin)))) * h;
   const ySpot = v => pad.t + (1 - ((v - spotMin) / Math.max(1e-9, (spotMax - spotMin)))) * h;
 
+  // Axes
   ctx.strokeStyle = 'rgba(255,255,255,0.12)';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1341,6 +1426,18 @@ function renderAnalyticsChart() {
   ctx.lineTo(pad.l + w, pad.t + h);
   ctx.stroke();
 
+  // Zero line for PnL
+  if (pnlMin < 0 && pnlMax > 0) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pad.l, yPnl(0));
+    ctx.lineTo(pad.l + w, yPnl(0));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // PnL line
   ctx.strokeStyle = '#66e4ff';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -1350,9 +1447,10 @@ function renderAnalyticsChart() {
   });
   ctx.stroke();
 
+  // Spot line
   if (spotVals.length) {
     ctx.strokeStyle = '#fbcb5c';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     let spotMoved = false;
     samples.forEach((s) => {
@@ -1364,6 +1462,7 @@ function renderAnalyticsChart() {
     if (spotMoved) ctx.stroke();
   }
 
+  // Event markers
   for (const ev of events) {
     const px = x(ev.ts);
     const color = ev.type === 'entry' ? '#4ade80' : (ev.type === 'exit' ? '#fb7185' : '#fbcb5c');
@@ -1375,23 +1474,11 @@ function renderAnalyticsChart() {
     ctx.stroke();
   }
 
+  // Labels
   ctx.fillStyle = '#66e4ff';
   ctx.fillText(`PnL ${pnlMin.toFixed(2)} .. ${pnlMax.toFixed(2)}`, 8, 14);
   ctx.fillStyle = '#fbcb5c';
   ctx.fillText(`Spot ${spotMin.toFixed(2)} .. ${spotMax.toFixed(2)}`, cssW - 190, 14);
-
-  const first = samples[0], last = samples[samples.length - 1];
-  const pnlChange = Number(last.pnl || 0) - Number(first.pnl || 0);
-  const spotChange = Number(last.spot || 0) - Number(first.spot || 0);
-  stats.innerHTML = `
-    <div class="analytics-stat"><div class="k">Strategy</div><div class="v">${escHtml(strategy)}</div></div>
-    <div class="analytics-stat"><div class="k">Last PnL</div><div class="v" style="color:${last.pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(last.pnl)}</div></div>
-    <div class="analytics-stat"><div class="k">PnL Change</div><div class="v" style="color:${pnlChange >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmt2(pnlChange)}</div></div>
-    <div class="analytics-stat"><div class="k">Spot Change</div><div class="v">${fmt2(spotChange)}</div></div>
-    <div class="analytics-stat"><div class="k">Samples</div><div class="v">${samples.length}</div></div>
-    <div class="analytics-stat"><div class="k">Events</div><div class="v">${events.length}</div></div>
-    <div class="analytics-stat"><div class="k">Mode</div><div class="v">${replayState.enabled && replayState.strategy === strategy ? 'Replay' : 'Live'}</div></div>
-  `;
 }
 
 async function forceExit(name) {
@@ -1544,7 +1631,7 @@ async function toggleMode(name) {
     // Reload from backend truth to avoid stale/mixed UI state.
     await loadStrategies();
     if (document.getElementById('monitor-tab')?.classList.contains('active') ||
-        document.getElementById('analytics-tab')?.classList.contains('active')) {
+        document.getElementById('performance-tab')?.classList.contains('active')) {
       await loadLiveMonitor();
     }
 
@@ -1564,22 +1651,22 @@ async function toggleMode(name) {
 window.addEventListener('load', () => {
   loadStrategies();
   refreshStatus();
-  refreshAnalyticsStrategyOptions();
-  const to = new Date();
-  const from = new Date(to.getTime() - (60 * 60 * 1000));
-  const fmt = d => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-  if ($('analytics-from')) $('analytics-from').value = fmt(from);
-  if ($('analytics-to')) $('analytics-to').value = fmt(to);
+  refreshPerfStrategyOptions();
   setInterval(refreshStatus, 5000);
   setInterval(() => {
     const activeTab = document.querySelector('.tab-btn.active');
-    if (activeTab && (activeTab.textContent.includes('Monitor') || activeTab.textContent.includes('Analytics'))) {
+    if (activeTab && (activeTab.textContent.includes('Monitor') || activeTab.textContent.includes('Performance'))) {
       loadLiveMonitor();
+      if (activeTab.textContent.includes('Performance')) {
+        renderPortfolioSummary();
+        renderPerformanceCards();
+        renderPerfChart();
+      }
     }
   }, 3000);
   window.addEventListener('resize', () => {
-    if (document.getElementById('analytics-tab')?.classList.contains('active')) {
-      renderAnalyticsChart();
+    if (document.getElementById('performance-tab')?.classList.contains('active')) {
+      renderPerfChart();
     }
   });
 });

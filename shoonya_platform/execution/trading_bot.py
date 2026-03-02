@@ -582,17 +582,14 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
     def is_healthy(self) -> bool:
         """Health check for monitoring.
 
-        Returns True only when the broker API object exists and a
-        quick session probe succeeds.  Returns False and logs on
-        any failure so issues are observable.
+        Returns True when the broker API object exists and appears
+        logged in.  Read-only — never triggers ensure_session()/login()
+        to avoid killing the WebSocket session.
         """
         try:
             if not hasattr(self, 'api'):
                 return False
-            # Minimal probe: ensure_session returns bool
-            if hasattr(self.api, 'ensure_session'):
-                return bool(self.api.ensure_session())
-            return True
+            return bool(getattr(self.api, 'logged_in', False))
         except Exception as exc:
             logger.warning("is_healthy check failed: %s", exc)
             return False

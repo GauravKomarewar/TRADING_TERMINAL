@@ -186,10 +186,9 @@ def event_handler_feed_update(tick_data: dict) -> None:
     """
     global _tick_counter, _last_tick_time
     
-    # Validate client session
-    if _api_client_ref and not _api_client_ref.is_logged_in():
-        logger.debug("Ignoring tick - client not logged in")
-        return
+    # NOTE: Do NOT gate ticks on session state.
+    # WS ticks arrive independently of REST session validity.
+    # Dropping ticks here causes zero-data cascading failures.
     
     try:
         raw_token = tick_data.get("tk")
@@ -216,12 +215,17 @@ def event_handler_feed_update(tick_data: dict) -> None:
         with _tick_counter_lock:
             _tick_counter += 1
             should_log = (_tick_counter % config.LOG_TICK_INTERVAL) == 0
+            is_first = (_tick_counter == 1)
+        
+        if is_first:
+            ltp = normalized.get('ltp')
+            logger.info(f"🎯 FIRST TICK received | token={token} | LTP={ltp} | store_size={len(tick_data_store)}")
         
         if should_log:
             ltp = normalized.get('ltp')
             oi = normalized.get('oi')
             if ltp is not None:
-                logger.debug(f"📈 Tick {token} | LTP: {ltp} | OI: {oi} | Count: {_tick_counter}")
+                logger.debug(f"📈 Tick #{_tick_counter} | {token} | LTP: {ltp} | OI: {oi} | store={len(tick_data_store)}")
                     
     except Exception as e:
         logger.error(f"Error handling feed update: {e}", exc_info=True)

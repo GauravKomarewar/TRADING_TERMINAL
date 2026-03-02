@@ -1582,7 +1582,7 @@ def _auto_greeks_refresher(
                 consecutive_failures += 1
                 
                 if consecutive_failures >= max_consecutive_failures:
-                    logger.error(
+                    logger.warning(
                         "Greek refresh failed %d times consecutively - "
                         "possible data quality issue",
                         consecutive_failures

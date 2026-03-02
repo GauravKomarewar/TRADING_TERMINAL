@@ -8,6 +8,9 @@ class TestHardeningCriticalPaths(unittest.TestCase):
         critical_files = [
             Path("shoonya_platform/strategy_runner/strategy_executor_service.py"),
             Path("shoonya_platform/execution/trading_bot.py"),
+            Path("shoonya_platform/execution/bot_alert_processing.py"),
+            Path("shoonya_platform/execution/bot_execution.py"),
+            Path("shoonya_platform/execution/bot_status_scheduling.py"),
         ]
         for p in critical_files:
             text = p.read_text(encoding="utf-8", errors="replace")
@@ -24,7 +27,8 @@ class TestHardeningCriticalPaths(unittest.TestCase):
         self.assertIn("(now - self._rule_last_fired[rule_name]).total_seconds()", text)
 
     def test_test_mode_exit_does_not_require_broker_netqty(self):
-        text = Path("shoonya_platform/execution/trading_bot.py").read_text(
+        # After mixin split, process_alert lives in bot_execution.py
+        text = Path("shoonya_platform/execution/bot_execution.py").read_text(
             encoding="utf-8", errors="replace"
         )
         self.assertIn("if execution_type == \"EXIT\" and not parsed.test_mode:", text)

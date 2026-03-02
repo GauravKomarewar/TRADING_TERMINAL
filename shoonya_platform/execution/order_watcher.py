@@ -100,10 +100,16 @@ class OrderWatcherEngine(threading.Thread):
         """
         try:
             broker_orders = self.bot.api.get_order_book() or []
-        except Exception:
-            logger.exception("OrderWatcher: get_order_book() failed — broker polling skipped this cycle")
+        except Exception as _ob_err:
+            self._ob_fail_count = getattr(self, '_ob_fail_count', 0) + 1
+            if self._ob_fail_count <= 3 or self._ob_fail_count % 20 == 0:
+                logger.error(
+                    "OrderWatcher: get_order_book() failed (count=%d) — broker polling skipped: %s",
+                    self._ob_fail_count, _ob_err,
+                )
             return
 
+        self._ob_fail_count = 0  # Reset on success
         for bo in broker_orders:
             broker_id = bo.get("norenordno")
             status = (bo.get("status") or "").upper()

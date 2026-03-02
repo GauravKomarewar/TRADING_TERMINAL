@@ -1370,7 +1370,7 @@ class ShoonyaClient(NorenApi):
         if self._enable_auto_recovery:
             self.ensure_session()  # Will raise RuntimeError if recovery fails
         elif not self._logged_in:
-            logger.critical("🚨 get_order_book: session invalid")
+            logger.error("🚨 get_order_book: session invalid")
             raise RuntimeError("SESSION_INVALID")
 
         try:
@@ -1395,7 +1395,7 @@ class ShoonyaClient(NorenApi):
             raise
 
         except Exception as exc:
-            logger.critical("🚨 get_order_book exception: %s", exc)
+            logger.error("🚨 get_order_book exception: %s", exc)
             raise RuntimeError(f"BROKER_API_ERROR: {exc}")
 
     def get_account_info(self) -> AccountInfo:

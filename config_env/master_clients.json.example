@@ -1,0 +1,26 @@
+{
+  "_comment": "Master client registry — managed by master_manager.py. Add one entry per client.",
+  "clients": [
+    {
+      "client_id": "CLIENT_ID_PLACEHOLDER",
+      "client_alias": "CLIENT_ALIAS_PLACEHOLDER",
+      "display_name": "DISPLAY_NAME_PLACEHOLDER",
+      "webhook_url": "http://127.0.0.1:5001",
+      "dashboard_url": "http://127.0.0.1:8001",
+      "env_file": "config_env/FA14667.env",
+
+      "service_enabled": true,
+      "trading_blocked": false,
+      "block_reason": null,
+
+      "copy_trading_role": "standalone",
+      "copy_trading_enabled": false,
+      "copy_trading_master_id": null,
+      "copy_trading_followers": [],
+
+      "registered_at": "2026-03-02T00:00:00",
+      "last_heartbeat": null,
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "_comment": "Gateway route registry — one entry per client. Edit and save; gateway auto-reloads.",
+  "clients": [
+    {
+      "alias": "FA14667",
+      "display_name": "CLIENT_ONE:FA14667",
+      "webhook_url": "http://127.0.0.1:5001",
+      "dashboard_url": "http://127.0.0.1:8001",
+      "enabled": true
+    },
+    {
+      "alias": "FA14668",
+      "display_name": "CLIENT_TWO:FA14668",
+      "webhook_url": "http://127.0.0.1:5002",
+      "dashboard_url": "http://127.0.0.1:8002",
+      "enabled": false
+    }
+  ]
+}

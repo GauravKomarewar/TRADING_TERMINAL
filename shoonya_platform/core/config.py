@@ -179,6 +179,56 @@ class Config:
         self.shoonya_host: str = "https://api.shoonya.com/NorenWClientTP/"
         self.shoonya_websocket: str = "wss://api.shoonya.com/NorenWSTP/"
 
+        # ---------------------------------------------------------------
+        # === Client Gateway Alias ===
+        # URL-safe token used by the gateway router for path-based routing.
+        # Defaults to user_id so existing deployments need no change.
+        # ---------------------------------------------------------------
+        self.client_id_alias: str = (
+            self._strip_comment(os.getenv("CLIENT_ID_ALIAS", ""))
+            or (self.user_id or "")
+        )
+
+        # ---------------------------------------------------------------
+        # === Copy Trading ===
+        # ---------------------------------------------------------------
+        self.copy_trading_role: str = self._strip_comment(
+            os.getenv("COPY_TRADING_ROLE", "standalone")
+        ).lower()
+        self.copy_trading_secret: Optional[str] = (
+            self._strip_comment(os.getenv("COPY_TRADING_SECRET", "")) or None
+        )
+        # Followers — only meaningful when role=master
+        _followers_raw = self._strip_comment(os.getenv("COPY_TRADING_FOLLOWERS", ""))
+        self.copy_trading_followers: List[str] = (
+            [u.strip() for u in _followers_raw.split(",") if u.strip()]
+            if _followers_raw else []
+        )
+        # Master endpoint — only meaningful when role=follower
+        self.copy_trading_master_endpoint: Optional[str] = (
+            self._strip_comment(os.getenv("COPY_TRADING_MASTER_ENDPOINT", "")) or None
+        )
+        # Execution mode: mirror | scaled
+        self.copy_trading_mode: str = self._strip_comment(
+            os.getenv("COPY_TRADING_MODE", "mirror")
+        ).lower()
+        self.copy_trading_scale_factor: float = self._parse_float(
+            os.getenv("COPY_TRADING_SCALE_FACTOR", "1.0"),
+            "COPY_TRADING_SCALE_FACTOR",
+            min_val=0.01,
+            max_val=100.0,
+        )
+
+        # ---------------------------------------------------------------
+        # === Master Manager ===
+        # ---------------------------------------------------------------
+        self.master_manager_url: Optional[str] = (
+            self._strip_comment(os.getenv("MASTER_MANAGER_URL", "")) or None
+        )
+        self.master_manager_token: Optional[str] = (
+            self._strip_comment(os.getenv("MASTER_MANAGER_TOKEN", "")) or None
+        )
+
     # ------------------------------------------------------------------
     # PARSING HELPERS (NEW)
     # ------------------------------------------------------------------
@@ -392,7 +442,45 @@ class Config:
             )
 
         # -------------------------------------------------
-        # 7️⃣ Type Narrowing (IMPORTANT)
+        # 7️⃣ Copy Trading Validation
+        # -------------------------------------------------
+        _valid_roles = {"standalone", "master", "follower"}
+        if self.copy_trading_role not in _valid_roles:
+            raise ConfigValidationError(
+                f"COPY_TRADING_ROLE must be one of {_valid_roles}, "
+                f"got: '{self.copy_trading_role}'"
+            )
+
+        if self.copy_trading_role == "master":
+            if not self.copy_trading_secret:
+                raise ConfigValidationError(
+                    "COPY_TRADING_SECRET is required when COPY_TRADING_ROLE=master"
+                )
+            if not self.copy_trading_followers:
+                logger.warning(
+                    "⚠️ COPY_TRADING_ROLE=master but COPY_TRADING_FOLLOWERS is empty. "
+                    "No alerts will be fanned out."
+                )
+
+        if self.copy_trading_role == "follower":
+            if not self.copy_trading_secret:
+                raise ConfigValidationError(
+                    "COPY_TRADING_SECRET is required when COPY_TRADING_ROLE=follower"
+                )
+            if not self.copy_trading_master_endpoint:
+                raise ConfigValidationError(
+                    "COPY_TRADING_MASTER_ENDPOINT is required when COPY_TRADING_ROLE=follower"
+                )
+
+        _valid_modes = {"mirror", "scaled"}
+        if self.copy_trading_mode not in _valid_modes:
+            raise ConfigValidationError(
+                f"COPY_TRADING_MODE must be one of {_valid_modes}, "
+                f"got: '{self.copy_trading_mode}'"
+            )
+
+        # -------------------------------------------------
+        # 8️⃣ Type Narrowing (IMPORTANT)
         # -------------------------------------------------
         assert self.user_id is not None
         assert self.password is not None
@@ -456,6 +544,29 @@ class Config:
             "host": self.host,
             "port": self.port,
             "threads": self.threads,
+            "dashboard_port": self.dashboard_port,
+            "client_id_alias": self.client_id_alias,
+        }
+
+    def get_copy_trading_config(self) -> Dict[str, Any]:
+        """
+        Get copy trading configuration (safe to log — no secrets).
+        The shared secret is intentionally excluded from this dict.
+        """
+        return {
+            "role": self.copy_trading_role,
+            "mode": self.copy_trading_mode,
+            "scale_factor": self.copy_trading_scale_factor,
+            "followers": self.copy_trading_followers,
+            "master_endpoint": self.copy_trading_master_endpoint,
+            "enabled": self.copy_trading_role != "standalone",
+        }
+
+    def get_master_manager_config(self) -> Dict[str, Any]:
+        """Get master manager connection config (masks token)."""
+        return {
+            "url": self.master_manager_url,
+            "token_set": bool(self.master_manager_token),
         }
 
     def get_telegram_config(self) -> Dict[str, Optional[str]]:

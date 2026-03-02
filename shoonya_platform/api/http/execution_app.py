@@ -19,6 +19,7 @@ This service is part of the EXECUTION PLANE.
 """
 
 import logging
+import os
 from datetime import datetime
 from flask import Flask, request, jsonify
 
@@ -73,6 +74,29 @@ class ExecutionApp:
 
                 result = self.bot.process_alert(alert_data)
                 status = 200 if result["status"] != "error" else 500
+
+                # ---- COPY TRADING FAN-OUT (MASTER ONLY) ----
+                # Fan out to followers only when execution succeeded and this
+                # client is configured as master. Fanout is fire-and-forget
+                # (does not affect HTTP response to TradingView).
+                copy_svc = getattr(self.bot, "copy_trading_service", None)
+                if (
+                    copy_svc is not None
+                    and copy_svc.is_master
+                    and result.get("status") not in ("error", "blocked", "FAILED")
+                ):
+                    try:
+                        fanout_results = copy_svc.fan_out_alert(alert_data, result)
+                        result["copy_trading"] = {
+                            "fanned_out": True,
+                            "followers_attempted": len(fanout_results),
+                            "followers_delivered": sum(
+                                1 for r in fanout_results if r.get("status") == "delivered"
+                            ),
+                        }
+                    except Exception as _ct_err:
+                        logger.warning("CopyTrading fan-out error (non-fatal): %s", _ct_err)
+
                 return jsonify(result), status
 
             except Exception as e:
@@ -178,6 +202,119 @@ class ExecutionApp:
                         message=str(e),
                     )
                 ), 500
+
+        # -------------------------------
+        # Copy-Alert Endpoint (FOLLOWER / RELAY)
+        # Receives fan-out alerts from a master client.
+        #
+        # INDEPENDENT TRADING NOTE:
+        # Every client — regardless of copy_trading_role — ALWAYS
+        # receives its own TradingView webhooks on /webhook and trades
+        # independently.  Copy trading is purely additive:
+        #   • standalone:  only /webhook   (no copy involvement)
+        #   • master:      /webhook → process → fan-out to followers
+        #   • follower:    /webhook (own alerts) + /copy-alert (master's alerts)
+        #   • relay:       follower who is also a master for sub-followers;
+        #                  copy-alert is processed AND re-fanned-out
+        # -------------------------------
+        @self.app.route("/copy-alert", methods=["POST"])
+        def copy_alert():
+            try:
+                copy_svc = getattr(self.bot, "copy_trading_service", None)
+
+                # Silently accept (200) if copy trading not configured on this client,
+                # so the master doesn't get spurious errors.
+                if copy_svc is None or not copy_svc.is_follower:
+                    return jsonify({"status": "not_a_follower"}), 200
+
+                payload_bytes = request.get_data()
+                signature = request.headers.get("X-Copy-Signature", "")
+
+                if not copy_svc.validate_copy_signature(payload_bytes, signature):
+                    return jsonify({"error": "Invalid copy signature"}), 401
+
+                raw_payload = parse_json_safely(payload_bytes.decode("utf-8", errors="replace"))
+                copy_payload, parse_error = raw_payload
+                if parse_error:
+                    return jsonify({"error": parse_error}), 400
+
+                alert_data, metadata = copy_svc.extract_alert_from_copy_payload(copy_payload)
+
+                logger.info(
+                    "COPY_ALERT_RECEIVED | master=%s | strategy=%s | mode=%s",
+                    metadata.get("master_client_id", "unknown"),
+                    alert_data.get("strategy_name", "unknown"),
+                    metadata.get("copy_mode", "mirror"),
+                )
+
+                result = self.bot.process_alert(alert_data)
+
+                # ---- RELAY FAN-OUT (this client is also a master for sub-followers) ----
+                # If this follower is ALSO a master for other followers, re-fan the
+                # alert so chains like A-master → B-relay → C-follower work correctly.
+                if (
+                    copy_svc.is_master
+                    and result.get("status") not in ("error", "blocked", "FAILED")
+                ):
+                    try:
+                        fanout_results = copy_svc.fan_out_alert(alert_data, result)
+                        result["relay_copy_trading"] = {
+                            "relayed": True,
+                            "followers_attempted": len(fanout_results),
+                            "followers_delivered": sum(
+                                1 for r in fanout_results if r.get("status") == "delivered"
+                            ),
+                        }
+                    except Exception as _relay_err:
+                        logger.warning("Relay fan-out error (non-fatal): %s", _relay_err)
+
+                status_code = 200 if result.get("status") != "error" else 500
+                return jsonify({**result, "copy_meta": metadata}), status_code
+
+            except Exception as e:
+                log_exception("copy_alert_endpoint", e)
+                return jsonify(
+                    create_response_dict(status="error", message="Copy alert processing failed")
+                ), 500
+
+        # -------------------------------
+        # Master Manager Status Endpoint
+        # Called by the master manager health poller.
+        # Returns structured client status without auth
+        # (internal loopback only — don't expose publicly).
+        # -------------------------------
+        @self.app.route("/master-status", methods=["GET"])
+        def master_status():
+            # --- Loopback guard: only allow requests from 127.0.0.1 / ::1 ---
+            # Additionally accept an optional X-Internal-Token header for
+            # non-loopback internal networks (configure via INTERNAL_TOKEN env var).
+            allowed_addrs = {"127.0.0.1", "::1", "localhost"}
+            internal_token = os.environ.get("INTERNAL_TOKEN")
+            remote = request.remote_addr or ""
+            token_header = request.headers.get("X-Internal-Token", "")
+            if remote not in allowed_addrs:
+                if not (internal_token and token_header == internal_token):
+                    return jsonify({"error": "Forbidden"}), 403
+            try:
+                cfg = self.bot.config
+                ct_cfg = cfg.get_copy_trading_config()
+                identity = cfg.get_client_identity()
+                stats = self.bot.get_bot_stats()
+                return jsonify({
+                    "client_id": identity.get("client_id"),
+                    "client_alias": getattr(cfg, "client_id_alias", identity.get("user_id")),
+                    "display_name": identity.get("client_id"),
+                    "service": "execution",
+                    "logged_in": bool(self.bot.api.logged_in),
+                    "copy_trading_role": ct_cfg.get("role"),
+                    "copy_trading_enabled": ct_cfg.get("enabled"),
+                    "total_trades": stats.total_trades,
+                    "today_trades": stats.today_trades,
+                    "timestamp": datetime.now().isoformat(),
+                }), 200
+            except Exception as e:
+                log_exception("master_status", e)
+                return jsonify({"status": "error", "message": "Internal server error"}), 500
 
     def get_app(self):
         return self.app

@@ -252,6 +252,29 @@
             color: var(--primary);
             font-size: 1.25rem;
         }
+
+        /* Client identity badge shown on login page */
+        .client-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.85rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(99,102,241,0.12);
+            border: 1px solid rgba(99,102,241,0.35);
+            font-size: 0.78rem;
+            color: #a5b4fc;
+            letter-spacing: 0.03em;
+        }
+        .client-badge .badge-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 5px #22c55e;
+            flex-shrink: 0;
+        }
+        .client-badge.loading { opacity: 0.45; }
+        .client-badge.hidden  { display: none; }
     </style>
 </head>
 <body>
@@ -263,6 +286,11 @@
             <div class="logo-text">Intelligent Trading System</div>
             <div class="logo-subtitle">
                 OMS · Risk-Managed Execution · Live Monitoring
+            </div>
+            <!-- Shows which client account this dashboard belongs to -->
+            <div id="clientBadge" class="client-badge loading">
+                <span class="badge-dot"></span>
+                <span id="clientBadgeText">Loading account…</span>
             </div>
         </div>
 
@@ -307,7 +335,7 @@
 
     <div class="footer">
         © 2026 Intelligent Trading System<br>
-        <strong>Gaurav Y Komarewar</strong>
+        <span id="footerClientName" style="font-weight:600;"></span>
     </div>
 </div>
 
@@ -389,6 +417,28 @@
 
     window.addEventListener('load', () => {
         document.getElementById('password').focus();
+
+        // ── Fetch client identity (public endpoint, no auth needed) ──
+        fetch('/auth/client-info')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                const badge    = document.getElementById('clientBadge');
+                const badgeTxt = document.getElementById('clientBadgeText');
+                const footer   = document.getElementById('footerClientName');
+                if (data && (data.user_id || data.alias)) {
+                    const uid   = data.user_id  || data.alias || '';
+                    const uname = data.user_name || '';
+                    const label = uname ? `${uid} — ${uname}` : uid;
+                    badgeTxt.textContent = '🔑 Account: ' + label;
+                    badge.classList.remove('loading');
+                    footer.textContent = uname || uid;
+                } else {
+                    badge.classList.add('hidden');
+                }
+            })
+            .catch(() => {
+                document.getElementById('clientBadge').classList.add('hidden');
+            });
     });
 </script>
 

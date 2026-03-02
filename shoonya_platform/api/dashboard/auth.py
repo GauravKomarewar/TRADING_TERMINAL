@@ -71,7 +71,7 @@ async def login(
     - Session is cookie-based
     - Client identity comes ONLY from Config
     """
-    if form_data.password != DASHBOARD_PASSWORD:
+    if not secrets.compare_digest(form_data.password, DASHBOARD_PASSWORD):
         logger.warning("❌ Dashboard login failed")
         raise HTTPException(status_code=401, detail="Invalid password")
 
@@ -147,3 +147,27 @@ async def status(
         raise HTTPException(status_code=401, detail="Session expired")
 
     return {"authenticated": True}
+
+
+@router.get("/client-info")
+async def client_info():
+    """
+    Return the identity of the client whose dashboard this process serves.
+
+    This endpoint is intentionally PUBLIC (no auth required) so the login
+    page can display the correct client context to the operator BEFORE they
+    authenticate — e.g. "You are logging in to FA14667 (GAURAV)".
+
+    Returns only non-secret identity fields (no credentials, no tokens).
+    """
+    try:
+        identity = Config().get_client_identity()
+        return {
+            "user_id":     identity.get("user_id", ""),
+            "user_name":   identity.get("user_name", ""),
+            "client_id":   identity.get("client_id", ""),
+            "alias":       os.getenv("CLIENT_ID_ALIAS", identity.get("user_id", "")),
+        }
+    except Exception as exc:
+        logger.warning("client-info fetch failed: %s", exc)
+        return {"user_id": "", "user_name": "", "client_id": "", "alias": ""}

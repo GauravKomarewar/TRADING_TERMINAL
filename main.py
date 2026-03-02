@@ -58,7 +58,9 @@ import uvicorn
 from shoonya_platform.core.config import Config
 from shoonya_platform.execution.trading_bot import ShoonyaBot, set_global_bot
 from shoonya_platform.api.http.execution_app import ExecutionApp
-from shoonya_platform.api.dashboard.dashboard_app import create_dashboard_app
+# NOTE: dashboard_app is imported lazily inside run_dashboard() so that
+# DASHBOARD_ENV is already set in os.environ before the module's top-level
+# bootstrap code runs (it reads DASHBOARD_ENV at import time).
 from shoonya_platform.logging.logger_config import setup_application_logging, get_component_logger
 from shoonya_platform.utils.utils import log_exception
 
@@ -141,6 +143,8 @@ def run_dashboard():
 
     while not shutdown_event.is_set():
         try:
+            # Lazy import: DASHBOARD_ENV must be set before this module loads
+            from shoonya_platform.api.dashboard.dashboard_app import create_dashboard_app  # noqa: PLC0415
             app = create_dashboard_app()
 
             # Create Server instance (not run() helper)
@@ -211,6 +215,13 @@ def main():
         env_path = Path(args.env)
         if not env_path.is_absolute():
             env_path = Path(__file__).resolve().parent / env_path
+
+    # --- DASHBOARD_ENV must be set BEFORE dashboard_app module is imported ---
+    # dashboard_app.py reads DASHBOARD_ENV at module level to load env vars.
+    # Setting it here (before the lazy import in run_dashboard) ensures every
+    # client process loads ITS OWN config file, not always primary.env.
+    _dashboard_env = env_path.stem if env_path else "primary"
+    os.environ["DASHBOARD_ENV"] = _dashboard_env
 
     try:
         # -------------------------------------------------
@@ -337,6 +348,43 @@ def main():
                 port=server_cfg["port"],
                 report_frequency=config.report_frequency,
             )
+
+        # -------------------------------------------------
+        # MASTER MANAGER REGISTRATION (OPTIONAL)
+        # If MASTER_MANAGER_URL is configured, register this
+        # client at startup so the master is aware of it.
+        # -------------------------------------------------
+        master_url = config.master_manager_url
+        master_token = config.master_manager_token
+        if master_url and master_token:
+            try:
+                import urllib.request as _urllib_req
+                import json as _json
+
+                registration_payload = {
+                    "client_id": config.user_id,
+                    "client_alias": config.client_id_alias,
+                    "display_name": client_id,
+                    "webhook_url": f"http://127.0.0.1:{config.port}",
+                    "dashboard_url": f"http://127.0.0.1:{config.dashboard_port}",
+                    "copy_trading_role": config.copy_trading_role,
+                    "copy_trading_enabled": config.copy_trading_role != "standalone",
+                }
+                body = _json.dumps(registration_payload).encode("utf-8")
+                req = _urllib_req.Request(
+                    master_url.rstrip("/") + "/api/register",
+                    data=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Master-Token": master_token,
+                    },
+                    method="POST",
+                )
+                with _urllib_req.urlopen(req, timeout=5) as resp:
+                    reg_result = _json.loads(resp.read())
+                    logger.info("✅ Registered with master manager: %s", reg_result)
+            except Exception as _reg_err:
+                logger.warning("⚠️ Master manager registration failed (non-fatal): %s", _reg_err)
 
         # -------------------------------------------------
         # START WAITRESS (BLOCKING — MAIN THREAD)

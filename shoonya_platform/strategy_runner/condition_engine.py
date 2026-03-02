@@ -445,11 +445,11 @@ class ConditionEngine:
                             return self.state.spot_price > leg.strike
                         return self.state.spot_price < leg.strike
                     elif metric == "moneyness":
-                        if leg.strike is None or leg.option_type is None or self.state.spot_price == 0:
+                        if leg.strike is None or leg.option_type is None or not self.state.spot_price:
                             return 0.0
-                        if leg.option_type.value == "CE":
-                            return (leg.strike - self.state.spot_price) / self.state.spot_price
-                        return (self.state.spot_price - leg.strike) / self.state.spot_price
+                        # Use the same formula as ce_moneyness/pe_moneyness helpers:
+                        # (strike - spot) / spot  for both CE and PE
+                        return (leg.strike - self.state.spot_price) / self.state.spot_price
                     elif hasattr(leg, metric):
                         return getattr(leg, metric)
             return 0.0

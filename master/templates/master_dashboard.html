@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Master Account Manager — Shoonya Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+    .dot-green  { background:#22c55e; box-shadow: 0 0 6px #22c55e; }
+    .dot-red    { background:#ef4444; box-shadow: 0 0 6px #ef4444; }
+    .dot-yellow { background:#eab308; box-shadow: 0 0 6px #eab308; }
+    .dot-gray   { background:#6b7280; }
+    .flash { animation: flashbg 0.6s ease; }
+    @keyframes flashbg { 0%,100%{background:transparent} 50%{background:#fef08a} }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-sans">
+
+<!-- ========== NAVBAR ========== -->
+<nav class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <span class="text-2xl">🛡️</span>
+    <div>
+      <div class="text-white font-bold text-lg leading-none">Master Account Manager</div>
+      <div class="text-gray-400 text-xs">Shoonya Trading Platform — Control Plane</div>
+    </div>
+  </div>
+  <div class="flex items-center gap-4">
+    <span class="text-gray-400 text-sm">{{ now }}</span>
+    <form action="/auth/logout" method="post">
+      <button type="submit"
+        class="bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-1.5 rounded-md transition">
+        Logout
+      </button>
+    </form>
+  </div>
+</nav>
+
+<!-- ========== SUMMARY CARDS ========== -->
+<div class="max-w-7xl mx-auto px-6 py-6">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+    {% set cards = [
+      ("Total Clients",      summary.total_clients,     "text-blue-400",   "📋"),
+      ("Active Services",    summary.active_clients,    "text-green-400",  "✅"),
+      ("Blocked",            summary.blocked_clients,   "text-red-400",    "🚫"),
+      ("Copy Trading On",    summary.copy_trading_active,"text-purple-400","🔁"),
+      ("Masters",            summary.masters,            "text-orange-400", "👑"),
+      ("Followers",          summary.followers,          "text-cyan-400",   "👥"),
+    ] %}
+    {% for label, value, color, icon in cards %}
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-2xl mb-1">{{ icon }}</div>
+      <div class="text-3xl font-bold {{ color }}">{{ value }}</div>
+      <div class="text-gray-400 text-xs mt-1">{{ label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ========== CLIENT TABLE ========== -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <div class="flex justify-between items-center px-6 py-4 border-b border-gray-800">
+      <h2 class="text-lg font-semibold text-white">Registered Clients</h2>
+      <button onclick="location.reload()"
+        class="bg-gray-700 hover:bg-gray-600 text-sm text-white px-3 py-1.5 rounded-md transition">
+        ↺ Refresh
+      </button>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-800 text-gray-400 uppercase text-xs tracking-wider">
+            <th class="px-4 py-3 text-left">Client</th>
+            <th class="px-4 py-3 text-left">Service</th>
+            <th class="px-4 py-3 text-left">Trading</th>
+            <th class="px-4 py-3 text-left">Copy Role</th>
+            <th class="px-4 py-3 text-left">Last Heartbeat</th>
+            <th class="px-4 py-3 text-left">Health</th>
+            <th class="px-4 py-3 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+          {% for c in clients %}
+          <tr class="hover:bg-gray-850 transition" id="row-{{ c.client_id }}">
+            <!-- Client identity -->
+            <td class="px-4 py-3">
+              <div class="font-medium text-white">{{ c.client_id }}</div>
+              <div class="text-gray-400 text-xs">{{ c.display_name }}</div>
+              {% if c.webhook_url %}
+              <div class="text-gray-500 text-xs">🔗 {{ c.webhook_url }}</div>
+              {% endif %}
+            </td>
+
+            <!-- Service enabled -->
+            <td class="px-4 py-3">
+              {% if c.service_enabled %}
+              <span class="status-dot dot-green"></span>
+              <span class="text-green-400 text-xs font-medium">ENABLED</span>
+              {% else %}
+              <span class="status-dot dot-gray"></span>
+              <span class="text-gray-400 text-xs font-medium">DISABLED</span>
+              {% endif %}
+            </td>
+
+            <!-- Trading blocked -->
+            <td class="px-4 py-3">
+              {% if c.trading_blocked %}
+              <span class="status-dot dot-red"></span>
+              <span class="text-red-400 text-xs font-medium">BLOCKED</span>
+              {% if c.block_reason %}
+              <div class="text-gray-500 text-xs mt-0.5 max-w-xs truncate" title="{{ c.block_reason }}">
+                {{ c.block_reason }}
+              </div>
+              {% endif %}
+              {% else %}
+              <span class="status-dot dot-green"></span>
+              <span class="text-green-400 text-xs font-medium">LIVE</span>
+              {% endif %}
+            </td>
+
+            <!-- Copy trading role -->
+            <td class="px-4 py-3">
+              {% if c.copy_trading_role == 'master' %}
+              <span class="bg-orange-900 text-orange-300 px-2 py-0.5 rounded-full text-xs font-medium">👑 MASTER</span>
+              {% if c.copy_trading_followers %}
+              <div class="text-gray-500 text-xs mt-1">{{ c.copy_trading_followers | length }} follower(s)</div>
+              {% endif %}
+              {% elif c.copy_trading_role == 'follower' %}
+              <span class="bg-cyan-900 text-cyan-300 px-2 py-0.5 rounded-full text-xs font-medium">👥 FOLLOWER</span>
+              {% if c.copy_trading_master_id %}
+              <div class="text-gray-500 text-xs mt-1">of {{ c.copy_trading_master_id }}</div>
+              {% endif %}
+              {% else %}
+              <span class="bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full text-xs">STANDALONE</span>
+              {% endif %}
+            </td>
+
+            <!-- Last heartbeat -->
+            <td class="px-4 py-3 text-gray-400 text-xs">
+              {{ c.last_heartbeat or '—' }}
+            </td>
+
+            <!-- Health status -->
+            <td class="px-4 py-3">
+              {% set hs = c.last_health_status or 'unknown' %}
+              {% if 'healthy' in hs %}
+              <span class="status-dot dot-green"></span>
+              <span class="text-green-400 text-xs">{{ hs }}</span>
+              {% elif 'unreachable' in hs or 'http_' in hs %}
+              <span class="status-dot dot-red"></span>
+              <span class="text-red-400 text-xs">{{ hs }}</span>
+              {% else %}
+              <span class="status-dot dot-yellow"></span>
+              <span class="text-yellow-400 text-xs">{{ hs }}</span>
+              {% endif %}
+            </td>
+
+            <!-- Actions -->
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap gap-1.5 justify-center">
+
+                <!-- Service toggle -->
+                {% if c.service_enabled %}
+                <button data-action="service/disable" data-client="{{ c.client_id }}"
+                  class="bg-gray-700 hover:bg-gray-600 text-xs text-white px-2 py-1 rounded transition"
+                  title="Disable service">⏹ Disable</button>
+                {% else %}
+                <button data-action="service/enable" data-client="{{ c.client_id }}"
+                  class="bg-green-800 hover:bg-green-700 text-xs text-white px-2 py-1 rounded transition"
+                  title="Enable service">▶ Enable</button>
+                {% endif %}
+
+                <!-- Trading block toggle -->
+                {% if c.trading_blocked %}
+                <button data-action="unblock" data-client="{{ c.client_id }}"
+                  class="bg-green-800 hover:bg-green-700 text-xs text-white px-2 py-1 rounded transition"
+                  title="Unblock trading">🟢 Unblock</button>
+                {% else %}
+                <button data-action="block" data-client="{{ c.client_id }}"
+                  class="bg-red-800 hover:bg-red-700 text-xs text-white px-2 py-1 rounded transition"
+                  title="Block trading">🚫 Block</button>
+                {% endif %}
+
+                <!-- Copy trading toggle -->
+                {% if c.copy_trading_enabled %}
+                <button data-action="copy-trading/disable" data-client="{{ c.client_id }}"
+                  class="bg-purple-800 hover:bg-purple-700 text-xs text-white px-2 py-1 rounded transition"
+                  title="Disable copy trading">🔁 Off</button>
+                {% else %}
+                <button data-action="copy-trading/enable" data-client="{{ c.client_id }}"
+                  class="bg-indigo-800 hover:bg-indigo-700 text-xs text-white px-2 py-1 rounded transition"
+                  title="Enable copy trading">🔁 On</button>
+                {% endif %}
+
+                <!-- Dashboard link (URL validated server-side) -->
+                {% if c.dashboard_url %}
+                <a href="{{ c.dashboard_url }}" target="_blank" rel="noopener noreferrer"
+                  class="bg-blue-800 hover:bg-blue-700 text-xs text-white px-2 py-1 rounded transition"
+                  title="Open client dashboard">📊 Dash</a>
+                {% endif %}
+
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+              No clients registered. Add clients to
+              <code class="text-gray-300">config_env/master_clients.json</code>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ========== QUICK REFERENCE ========== -->
+  <div class="mt-6 bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <h3 class="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-3">REST API Quick Reference</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
+      {% for method, path, desc in [
+        ("GET",    "/api/clients",                           "List all clients"),
+        ("POST",   "/api/clients",                           "Register / update client"),
+        ("PUT",    "/api/clients/{id}/block",                "Block trading"),
+        ("PUT",    "/api/clients/{id}/unblock",              "Unblock trading"),
+        ("PUT",    "/api/clients/{id}/service/enable",       "Enable service"),
+        ("PUT",    "/api/clients/{id}/service/disable",      "Disable service"),
+        ("PUT",    "/api/clients/{id}/copy-trading/enable",  "Enable copy trading"),
+        ("PUT",    "/api/clients/{id}/copy-trading/disable", "Disable copy trading"),
+        ("GET",    "/api/permission/{id}",                   "Client permission check"),
+        ("POST",   "/api/register",                          "Client self-registration"),
+      ] %}
+      <div class="flex gap-2 bg-gray-800 rounded px-2 py-1">
+        <span class="{% if method == 'GET' %}text-green-400{% elif method == 'POST' %}text-blue-400{% elif method == 'PUT' %}text-yellow-400{% else %}text-red-400{% endif %} w-10 flex-shrink-0">{{ method }}</span>
+        <span class="text-gray-300">{{ path }}</span>
+        <span class="text-gray-500 ml-auto">{{ desc }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="mt-3 text-gray-500 text-xs">
+      Auth: <code class="text-gray-300">Authorization: Bearer &lt;MASTER_API_TOKEN&gt;</code>
+      or active session cookie.
+    </div>
+  </div>
+</div>
+
+<!-- ========== JS ACTIONS ========== -->
+<script>
+  async function doAction(clientId, action, body={}) {
+    const url = `/api/clients/${encodeURIComponent(clientId)}/${action}`;
+    try {
+      const resp = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      if (resp.ok) {
+        const row = document.getElementById(`row-${clientId}`);
+        if (row) row.classList.add("flash");
+        setTimeout(() => location.reload(), 700);
+      } else {
+        let msg = resp.statusText;
+        try { const d = await resp.json(); msg = d.detail || msg; } catch (_) {}
+        alert(`Action failed: ${msg}`);
+      }
+    } catch(e) {
+      alert(`Request error: ${e.message}`);
+    }
+  }
+
+  function blockWithReason(clientId) {
+    const reason = prompt(`Block reason for ${clientId}:`, "Manual block by admin");
+    if (reason === null) return;  // Cancelled
+    doAction(clientId, "block", { reason });
+  }
+
+  function enableCopyTrading(clientId) {
+    const role = prompt(`Copy trading role for ${clientId} (master/follower):`, "follower");
+    if (!role) return;
+    const body = { role };
+    if (role === "follower") {
+      const masterId = prompt("Master client_id:");
+      if (masterId) body.master_id = masterId;
+    }
+    doAction(clientId, "copy-trading/enable", body);
+  }
+
+  // Attach event listeners via data-attribute delegation (avoids inline onclick XSS vectors)
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('[data-action]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const action = btn.dataset.action;
+        const clientId = btn.dataset.client;
+        if (action === 'block') {
+          blockWithReason(clientId);
+        } else if (action === 'copy-trading/enable') {
+          enableCopyTrading(clientId);
+        } else {
+          doAction(clientId, action);
+        }
+      });
+    });
+  });
+</script>
+</body>
+</html>

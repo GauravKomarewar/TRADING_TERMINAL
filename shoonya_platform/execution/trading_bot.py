@@ -97,6 +97,9 @@ from shoonya_platform.execution.bot_alert_processing import AlertProcessingMixin
 from shoonya_platform.execution.bot_execution import ExecutionMixin
 from shoonya_platform.execution.bot_status_scheduling import StatusSchedulingMixin
 
+# ---------------------- COPY TRADING ----------------
+from shoonya_platform.services.copy_trading_service import CopyTradingService
+
 logger = get_component_logger('trading_bot')
 
 
@@ -436,6 +439,22 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
         # SCHEDULER
         # -------------------------------------------------
         self.start_scheduler()
+
+        # -------------------------------------------------
+        # COPY TRADING SERVICE
+        # -------------------------------------------------
+        self.copy_trading_service = CopyTradingService(self.config)
+        if self.copy_trading_service.is_enabled:
+            ct_cfg = self.config.get_copy_trading_config()
+            logger.info(
+                "🔁 CopyTradingService ACTIVE | role=%s | mode=%s | followers=%d",
+                ct_cfg["role"],
+                ct_cfg["mode"],
+                ct_cfg["followers"].__len__() if ct_cfg["followers"] else 0,
+            )
+        else:
+            logger.info("🔁 CopyTradingService: STANDALONE (copy trading disabled)")
+
         self._announce_startup_complete()
 
     def register_live_strategy(self, strategy_name, strategy, market):

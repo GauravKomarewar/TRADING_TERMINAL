@@ -495,14 +495,18 @@ def step_install_deps(args: argparse.Namespace) -> None:
 # ── Linux: systemd ──────────────────────────────────────────────────────────
 
 def _gen_trading_service() -> str:
+    """Generate trading.service for the PRIMARY (default) client.
+    For multi-client deployments use trading@.service template instead.
+    """
     user = current_user()
     p = PROJECT_ROOT
     return textwrap.dedent(f"""\
         [Unit]
-        Description=Trading Service
+        Description=Trading Service (primary)
         Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
         After=network-online.target
         Wants=network-online.target
+        After=gateway.service
         StartLimitIntervalSec=300
         StartLimitBurst=5
 
@@ -517,7 +521,7 @@ def _gen_trading_service() -> str:
         Environment="LOG_LEVEL=INFO"
         Environment="PYTHONPATH={p}"
 
-        ExecStart={p}/venv/bin/python {p}/main.py
+        ExecStart={p}/venv/bin/python {p}/main.py --env config_env/primary.env
 
         Restart=always
         RestartSec=10
@@ -546,6 +550,186 @@ def _gen_trading_service() -> str:
 
         [Install]
         WantedBy=multi-user.target
+    """)
+
+
+def _gen_template_service() -> str:
+    """Generate trading@.service template for multi-client deployments.
+    Usage: systemctl start trading@FA14667
+    """
+    user = current_user()
+    p = PROJECT_ROOT
+    return textwrap.dedent(f"""\
+        [Unit]
+        Description=Shoonya Trading Client — %i
+        Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+        After=network-online.target
+        Wants=network-online.target
+        After=gateway.service
+        StartLimitIntervalSec=300
+        StartLimitBurst=5
+
+        [Service]
+        Type=simple
+        User={user}
+        Group={user}
+        WorkingDirectory={p}
+
+        Environment="PATH={p}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+        Environment="PYTHONUNBUFFERED=1"
+        Environment="LOG_LEVEL=INFO"
+        Environment="PYTHONPATH={p}"
+
+        ExecStart={p}/venv/bin/python {p}/main.py --env config_env/%i.env
+
+        Restart=always
+        RestartSec=10
+        RestartForceExitStatus=1
+
+        MemoryMax=2G
+        CPUQuota=80%
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        ProtectSystem=no
+        ProtectHome=no
+        ProtectKernelTunables=yes
+
+        TimeoutStopSec=30
+        KillSignal=SIGTERM
+        SendSIGKILL=yes
+
+        OOMScoreAdjust=-500
+        LimitNOFILE=65536
+        LimitNPROC=8192
+
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=trading@%i
+
+        [Install]
+        WantedBy=multi-user.target
+    """)
+
+
+def _gen_gateway_service() -> str:
+    """Generate gateway.service for the multi-client reverse proxy."""
+    user = current_user()
+    p = PROJECT_ROOT
+    return textwrap.dedent(f"""\
+        [Unit]
+        Description=Shoonya Multi-Client Gateway
+        Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+        After=network-online.target
+        Wants=network-online.target
+        StartLimitIntervalSec=300
+        StartLimitBurst=5
+
+        [Service]
+        Type=simple
+        User={user}
+        Group={user}
+        WorkingDirectory={p}
+
+        Environment="PATH={p}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+        Environment="PYTHONUNBUFFERED=1"
+        Environment="PYTHONPATH={p}"
+
+        ExecStart={p}/venv/bin/python {p}/gateway_main.py --env config_env/gateway.env
+
+        Restart=always
+        RestartSec=5
+        MemoryMax=512M
+        CPUQuota=30%
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        ProtectSystem=no
+        ProtectHome=no
+
+        TimeoutStopSec=15
+        KillSignal=SIGTERM
+        SendSIGKILL=yes
+        LimitNOFILE=65536
+
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=trading-gateway
+
+        [Install]
+        WantedBy=multi-user.target
+    """)
+
+
+def _gen_master_service() -> str:
+    """Generate master.service for the master account manager."""
+    user = current_user()
+    p = PROJECT_ROOT
+    return textwrap.dedent(f"""\
+        [Unit]
+        Description=Shoonya Master Account Manager
+        Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+        After=network-online.target
+        Wants=network-online.target
+        StartLimitIntervalSec=300
+        StartLimitBurst=5
+
+        [Service]
+        Type=simple
+        User={user}
+        Group={user}
+        WorkingDirectory={p}
+
+        Environment="PATH={p}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+        Environment="PYTHONUNBUFFERED=1"
+        Environment="PYTHONPATH={p}"
+
+        ExecStart={p}/venv/bin/python {p}/master_manager.py --env config_env/master.env
+
+        Restart=always
+        RestartSec=5
+        MemoryMax=512M
+        CPUQuota=20%
+
+        NoNewPrivileges=yes
+        ProtectSystem=no
+        ProtectHome=no
+
+        TimeoutStopSec=15
+        KillSignal=SIGTERM
+        SendSIGKILL=yes
+        LimitNOFILE=65536
+
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=trading-master
+
+        [Install]
+        WantedBy=multi-user.target
+    """)
+
+
+def _gen_sudoers_rule() -> str:
+    """Generate sudoers rule so master manager can control client services."""
+    return textwrap.dedent(f"""\
+        # trading-master sudoers: allow ubuntu to control trading services
+        # Install: sudo cp to /etc/sudoers.d/trading-master && sudo chmod 440
+        {current_user()} ALL=(root) NOPASSWD: \\
+            /usr/bin/systemctl start   trading@*, \\
+            /usr/bin/systemctl stop    trading@*, \\
+            /usr/bin/systemctl restart trading@*, \\
+            /usr/bin/systemctl reload  trading@*, \\
+            /usr/bin/systemctl status  trading@*, \\
+            /usr/bin/systemctl enable  trading@*, \\
+            /usr/bin/systemctl disable trading@*, \\
+            /usr/bin/systemctl start   gateway.service, \\
+            /usr/bin/systemctl stop    gateway.service, \\
+            /usr/bin/systemctl restart gateway.service, \\
+            /usr/bin/systemctl status  gateway.service, \\
+            /usr/bin/systemctl start   master.service, \\
+            /usr/bin/systemctl stop    master.service, \\
+            /usr/bin/systemctl restart master.service, \\
+            /usr/bin/systemctl status  master.service
     """)
 
 
@@ -594,7 +778,11 @@ def install_linux_services(args: argparse.Namespace) -> None:
     if not has_sudo():
         print("  ⚠️  No passwordless sudo. Manual install needed:")
         print(f"     sudo cp {DEPLOYMENT_DIR}/trading.service /etc/systemd/system/")
+        print(f"     sudo cp {DEPLOYMENT_DIR}/trading@.service /etc/systemd/system/")
+        print(f"     sudo cp {DEPLOYMENT_DIR}/gateway.service /etc/systemd/system/")
+        print(f"     sudo cp {DEPLOYMENT_DIR}/master.service /etc/systemd/system/")
         print(f"     sudo cp {SYSTEMD_DIR}/*.service {SYSTEMD_DIR}/*.timer /etc/systemd/system/")
+        print(f"     sudo cp {DEPLOYMENT_DIR}/sudoers.d/trading-master /etc/sudoers.d/ && sudo chmod 440 /etc/sudoers.d/trading-master")
         print("     sudo systemctl daemon-reload")
         _write_service_files_to_repo()
         return
@@ -605,11 +793,14 @@ def install_linux_services(args: argparse.Namespace) -> None:
     # Copy to systemd
     dest = Path("/etc/systemd/system")
     files = [
-        (DEPLOYMENT_DIR / "trading.service", "trading.service"),
+        (DEPLOYMENT_DIR / "trading.service",   "trading.service"),
+        (DEPLOYMENT_DIR / "trading@.service",  "trading@.service"),
+        (DEPLOYMENT_DIR / "gateway.service",   "gateway.service"),
+        (DEPLOYMENT_DIR / "master.service",    "master.service"),
         (SYSTEMD_DIR / "trading_start.service", "trading_start.service"),
-        (SYSTEMD_DIR / "trading_stop.service", "trading_stop.service"),
-        (SYSTEMD_DIR / "trading_start.timer", "trading_start.timer"),
-        (SYSTEMD_DIR / "trading_stop.timer", "trading_stop.timer"),
+        (SYSTEMD_DIR / "trading_stop.service",  "trading_stop.service"),
+        (SYSTEMD_DIR / "trading_start.timer",  "trading_start.timer"),
+        (SYSTEMD_DIR / "trading_stop.timer",   "trading_stop.timer"),
     ]
 
     for src, name in files:
@@ -618,6 +809,13 @@ def install_linux_services(args: argparse.Namespace) -> None:
             print(f"  ✅ Installed {name}")
         else:
             print(f"  ⚠️  Missing: {src}")
+
+    # Install sudoers rule for master manager service control
+    sudoers_src = DEPLOYMENT_DIR / "sudoers.d" / "trading-master"
+    if sudoers_src.exists():
+        run(["sudo", "cp", str(sudoers_src), "/etc/sudoers.d/trading-master"])
+        run(["sudo", "chmod", "440", "/etc/sudoers.d/trading-master"])
+        print("  ✅ Installed sudoers rule for master service control")
 
     run(["sudo", "systemctl", "daemon-reload"])
     print("  ✅ systemd reloaded")
@@ -628,7 +826,11 @@ def install_linux_services(args: argparse.Namespace) -> None:
         print(f"  ✅ Enabled {timer}")
 
     run(["sudo", "systemctl", "enable", "trading.service"], check=False)
-    print("  ✅ trading.service enabled (start manually when ready)")
+    run(["sudo", "systemctl", "enable", "gateway.service"], check=False)
+    run(["sudo", "systemctl", "enable", "master.service"], check=False)
+    print("  ✅ trading.service, gateway.service, master.service enabled")
+    print("  ℹ️  Start with: sudo systemctl start gateway master trading")
+    print("  ℹ️  Multi-client: sudo systemctl start trading@FA14667 trading@FA14668")
 
 
 def _write_service_files_to_repo() -> None:
@@ -637,8 +839,16 @@ def _write_service_files_to_repo() -> None:
     SYSTEMD_DIR.mkdir(parents=True, exist_ok=True)
 
     (DEPLOYMENT_DIR / "trading.service").write_text(_gen_trading_service())
+    (DEPLOYMENT_DIR / "trading@.service").write_text(_gen_template_service())
+    (DEPLOYMENT_DIR / "gateway.service").write_text(_gen_gateway_service())
+    (DEPLOYMENT_DIR / "master.service").write_text(_gen_master_service())
     (SYSTEMD_DIR / "trading_start.service").write_text(_gen_start_service())
     (SYSTEMD_DIR / "trading_stop.service").write_text(_gen_stop_service())
+
+    # Write sudoers rule
+    sudoers_dir = DEPLOYMENT_DIR / "sudoers.d"
+    sudoers_dir.mkdir(parents=True, exist_ok=True)
+    (sudoers_dir / "trading-master").write_text(_gen_sudoers_rule())
 
     print(f"  📝 Generated service files (user={current_user()}, path={PROJECT_ROOT})")
 
@@ -1031,59 +1241,85 @@ def _detect_public_ip() -> str:
 
 
 def _gen_nginx_config(server_ip: str) -> str:
-    """Generate nginx site config with HTTPS + reverse proxy."""
+    """Generate nginx site config for multi-client gateway architecture."""
     return textwrap.dedent(f"""\
         # ============================================
         # Shoonya Trading Platform — Nginx Config
+        # Multi-client gateway architecture
         # Generated by bootstrap.py — safe to regenerate
         # ============================================
+        #
+        # Architecture:
+        #   Internet (80/443)
+        #     ├── /master/*   →  Master Account Manager  (:9000)
+        #     └── /*          →  Multi-Client Gateway    (:7000)
+        #                             → /<alias>/webhook  → client :5001+
+        #                             → /<alias>/dashboard/* → client :8001+
 
         # HTTP → HTTPS redirect
         server {{
-            listen 80;
+            listen 80 default_server;
+            listen [::]:80 default_server;
             server_name {server_ip};
             return 301 https://$host$request_uri;
         }}
 
         # HTTPS server
         server {{
-            listen 443 ssl;
+            listen 443 ssl http2 default_server;
+            listen [::]:443 ssl http2 default_server;
             server_name {server_ip};
 
             ssl_certificate     /etc/nginx/ssl/nginx.crt;
             ssl_certificate_key /etc/nginx/ssl/nginx.key;
-
             ssl_protocols TLSv1.2 TLSv1.3;
-            ssl_ciphers HIGH:!aNULL:!MD5;
+            ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:!aNULL:!MD5;
             ssl_prefer_server_ciphers on;
             ssl_session_cache shared:SSL:10m;
             ssl_session_timeout 10m;
 
             # Security headers
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
             add_header X-Frame-Options SAMEORIGIN always;
             add_header X-Content-Type-Options nosniff always;
             add_header X-XSS-Protection "1; mode=block" always;
 
-            # Dashboard (port {DASHBOARD_PORT})
-            location / {{
-                proxy_pass http://127.0.0.1:{DASHBOARD_PORT};
+            client_max_body_size 1m;
+            access_log /var/log/nginx/trading_access.log combined;
+            error_log  /var/log/nginx/trading_error.log warn;
+
+            # Master Account Manager — admin dashboard
+            location /master/ {{
+                proxy_pass         http://127.0.0.1:9000/;
                 proxy_http_version 1.1;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-                proxy_set_header Upgrade $http_upgrade;
-                proxy_set_header Connection "upgrade";
+                proxy_set_header   Host              $host;
+                proxy_set_header   X-Real-IP         $remote_addr;
+                proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+                proxy_set_header   X-Forwarded-Proto $scheme;
+                proxy_set_header   Upgrade           $http_upgrade;
+                proxy_set_header   Connection        "upgrade";
+                proxy_read_timeout 60s;
             }}
 
-            # Execution API (port {API_PORT})
-            location /api/ {{
-                proxy_pass http://127.0.0.1:{API_PORT}/;
+            # Gateway health passthrough (no auth needed)
+            location = /health {{
+                proxy_pass        http://127.0.0.1:7000/health;
                 proxy_http_version 1.1;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
+                access_log        off;
+            }}
+
+            # Multi-client gateway — all other traffic
+            location / {{
+                proxy_pass         http://127.0.0.1:7000;
+                proxy_http_version 1.1;
+                proxy_set_header   Host              $host;
+                proxy_set_header   X-Real-IP         $remote_addr;
+                proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+                proxy_set_header   X-Forwarded-Proto $scheme;
+                proxy_set_header   Upgrade           $http_upgrade;
+                proxy_set_header   Connection        "upgrade";
+                proxy_read_timeout 60s;
+                proxy_buffering    off;
             }}
         }}
     """)

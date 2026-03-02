@@ -31,6 +31,7 @@ Authentication:
 import logging
 import os
 import secrets
+import subprocess
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -329,12 +330,86 @@ def create_master_app(registry: MasterRegistry, poller: HealthPoller) -> FastAPI
             "copy_trading_role": client["copy_trading_role"],
         })
 
+    # ------------------------------------------------------------------
+    # Systemd Service Control (admin auth required)
+    # Requires sudoers rule: utilities/deployment/sudoers.d/trading-master
+    # ------------------------------------------------------------------
+
+    @app.post("/api/clients/{client_id}/systemd/start")
+    async def systemd_start(client_id: str, request: Request) -> JSONResponse:
+        _require_auth(request)
+        result = _run_systemctl("start", _service_name_for_client(client_id))
+        if result["success"]:
+            # Mark service as enabled in registry (best-effort)
+            try:
+                registry.enable_service(client_id)
+            except KeyError:
+                pass
+        return JSONResponse(result, status_code=200 if result["success"] else 500)
+
+    @app.post("/api/clients/{client_id}/systemd/stop")
+    async def systemd_stop(client_id: str, request: Request) -> JSONResponse:
+        _require_auth(request)
+        result = _run_systemctl("stop", _service_name_for_client(client_id))
+        if result["success"]:
+            try:
+                registry.disable_service(client_id)
+            except KeyError:
+                pass
+        return JSONResponse(result, status_code=200 if result["success"] else 500)
+
+    @app.post("/api/clients/{client_id}/systemd/restart")
+    async def systemd_restart(client_id: str, request: Request) -> JSONResponse:
+        _require_auth(request)
+        result = _run_systemctl("restart", _service_name_for_client(client_id))
+        return JSONResponse(result, status_code=200 if result["success"] else 500)
+
+    @app.get("/api/clients/{client_id}/systemd/status")
+    async def systemd_status(client_id: str, request: Request) -> JSONResponse:
+        _require_auth(request)
+        result = _run_systemctl("status", _service_name_for_client(client_id))
+        return JSONResponse(result)
+
     return app
+# ---------------------------------------------------------------------------
+
+_ALLOWED_SYSTEMD_ACTIONS = frozenset({"start", "stop", "restart", "status"})
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def _service_name_for_client(client_id: str) -> str:
+    """Return the systemd service unit name for a client."""
+    # Instance name must only contain safe chars; strip anything odd.
+    safe = "".join(c for c in client_id if c.isalnum() or c in "-_.")
+    return f"trading@{safe}.service"
+
+
+def _run_systemctl(action: str, unit: str) -> Dict[str, Any]:
+    """
+    Run `sudo systemctl <action> <unit>` and return structured result.
+    Requires the sudoers rule at utilities/deployment/sudoers.d/trading-master.
+    """
+    if action not in _ALLOWED_SYSTEMD_ACTIONS:
+        raise ValueError(f"Invalid systemd action: {action!r}")
+    cmd = ["sudo", "/usr/bin/systemctl", action, unit]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return {
+            "unit": unit,
+            "action": action,
+            "returncode": result.returncode,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+            "success": result.returncode == 0,
+        }
+    except subprocess.TimeoutExpired:
+        return {"unit": unit, "action": action, "success": False, "error": "systemctl timed out"}
+    except Exception as exc:
+        return {"unit": unit, "action": action, "success": False, "error": str(exc)}
 
 def _build_summary(clients) -> Dict[str, Any]:
     total = len(clients)

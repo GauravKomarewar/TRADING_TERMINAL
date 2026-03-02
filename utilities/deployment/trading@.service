@@ -1,0 +1,84 @@
+# =============================================================================
+# TRADING CLIENT TEMPLATE UNIT — trading@.service
+# =============================================================================
+#
+# Systemd "@" template: the part after "@" becomes the instance name (%i).
+# Each client has its own service instance named after its env-file stem.
+#
+# Usage:
+#   systemctl start   trading@FA14667   # starts client FA14667
+#   systemctl stop    trading@FA14667
+#   systemctl status  trading@FA14667
+#   systemctl restart trading@FA14667
+#   systemctl enable  trading@FA14667   # auto-start at boot
+#
+# Prerequisites:
+#   config_env/%i.env must exist (e.g. config_env/FA14667.env)
+#
+# Install:
+#   sudo cp utilities/deployment/trading@.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+# =============================================================================
+
+[Unit]
+Description=Shoonya Trading Client — %i
+Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+After=network-online.target
+Wants=network-online.target
+
+# Clients should start AFTER the gateway (if running)
+After=gateway.service
+# Allow gateway to be absent without blocking this unit
+# (gateway is optional for direct-IP deployments)
+
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/shoonya_platform
+
+# %i = instance name (e.g. FA14667 → loads config_env/FA14667.env)
+Environment="PATH=/home/ubuntu/shoonya_platform/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="LOG_LEVEL=INFO"
+Environment="PYTHONPATH=/home/ubuntu/shoonya_platform"
+
+ExecStart=/home/ubuntu/shoonya_platform/venv/bin/python \
+    /home/ubuntu/shoonya_platform/main.py \
+    --env config_env/%i.env
+
+Restart=always
+RestartSec=10
+RestartForceExitStatus=1
+
+# Resource limits (tweak per instance if needed)
+MemoryMax=2G
+CPUQuota=80%
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=no
+ProtectHome=no
+ProtectKernelTunables=yes
+
+# Shutdown
+TimeoutStopSec=30
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# Resilience
+OOMScoreAdjust=-500
+LimitNOFILE=65536
+LimitNPROC=8192
+
+# Logs: journalctl -u trading@FA14667 -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading@%i
+
+[Install]
+WantedBy=multi-user.target

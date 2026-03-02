@@ -200,6 +200,22 @@
                   title="Open client dashboard">📊 Dash</a>
                 {% endif %}
 
+                <!-- OS Service control (systemd) -->
+                <div class="w-full border-t border-gray-700 my-0.5"></div>
+                <span class="w-full text-gray-600 text-xs text-center">─ OS Service ─</span>
+                <button data-systemd="start" data-client="{{ c.client_id }}"
+                  class="bg-emerald-900 hover:bg-emerald-800 text-xs text-white px-2 py-1 rounded transition"
+                  title="systemctl start trading@{{ c.client_id }}">▶ Start</button>
+                <button data-systemd="restart" data-client="{{ c.client_id }}"
+                  class="bg-amber-900 hover:bg-amber-800 text-xs text-white px-2 py-1 rounded transition"
+                  title="systemctl restart trading@{{ c.client_id }}">🔄 Restart</button>
+                <button data-systemd="stop" data-client="{{ c.client_id }}"
+                  class="bg-rose-900 hover:bg-rose-800 text-xs text-white px-2 py-1 rounded transition"
+                  title="systemctl stop trading@{{ c.client_id }}">⏹ Stop</button>
+                <button data-systemd="status" data-client="{{ c.client_id }}"
+                  class="bg-slate-700 hover:bg-slate-600 text-xs text-white px-2 py-1 rounded transition"
+                  title="systemctl status trading@{{ c.client_id }}">📝 Status</button>
+
               </div>
             </td>
           </tr>
@@ -221,16 +237,20 @@
     <h3 class="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-3">REST API Quick Reference</h3>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
       {% for method, path, desc in [
-        ("GET",    "/api/clients",                           "List all clients"),
-        ("POST",   "/api/clients",                           "Register / update client"),
-        ("PUT",    "/api/clients/{id}/block",                "Block trading"),
-        ("PUT",    "/api/clients/{id}/unblock",              "Unblock trading"),
-        ("PUT",    "/api/clients/{id}/service/enable",       "Enable service"),
-        ("PUT",    "/api/clients/{id}/service/disable",      "Disable service"),
-        ("PUT",    "/api/clients/{id}/copy-trading/enable",  "Enable copy trading"),
-        ("PUT",    "/api/clients/{id}/copy-trading/disable", "Disable copy trading"),
-        ("GET",    "/api/permission/{id}",                   "Client permission check"),
-        ("POST",   "/api/register",                          "Client self-registration"),
+        ("GET",    "/api/clients",                              "List all clients"),
+        ("POST",   "/api/clients",                              "Register / update client"),
+        ("PUT",    "/api/clients/{id}/block",                   "Block trading"),
+        ("PUT",    "/api/clients/{id}/unblock",                 "Unblock trading"),
+        ("PUT",    "/api/clients/{id}/service/enable",          "Enable service (registry)"),
+        ("PUT",    "/api/clients/{id}/service/disable",         "Disable service (registry)"),
+        ("PUT",    "/api/clients/{id}/copy-trading/enable",     "Enable copy trading"),
+        ("PUT",    "/api/clients/{id}/copy-trading/disable",    "Disable copy trading"),
+        ("POST",   "/api/clients/{id}/systemd/start",           "systemctl start trading@{id}"),
+        ("POST",   "/api/clients/{id}/systemd/stop",            "systemctl stop trading@{id}"),
+        ("POST",   "/api/clients/{id}/systemd/restart",         "systemctl restart trading@{id}"),
+        ("GET",    "/api/clients/{id}/systemd/status",          "systemctl status trading@{id}"),
+        ("GET",    "/api/permission/{id}",                      "Client permission check"),
+        ("POST",   "/api/register",                             "Client self-registration"),
       ] %}
       <div class="flex gap-2 bg-gray-800 rounded px-2 py-1">
         <span class="{% if method == 'GET' %}text-green-400{% elif method == 'POST' %}text-blue-400{% elif method == 'PUT' %}text-yellow-400{% else %}text-red-400{% endif %} w-10 flex-shrink-0">{{ method }}</span>
@@ -271,6 +291,33 @@
     }
   }
 
+  async function doSystemd(clientId, action) {
+    const url = `/api/clients/${encodeURIComponent(clientId)}/systemd/${action}`;
+    const method = action === 'status' ? 'GET' : 'POST';
+    try {
+      const resp = await fetch(url, { method, credentials: "include" });
+      let data = {};
+      try { data = await resp.json(); } catch (_) {}
+      if (action === 'status') {
+        // Show status output in a modal-style alert
+        const out = data.stdout || data.error || '(no output)';
+        const lines = out.split('\n').slice(0, 20).join('\n');
+        alert(`systemctl status trading@${clientId}\n\n${lines}`);
+        return;
+      }
+      if (data.success) {
+        const row = document.getElementById(`row-${clientId}`);
+        if (row) row.classList.add('flash');
+        setTimeout(() => location.reload(), 800);
+      } else {
+        const err = data.stderr || data.error || resp.statusText;
+        alert(`systemd ${action} failed for ${clientId}:\n${err}`);
+      }
+    } catch(e) {
+      alert(`Request error: ${e.message}`);
+    }
+  }
+
   function blockWithReason(clientId) {
     const reason = prompt(`Block reason for ${clientId}:`, "Manual block by admin");
     if (reason === null) return;  // Cancelled
@@ -288,8 +335,9 @@
     doAction(clientId, "copy-trading/enable", body);
   }
 
-  // Attach event listeners via data-attribute delegation (avoids inline onclick XSS vectors)
+  // Attach event listeners via data-attribute delegation
   document.addEventListener('DOMContentLoaded', function() {
+    // Registry / trading control buttons (PUT endpoints)
     document.querySelectorAll('[data-action]').forEach(function(btn) {
       btn.addEventListener('click', function() {
         const action = btn.dataset.action;
@@ -301,6 +349,17 @@
         } else {
           doAction(clientId, action);
         }
+      });
+    });
+    // Systemd service control buttons (POST/GET endpoints)
+    document.querySelectorAll('[data-systemd]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const action   = btn.dataset.systemd;
+        const clientId = btn.dataset.client;
+        if (action === 'stop') {
+          if (!confirm(`Stop trading@${clientId}? This will halt all trading for this client.`)) return;
+        }
+        doSystemd(clientId, action);
       });
     });
   });

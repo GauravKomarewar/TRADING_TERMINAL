@@ -1,0 +1,69 @@
+# =============================================================================
+# MASTER ACCOUNT MANAGER — master.service
+# =============================================================================
+#
+# Master control plane: manages all client services, health polling,
+# copy-trading settings, service enable/disable, and admin dashboard.
+#
+# Configure: config_env/master.env
+#   MASTER_HOST=127.0.0.1
+#   MASTER_PORT=9000
+#   MASTER_ADMIN_PASSWORD=<strong-password>
+#   MASTER_API_TOKEN=<strong-token>
+#   MASTER_REGISTRY_FILE=config_env/master_clients.json
+#   MASTER_HEALTH_POLL_INTERVAL=30
+#
+# Install:
+#   sudo cp utilities/deployment/master.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable master
+#   sudo systemctl start master
+# =============================================================================
+
+[Unit]
+Description=Shoonya Master Account Manager
+Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+After=network-online.target
+Wants=network-online.target
+
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/shoonya_platform
+
+Environment="PATH=/home/ubuntu/shoonya_platform/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ubuntu/shoonya_platform"
+
+ExecStart=/home/ubuntu/shoonya_platform/venv/bin/python \
+    /home/ubuntu/shoonya_platform/master_manager.py \
+    --env config_env/master.env
+
+Restart=always
+RestartSec=5
+
+MemoryMax=512M
+CPUQuota=20%
+
+# Master needs to invoke systemctl for service management → not PrivateTmp
+PrivateTmp=no
+NoNewPrivileges=yes
+ProtectSystem=no
+ProtectHome=no
+
+TimeoutStopSec=15
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading-master
+
+[Install]
+WantedBy=multi-user.target

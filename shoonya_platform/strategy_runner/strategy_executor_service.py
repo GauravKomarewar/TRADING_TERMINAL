@@ -993,7 +993,14 @@ class PerStrategyExecutor:
             pre_adjustments_today = self.state.adjustments_today
             pre_lifetime_adjustments = self.state.lifetime_adjustments
             pre_last_adjustment_time = self.state.last_adjustment_time
-            actions = self.adjustment_engine.check_and_apply(now)
+            # ✅ BUG FIX: Do not run adjustments if no legs are active yet.
+            # Conditions like 'adj_count_today >= 0' are always true, so without
+            # this guard the adjustment engine fires before entry and crashes when
+            # dynamic leg selectors (LOWER_DELTA_LEG etc.) resolve to None.
+            if not self.state.any_leg_active:
+                actions = []
+            else:
+                actions = self.adjustment_engine.check_and_apply(now)
             for action in actions:
                 logger.info(f"Adjustment: {action}")
             if actions:

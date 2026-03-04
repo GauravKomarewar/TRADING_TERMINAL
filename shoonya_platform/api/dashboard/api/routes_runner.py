@@ -158,6 +158,9 @@ def start_runner(ctx=Depends(require_dashboard_auth)):
         for cfg_path in sorted(STRATEGY_CONFIG_DIR.glob("*.json")):
             if cfg_path.name == "STRATEGY_CONFIG_SCHEMA.json":
                 continue
+            # ✅ BUG FIX: Skip schema / template files that are not real strategy configs
+            if "schema" in cfg_path.stem.lower() or cfg_path.stem.lower() in ("template", "example"):
+                continue
             name = cfg_path.stem
             if name in runner._strategies:
                 loaded.append(name)

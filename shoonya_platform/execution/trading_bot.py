@@ -547,7 +547,9 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
                 self.telegram._append_message_log(normalized)
                 # Only send to Telegram if "all" pref allows
                 if self.telegram._should_send_to_telegram("send_generic"):
+                    logger.debug("send_telegram: SENDING to Telegram (prefs allow)")
                     return self.telegram.send_message(normalized, _skip_log=True)
+                logger.debug("send_telegram: BLOCKED by prefs (all=%s), logged to JSONL only", self.telegram._prefs.get('all'))
                 return True
             except Exception as e:
                 logger.error(f"Telegram send error: {e}")
@@ -717,7 +719,7 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
                                 f"\u2022 Total trades: {len(self.trade_records)}\n"
                                 f"\u2022 Uptime: Until shutdown"
                             )
-                            self.telegram.send_message(shutdown_msg, timeout=3.0)
+                            self.send_telegram(shutdown_msg)
                         except Exception as tg_e:
                             logger.debug(f"Telegram send timeout (expected): {tg_e}")
 

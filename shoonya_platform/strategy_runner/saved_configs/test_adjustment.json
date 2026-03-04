@@ -20,8 +20,8 @@
     },
     "timing": {
         "entry_window_start": "09:18",
-        "entry_window_end": "12:53",
-        "eod_exit_time": "12:55"
+        "entry_window_end": "13:06",
+        "eod_exit_time": "13:08"
     },
     "market_data": {
         "source": "sqlite",
@@ -173,7 +173,7 @@
             "breakeven_buffer": null
         },
         "time": {
-            "strategy_exit_time": "12:55",
+            "strategy_exit_time": "13:08",
             "expiry_day_action": "none",
             "expiry_day_time": "09:15",
             "roll_target": "weekly_next"

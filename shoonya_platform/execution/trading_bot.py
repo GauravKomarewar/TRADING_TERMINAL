@@ -546,10 +546,15 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
                 # Always log for dashboard
                 self.telegram._append_message_log(normalized)
                 # Only send to Telegram if "all" pref allows
-                if self.telegram._should_send_to_telegram("send_generic"):
-                    logger.debug("send_telegram: SENDING to Telegram (prefs allow)")
+                prefs_allow = self.telegram._should_send_to_telegram("send_generic")
+                logger.debug(
+                    "send_telegram: prefs_allow=%s | _prefs=%s | msg_preview=%.40s",
+                    prefs_allow,
+                    self.telegram._prefs,
+                    normalized.replace('\n', ' ')[:40],
+                )
+                if prefs_allow:
                     return self.telegram.send_message(normalized, _skip_log=True)
-                logger.debug("send_telegram: BLOCKED by prefs (all=%s), logged to JSONL only", self.telegram._prefs.get('all'))
                 return True
             except Exception as e:
                 logger.error(f"Telegram send error: {e}")

@@ -181,10 +181,15 @@ class TelegramNotifier:
         # ALWAYS log for dashboard display
         self._append_message_log(safe_message)
         # Only send to Telegram if prefs allow
-        if not self._should_send_to_telegram(method_name):
-            logger.debug("Telegram send BLOCKED by prefs for %s (all=%s)", method_name, self._prefs.get('all'))
+        prefs_allow = self._should_send_to_telegram(method_name)
+        logger.debug(
+            "_send_with_log: method=%s prefs_allow=%s _prefs=%s",
+            method_name,
+            prefs_allow,
+            self._prefs,
+        )
+        if not prefs_allow:
             return True
-        logger.debug("Telegram send ALLOWED for %s", method_name)
         return self.send_message(message, _skip_log=True)
 
     @staticmethod

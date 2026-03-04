@@ -1148,11 +1148,21 @@ class PerStrategyExecutor:
                     leg.order_status = "FAILED"
                     leg.is_active = False
 
+        # Handle CLOSE_PENDING timeout (adjustment close orders)
+        for leg in list(self.state.legs.values()):
+            if leg.order_status != "CLOSE_PENDING":
+                continue
+            if leg.order_placed_at and (datetime.now() - leg.order_placed_at).total_seconds() > 60:
+                logger.warning(f"CLOSE_PENDING TIMEOUT | {leg.tag} – marking CLOSED")
+                leg.order_status = "CLOSED"
+                leg.is_active = False
+
     def notify_fill(self, symbol: str, side: str, qty: int, price: float,
                     delta: Optional[float], broker_order_id: str, command_id: Optional[str] = None):
         """Immediate fill notification from OrderWatcher."""
         fill_symbol = str(symbol or "").strip()
         fill_side = str(side or "").upper()
+        # Pass 1: match PENDING legs (entry / adjustment open orders)
         for leg in self.state.legs.values():
             if leg.order_status != "PENDING":
                 continue
@@ -1169,6 +1179,20 @@ class PerStrategyExecutor:
             leg.ltp = price
             leg.delta = delta if delta is not None else leg.delta
             logger.info(f"FILL NOTIFIED | {self.name} | {symbol} {side} {qty} @ {price}")
+            return
+        # Pass 2: match CLOSE_PENDING legs (adjustment close orders – opposite side)
+        for leg in self.state.legs.values():
+            if leg.order_status != "CLOSE_PENDING":
+                continue
+            expected_close_side = "BUY" if leg.side.value == "SELL" else "SELL"
+            if fill_side != expected_close_side:
+                continue
+            if fill_symbol not in self._leg_symbols(leg):
+                continue
+            leg.order_status = "CLOSED"
+            leg.is_active = False
+            leg.order_id = broker_order_id
+            logger.info(f"CLOSE FILL NOTIFIED | {self.name} | {symbol} {side} {qty} @ {price}")
             return
         logger.warning(f"FILL NOTIFICATION: No matching pending leg for {symbol} {side}")
 
@@ -1657,7 +1681,11 @@ class PerStrategyExecutor:
             before = before_legs.get(tag)
             after = self.state.legs.get(tag)
             before_qty = int(before.qty) if (before and before.is_active) else 0
-            after_qty = int(after.qty) if (after and after.is_active) else 0
+            # Include PENDING legs that are NEW (not in before_legs) — these are
+            # adjustment-created legs awaiting fill dispatch.
+            after_qty = int(after.qty) if after and (
+                after.is_active or (after.order_status == "PENDING" and before is None)
+            ) else 0
             delta = after_qty - before_qty
 
             if delta < 0:
@@ -1673,6 +1701,10 @@ class PerStrategyExecutor:
                 sym = str(payload.get("tradingsymbol") or "").strip()
                 if sym:
                     close_by_symbol[sym] = close_by_symbol.get(sym, 0) + int(payload.get("qty", 0) or 0)
+                # Mark the closing leg for fill tracking so notify_fill can match it
+                if after and after.order_status not in ("PENDING",):
+                    after.order_status = "CLOSE_PENDING"
+                    after.order_placed_at = datetime.now()
             elif delta > 0:
                 if after is None:
                     continue

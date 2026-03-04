@@ -1,7 +1,7 @@
 {
   "schema_version": "4.0",
-  "name": "nifty_dnss_actual",
-  "id": "NIFTY_DNSS_ACTUAL",
+  "name": "test adjustment",
+  "id": "TEST_ADJUSTMENT",
   "description": "",
   "type": "neutral",
   "enabled": true,
@@ -13,19 +13,19 @@
     "product_type": "NRML",
     "order_type": "MARKET",
     "lots": 1,
-    "db_file": "NFO_NIFTY_02-MAR-2026.sqlite",
-    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_02-MAR-2026.sqlite",
+    "db_file": "NFO_NIFTY_10-MAR-2026.sqlite",
+    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_10-MAR-2026.sqlite",
     "paper_mode": true,
     "test_mode": "SUCCESS"
   },
   "timing": {
     "entry_window_start": "09:18",
-    "entry_window_end": "15:10",
-    "eod_exit_time": "15:28"
+    "entry_window_end": "15:15",
+    "eod_exit_time": "15:25"
   },
   "market_data": {
     "source": "sqlite",
-    "db_file": "NFO_NIFTY_02-MAR-2026.sqlite"
+    "db_file": "NFO_NIFTY_10-MAR-2026.sqlite"
   },
   "entry": {
     "entry_sequence": "parallel",
@@ -43,7 +43,7 @@
         "order_type": "MARKET",
         "strike_mode": "standard",
         "strike_selection": "delta",
-        "strike_value": "0.3",
+        "strike_value": "0.5",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -61,7 +61,7 @@
         "order_type": "MARKET",
         "strike_mode": "standard",
         "strike_selection": "delta",
-        "strike_value": "0.3",
+        "strike_value": "0.5",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -75,71 +75,19 @@
       {
         "name": "Adjustment 1",
         "priority": 1,
-        "max_per_day": 20,
+        "max_per_day": 5,
         "max_total": null,
         "cooldown_sec": 60,
-        "retriger": true,
+        "retriger": false,
         "leg_guard": "",
         "conditions": [
           {
             "parameter": "net_delta",
             "comparator": ">=",
-            "value": "0.2"
-          },
-          {
-            "parameter": "combined_pnl",
-            "comparator": ">=",
-            "value": "1000",
-            "join": "OR"
-          },
-          {
-            "parameter": "max_leg_delta",
-            "comparator": "<",
-            "value": "0.65",
-            "join": "AND"
+            "value": "0.07"
           }
         ],
         "action": {
-          "type": "simple_close_open_new",
-          "leg_swaps": [
-            {
-              "close_tag": "LOWER_DELTA_LEG",
-              "new_leg": {
-                "side": "SELL",
-                "option_type": "MATCH_CLOSING",
-                "lots": 1,
-                "order_type": "",
-                "strike_mode": "match_leg",
-                "strike_selection": "match_leg_param",
-                "match_leg": "HIGHER_DELTA_LEG",
-                "match_param": "abs_delta",
-                "match_offset": 0,
-                "match_multiplier": 1
-              }
-            }
-          ]
-        },
-        "else_enabled": true,
-        "else_conditions": [
-          {
-            "parameter": "net_delta",
-            "comparator": ">=",
-            "value": "0.2"
-          },
-          {
-            "parameter": "combined_pnl",
-            "comparator": ">=",
-            "value": "1000",
-            "join": "OR"
-          },
-          {
-            "parameter": "max_leg_delta",
-            "comparator": ">=",
-            "value": "0.65",
-            "join": "AND"
-          }
-        ],
-        "else_action": {
           "type": "simple_close_open_new",
           "leg_swaps": [
             {
@@ -158,7 +106,10 @@
               }
             }
           ]
-        }
+        },
+        "else_enabled": false,
+        "else_conditions": [],
+        "else_action": null
       }
     ]
   },
@@ -196,7 +147,7 @@
       "breakeven_buffer": null
     },
     "time": {
-      "strategy_exit_time": "15:28",
+      "strategy_exit_time": "15:25",
       "expiry_day_action": "none",
       "expiry_day_time": "09:15",
       "roll_target": "weekly_next"
@@ -217,8 +168,8 @@
       "fri"
     ],
     "entry_time": "09:18",
-    "entry_window_end": "15:10",
-    "exit_time": "15:28",
+    "entry_window_end": "15:15",
+    "exit_time": "15:25",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
@@ -228,11 +179,9 @@
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-02-26T09:44:35.873Z"
+    "created_at": "2026-03-04T05:27:22.309Z"
   },
-  "paper_mode": true,
-  "test_mode": "SUCCESS",
-  "created_at": "2026-02-27T12:53:41",
-  "updated_at": "2026-02-27T15:05:07",
-  "status_updated_at": "2026-03-04T10:34:45.389211"
+  "created_at": "2026-03-04T10:57:31",
+  "updated_at": "2026-03-04T10:57:31",
+  "status_updated_at": "2026-03-04T10:57:36.077667"
 }

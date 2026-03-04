@@ -244,18 +244,32 @@ class AdjustmentEngine:
                 new_leg_cfg = swap.get("new_leg", {})
                 closing_leg = self.state.legs.get(close_tag) if close_tag else None
                 # ✅ BUG FIX: Pre-validate match_leg reference BEFORE deactivating
-                # the close_tag leg.  If the reference cannot be resolved (e.g. no
-                # active legs yet), skip the swap entirely to avoid an inconsistent
-                # half-open state (old leg deactivated, replacement never opened).
+                # the close_tag leg.  Skip the swap when:
+                # (a) the reference cannot be resolved at all (no active legs), OR
+                # (b) close_tag == resolved_ref_tag AND no other active leg exists
+                #     (would have nothing to match against after closure).
+                # Note: closing_leg fallback in _open_new_leg handles the case where
+                # close_tag IS the match_leg (single-leg state).
                 if new_leg_cfg.get("strike_mode") == "match_leg":
                     ref_name = new_leg_cfg.get("match_leg")
                     resolved_ref_tag = self._resolve_close_tag(ref_name) if ref_name else None
                     ref_leg = self.state.legs.get(resolved_ref_tag) if resolved_ref_tag else None
+                    active_legs = [l for l in self.state.legs.values() if l.is_active]
+                    # Only one active leg AND it is both the close_tag and the match reference
+                    same_tag = close_tag and resolved_ref_tag and (close_tag == resolved_ref_tag)
                     if ref_leg is None or not ref_leg.is_active:
                         logger.warning(
                             "ADJUSTMENT_SKIPPED | simple_close_open_new | match_leg ref '%s' "
                             "unresolvable or inactive (no active legs). Skipping swap (close=%s).",
                             ref_name, close_tag,
+                        )
+                        continue
+                    if same_tag and len(active_legs) <= 1:
+                        logger.warning(
+                            "ADJUSTMENT_SKIPPED | simple_close_open_new | close_tag '%s' is the "
+                            "only active leg and also the match_leg reference '%s'. "
+                            "Skipping swap to avoid invalid single-leg close+match.",
+                            close_tag, ref_name,
                         )
                         continue
                 if close_tag and close_tag in self.state.legs:
@@ -332,6 +346,17 @@ class AdjustmentEngine:
             ref_tag = self._resolve_close_tag(strike_cfg.match_leg)
             if ref_tag:
                 reference_leg = self.state.legs.get(ref_tag)
+            # ✅ BUG FIX: If the match_leg reference became None after the close_tag
+            # leg was deactivated (e.g. only 1 active leg that was both close_tag and
+            # match_leg), fall back to closing_leg.  This is semantically correct: the
+            # new leg should match the delta/param of the leg we just closed.
+            if reference_leg is None and closing_leg is not None:
+                logger.warning(
+                    "MATCH_LEG reference '%s' is None after deactivation; "
+                    "falling back to closing_leg '%s' as reference.",
+                    strike_cfg.match_leg, closing_leg.tag,
+                )
+                reference_leg = closing_leg
 
         strike, opt_data = self.market.resolve_strike(
             strike_cfg, symbol, expiry=expiry, reference_leg_state=reference_leg

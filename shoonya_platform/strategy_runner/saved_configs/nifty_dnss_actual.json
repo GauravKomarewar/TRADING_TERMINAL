@@ -20,7 +20,7 @@
   },
   "timing": {
     "entry_window_start": "09:18",
-    "entry_window_end": "14:00",
+    "entry_window_end": "15:10",
     "eod_exit_time": "15:28"
   },
   "market_data": {
@@ -217,13 +217,13 @@
       "fri"
     ],
     "entry_time": "09:18",
-      "entry_window_end": "14:00",
+      "entry_window_end": "15:10",
     "exit_time": "15:28",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
     "square_off_before_min": null,
-    "entry_on_expiry_day": false,
+    "entry_on_expiry_day": true,
     "max_reentries_per_day": 1
   },
   "meta": {

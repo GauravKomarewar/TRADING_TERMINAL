@@ -106,6 +106,12 @@ class ExitEngine:
         return None
 
     def _check_stop_loss(self) -> Optional[str]:
+        # ✅ BUG-010 GUARD: never fire stop-loss when no positions are open.
+        # combined_pnl == 0 with a positive amount threshold would always pass
+        # the <= -amount test if amount is mis-signed, and even with a correctly
+        # signed amount a zero-position strategy should never exit on stop-loss.
+        if not self.state.any_leg_active:
+            return None
         cfg = self.exit_config.get("stop_loss", {})
         amount = self._to_float(cfg.get("amount"))
         pct = self._to_float(cfg.get("pct"))

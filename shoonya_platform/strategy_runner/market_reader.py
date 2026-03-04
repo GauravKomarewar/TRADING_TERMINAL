@@ -742,19 +742,20 @@ class MarketReader:
         symbol: str,  # kept for interface compatibility
         expiry: Optional[str] = None,
         reference_leg_state=None,
-        is_straddle_context: bool = False,
     ) -> Tuple[float, Dict[str, Any]]:
         """
         Resolve strike and option data from StrikeConfig.
-        
+
+        Each leg is resolved independently per its own strike_selection config.
+        If a user explicitly sets strike_selection="straddle_delta" in the JSON,
+        the straddle-aware matching is used.  Otherwise, plain delta search applies.
+
         Args:
             config: Strike configuration
             symbol: Symbol (for compatibility)
             expiry: Expiry date
             reference_leg_state: Reference leg for match_leg mode
-            is_straddle_context: If True and using delta selection, use straddle-aware matching
-                               that finds the strike with balanced CE/PE deltas at same strike
-        
+
         Raises:
             RuntimeError if snapshot too old or data not found.
         """
@@ -790,8 +791,10 @@ class MarketReader:
                     raise ValueError(f"Malformed atm offset: {sel}")
             elif sel in ("delta", "straddle_delta"):
                 target = float(val) if val else 0.3
-                # Use straddle-aware matching if explicitly requested or auto-detected
-                if is_straddle_context or sel == "straddle_delta":
+                # Only use straddle-aware matching when user EXPLICITLY sets
+                # strike_selection="straddle_delta" in the JSON config.
+                # Plain "delta" always resolves each leg independently.
+                if sel == "straddle_delta":
                     opt_data = self.find_straddle_strike_by_delta(opt_type, target, expiry=expiry)
                     if opt_data is None:
                         logger.warning(
@@ -891,7 +894,7 @@ class MarketReader:
             else:
                 raise ValueError(f"Unsupported standard selection: {sel}")
 
-            if sel not in ["delta", "theta", "vega", "gamma", "premium", "oi", "volume", "iv"]:
+            if sel not in ["delta", "straddle_delta", "theta", "vega", "gamma", "premium", "oi", "volume", "iv"]:
                 # For simple strike selections, get option data now
                 opt_data = self.get_option_at_strike(strike, opt_type, expiry)
                 if opt_data is None:
@@ -1407,7 +1410,6 @@ class MockMarketReader(MarketReader):
         symbol: str,
         expiry: Optional[str] = None,
         reference_leg_state=None,
-        is_straddle_context: bool = False,
     ) -> Tuple[float, Dict[str, Any]]:
         if config.mode == StrikeMode.STANDARD:
             sel = (config.strike_selection or "atm").lower()
@@ -1421,7 +1423,7 @@ class MockMarketReader(MarketReader):
                 strike = self._atm + (off * step)
             elif sel in ("delta", "straddle_delta"):
                 target = float(val) if val else 0.3
-                if is_straddle_context or sel == "straddle_delta":
+                if sel == "straddle_delta":
                     opt_data = self.find_straddle_strike_by_delta(config.option_type, target)
                 else:
                     opt_data = self.find_option_by_delta(config.option_type, target)

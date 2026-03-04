@@ -139,9 +139,29 @@ class TelegramNotifier:
             qty = leg.get("qty") if leg.get("qty") is not None else leg.get("quantity")
             order_type = str(leg.get("order_type") or "MARKET").upper()
             price_str = self._format_price(order_type, leg.get("price"))
-            lines.append(
-                f"   {idx}. {direction} {symbol} | Qty {qty} | {order_type} {price_str}"
-            )
+
+            # ── Extended leg info (tag, strike, expiry, delta, iv) ──
+            tag = leg.get("tag") or ""
+            option_type = leg.get("option_type") or ""
+            strike = leg.get("strike")
+            expiry = leg.get("expiry") or ""
+            delta = leg.get("delta")
+            iv = leg.get("iv")
+            lots = leg.get("lots")
+
+            strike_str = f"₹{strike:.0f}" if strike is not None else ""
+            delta_str = f"Δ {delta:.4f}" if delta is not None else ""
+            iv_str = f"IV {iv:.1f}%" if iv is not None else ""
+            lots_str = f"{lots}L" if lots is not None else ""
+
+            # Line 1: core order info
+            main_line = f"   {idx}. {direction} {symbol} | Qty {qty} | {order_type} {price_str}"
+            # Line 2: strike / greeks detail (only if available)
+            detail_parts = [p for p in [tag, option_type, strike_str, expiry, lots_str, delta_str, iv_str] if p]
+            if detail_parts:
+                main_line += f"\n      ↳ {' | '.join(detail_parts)}"
+
+            lines.append(main_line)
         return "\n".join(lines)
 
     def send_startup_message(self, host: str, port: int, report_frequency: int) -> bool:

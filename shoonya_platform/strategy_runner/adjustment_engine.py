@@ -405,7 +405,7 @@ class AdjustmentEngine:
         return Condition(
             parameter=d["parameter"],
             comparator=Comparator(d["comparator"]),
-            value=d["value"],
+            value=d.get("value"),
             value2=d.get("value2"),
             join=JoinOperator(d["join"]) if d.get("join") else None
         )

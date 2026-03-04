@@ -32,18 +32,15 @@ class EntryEngine:
             )
             return []  # global gate blocks entry
 
-        # 2. Detect if this is a straddle entry (CE + PE with delta matching)
+        # 2. Process each leg — every leg is resolved independently per its own
+        #    strike_selection config.  No auto-detection / overriding of the user's
+        #    intent (straddle vs strangle etc.) is performed.
         legs_config = entry_config.get("legs", [])
-        is_straddle = self._detect_straddle_entry(legs_config)
-        if is_straddle:
-            logger.info(f"Detected straddle entry pattern - using balanced delta matching")
-
-        # 3. Process each leg
         new_legs = []
         sequence = entry_config.get("entry_sequence", "parallel")
 
         for leg_cfg in legs_config:
-            leg_state = self._process_single_leg(leg_cfg, symbol, default_expiry, is_straddle)
+            leg_state = self._process_single_leg(leg_cfg, symbol, default_expiry)
             if leg_state:
                 new_legs.append(leg_state)
                 if sequence == "sequential":
@@ -59,41 +56,7 @@ class EntryEngine:
             )
         return new_legs
 
-    def _detect_straddle_entry(self, legs_config: List[Dict[str, Any]]) -> bool:
-        """
-        Detect if entry configuration is for a straddle (CE + PE with delta matching).
-        Returns True if:
-        - Exactly 2 legs
-        - One is CE, one is PE
-        - Both use "delta" strike_selection
-        - Both have similar strike_values
-        """
-        if len(legs_config) != 2:
-            return False
-        
-        leg_config_1, leg_config_2 = legs_config[0], legs_config[1]
-        
-        # Check if one is CE and one is PE
-        opt_types = {leg_config_1.get("option_type"), leg_config_2.get("option_type")}
-        if opt_types != {"CE", "PE"}:
-            return False
-        
-        # Check if both use delta selection
-        sel_1 = leg_config_1.get("strike_selection")
-        sel_2 = leg_config_2.get("strike_selection")
-        if sel_1 != "delta" or sel_2 != "delta":
-            return False
-        
-        # Check if delta values are similar (for straddle, both should target ~0.5)
-        val_1 = float(leg_config_1.get("strike_value", 0.3))
-        val_2 = float(leg_config_2.get("strike_value", 0.3))
-        if abs(val_1 - val_2) > 0.05:  # Allow 0.05 margin
-            return False
-        
-        logger.debug(f"Straddle detected: CE delta={val_1}, PE delta={val_2}")
-        return True
-
-    def _process_single_leg(self, leg_cfg: Dict[str, Any], symbol: str, default_expiry: str, is_straddle: bool = False) -> Optional[LegState]:
+    def _process_single_leg(self, leg_cfg: Dict[str, Any], symbol: str, default_expiry: str) -> Optional[LegState]:
         """Process one entry leg: evaluate IF/ELSE, resolve strike, create LegState."""
         # --- Tag validation ---
         tag = leg_cfg.get("tag")
@@ -193,7 +156,7 @@ class EntryEngine:
                 reference_leg = self.state.legs.get(strike_cfg.match_leg)
 
             strike, opt_data = self.market.resolve_strike(
-                strike_cfg, symbol, expiry, reference_leg, is_straddle_context=is_straddle
+                strike_cfg, symbol, expiry, reference_leg
             )
 
             leg = LegState(
@@ -225,7 +188,7 @@ class EntryEngine:
         return Condition(
             parameter=d["parameter"],
             comparator=Comparator(d["comparator"]),
-            value=d["value"],
+            value=d.get("value"),
             value2=d.get("value2"),
             join=JoinOperator(d["join"]) if d.get("join") else None
         )

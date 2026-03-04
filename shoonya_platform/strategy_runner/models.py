@@ -50,7 +50,7 @@ class JoinOperator(Enum):
 class Condition:
     parameter: str          # e.g. "spot_price", "tag.LEG@1.delta"
     comparator: Comparator
-    value: Union[float, str]
+    value: Optional[Union[float, str]] = None    # None for is_true / is_false
     value2: Optional[Union[float, str]] = None   # for between
     join: Optional[JoinOperator] = None          # for combining in a list
 

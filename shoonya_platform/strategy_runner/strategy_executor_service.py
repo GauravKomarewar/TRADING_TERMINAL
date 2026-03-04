@@ -1781,6 +1781,14 @@ class PerStrategyExecutor:
             "order_type": order_type,
             "price": price,
             "product_type": identity.get("product_type", "NRML"),
+            # ── Extended leg info for Telegram / audit ──
+            "tag": leg.tag,
+            "option_type": leg.option_type.value if leg.option_type else None,
+            "strike": leg.strike,
+            "expiry": leg.expiry,
+            "delta": round(leg.delta, 4) if leg.delta else None,
+            "iv": round(leg.iv, 2) if leg.iv else None,
+            "lots": int(qty),
         }
 
     def _lots_to_order_qty(self, lots: int, leg: Optional[LegState] = None) -> int:

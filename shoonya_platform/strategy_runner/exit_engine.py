@@ -68,7 +68,10 @@ class ExitEngine:
             rules = combined.get("rules", [])
             if rules:
                 cond_objs = [self._dict_to_condition(c) for c in rules]
-                if self.condition_engine.evaluate(cond_objs):
+                # ✅ BUG FIX: Use any() to OR individual conditions, matching
+                # how AND uses all(). Previous code passed all conds to evaluate()
+                # which chained with per-condition join fields (defaulting to AND).
+                if any(self.condition_engine.evaluate([c]) for c in cond_objs):
                     self.last_exit_reason = "combined_conditions_or"
                     return "combined_conditions"
         elif combined.get("operator") == "AND":
@@ -204,7 +207,7 @@ class ExitEngine:
         return Condition(
             parameter=d["parameter"],
             comparator=Comparator(d["comparator"]),
-            value=d["value"],
+            value=d.get("value"),
             value2=d.get("value2"),
             join=JoinOperator(d["join"]) if d.get("join") else None
         )

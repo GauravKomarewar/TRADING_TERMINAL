@@ -48,7 +48,7 @@ VALID_STRIKE_SELECTIONS = {
     "atm", "atm+1", "atm-1", "atm+2", "atm-2", "atm+3", "atm-3",
     "atm+4", "atm-4", "atm+5", "atm-5",
     "atm_points", "atm_pct", "exact_strike",
-    "delta", "premium", "iv", "theta", "vega", "gamma", "oi", "volume", "otm_pct",
+    "delta", "straddle_delta", "premium", "iv", "theta", "vega", "gamma", "oi", "volume", "otm_pct",
     "max_pain", "pcr_inflection",
 }
 

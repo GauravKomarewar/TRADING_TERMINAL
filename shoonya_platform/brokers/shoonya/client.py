@@ -157,6 +157,11 @@ class ShoonyaClient(NorenApi):
     ORDER_MAX_RETRY_ATTEMPTS = 3
     ORDER_RETRY_BASE_DELAY = 1  # seconds
 
+    # Failure cooldown (prevent broker hammering)
+    LIMITS_CACHE_TTL_SECONDS = 10  # Cache successful get_limits for this long
+    LIMITS_FAIL_COOLDOWN_SECONDS = 30  # After failure, don't retry for this long
+    LIMITS_MAX_CONSECUTIVE_FAILS = 3  # After this many fails, enter cooldown
+
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
@@ -200,6 +205,16 @@ class ShoonyaClient(NorenApi):
         # Rate limiting (sliding window)
         self._api_call_times: deque = deque(maxlen=100)
         
+        # Activity tracking
+        self._last_api_call: float = 0
+
+        # Failure tracking and cooldown (prevent broker hammering)
+        self._limits_cache: Optional[dict] = None
+        self._limits_cache_time: float = 0
+        self._limits_fail_count: int = 0
+        self._limits_cooldown_until: float = 0
+        self._session_recovery_in_progress: bool = False
+
         # Logging flags (prevent spam)
         self._logged_flags: Set[str] = set()
 
@@ -466,42 +481,80 @@ class ShoonyaClient(NorenApi):
             logger.critical("🚨 Session invalid (auto_recovery disabled)")
             raise RuntimeError("SESSION_INVALID")
 
-        # 🔧 FIXED: Actually validate with broker when needed
+        # 🔧 FIXED: Validate with a LIGHTWEIGHT broker call (not get_limits)
+        # get_watch_list_names() is much lighter than get_limits() and
+        # still validates the session token with Shoonya's server.
         try:
-            logger.debug("🔍 Validating session via broker API...")
+            # Prevent concurrent recovery storms
+            if self._session_recovery_in_progress:
+                logger.debug("⏳ Session recovery already in progress, waiting...")
+                # Wait up to 10 seconds for the other thread's recovery to finish
+                for _ in range(100):
+                    time.sleep(0.1)
+                    if not self._session_recovery_in_progress:
+                        break
+                if self._logged_in:
+                    return True
+                raise RuntimeError("SESSION_RECOVERY_FAILED")
+
+            logger.debug("🔍 Validating session via lightweight broker API...")
 
             # Rate limit check before validation
             self._check_api_rate_limit()
             
-            # Take lock ONLY for broker API call
+            # Use lightweight get_watch_list_names() instead of heavy get_limits()
             with self._api_lock:
-                resp = super().get_limits()
+                resp = super().get_watch_list_names()
 
-            # 🔧 STRONGER VALIDATION: require broker response to be a valid dict
-            valid = self._normalize_dict_response(
-                resp,
-                "ensure_session",
-                allow_missing_stat=False,
-                critical=False,
-            )
-
-            if isinstance(valid, dict):
+            # Check if session is still valid
+            if isinstance(resp, dict) and resp.get("stat") == "Ok":
                 self._last_session_validation = datetime.now()
-                self._last_api_call = time.time()  # 🔧 FIXED: Update activity timestamp
+                self._last_api_call = time.time()
                 logger.debug("✅ Session validated with broker")
                 return True
+            
+            # Also accept non-error dict responses (some Shoonya quirks)
+            if isinstance(resp, dict) and resp.get("stat") is None:
+                self._last_session_validation = datetime.now()
+                self._last_api_call = time.time()
+                logger.debug("✅ Session validated (no-stat response accepted)")
+                return True
 
-            # Invalid response - session expired or not-ok
-            logger.warning("❌ Session expired or invalid broker response: %s", resp)
+            # None response = API unavailable (e.g., after hours), NOT session expired
+            # Only trigger recovery for explicit "Session Expired" errors
+            if resp is None:
+                # After-hours or API unavailable — assume session is still valid,
+                # avoid burning login attempts. Mark as validated.
+                self._last_session_validation = datetime.now()
+                self._last_api_call = time.time()
+                logger.debug("✅ Session assumed valid (broker returned None — likely after-hours)")
+                return True
+
+            # Explicit error with "Session Expired" — this IS a real session failure
+            emsg = resp.get("emsg", "") if isinstance(resp, dict) else str(resp)
+            is_session_expired = "session expired" in emsg.lower() or "invalid session" in emsg.lower()
+            
+            if not is_session_expired:
+                # Non-session error (e.g., API issue) — don't invalidate session
+                self._last_session_validation = datetime.now()
+                self._last_api_call = time.time()
+                logger.debug("✅ Session assumed valid (broker error not session-related: %s)", emsg)
+                return True
+
+            logger.warning("❌ Session expired: %s", emsg)
             self._logged_in = False
             
             if self._enable_auto_recovery:
-                logger.info("🔄 Attempting session recovery...")
-                if not self.login():
-                    logger.critical("❌ Session re-login FAILED - ABORTING")
-                    raise RuntimeError("SESSION_RECOVERY_FAILED")
-                logger.info("✅ Session recovered successfully")
-                return True
+                self._session_recovery_in_progress = True
+                try:
+                    logger.info("🔄 Attempting session recovery...")
+                    if not self.login():
+                        logger.critical("❌ Session re-login FAILED - ABORTING")
+                        raise RuntimeError("SESSION_RECOVERY_FAILED")
+                    logger.info("✅ Session recovered successfully")
+                    return True
+                finally:
+                    self._session_recovery_in_progress = False
             
             raise RuntimeError("SESSION_INVALID")
 
@@ -514,12 +567,16 @@ class ShoonyaClient(NorenApi):
             self._logged_in = False
             
             if self._enable_auto_recovery:
-                logger.info("🔄 Attempting session recovery after validation error...")
-                if not self.login():
-                    logger.critical("❌ Session recovery after exception FAILED - ABORTING")
-                    raise RuntimeError("SESSION_RECOVERY_FAILED")
-                logger.info("✅ Session recovered successfully")
-                return True
+                self._session_recovery_in_progress = True
+                try:
+                    logger.info("🔄 Attempting session recovery after validation error...")
+                    if not self.login():
+                        logger.critical("❌ Session recovery after exception FAILED - ABORTING")
+                        raise RuntimeError("SESSION_RECOVERY_FAILED")
+                    logger.info("✅ Session recovered successfully")
+                    return True
+                finally:
+                    self._session_recovery_in_progress = False
             
             raise RuntimeError("SESSION_INVALID")
 
@@ -1165,15 +1222,15 @@ class ShoonyaClient(NorenApi):
 
     def get_limits(self) -> dict:
         """
-        Get account limits with fail-hard semantics.
+        Get account limits with fail-hard semantics and failure cooldown.
         
         CRITICAL: Tier-1 operation for RMS and health checks.
         
-        Reality (Shoonya):
-        - Usually dict
-        - Sometimes missing "stat"
-        - Sometimes nested
-        - Rarely None
+        Improvements:
+        - Returns cached data during failure cooldown (prevents broker hammering)
+        - Caches successful results for LIMITS_CACHE_TTL_SECONDS
+        - Recovery login forces actual re-login (sets _logged_in=False first)
+        - Failure counter triggers cooldown after LIMITS_MAX_CONSECUTIVE_FAILS
         
         Returns:
             dict with account limits
@@ -1181,9 +1238,25 @@ class ShoonyaClient(NorenApi):
         Raises:
             RuntimeError: If session invalid or broker returns invalid data
         """
-        # 🔥 FAIL-HARD: Session validation
+        now = time.time()
+
+        # 🛡️ COOLDOWN: If in failure cooldown, return cached data or raise
+        if now < self._limits_cooldown_until:
+            if self._limits_cache:
+                logger.debug("📦 get_limits: returning cached data (cooldown active, %.0fs remaining)",
+                             self._limits_cooldown_until - now)
+                return self._limits_cache
+            raise RuntimeError("BROKER_LIMITS_UNAVAILABLE")
+
+        # 📦 CACHE: Return cached data if still fresh
+        if self._limits_cache and (now - self._limits_cache_time) < self.LIMITS_CACHE_TTL_SECONDS:
+            logger.debug("📦 get_limits: returning cached data (%.1fs old)",
+                         now - self._limits_cache_time)
+            return self._limits_cache
+
+        # 🔥 Session validation
         if self._enable_auto_recovery:
-            self.ensure_session()  # Will raise RuntimeError if recovery fails
+            self.ensure_session()
         elif not self._logged_in:
             logger.critical("🚨 get_limits: session invalid")
             raise RuntimeError("SESSION_INVALID")
@@ -1194,45 +1267,80 @@ class ShoonyaClient(NorenApi):
             with self._api_lock:
                 resp = super().get_limits()
 
-            # 🔧 FIXED: Update activity timestamp
             self._last_api_call = time.time()
 
-            # 🔥 FAIL-HARD: Invalid response is unacceptable
             limits = self._normalize_dict_response(
                 resp,
                 "get_limits",
                 allow_missing_stat=True,
-                critical=False  # Will raise RuntimeError on invalid response
+                critical=False
             )
 
-            # If broker returned invalid data, attempt one recovery+retry when enabled
-            if not limits:
-                logger.warning("🚨 get_limits returned invalid data, attempting recovery if enabled")
-                if self._enable_auto_recovery:
-                    logger.info("🔄 Attempting session recovery before failing get_limits")
-                    try:
-                        if self.login():
-                            with self._api_lock:
-                                resp2 = super().get_limits()
-                            self._last_api_call = time.time()
-                            limits = self._normalize_dict_response(resp2, "get_limits", allow_missing_stat=True, critical=False)
-                            if limits:
-                                logger.info("✅ get_limits succeeded after recovery")
-                                return limits
-                    except Exception as e:
-                        logger.warning("Session recovery attempt failed: %s", e)
+            if limits:
+                # ✅ SUCCESS: Reset failure tracking, update cache
+                self._limits_fail_count = 0
+                self._limits_cooldown_until = 0
+                self._limits_cache = limits
+                self._limits_cache_time = time.time()
+                return limits
 
-                logger.critical("🚨 get_limits returned invalid data")
-                raise RuntimeError("BROKER_LIMITS_INVALID")
+            # ❌ FAILURE: Broker returned invalid data
+            self._limits_fail_count += 1
+            logger.warning(
+                "🚨 get_limits returned invalid data (fail %d/%d)",
+                self._limits_fail_count, self.LIMITS_MAX_CONSECUTIVE_FAILS
+            )
 
-            return limits
+            # Attempt ONE recovery with forced re-login
+            if self._enable_auto_recovery and self._limits_fail_count <= self.LIMITS_MAX_CONSECUTIVE_FAILS:
+                logger.info("🔄 Attempting forced re-login before retrying get_limits")
+                try:
+                    # Force actual re-login (don't let login() skip with "Already logged in")
+                    self._logged_in = False
+                    if self.login():
+                        with self._api_lock:
+                            resp2 = super().get_limits()
+                        self._last_api_call = time.time()
+                        limits = self._normalize_dict_response(
+                            resp2, "get_limits",
+                            allow_missing_stat=True, critical=False
+                        )
+                        if limits:
+                            logger.info("✅ get_limits succeeded after forced re-login")
+                            self._limits_fail_count = 0
+                            self._limits_cooldown_until = 0
+                            self._limits_cache = limits
+                            self._limits_cache_time = time.time()
+                            return limits
+                except Exception as e:
+                    logger.warning("Session recovery attempt failed: %s", e)
+
+            # Enter cooldown if too many consecutive failures
+            if self._limits_fail_count >= self.LIMITS_MAX_CONSECUTIVE_FAILS:
+                self._limits_cooldown_until = time.time() + self.LIMITS_FAIL_COOLDOWN_SECONDS
+                logger.warning(
+                    "🛡️ get_limits entering %.0fs cooldown after %d consecutive failures",
+                    self.LIMITS_FAIL_COOLDOWN_SECONDS, self._limits_fail_count
+                )
+
+            # Return cached data if available, otherwise raise
+            if self._limits_cache:
+                logger.warning("📦 get_limits: returning stale cached data after failure")
+                return self._limits_cache
+
+            logger.critical("🚨 get_limits returned invalid data (no cache available)")
+            raise RuntimeError("BROKER_LIMITS_INVALID")
             
         except RuntimeError:
-            # Re-raise RuntimeError for critical failures
             raise
             
         except Exception as exc:
+            self._limits_fail_count += 1
+            if self._limits_fail_count >= self.LIMITS_MAX_CONSECUTIVE_FAILS:
+                self._limits_cooldown_until = time.time() + self.LIMITS_FAIL_COOLDOWN_SECONDS
             logger.critical("🚨 get_limits exception: %s", exc)
+            if self._limits_cache:
+                return self._limits_cache
             raise RuntimeError(f"BROKER_API_ERROR: {exc}")
 
     def get_positions(self) -> List[dict]:

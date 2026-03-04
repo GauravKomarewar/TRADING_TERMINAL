@@ -267,6 +267,71 @@
             .kpi-strip { flex-direction: column; }
             .kpi-card { min-width: unset; }
         }
+
+        /* ── Telegram Toggle Switches ── */
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            font-size: 12px;
+        }
+        .toggle-row + .toggle-row { border-top: 1px solid var(--border); }
+        .toggle-label {
+            color: var(--text-secondary);
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .toggle-label-main { font-weight: 600; }
+        .toggle-label-sub { font-size: 10px; color: var(--muted); }
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            transition: all 0.3s;
+        }
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background: var(--muted);
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--success);
+            border-color: var(--success);
+        }
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(18px);
+            background: #fff;
+        }
+        .toggle-switch input:disabled + .toggle-slider {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .toggle-switch.master input:checked + .toggle-slider {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
     </style>
 </head>
 <body data-page="dashboard">
@@ -498,6 +563,56 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Telegram Notifications -->
+            <div class="dash-card">
+                <div class="card-head">
+                    <h3>📱 Telegram Notifications</h3>
+                    <span id="telegramBadge" class="status-badge neutral">--</span>
+                </div>
+                <div class="card-body-pad">
+                    <div class="toggle-row">
+                        <div class="toggle-label">
+                            <span class="toggle-label-main">All Messages</span>
+                            <span class="toggle-label-sub">Master switch for all Telegram notifications</span>
+                        </div>
+                        <label class="toggle-switch master">
+                            <input type="checkbox" id="tgToggleAll" onchange="toggleTelegram('all', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="toggle-row">
+                        <div class="toggle-label">
+                            <span class="toggle-label-main">System / Status</span>
+                            <span class="toggle-label-sub">Startup, login, heartbeat, errors</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="tgToggleSystem" onchange="toggleTelegram('system', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="toggle-row">
+                        <div class="toggle-label">
+                            <span class="toggle-label-main">Strategy / Orders</span>
+                            <span class="toggle-label-sub">Alerts, order placement, execution results</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="tgToggleStrategy" onchange="toggleTelegram('strategy', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="toggle-row">
+                        <div class="toggle-label">
+                            <span class="toggle-label-main">Reports / Summaries</span>
+                            <span class="toggle-label-sub">Daily summary, status reports, risk alerts</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="tgToggleReports" onchange="toggleTelegram('reports', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -533,12 +648,15 @@
     }
 
     // ─── Config & State ───
-    var REFRESH_MS = 1000;
+    var REFRESH_MS = 3000;
+    var REFRESH_MS_NORMAL = 3000;
+    var REFRESH_MS_ERROR = 10000;
     var lastUpdate = Date.now();
     var autoRefreshTimer = null;
     var isRefreshing = false;
     var retryCount = 0;
     var MAX_RETRIES = 3;
+    var consecutiveErrors = 0;
 
     // ─── Formatting ───
     function fmt(val) {
@@ -635,9 +753,21 @@
 
             lastUpdate = Date.now();
             retryCount = 0;
+            // Restore normal polling speed on success
+            if (consecutiveErrors > 0) {
+                consecutiveErrors = 0;
+                REFRESH_MS = REFRESH_MS_NORMAL;
+                startAutoRefresh();
+            }
 
         } catch (err) {
+            consecutiveErrors++;
             if (!isAuto) showError(err.message);
+            // Slow down polling when errors persist
+            if (consecutiveErrors >= 3 && REFRESH_MS !== REFRESH_MS_ERROR) {
+                REFRESH_MS = REFRESH_MS_ERROR;
+                startAutoRefresh();
+            }
             if (isAuto && retryCount < MAX_RETRIES) {
                 retryCount++;
                 setTimeout(function() { updateDashboard(true); }, 2000);
@@ -1055,6 +1185,92 @@
         else if (sec < 60) el.textContent = sec + 's ago';
         else el.textContent = Math.floor(sec / 60) + 'm ago';
     }, 1000);
+
+    // ─── Telegram Toggle Controls ───
+    var _tgPrefsLoaded = false;
+
+    function loadTelegramPrefs() {
+        fetch('/dashboard/telegram/preferences', { credentials: 'include' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                _tgPrefsLoaded = true;
+                var prefs = data.preferences || {};
+                document.getElementById('tgToggleAll').checked = !!prefs.all;
+                document.getElementById('tgToggleSystem').checked = !!prefs.system;
+                document.getElementById('tgToggleStrategy').checked = !!prefs.strategy;
+                document.getElementById('tgToggleReports').checked = !!prefs.reports;
+                applyMasterState(!!prefs.all);
+                updateTelegramBadge(prefs);
+            })
+            .catch(function() {
+                // defaults: all on
+                document.getElementById('tgToggleAll').checked = true;
+                document.getElementById('tgToggleSystem').checked = true;
+                document.getElementById('tgToggleStrategy').checked = true;
+                document.getElementById('tgToggleReports').checked = true;
+                updateTelegramBadge({ all: true, system: true, strategy: true, reports: true });
+            });
+    }
+
+    function toggleTelegram(category, enabled) {
+        // If master toggle changes, cascade to all sub-toggles
+        if (category === 'all') {
+            document.getElementById('tgToggleSystem').checked = enabled;
+            document.getElementById('tgToggleStrategy').checked = enabled;
+            document.getElementById('tgToggleReports').checked = enabled;
+            applyMasterState(enabled);
+        }
+
+        // Collect current state
+        var prefs = {
+            all: document.getElementById('tgToggleAll').checked,
+            system: document.getElementById('tgToggleSystem').checked,
+            strategy: document.getElementById('tgToggleStrategy').checked,
+            reports: document.getElementById('tgToggleReports').checked,
+        };
+
+        // Auto-update master toggle based on sub-toggles
+        if (category !== 'all') {
+            var anyOn = prefs.system || prefs.strategy || prefs.reports;
+            document.getElementById('tgToggleAll').checked = anyOn;
+            prefs.all = anyOn;
+            applyMasterState(anyOn);
+        }
+
+        updateTelegramBadge(prefs);
+
+        fetch('/dashboard/telegram/preferences', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(prefs),
+            credentials: 'include',
+        }).catch(function(err) { console.error('Telegram prefs save failed:', err); });
+    }
+
+    function applyMasterState(masterOn) {
+        var subs = ['tgToggleSystem', 'tgToggleStrategy', 'tgToggleReports'];
+        subs.forEach(function(id) {
+            document.getElementById(id).disabled = !masterOn;
+        });
+    }
+
+    function updateTelegramBadge(prefs) {
+        var badge = document.getElementById('telegramBadge');
+        if (!prefs.all) {
+            badge.textContent = 'OFF';
+            badge.className = 'status-badge danger';
+        } else if (prefs.system && prefs.strategy && prefs.reports) {
+            badge.textContent = 'ALL ON';
+            badge.className = 'status-badge safe';
+        } else {
+            var count = (prefs.system ? 1 : 0) + (prefs.strategy ? 1 : 0) + (prefs.reports ? 1 : 0);
+            badge.textContent = count + '/3 ON';
+            badge.className = 'status-badge warning';
+        }
+    }
+
+    // Load prefs on page load
+    loadTelegramPrefs();
 
     // ─── Cleanup ───
     window.addEventListener('beforeunload', stopAutoRefresh);

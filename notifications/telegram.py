@@ -20,6 +20,20 @@ logger = logging.getLogger(__name__)
 class TelegramNotifier:
     """Handle all Telegram notifications using simple HTTP requests"""
 
+    # Category mapping: method name prefix → preference key
+    _CATEGORY_MAP = {
+        "send_startup": "system",
+        "send_ready": "system",
+        "send_login": "system",
+        "send_error": "system",
+        "send_test": "system",
+        "send_alert": "strategy",
+        "send_order": "strategy",
+        "send_daily": "reports",
+        "send_status": "reports",
+        "send_heartbeat": "reports",
+    }
+
     def __init__(self, bot_token: str, chat_id: str):
         """Initialize Telegram notifier with bot token and chat ID"""
         self.bot_token = bot_token
@@ -28,6 +42,37 @@ class TelegramNotifier:
         self.session = requests.Session()
         self.is_connected = False
         self._log_path = self._resolve_log_path()
+        # Granular preferences (set by dashboard toggle, default all on)
+        self._prefs = {"all": True, "system": True, "strategy": True, "reports": True}
+
+    def set_preferences(self, prefs: dict) -> None:
+        """Update notification category preferences."""
+        for k in ("all", "system", "strategy", "reports"):
+            if k in prefs:
+                self._prefs[k] = bool(prefs[k])
+
+    def is_category_enabled(self, category: str) -> bool:
+        """Check if a notification category is enabled."""
+        if not self._prefs.get("all", True):
+            return False
+        return self._prefs.get(category, True)
+
+    def _should_send_to_telegram(self, method_name: str) -> bool:
+        """Check whether a notification should actually be sent to Telegram.
+        
+        This only controls HTTP delivery to Telegram.
+        Messages are ALWAYS logged to the JSONL file for dashboard display.
+        """
+        if not self._prefs.get("all", True):
+            return False
+        for prefix, category in self._CATEGORY_MAP.items():
+            if method_name.startswith(prefix):
+                return self._prefs.get(category, True)
+        # Unknown methods: allow by default
+        return True
+
+    # Keep backward-compat alias
+    _should_send = _should_send_to_telegram
 
     def test_connection(self):
         """Test Telegram bot connection"""
@@ -60,8 +105,13 @@ class TelegramNotifier:
         self,
         message: str,
         parse_mode: Literal["HTML", "MarkdownV2"] = "HTML",
+        _skip_log: bool = False,
     ) -> bool:
-        """Send message to Telegram using HTTP request"""
+        """Send message to Telegram using HTTP request.
+        
+        Args:
+            _skip_log: If True, skip appending to JSONL (caller already logged).
+        """
         if not self.is_connected:
             logger.warning("Telegram not connected, attempting to reconnect...")
             if not self.test_connection():
@@ -83,7 +133,8 @@ class TelegramNotifier:
                 response_data = response.json()
                 if response_data.get("ok"):
                     logger.debug("Telegram message sent successfully")
-                    self._append_message_log(safe_message)
+                    if not _skip_log:
+                        self._append_message_log(safe_message)
                     return True
                 logger.error(f"Telegram API error: {response_data}")
                 return False
@@ -118,6 +169,21 @@ class TelegramNotifier:
                 f.write(json.dumps(payload, ensure_ascii=True) + "\n")
         except Exception as e:
             logger.warning(f"Failed to log telegram message: {e}")
+
+    def _send_with_log(self, method_name: str, message: str) -> bool:
+        """Always log the message for dashboard display, but only send to Telegram
+        if the category preference allows it.
+        
+        This ensures dashboard 'Recent Alerts' always shows all messages in
+        real-time, regardless of telegram toggle state.
+        """
+        safe_message = sanitize_text(message, ascii_only=False)
+        # ALWAYS log for dashboard display
+        self._append_message_log(safe_message)
+        # Only send to Telegram if prefs allow
+        if not self._should_send_to_telegram(method_name):
+            return True
+        return self.send_message(message, _skip_log=True)
 
     @staticmethod
     def _format_price(order_type: str, price: Any) -> str:
@@ -177,10 +243,10 @@ class TelegramNotifier:
             f"🔐 Attempting broker login...\n"
             f"🌐 Server: http://{host}:{port}\n"
             f"🔔 Telegram: ✅ Connected\n"
-            f"� Heartbeat: Every 5 minutes\n\n"
+            f"\xef\xb8\x8f Heartbeat: Every 5 minutes\n\n"
             f"⏳ Please wait for READY confirmation..."
         )
-        return self.send_message(message)
+        return self._send_with_log("send_startup", message)
 
     def send_ready_message(self, host: str, port: int, report_frequency: int) -> bool:
         """Send bot ready notification"""
@@ -198,7 +264,7 @@ class TelegramNotifier:
             f"🎯 <b>Status: Monitoring for trading signals...</b>\n\n"
             f"📖 <i>Available: Webhook | Dashboard | Live Feed</i>"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_ready", message)
 
     def send_login_success(self, user_id: str) -> bool:
         """Send login success notification"""
@@ -210,7 +276,7 @@ class TelegramNotifier:
             f"👤 User: {user_id}\n"
             f"🤖 Bot Status: Active & Ready"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_login", message)
 
     def send_login_failed(self, error: str) -> bool:
         """Send login failed notification"""
@@ -221,7 +287,7 @@ class TelegramNotifier:
             f"❌ Error: {error}\n"
             f"📅 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_login", message)
 
     def send_alert_received(
         self,
@@ -245,7 +311,7 @@ class TelegramNotifier:
             f"{leg_details}"
             f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_alert", message)
 
     def send_order_placing(
         self,
@@ -268,7 +334,7 @@ class TelegramNotifier:
             f"📦 Qty: {quantity}\n"
             f"💰 Price: {price_str}"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_order", message)
 
     def send_order_success(self, order_id: str, symbol: str, direction: str, quantity: int) -> bool:
         """Send order success notification"""
@@ -280,7 +346,7 @@ class TelegramNotifier:
             f"📈 {symbol} - {direction} {quantity}\n"
             f"⏰ {datetime.now().strftime('%H:%M:%S')}"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_order", message)
 
     def send_order_failed(self, symbol: str, direction: str, quantity: int, error: str) -> bool:
         """Send order failed notification"""
@@ -292,7 +358,7 @@ class TelegramNotifier:
             f"🚫 Error: {error}\n"
             f"⏰ {datetime.now().strftime('%H:%M:%S')}"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_order", message)
 
     def send_alert_summary(
         self,
@@ -319,7 +385,7 @@ class TelegramNotifier:
             f"📊 Rate: {success_rate:.1f}%\n"
             f"⏰ Completed: {datetime.now().strftime('%H:%M:%S')}"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_alert", message)
 
     def send_error_message(
         self,
@@ -351,10 +417,10 @@ class TelegramNotifier:
             f"{details_block}"
             f"\n⏰ Time: {datetime.now().strftime('%H:%M:%S')}"
         )
-        return self.send_message(message)
+        return self._send_with_log("send_error", message)
 
     def send_test_message(self) -> bool:
-        """Send test message"""
+        """Send test message - always sends and logs regardless of prefs"""
         from datetime import datetime
 
         message = (
@@ -362,4 +428,6 @@ class TelegramNotifier:
             f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"✅ Connection working!"
         )
-        return self.send_message(message)
+        safe_message = sanitize_text(message, ascii_only=False)
+        self._append_message_log(safe_message)
+        return self.send_message(message, _skip_log=True)

@@ -395,6 +395,8 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
         # -------------------------------------------------
         self.telegram_enabled = self.config.is_telegram_enabled()
         self.telegram = None
+        # Granular telegram notification preferences (dashboard toggle)
+        self._telegram_prefs = {"all": True, "system": True, "strategy": True, "reports": True}
         if self.telegram_enabled:
             try:
                 telegram_config = self.config.get_telegram_config()
@@ -406,6 +408,25 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
 
                 self.telegram = TelegramNotifier(bot_token, chat_id)
                 logger.info("Telegram integration enabled")
+
+                # Load saved notification prefs from disk  
+                try:
+                    from pathlib import Path as _TgPath
+                    _prefs_file = _TgPath(__file__).resolve().parents[2] / "logs" / f"telegram_prefs_{self.client_id}.json"
+                    if _prefs_file.exists():
+                        import json as _tg_json
+                        with open(_prefs_file, "r", encoding="utf-8") as _pf:
+                            saved_prefs = _tg_json.load(_pf)
+                        self._telegram_prefs = {
+                            "all": saved_prefs.get("all", True),
+                            "system": saved_prefs.get("system", True),
+                            "strategy": saved_prefs.get("strategy", True),
+                            "reports": saved_prefs.get("reports", True),
+                        }
+                        self.telegram.set_preferences(self._telegram_prefs)
+                        logger.info("Telegram prefs loaded from disk: %s", self._telegram_prefs)
+                except Exception as _prefs_err:
+                    logger.debug("No saved telegram prefs: %s", _prefs_err)
             except Exception as e:
                 logger.error(f"Failed to initialize Telegram: {e}")
                 self.telegram_enabled = False
@@ -514,11 +535,20 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
                 logger.warning("Shutdown-start Telegram notification failed: %s", e)
 
     def send_telegram(self, message: str) -> bool:
-        """Safe wrapper for sending Telegram messages"""
+        """Safe wrapper for sending Telegram messages.
+        
+        Always logs to JSONL for dashboard display.
+        Only sends via HTTP to Telegram if preferences allow.
+        """
         if self.telegram_enabled and self.telegram:
             try:
                 normalized = sanitize_text(message, ascii_only=False)
-                return self.telegram.send_message(normalized)
+                # Always log for dashboard
+                self.telegram._append_message_log(normalized)
+                # Only send to Telegram if "all" pref allows
+                if self.telegram._should_send_to_telegram("send_generic"):
+                    return self.telegram.send_message(normalized, _skip_log=True)
+                return True
             except Exception as e:
                 logger.error(f"Telegram send error: {e}")
                 return False

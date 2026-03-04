@@ -358,10 +358,6 @@ async function logout() {
     window.location.href = '/';
 }
 
-window.addEventListener('DOMContentLoaded', function() {
-    checkAuth();
-});
-
 // Smart refresh for diagnostics - update values only, not full page rebuild
 let diagnosticsAutoTimer = null;
 let lastDiagnosticsData = null;
@@ -369,7 +365,7 @@ let lastIntentData = null;
 let lastDashboardData = null;
 
 function smartUpdateDiagnostics() {
-    fetch('/dashboard/diagnostics', {credentials:'include'})
+    fetch('/dashboard/diagnostics/orders', {credentials:'include'})
         .then(r => r.json())
         .then(data => {
             if (JSON.stringify(data) !== JSON.stringify(lastDiagnosticsData)) {

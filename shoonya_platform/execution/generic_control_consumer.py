@@ -224,6 +224,26 @@ class GenericControlIntentConsumer:
             )
             return "REJECTED"
 
+        # ----------------------------
+        # CANCEL ALL BROKER ORDERS → EXIT ALL OPEN POSITIONS
+        # ----------------------------
+        if intent_type == "CANCEL_ALL_BROKER_ORDERS":
+            logger.critical(
+                "🛑 DASHBOARD CANCEL ALL BROKER ORDERS → EXIT ALL | intent=%s",
+                intent_id,
+            )
+            try:
+                self.bot.command_service.position_exit_service.exit_positions(
+                    scope="ALL",
+                    product_scope="ALL",
+                    reason="DASHBOARD_CANCEL_ALL",
+                    source="DASHBOARD",
+                )
+                return "ACCEPTED"
+            except Exception as e:
+                logger.exception("Cancel all broker orders failed: %s", e)
+                return "FAILED"
+
         # If we reach here, the intent type was not handled
         logger.error("Unknown broker control intent type: %s", intent_type)
         return "REJECTED"
@@ -375,7 +395,8 @@ class GenericControlIntentConsumer:
             # ==================================================
             # BROKER CONTROL (WATCHER-ONLY)
             # ==================================================
-            elif intent_type in ("CANCEL_BROKER_ORDER", "MODIFY_BROKER_ORDER"):
+            elif intent_type in ("CANCEL_BROKER_ORDER", "MODIFY_BROKER_ORDER",
+                                 "CANCEL_ALL_BROKER_ORDERS"):
                 result = self._handle_broker_control_intent(
                     intent_type, payload, intent_id
                 )
@@ -416,12 +437,11 @@ class GenericControlIntentConsumer:
         cur.execute(
             """
             UPDATE orders
-            SET status = 'FAILED',
+            SET status = 'CANCELLED',
                 updated_at = CURRENT_TIMESTAMP
             WHERE command_id = ?
             AND client_id = ?
-            AND status = 'CREATED'
-            AND source = 'MANUAL'
+            AND status IN ('CREATED', 'TRIGGERED', 'SENT_TO_BROKER')
             """,
             (command_id, self.bot.client_id),
         )
@@ -469,8 +489,7 @@ class GenericControlIntentConsumer:
             SET {", ".join(fields)}
             WHERE command_id = ?
             AND client_id = ?
-            AND status = 'CREATED'
-            AND source = 'MANUAL'
+            AND status IN ('CREATED', 'TRIGGERED', 'SENT_TO_BROKER')
             """,
             values,
         )
@@ -491,10 +510,9 @@ class GenericControlIntentConsumer:
         cur.execute(
             """
             UPDATE orders
-            SET status = 'FAILED',
+            SET status = 'CANCELLED',
                 updated_at = CURRENT_TIMESTAMP
-            WHERE status = 'CREATED'
-            AND source = 'MANUAL'
+            WHERE status IN ('CREATED', 'TRIGGERED', 'SENT_TO_BROKER')
             AND client_id = ?
             """,
             (self.bot.client_id,),

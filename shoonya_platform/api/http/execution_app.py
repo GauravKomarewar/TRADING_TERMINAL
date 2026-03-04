@@ -134,7 +134,7 @@ class ExecutionApp:
 
                 response = self.telegram_controller.handle_message(payload)
                 if response:
-                    self.bot.telegram.send_message(response)
+                    self.bot.send_telegram(response, category="system")
 
                 return jsonify({"ok": True})
 

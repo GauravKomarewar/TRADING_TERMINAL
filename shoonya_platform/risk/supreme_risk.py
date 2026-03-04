@@ -334,7 +334,7 @@ class SupremeRiskManager:
                 f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                 f"⚠️ <b>FORCING EXIT OF ALL POSITIONS</b>"
             )
-            self.bot.send_telegram(msg)
+            self.bot.send_telegram(msg, category="system")
 
         self._route_global_exit("RMS_DAILY_MAX_LOSS")
 
@@ -437,7 +437,8 @@ class SupremeRiskManager:
                                         f"🚨 <b>POST-BREACH FLATTEN</b>\n\n"
                                         f"Positions detected after max loss hit:\n"
                                         f"{detail_text}\n\n"
-                                        f"⚠️ Force-exiting ALL positions again"
+                                        f"⚠️ Force-exiting ALL positions again",
+                                        category="system"
                                     )
                 else:
                     logger.debug("RMS: No positions in broker snapshot")
@@ -489,7 +490,8 @@ class SupremeRiskManager:
                 if self.bot.telegram_enabled:
                     self.bot.send_telegram(
                         f"🚨 <b>RISK: Cancelled {cancelled} pending broker orders</b>\n"
-                        f"Daily loss hit — no new orders allowed"
+                        f"Daily loss hit — no new orders allowed",
+                        category="system"
                     )
         except Exception as e:
             logger.error("RMS: Error cancelling broker orders: %s", e)
@@ -660,7 +662,7 @@ class SupremeRiskManager:
                     f"📊 Trail Steps: {steps}\n"
                     f"💰 Protected Profit: ₹{abs(self.dynamic_max_loss - self.BASE_MAX_LOSS):.2f}"
                 )
-                self.bot.send_telegram(msg)
+                self.bot.send_telegram(msg, category="reports")
 
     def _check_warning_threshold(self):
         if self.warning_sent or self.daily_loss_hit:
@@ -690,7 +692,7 @@ class SupremeRiskManager:
                     f"📊 Warning Threshold: {self.WARNING_THRESHOLD_PCT*100:.0f}%\n\n"
                     f"⚠️ Approaching exit threshold!"
                 )
-                self.bot.send_telegram(msg)
+                self.bot.send_telegram(msg, category="system")
 
     def _activate_cooldown(self):
         today = date.today()
@@ -712,7 +714,7 @@ class SupremeRiskManager:
                 f"📅 Days Until Resume: {days_until_monday}\n\n"
                 f"⚠️ All trading blocked until next Monday"
             )
-            self.bot.send_telegram(msg)
+            self.bot.send_telegram(msg, category="system")
 
     # --------------------------------------------------
     # PNL OHLC / REPORTING (UNCHANGED)
@@ -792,7 +794,7 @@ class SupremeRiskManager:
             msg += f"\n\n⚠️ <b>COOLDOWN ACTIVE UNTIL {self.cooldown_until.strftime('%d-%b')}</b>"
         
         logger.info("RMS: Periodic status sent")
-        self.bot.send_telegram(msg)
+        self.bot.send_telegram(msg, category="reports")
 
     def _reset_daily_state(self, new_day: date):
         logger.info(
@@ -826,7 +828,7 @@ class SupremeRiskManager:
                 f"📊 Trail Step: ₹{self.TRAIL_STEP:.2f}\n\n"
                 f"✅ RMS Ready"
             )
-            self.bot.send_telegram(msg)
+            self.bot.send_telegram(msg, category="system")
 
     def get_status(self) -> Dict:
         return {

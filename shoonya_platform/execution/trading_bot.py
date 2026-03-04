@@ -534,22 +534,30 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
             except Exception as e:
                 logger.warning("Shutdown-start Telegram notification failed: %s", e)
 
-    def send_telegram(self, message: str) -> bool:
+    def send_telegram(self, message: str, *, category: str = "system") -> bool:
         """Safe wrapper for sending Telegram messages.
         
         Always logs to JSONL for dashboard display.
         Only sends via HTTP to Telegram if preferences allow.
+
+        Args:
+            message: The message to send.
+            category: One of 'system', 'strategy', 'reports'.
+                      Controls which dashboard toggle governs this message.
         """
         if self.telegram_enabled and self.telegram:
             try:
                 normalized = sanitize_text(message, ascii_only=False)
                 # Always log for dashboard
                 self.telegram._append_message_log(normalized)
-                # Only send to Telegram if "all" pref allows
-                prefs_allow = self.telegram._should_send_to_telegram("send_generic")
-                logger.debug(
-                    "send_telegram: prefs_allow=%s | _prefs=%s | msg_preview=%.40s",
+                # Check BOTH master + category toggle
+                prefs_allow = self.telegram._should_send_to_telegram(
+                    "send_generic", category=category,
+                )
+                logger.info(
+                    "send_telegram: prefs_allow=%s | category=%s | _prefs=%s | msg_preview=%.40s",
                     prefs_allow,
+                    category,
                     self.telegram._prefs,
                     normalized.replace('\n', ' ')[:40],
                 )
@@ -724,7 +732,7 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
                                 f"\u2022 Total trades: {len(self.trade_records)}\n"
                                 f"\u2022 Uptime: Until shutdown"
                             )
-                            self.send_telegram(shutdown_msg)
+                            self.send_telegram(shutdown_msg, category="system")
                         except Exception as tg_e:
                             logger.debug(f"Telegram send timeout (expected): {tg_e}")
 

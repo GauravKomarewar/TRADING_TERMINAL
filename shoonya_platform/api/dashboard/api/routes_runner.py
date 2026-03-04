@@ -599,7 +599,8 @@ def set_strategy_mode(
                 f"Previous: {previous_mode}\n"
                 f"New: {new_mode}\n"
                 f"━━━━━━━━━━━━━━━━━\n"
-                f"{restart_message if needs_restart else 'Strategy not running'}"
+                f"{restart_message if needs_restart else 'Strategy not running'}",
+                category="strategy"
             )
 
         return {

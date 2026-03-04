@@ -48,7 +48,7 @@ class StatusSchedulingMixin:
                         from shoonya_platform.strategy_runner.universal_settings.universal_strategy_reporter import build_strategy_report
                         report = build_strategy_report(strategy, market)
                         if report:
-                            self.send_telegram(report)
+                            self.send_telegram(report, category="reports")
                     except Exception as e:
                         log_exception(f"strategy_report:{name}", e)
 
@@ -107,7 +107,8 @@ class StatusSchedulingMixin:
                                     f"\U0001f6a8 <b>CRITICAL: SERVICE RESTART REQUIRED</b>\n"
                                     f"\u274c Session recovery failed\n"
                                     f"\U0001f504 Service will auto-restart in 5 seconds\n"
-                                    f"\u23f0 Time: {datetime.now().strftime('%H:%M:%S')}"
+                                    f"\u23f0 Time: {datetime.now().strftime('%H:%M:%S')}",
+                                    category="system"
                                 )
                             except Exception as notify_error:
                                 logger.error(f"Failed to send critical restart alert: {notify_error}")
@@ -219,7 +220,7 @@ class StatusSchedulingMixin:
                 message += f"\u2022 No trades executed yesterday\n"
 
             message += f"\n\U0001f3af Ready for today's opportunities!"
-            self.send_telegram(message)
+            self.send_telegram(message, category="reports")
 
         except Exception as e:
             log_exception("send_daily_summary", e)
@@ -258,7 +259,7 @@ class StatusSchedulingMixin:
                 message += f"\U0001f4ca No trades executed today\n"
 
             message += f"\n\U0001f634 Bot will continue monitoring overnight"
-            self.send_telegram(message)
+            self.send_telegram(message, category="reports")
 
         except Exception as e:
             log_exception("send_market_close_summary", e)
@@ -312,7 +313,7 @@ class StatusSchedulingMixin:
                 f"\U0001f916 Status: Active & Monitoring"
             )
 
-            self.send_telegram(message)
+            self.send_telegram(message, category="reports")
             logger.debug("Heartbeat sent")
 
         except Exception as e:
@@ -406,7 +407,7 @@ class StatusSchedulingMixin:
 
             message += f"\n\U0001f514 <i>Next report in {self.config.report_frequency} minutes</i>"
 
-            self.send_telegram(message)
+            self.send_telegram(message, category="reports")
             logger.info("Status report sent")
 
         except Exception as e:

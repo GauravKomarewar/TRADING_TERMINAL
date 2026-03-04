@@ -438,7 +438,8 @@ class ExecutionMixin:
                         f"<b>STRATEGY REGISTERED</b>\n"
                         f"Name: {strategy_name}\n"
                         f"Type: ExecutorService (condition-based)\n"
-                        f"Time: {datetime.now().strftime('%H:%M:%S')}"
+                        f"Time: {datetime.now().strftime('%H:%M:%S')}",
+                        category="strategy"
                     )
                 except Exception as e:
                     logger.warning(f"Telegram notification failed: {e}")
@@ -451,7 +452,8 @@ class ExecutionMixin:
                     self.send_telegram(
                         f"<b>STRATEGY REGISTRATION FAILED</b>\n"
                         f"Name: {strategy_name}\n"
-                        f"Error: {str(e)}"
+                        f"Error: {str(e)}",
+                        category="strategy"
                     )
                 except Exception:
                     pass
@@ -735,7 +737,8 @@ class ExecutionMixin:
                                 f"\U0001f6a8 EXIT ORDER REJECTED\n"
                                 f"Symbol: {command.symbol}\n"
                                 f"Reason: {result.error_message}\n"
-                                f"\u26a0\ufe0f Position still open - manual action may be needed"
+                                f"\u26a0\ufe0f Position still open - manual action may be needed",
+                                category="strategy"
                             )
                         except Exception as e:
                             logger.warning(f"Failed to send telegram notification: {e}")

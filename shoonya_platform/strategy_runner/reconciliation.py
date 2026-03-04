@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional, Callable
+import re
 from .state import StrategyState, LegState
 from .models import InstrumentType, OptionType, Side
 import logging
@@ -68,6 +69,23 @@ class BrokerReconciliation:
             logger.error(f"BrokerReconciliation.reconcile_from_broker: fetch failed: {e}")
             return warnings
 
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # BUG-11 FIX: Guard against session-failure returning empty positions.
+        # If broker returns ZERO positions but we believe we have active legs,
+        # this is almost certainly a stale/failed API response — skip
+        # reconciliation entirely instead of wiping all legs inactive.
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        active_leg_count = sum(1 for leg in self.state.legs.values() if leg.is_active)
+        if not broker_positions and active_leg_count > 0:
+            msg = (
+                f"RECONCILE: Broker returned EMPTY positions but state has "
+                f"{active_leg_count} active leg(s) — skipping reconciliation "
+                f"(possible session/API issue)"
+            )
+            warnings.append(msg)
+            logger.warning(msg)
+            return warnings
+
         broker_netqty: Dict[str, int] = {}
         for pos in broker_positions:
             tsym = pos.get("tsym", "")
@@ -82,6 +100,26 @@ class BrokerReconciliation:
             sym = getattr(leg, "trading_symbol", None) or leg.symbol
             if not sym:
                 warnings.append(f"Leg {tag}: no symbol - cannot reconcile")
+                continue
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # BUG-13 FIX: If trading_symbol was never populated, sym may
+            # be just the underlying name (e.g. "NIFTY") which won't match
+            # the broker's full tsym like "NIFTY10MAR26C24850".
+            # Detect this and skip reconciliation for the leg rather than
+            # falsely concluding it's flat.
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if not re.search(r'\d', sym):
+                # Symbol has no digits → likely bare underlying, not full trading symbol
+                warnings.append(
+                    f"Leg {tag}: symbol '{sym}' looks like underlying (no strike/expiry) "
+                    f"— skipping reconciliation for this leg"
+                )
+                logger.warning(
+                    "RECONCILE | %s | symbol '%s' has no digits — "
+                    "trading_symbol may not be populated, skipping",
+                    tag, sym,
+                )
                 continue
 
             net = broker_netqty.get(sym, 0)

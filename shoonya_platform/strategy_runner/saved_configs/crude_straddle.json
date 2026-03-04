@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "STOPPED",
   "identity": {
     "exchange": "MCX",
     "underlying": "CRUDEOILM",
@@ -234,5 +234,5 @@
   "test_mode": "SUCCESS",
   "created_at": "2026-03-02T18:28:46",
   "updated_at": "2026-03-02T18:28:46",
-  "status_updated_at": "2026-03-02T22:40:15.784388"
+  "status_updated_at": "2026-03-04T13:23:16.851264"
 }

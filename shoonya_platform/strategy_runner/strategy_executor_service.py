@@ -1026,16 +1026,23 @@ class PerStrategyExecutor:
                             leg.lot_size = self._lot_size
                     self.persistence.save(self.state, str(self.state_file))
 
-        # Broker reconciliation (every 5 minutes) – unchanged
-        if now.second == 0 and now.minute % 5 == 0 and not self._resolve_test_mode():
-            try:
-                broker_view = getattr(self.bot, "broker_view", None)
-                if broker_view is not None:
-                    warnings = self.reconciliation.reconcile_from_broker(broker_view)
-                    if warnings:
-                        logger.warning(f"RECONCILE [{self.name}]: {len(warnings)} mismatch(es) corrected")
-            except Exception as e:
-                logger.error(f"Broker reconciliation failed for {self.name}: {e}")
+        # Broker reconciliation (every 5 minutes)
+        # BUG-14 FIX: Widened from second==0 (1s window) to second<5 (5s window)
+        # to avoid missing the reconciliation window due to tick processing delays.
+        # Added _last_reconcile_minute guard to ensure it still only fires once per window.
+        if now.second < 5 and now.minute % 5 == 0 and not self._resolve_test_mode():
+            last_rec = getattr(self, "_last_reconcile_minute", -1)
+            current_window = now.hour * 60 + now.minute
+            if current_window != last_rec:
+                self._last_reconcile_minute = current_window
+                try:
+                    broker_view = getattr(self.bot, "broker_view", None)
+                    if broker_view is not None:
+                        warnings = self.reconciliation.reconcile_from_broker(broker_view)
+                        if warnings:
+                            logger.warning(f"RECONCILE [{self.name}]: {len(warnings)} mismatch(es) corrected")
+                except Exception as e:
+                    logger.error(f"Broker reconciliation failed for {self.name}: {e}")
 
         # Persist state periodically (every minute)
         if now.second == 0:

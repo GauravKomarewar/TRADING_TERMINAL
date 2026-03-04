@@ -534,9 +534,35 @@ class SupremeRiskManager:
         🔒 CNC positions are EXCLUDED from daily PnL calculation.
         CNC is long-term holding and should NOT trigger intraday risk breaches.
         Only MIS and NRML contribute to daily_pnl.
+        
+        🛡️ BUG-12 FIX: If get_positions() returns empty but we previously
+        had a non-zero PnL, preserve the last known PnL (session-failure guard).
         """
         self.bot._ensure_login()
-        positions = self.bot.api.get_positions() or []
+        
+        try:
+            positions = self.bot.api.get_positions() or []
+        except Exception as e:
+            # API call failed entirely — preserve last known PnL
+            logger.warning(
+                "RMS: get_positions() FAILED (%s) — preserving last_known_pnl=%.2f",
+                e,
+                self.last_known_pnl if self.last_known_pnl is not None else 0.0,
+            )
+            return []  # Return empty so heartbeat skips breach checks while blind
+        
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # BUG-12 FIX: Empty positions with prior PnL = suspected session failure.
+        # Do NOT reset daily_pnl to 0.0 — that disables risk enforcement and
+        # can cause false profit injection / trailing-stop confusion.
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        if not positions and self.last_known_pnl is not None and self.last_known_pnl != 0.0:
+            logger.warning(
+                "RMS: get_positions returned EMPTY but last_known_pnl=%.2f "
+                "— preserving PnL (possible session/API issue)",
+                self.last_known_pnl,
+            )
+            return []  # Return empty so heartbeat skips breach checks while blind
         
         total_rpnl = 0.0
         total_urmtom = 0.0

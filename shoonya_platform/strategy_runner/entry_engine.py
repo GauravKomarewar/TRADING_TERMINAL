@@ -114,6 +114,16 @@ class EntryEngine:
         if instrument == InstrumentType.FUT:
             # Futures leg
             ltp = self.market.get_fut_ltp(expiry) if hasattr(self.market, 'get_fut_ltp') else self.market.get_spot_price()
+            # ✅ BUG FIX: Resolve futures trading_symbol so broker orders use the
+            # actual contract symbol (e.g. "NIFTY26MARFUT") instead of just "NIFTY".
+            fut_tsym = ""
+            try:
+                from scripts.scriptmaster import get_future
+                fut_info = get_future(symbol, "NFO", result=0)
+                if isinstance(fut_info, dict):
+                    fut_tsym = str(fut_info.get("TradingSymbol") or fut_info.get("tsym") or "")
+            except Exception:
+                pass
             leg = LegState(
                 tag=tag,
                 symbol=symbol,
@@ -124,7 +134,8 @@ class EntryEngine:
                 side=side,
                 qty=lots,
                 entry_price=ltp,
-                ltp=ltp
+                ltp=ltp,
+                trading_symbol=fut_tsym,
             )
             return leg
 

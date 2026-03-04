@@ -290,16 +290,26 @@ class AdjustmentEngine:
                 symbol = leg.symbol
                 expiry = leg.expiry
                 break
+        # ✅ BUG FIX: Use closing_leg's symbol/expiry as primary fallback before
+        # iterating all legs.  When `simple_close_open_new` deactivates the only
+        # active leg **before** calling _open_new_leg, the loop above finds nothing
+        # and expiry previously fell back to "current" which MarketReader cannot resolve.
+        if symbol is None and closing_leg is not None:
+            symbol = closing_leg.symbol
+        if expiry is None and closing_leg is not None:
+            expiry = closing_leg.expiry
         if symbol is None:
-            # No active legs — pick symbol from any existing leg for reference
+            # No active legs and no closing_leg — pick symbol from any existing leg
             for leg in self.state.legs.values():
                 symbol = leg.symbol
+                if expiry is None:
+                    expiry = leg.expiry
                 break
         # If still no symbol, we cannot proceed
         if symbol is None:
             raise ValueError("Cannot determine symbol for adjustment leg: no active or existing leg found.")
         if expiry is None:
-            expiry = "current"   # market reader should resolve this
+            expiry = None  # MarketReader auto-resolves None to nearest future expiry
 
         # For match_leg, we may need a reference leg
         reference_leg = None

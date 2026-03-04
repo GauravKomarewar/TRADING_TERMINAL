@@ -1506,12 +1506,18 @@ class PerStrategyExecutor:
                     reason=source,
                     source="STRATEGY_EXECUTOR"
                 )
+            # ✅ BUG FIX: Capture PnL BEFORE deactivating legs.
+            # combined_pnl only sums active legs; reading after deactivation returns 0.
+            pnl_snapshot = self.state.combined_pnl
             # Mark all legs inactive
             for leg in self.state.legs.values():
                 leg.is_active = False
-            self.state.cumulative_daily_pnl += self.state.combined_pnl
-            # Re‑entry only allowed if source is stop_loss and config says so
-            if source == "stop_loss":
+            self.state.cumulative_daily_pnl += pnl_snapshot
+            # ✅ BUG FIX: Detect stop-loss exit via exit_engine.last_exit_reason
+            # (the 'source' param is the action string like 'exit_all', not 'stop_loss').
+            exit_reason = getattr(self.exit_engine, 'last_exit_reason', '') or ''
+            is_stop_loss_exit = exit_reason.startswith('stop_loss')
+            if is_stop_loss_exit:
                 sl_cfg = self.config.get("exit", {}).get("stop_loss", {})
                 if sl_cfg.get("allow_reentry"):
                     self.state.entered_today = False
@@ -1803,6 +1809,20 @@ class PerStrategyExecutor:
                 if resolved:
                     tradingsymbol = str(resolved)
                     leg.trading_symbol = tradingsymbol
+            except Exception:
+                pass
+        # ✅ BUG FIX: Resolve futures trading_symbol via ScriptMaster when it was not
+        # set during entry (e.g. "NIFTY" -> "NIFTY26MARFUT").  Without this, the
+        # broker order is placed with the bare underlying name and gets rejected.
+        if tradingsymbol == leg.symbol and leg.instrument == InstrumentType.FUT:
+            try:
+                from scripts.scriptmaster import get_future
+                fut_info = get_future(leg.symbol, exchange, result=0)
+                if isinstance(fut_info, dict):
+                    resolved = str(fut_info.get("TradingSymbol") or fut_info.get("tsym") or "")
+                    if resolved:
+                        tradingsymbol = resolved
+                        leg.trading_symbol = tradingsymbol
             except Exception:
                 pass
 

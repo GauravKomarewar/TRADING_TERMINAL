@@ -964,6 +964,14 @@ class PerStrategyExecutor:
                 self.exit_engine.last_exit_reason or "unspecified",
             )
             self._execute_exit(exit_action, source=exit_action)
+            # ✅ BUG FIX(9): Persist state after exit so legs are marked
+            # inactive on disk. Without this the early `return` skips the
+            # periodic save at the bottom of process_tick, leaving a stale
+            # state file with active legs that confuses the next session.
+            try:
+                self.persistence.save(self.state, str(self.state_file))
+            except Exception as _e:
+                logger.warning("State persist after exit failed for %s: %s", self.name, _e)
             return
 
         # Check entry (if not already entered today)
@@ -1010,7 +1018,7 @@ class PerStrategyExecutor:
                     self.state.adjustments_today = pre_adjustments_today
                     self.state.lifetime_adjustments = pre_lifetime_adjustments
                     self.state.last_adjustment_time = pre_last_adjustment_time
-                    logger.error(f"Adjustment rollback applied for {self.name}")
+                    logger.warning(f"Adjustment rollback applied for {self.name}")
                 else:
                     # Stamp lot_size on any newly created adjustment legs
                     for leg in self.state.legs.values():
@@ -1575,6 +1583,11 @@ class PerStrategyExecutor:
 
         if rule_action == "close_all":
             self._execute_exit("exit_all", source="leg_rule_close_all")
+            # ✅ BUG FIX(9): Persist after leg-rule exit so state is clean on disk.
+            try:
+                self.persistence.save(self.state, str(self.state_file))
+            except Exception as _e:
+                logger.warning("State persist after leg-rule exit failed for %s: %s", self.name, _e)
             return
 
         close_qty_map: Dict[str, int] = {}
@@ -1746,7 +1759,7 @@ class PerStrategyExecutor:
                 f"Adjustment validation failed for {self.name}: "
                 f"close/open resolved to same symbol(s): {details}"
             )
-            logger.error(
+            logger.warning(
                 "ADJUSTMENT_VALIDATION_BLOCKED | strategy=%s | overlap=%s | close_map=%s | open_map=%s | legs=%s",
                 self.name,
                 details,
@@ -1754,7 +1767,7 @@ class PerStrategyExecutor:
                 open_by_symbol,
                 legs_payload,
             )
-            logger.error(err)
+            logger.warning(err)
             now = datetime.now()
             self._adjustment_block_until = now + timedelta(seconds=self._adjustment_validation_backoff_sec)
             self._adjustment_block_reason = details

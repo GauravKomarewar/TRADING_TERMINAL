@@ -276,10 +276,39 @@ class AdjustmentEngine:
                         continue
                 if close_tag and close_tag in self.state.legs:
                     self.state.legs[close_tag].is_active = False
-                self._open_new_leg(new_leg_cfg, closing_leg=closing_leg)
+                new_tag = self._open_new_leg(new_leg_cfg, closing_leg=closing_leg)
+                # ✅ No-op detection: if the new leg resolved to the same
+                # strike + option_type + expiry as the closing leg, the swap
+                # is pointless.  Undo it: remove the new leg and reactivate
+                # the closing leg.
+                if new_tag and closing_leg and new_tag in self.state.legs:
+                    new_leg = self.state.legs[new_tag]
+                    same_strike = (
+                        new_leg.strike is not None
+                        and closing_leg.strike is not None
+                        and new_leg.strike == closing_leg.strike
+                        and new_leg.option_type == closing_leg.option_type
+                        and new_leg.expiry == closing_leg.expiry
+                    )
+                    if same_strike:
+                        logger.info(
+                            "ADJUSTMENT_NOOP | simple_close_open_new | new leg '%s' "
+                            "resolved to same strike=%s/%s/%s as closing leg '%s'. "
+                            "Skipping swap.",
+                            new_tag, new_leg.strike, new_leg.option_type,
+                            new_leg.expiry, closing_leg.tag,
+                        )
+                        # Remove new leg, reactivate closing leg
+                        self.state.legs.pop(new_tag, None)
+                        if close_tag and close_tag in self.state.legs:
+                            self.state.legs[close_tag].is_active = True
 
-    def _open_new_leg(self, leg_cfg: Dict[str, Any], closing_leg: Optional[LegState] = None):
-        """Open a new leg based on strike config (from action)."""
+    def _open_new_leg(self, leg_cfg: Dict[str, Any], closing_leg: Optional[LegState] = None) -> Optional[str]:
+        """Open a new leg based on strike config (from action).
+
+        Returns:
+            The tag of the newly created leg, or None on failure.
+        """
         # Extract basic fields
         side = Side(leg_cfg.get("side", "BUY"))
         opt_type = self._resolve_option_type(leg_cfg.get("option_type", "CE"), closing_leg)
@@ -404,6 +433,7 @@ class AdjustmentEngine:
         leg.order_placed_at = datetime.now()
 
         self.state.legs[tag] = leg
+        return tag
 
     def _resolve_close_tag(self, close_tag: Optional[str]) -> Optional[str]:
         if not close_tag:

@@ -328,6 +328,7 @@ def test_build_alert_leg_converts_lots_to_contract_quantity():
 
 
 def test_adjustment_validation_backoff_blocks_repeated_retries():
+    """Same-symbol overlap in close/open is netted to zero (no-op), not blocked."""
     cfg = _base_config()
     cfg["adjustment"]["validation_retry_cooldown_sec"] = 120
     bot = _DummyBot()
@@ -352,9 +353,14 @@ def test_adjustment_validation_backoff_blocks_repeated_retries():
         ex.adjustment_engine.check_and_apply = _fake_adjust
         ex.process_tick()
         assert call_counter["count"] == 1
-        assert ex._adjustment_block_until is not None
+        # Same-symbol legs are netted (cancelled out); NO block is applied
+        assert ex._adjustment_block_until is None
+        # No alert sent because legs cancelled out
+        adj_alerts = [a for a in bot.alerts if a.get("execution_type") == "ADJUSTMENT"]
+        assert len(adj_alerts) == 0
+        # Adjustment engine can run again on next tick (no backoff)
         ex.process_tick()
-        assert call_counter["count"] == 1
+        assert call_counter["count"] == 2
 
 
 def test_execute_entry_uses_contract_quantity_for_alert_legs():

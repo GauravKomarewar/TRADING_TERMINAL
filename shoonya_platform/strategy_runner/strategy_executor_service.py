@@ -1797,51 +1797,64 @@ class PerStrategyExecutor:
         if not legs_payload:
             return True
 
-        # Safety guard: do not allow adjustment payload that closes and opens
-        # the same symbol in the same cycle (usually a bad roll resolution).
+        # Smart overlap netting: when close and open resolve to the same
+        # symbol (e.g. same-strike no-op from adjustment engine), net the
+        # quantities.  Equal qty → remove both (no order needed).
+        # Unequal qty → keep only the net difference.
         overlap = sorted(set(close_by_symbol.keys()) & set(open_by_symbol.keys()))
         if overlap:
-            details = ", ".join(
-                f"{sym}(close={close_by_symbol.get(sym, 0)},open={open_by_symbol.get(sym, 0)})"
-                for sym in overlap
-            )
-            err = (
-                f"Adjustment validation failed for {self.name}: "
-                f"close/open resolved to same symbol(s): {details}"
-            )
-            logger.warning(
-                "ADJUSTMENT_VALIDATION_BLOCKED | strategy=%s | overlap=%s | close_map=%s | open_map=%s | legs=%s",
-                self.name,
-                details,
-                close_by_symbol,
-                open_by_symbol,
-                legs_payload,
-            )
-            logger.warning(err)
-            now = datetime.now()
-            self._adjustment_block_until = now + timedelta(seconds=self._adjustment_validation_backoff_sec)
-            self._adjustment_block_reason = details
-            self._adjustment_block_announced = False
-            try:
-                should_notify = (
-                    self._last_adjustment_validation_alert_at is None
-                    or (
-                        now - self._last_adjustment_validation_alert_at
-                    ).total_seconds() >= self._adjustment_validation_alert_cooldown_sec
-                )
-                if should_notify and getattr(self.bot, "telegram_enabled", False) and getattr(self.bot, "telegram", None):
-                    self.bot.telegram.send_error_message(
-                        title="⚠️ ADJUSTMENT VALIDATION ERROR",
-                        error=f"Close/Open resolved to same symbol(s): {details}",
-                        strategy_name=self.name,
-                        execution_type="ADJUSTMENT",
-                        exchange=str(self.config.get('identity', {}).get('exchange', 'NFO')),
-                        legs=legs_payload,
+            for sym in overlap:
+                cq = close_by_symbol.get(sym, 0)
+                oq = open_by_symbol.get(sym, 0)
+                net = oq - cq  # positive = net open, negative = net close
+                if net == 0:
+                    # Perfect cancel — remove both entries from payload
+                    logger.info(
+                        "ADJUSTMENT_NOOP_NETTED | strategy=%s | symbol=%s | close=%s open=%s → netted to 0, removing both",
+                        self.name, sym, cq, oq,
                     )
-                    self._last_adjustment_validation_alert_at = now
-            except Exception as notify_err:
-                logger.warning(f"Failed to send adjustment validation alert: {notify_err}")
-            return False
+                    legs_payload = [
+                        lp for lp in legs_payload
+                        if str(lp.get("tradingsymbol") or "").strip() != sym
+                    ]
+                else:
+                    # Partial overlap — keep net difference
+                    logger.info(
+                        "ADJUSTMENT_PARTIAL_NET | strategy=%s | symbol=%s | close=%s open=%s → net=%s",
+                        self.name, sym, cq, oq, net,
+                    )
+                    # Remove all legs for this symbol, then add back the net
+                    # Find a representative leg to build from
+                    rep_leg = None
+                    for lp in legs_payload:
+                        if str(lp.get("tradingsymbol") or "").strip() == sym:
+                            rep_leg = lp
+                            break
+                    legs_payload = [
+                        lp for lp in legs_payload
+                        if str(lp.get("tradingsymbol") or "").strip() != sym
+                    ]
+                    if rep_leg is not None:
+                        net_leg = dict(rep_leg)
+                        net_leg["qty"] = abs(net)
+                        if net > 0:
+                            # Net open: same direction as the opening leg
+                            for lp in [l for l in legs_payload]:
+                                pass  # already removed
+                            # Use the open direction — find original open direction
+                            net_leg["direction"] = rep_leg.get("direction", "SELL")
+                        else:
+                            # Net close: opposite of position side
+                            # Use the close direction
+                            net_leg["direction"] = rep_leg.get("direction", "BUY")
+                        legs_payload.append(net_leg)
+
+            if not legs_payload:
+                logger.info(
+                    "ADJUSTMENT_ALL_NETTED | strategy=%s | all overlapping legs cancelled out, no orders to send",
+                    self.name,
+                )
+                return True
 
         result = self._submit_alert(execution_type="ADJUSTMENT", legs=legs_payload)
         return not self._is_failure_status((result or {}).get("status"))

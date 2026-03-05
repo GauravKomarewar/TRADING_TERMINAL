@@ -3,6 +3,28 @@ from typing import Dict, Optional, List, Any
 from datetime import datetime, date
 from .models import InstrumentType, OptionType, Side
 
+
+@dataclass
+class PnLSnapshot:
+    """Point-in-time PnL snapshot for historical tracking."""
+    timestamp: datetime
+    pnl: float
+    pnl_pct: float
+    ltp: float
+    underlying_price: float
+
+
+@dataclass
+class AdjustmentEvent:
+    """Record of one adjustment applied to the strategy."""
+    timestamp: datetime
+    rule_name: str
+    action_type: str
+    affected_legs: List[str]
+    reason: str
+    market_data_snapshot: Dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class LegState:
     tag: str
@@ -37,6 +59,40 @@ class LegState:
     filled_qty: int = 0                      # filled quantity in contracts (or lots)
     order_placed_at: Optional[datetime] = None
     lot_size: int = 1                        # contract lot size (e.g. 75 for NIFTY, 25 for BANKNIFTY, 10 for CRUDEOILM)
+
+    # ✅ BUG-001 FIX: PnL and history tracking per leg
+    pnl_history: List[PnLSnapshot] = field(default_factory=list)
+    entry_reason: str = ""
+    entry_timestamp: Optional[datetime] = None
+    exit_timestamp: Optional[datetime] = None
+    exit_reason: str = ""
+    exit_price: Optional[float] = None
+
+    def record_pnl_snapshot(self, underlying_price: float):
+        """Record current PnL for historical tracking."""
+        snapshot = PnLSnapshot(
+            timestamp=datetime.now(),
+            pnl=self.pnl,
+            pnl_pct=self.pnl_pct,
+            ltp=self.ltp,
+            underlying_price=underlying_price,
+        )
+        self.pnl_history.append(snapshot)
+        # Cap history to prevent memory bloat
+        if len(self.pnl_history) > 1000:
+            self.pnl_history = self.pnl_history[-500:]
+
+    @property
+    def max_pnl(self) -> float:
+        if not self.pnl_history:
+            return self.pnl
+        return max(s.pnl for s in self.pnl_history)
+
+    @property
+    def min_pnl(self) -> float:
+        if not self.pnl_history:
+            return self.pnl
+        return min(s.pnl for s in self.pnl_history)
 
     @property
     def order_qty(self) -> int:
@@ -116,6 +172,32 @@ class StrategyState:
     entered_today: bool = False
     _net_delta_override: Optional[float] = None
     _combined_pnl_override: Optional[float] = None
+
+    # ✅ BUG-002 FIX: Adjustment history for detailed reporting
+    adjustment_history: List[AdjustmentEvent] = field(default_factory=list)
+    entry_reason: str = ""
+    exit_reason: str = ""
+
+    def record_adjustment(self, rule_name: str, action_type: str,
+                          affected_legs: List[str], reason: str = ""):
+        """Record an adjustment event for audit trail."""
+        event = AdjustmentEvent(
+            timestamp=datetime.now(),
+            rule_name=rule_name,
+            action_type=action_type,
+            affected_legs=affected_legs,
+            reason=reason,
+            market_data_snapshot={
+                "spot_price": self.spot_price,
+                "atm_strike": self.atm_strike,
+                "net_delta": self.net_delta,
+                "combined_pnl": self.combined_pnl,
+            },
+        )
+        self.adjustment_history.append(event)
+        # Cap history to prevent unbounded growth
+        if len(self.adjustment_history) > 200:
+            self.adjustment_history = self.adjustment_history[-100:]
 
     @property
     def net_delta(self) -> float:
@@ -302,9 +384,14 @@ class StrategyState:
 
     @property
     def combined_pnl_pct(self) -> float:
-        if self.total_premium == 0:
+        # BUG-A3 FIX: Guard against total_premium=0 (buy-only / no premium strategies).
+        # Fall back to total_cost_basis so pct is meaningful for debit strategies.
+        base = self.total_premium
+        if base == 0:
+            base = self.total_cost_basis
+        if base == 0:
             return 0.0
-        return (self.combined_pnl / self.total_premium) * 100
+        return (self.combined_pnl / abs(base)) * 100
 
     @property
     def iv_skew(self) -> float:

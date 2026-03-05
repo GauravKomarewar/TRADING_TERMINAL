@@ -21,6 +21,26 @@ class EntryEngine:
         Process entry legs according to JSON config.
         Returns list of newly created LegState objects.
         """
+        # ✅ BUG-014 FIX: Entry guards — max entries per day, cooldown, max total
+        max_entries_per_day = entry_config.get("max_entries_per_day")
+        if max_entries_per_day is not None and self.state.total_trades_today >= int(max_entries_per_day):
+            logger.info(
+                "ENTRY_BLOCKED | max_entries_per_day=%s reached (today=%s)",
+                max_entries_per_day, self.state.total_trades_today,
+            )
+            return []
+
+        entry_cooldown = int(entry_config.get("entry_cooldown_sec", 0))
+        if entry_cooldown > 0 and self.state.entry_time:
+            from datetime import datetime as _dt
+            elapsed = (_dt.now() - self.state.entry_time).total_seconds()
+            if elapsed < entry_cooldown:
+                logger.info(
+                    "ENTRY_BLOCKED | cooldown %.0fs < %ss",
+                    elapsed, entry_cooldown,
+                )
+                return []
+
         # 1. Evaluate global conditions
         global_conds = entry_config.get("global_conditions", [])
         cond_objs = [self._dict_to_condition(c) for c in global_conds]

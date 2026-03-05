@@ -131,6 +131,18 @@ class BrokerReconciliation:
                 logger.warning(f"RECONCILE | {tag} ({sym}) | state says active but broker is flat")
                 leg.is_active = False
             else:
+                # ✅ BUG-003 FIX: Verify side matches broker direction
+                broker_side = Side.BUY if net > 0 else Side.SELL
+                if broker_side != leg.side:
+                    warnings.append(
+                        f"Leg {tag} ({sym}): side mismatch — state={leg.side.value} "
+                        f"but broker netqty={net} implies {broker_side.value}"
+                    )
+                    logger.warning(
+                        "RECONCILE | %s (%s) | SIDE MISMATCH state=%s broker=%s",
+                        tag, sym, leg.side.value, broker_side.value,
+                    )
+
                 broker_qty = abs(net)
                 broker_lots = self._contracts_to_lots(broker_qty, leg.expiry)
                 if leg.qty != broker_lots:

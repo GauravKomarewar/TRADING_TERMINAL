@@ -45,6 +45,13 @@ class AdjustmentEngine:
                 self.state.last_adjustment_time = current_time
                 self.state.adjustments_today += 1
                 self.state.lifetime_adjustments += 1
+                # ✅ BUG-002 FIX: Record adjustment event for audit trail
+                self.state.record_adjustment(
+                    rule_name=rule_name,
+                    action_type=action.get("type", "unknown"),
+                    affected_legs=[action.get("close_tag", ""), action.get("target_leg", "")],
+                    reason=f"IF conditions met",
+                )
                 logger.info(
                     "ADJUSTMENT_TRIGGERED | rule=%s | branch=IF | action=%s",
                     rule_name,
@@ -62,6 +69,13 @@ class AdjustmentEngine:
                     self.state.last_adjustment_time = current_time
                     self.state.adjustments_today += 1
                     self.state.lifetime_adjustments += 1
+                    # ✅ BUG-002 FIX: Record adjustment event for audit trail
+                    self.state.record_adjustment(
+                        rule_name=rule_name,
+                        action_type=else_action.get("type", "unknown"),
+                        affected_legs=[else_action.get("close_tag", ""), else_action.get("target_leg", "")],
+                        reason=f"ELSE conditions met",
+                    )
                     logger.info(
                         "ADJUSTMENT_TRIGGERED | rule=%s | branch=ELSE | action=%s",
                         rule_name,
@@ -124,22 +138,101 @@ class AdjustmentEngine:
 
         elif action_type == "partial_close_lots":
             close_tag = self._resolve_close_tag(action_cfg.get("close_tag"))
-            lots_to_close = action_cfg.get("lots", 1)
-            if close_tag and close_tag in self.state.legs:
-                leg = self.state.legs[close_tag]
-                leg.qty -= lots_to_close
-                if leg.qty <= 0:
-                    leg.is_active = False
+            lots_to_close = int(action_cfg.get("lots", 1))
+
+            if lots_to_close <= 0:
+                logger.error(
+                    "ADJUSTMENT_ERROR | partial_close_lots | "
+                    "invalid lots_to_close=%s", lots_to_close,
+                )
+                return
+
+            if not close_tag or close_tag not in self.state.legs:
+                logger.error(
+                    "ADJUSTMENT_ERROR | partial_close_lots | "
+                    "leg %s not found in state", close_tag,
+                )
+                return
+
+            leg = self.state.legs[close_tag]
+
+            if not leg.is_active:
+                logger.warning(
+                    "ADJUSTMENT_SKIP | partial_close_lots | "
+                    "leg %s is already inactive", close_tag,
+                )
+                return
+
+            # Validate lots_to_close <= current qty
+            if lots_to_close > leg.qty:
+                logger.warning(
+                    "ADJUSTMENT_MODIFIED | partial_close_lots | "
+                    "requested %s lots but %s only has %s lots "
+                    "- closing all instead",
+                    lots_to_close, close_tag, leg.qty,
+                )
+                lots_to_close = leg.qty
+
+            original_qty = leg.qty
+            leg.qty -= lots_to_close
+
+            logger.info(
+                "ADJUSTMENT_EXECUTED | partial_close_lots | "
+                "%s | qty: %s -> %s (closed %s lots)",
+                close_tag, original_qty, leg.qty, lots_to_close,
+            )
+
+            if leg.qty <= 0:
+                leg.is_active = False
+                logger.info("ADJUSTMENT_EXECUTED | %s fully closed", close_tag)
 
         elif action_type == "reduce_by_pct":
             close_tag = self._resolve_close_tag(action_cfg.get("close_tag"))
-            pct = action_cfg.get("reduce_pct", 50) / 100.0
-            if close_tag and close_tag in self.state.legs:
-                leg = self.state.legs[close_tag]
-                new_qty = int(leg.qty * (1 - pct))
-                leg.qty = new_qty
-                if leg.qty <= 0:
-                    leg.is_active = False
+            pct = float(action_cfg.get("reduce_pct", 50)) / 100.0
+
+            if pct <= 0 or pct > 1.0:
+                logger.error(
+                    "ADJUSTMENT_ERROR | reduce_by_pct | "
+                    "invalid reduce_pct=%.1f%% (must be 0-100)",
+                    pct * 100,
+                )
+                return
+
+            if not close_tag or close_tag not in self.state.legs:
+                logger.error(
+                    "ADJUSTMENT_ERROR | reduce_by_pct | "
+                    "leg %s not found in state", close_tag,
+                )
+                return
+
+            leg = self.state.legs[close_tag]
+
+            if not leg.is_active:
+                logger.warning(
+                    "ADJUSTMENT_SKIP | reduce_by_pct | "
+                    "leg %s is already inactive", close_tag,
+                )
+                return
+
+            # Use round() instead of int() to avoid truncation bias
+            lots_to_reduce = round(leg.qty * pct)
+            # If pct > 0 but rounds to 0, reduce at least 1 lot
+            if lots_to_reduce == 0 and pct > 0:
+                lots_to_reduce = 1
+
+            original_qty = leg.qty
+            new_qty = max(0, leg.qty - lots_to_reduce)
+
+            logger.info(
+                "ADJUSTMENT_EXECUTED | reduce_by_pct | "
+                "%s | %.1f%% = %s lots | qty: %s -> %s",
+                close_tag, pct * 100, lots_to_reduce, original_qty, new_qty,
+            )
+
+            leg.qty = new_qty
+            if leg.qty <= 0:
+                leg.is_active = False
+                logger.info("ADJUSTMENT_EXECUTED | %s fully closed", close_tag)
 
         elif action_type == "open_hedge":
             new_leg_cfg = action_cfg.get("new_leg", {})
@@ -176,9 +269,12 @@ class AdjustmentEngine:
                 )
             elif same_strike == "atm":
                 new_atm = self.market.get_atm_strike(new_expiry)
-                strike = new_atm
+                # ✅ BUG-006 FIX: Round ATM to nearest valid strike step in new expiry.
+                # Different expiries can have different strike steps (weekly=50, monthly=100).
+                step = self.market._get_strike_step(new_expiry)
+                strike = round(new_atm / step) * step
                 opt_data = self.market.get_option_at_strike(
-                    new_atm, old_leg.option_type, expiry=new_expiry
+                    strike, old_leg.option_type, expiry=new_expiry
                 )
             elif same_strike == "delta":
                 opt_data = self.market.find_option_by_delta(
@@ -236,8 +332,94 @@ class AdjustmentEngine:
             old_leg.is_active = False
 
         elif action_type == "convert_to_spread":
+            # Convert unlimited-risk position to defined-risk spread.
+            target_tag = self._resolve_close_tag(action_cfg.get("target_leg"))
+            width = float(action_cfg.get("width", 100))
+
+            # Fallback: legacy config uses wing_leg dict directly
             wing_cfg = action_cfg.get("wing_leg", {})
-            self._open_new_leg(wing_cfg)
+            if not target_tag and wing_cfg:
+                self._open_new_leg(wing_cfg)
+                return
+
+            if not target_tag or target_tag not in self.state.legs:
+                logger.error(
+                    "ADJUSTMENT_ERROR | convert_to_spread | "
+                    "target leg %s not found", target_tag,
+                )
+                return
+
+            target_leg = self.state.legs[target_tag]
+
+            if not target_leg.is_active:
+                logger.warning(
+                    "ADJUSTMENT_SKIP | convert_to_spread | "
+                    "target leg %s is inactive", target_tag,
+                )
+                return
+
+            if target_leg.instrument != InstrumentType.OPT:
+                logger.error(
+                    "ADJUSTMENT_ERROR | convert_to_spread | "
+                    "can only convert options, not %s", target_leg.instrument,
+                )
+                return
+
+            if target_leg.side != Side.SELL:
+                logger.error(
+                    "ADJUSTMENT_ERROR | convert_to_spread | "
+                    "can only convert short options (target is %s)", target_leg.side,
+                )
+                return
+
+            # Determine hedge strike
+            if target_leg.option_type == OptionType.CE:
+                hedge_strike = target_leg.strike + width
+                spread_name = "BEAR_CALL_SPREAD"
+            elif target_leg.option_type == OptionType.PE:
+                hedge_strike = target_leg.strike - width
+                spread_name = "BULL_PUT_SPREAD"
+            else:
+                logger.error("ADJUSTMENT_ERROR | convert_to_spread | invalid option_type")
+                return
+
+            # Validate hedge strike exists in chain
+            opt_data = self.market.get_option_at_strike(
+                hedge_strike, target_leg.option_type, expiry=target_leg.expiry
+            )
+            if not opt_data:
+                logger.error(
+                    "ADJUSTMENT_ERROR | convert_to_spread | "
+                    "hedge strike %s %s not found in chain",
+                    hedge_strike, target_leg.option_type.value if target_leg.option_type else "?",
+                )
+                return
+
+            hedge_tag = f"{target_tag}_HEDGE"
+            hedge_cfg = {
+                "tag": hedge_tag,
+                "symbol": target_leg.symbol,
+                "option_type": target_leg.option_type.value,
+                "side": "BUY",
+                "strike_mode": "exact",
+                "exact_strike": hedge_strike,
+                "lots": target_leg.qty,
+                "expiry": target_leg.expiry,
+                "group": f"SPREAD_{target_tag}",
+            }
+
+            new_tag = self._open_new_leg(hedge_cfg, closing_leg=None)
+
+            # Mark both legs as part of spread group
+            target_leg.group = f"SPREAD_{target_tag}"
+            if new_tag and new_tag in self.state.legs:
+                self.state.legs[new_tag].group = f"SPREAD_{target_tag}"
+
+            logger.info(
+                "ADJUSTMENT_EXECUTED | convert_to_spread | "
+                "%s -> %s | short=%s long=%s width=%s",
+                target_tag, spread_name, target_leg.strike, hedge_strike, width,
+            )
 
         elif action_type == "simple_close_open_new":
             swaps = action_cfg.get("leg_swaps", [])
@@ -377,10 +559,8 @@ class AdjustmentEngine:
             ref_tag = self._resolve_close_tag(strike_cfg.match_leg)
             if ref_tag:
                 reference_leg = self.state.legs.get(ref_tag)
-            # ✅ BUG FIX: If the match_leg reference became None after the close_tag
-            # leg was deactivated (e.g. only 1 active leg that was both close_tag and
-            # match_leg), fall back to closing_leg.  This is semantically correct: the
-            # new leg should match the delta/param of the leg we just closed.
+            # ✅ BUG-004 FIX: Multi-stage fallback for match_leg resolution.
+            # 1. Use closing_leg (semantically: match the leg we just closed)
             if reference_leg is None and closing_leg is not None:
                 logger.warning(
                     "MATCH_LEG reference '%s' is None after deactivation; "
@@ -388,6 +568,29 @@ class AdjustmentEngine:
                     strike_cfg.match_leg, closing_leg.tag,
                 )
                 reference_leg = closing_leg
+            # 2. Try any active leg with the exact match_leg tag
+            if reference_leg is None:
+                for leg in self.state.legs.values():
+                    if leg.is_active and leg.tag == strike_cfg.match_leg:
+                        reference_leg = leg
+                        break
+            # 3. Use most recently closed inactive leg as snapshot
+            if reference_leg is None:
+                inactive_candidates = [
+                    leg for leg in self.state.legs.values()
+                    if leg.tag == strike_cfg.match_leg and not leg.is_active
+                ]
+                if inactive_candidates:
+                    reference_leg = max(
+                        inactive_candidates,
+                        key=lambda l: l.order_placed_at or datetime.min,
+                    )
+                    logger.warning(
+                        "MATCH_LEG reference '%s' not active; using most recent "
+                        "inactive snapshot (placed_at=%s).",
+                        strike_cfg.match_leg,
+                        reference_leg.order_placed_at,
+                    )
 
         strike, opt_data = self.market.resolve_strike(
             strike_cfg, symbol, expiry=expiry, reference_leg_state=reference_leg

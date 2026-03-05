@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, date
-from typing import Optional, Dict, Any
-from .state import StrategyState, LegState
+from typing import Optional, Dict, Any, List
+from .state import StrategyState, LegState, PnLSnapshot, AdjustmentEvent
 from .models import InstrumentType, OptionType, Side
 
 class StatePersistence:
@@ -63,6 +63,22 @@ class StatePersistence:
                     "filled_qty": leg.filled_qty,
                     "order_placed_at": leg.order_placed_at.isoformat() if leg.order_placed_at else None,
                     "lot_size": getattr(leg, "lot_size", 1),
+                    # ✅ BUG-001 FIX: PnL history and tracking
+                    "pnl_history": [
+                        {
+                            "timestamp": snap.timestamp.isoformat(),
+                            "pnl": snap.pnl,
+                            "pnl_pct": snap.pnl_pct,
+                            "ltp": snap.ltp,
+                            "underlying_price": snap.underlying_price,
+                        }
+                        for snap in (leg.pnl_history or [])[-100:]  # Persist last 100
+                    ],
+                    "entry_reason": getattr(leg, "entry_reason", ""),
+                    "entry_timestamp": leg.entry_timestamp.isoformat() if getattr(leg, "entry_timestamp", None) else None,
+                    "exit_timestamp": leg.exit_timestamp.isoformat() if getattr(leg, "exit_timestamp", None) else None,
+                    "exit_reason": getattr(leg, "exit_reason", ""),
+                    "exit_price": getattr(leg, "exit_price", None),
                 } for tag, leg in state.legs.items()
             },
             "spot_price": state.spot_price,
@@ -83,6 +99,20 @@ class StatePersistence:
             "last_date": state.last_date.isoformat() if state.last_date else None,
             "entered_today": state.entered_today,
             "minutes_to_exit": state.minutes_to_exit,
+            # ✅ BUG-002 FIX: Adjustment history and strategy-level reasons
+            "adjustment_history": [
+                {
+                    "timestamp": evt.timestamp.isoformat(),
+                    "rule_name": evt.rule_name,
+                    "action_type": evt.action_type,
+                    "affected_legs": evt.affected_legs,
+                    "reason": evt.reason,
+                    "market_data_snapshot": evt.market_data_snapshot,
+                }
+                for evt in (state.adjustment_history or [])[-50:]  # Persist last 50
+            ],
+            "entry_reason": getattr(state, "entry_reason", ""),
+            "exit_reason": getattr(state, "exit_reason", ""),
         }
 
     @staticmethod
@@ -119,6 +149,23 @@ class StatePersistence:
                 order_placed_at=datetime.fromisoformat(leg_data["order_placed_at"]) if leg_data.get("order_placed_at") else None,
                 lot_size=leg_data.get("lot_size", 1),
             )
+            # Restore PnL history
+            for snap_data in leg_data.get("pnl_history", []):
+                try:
+                    leg.pnl_history.append(PnLSnapshot(
+                        timestamp=datetime.fromisoformat(snap_data["timestamp"]),
+                        pnl=snap_data["pnl"],
+                        pnl_pct=snap_data["pnl_pct"],
+                        ltp=snap_data["ltp"],
+                        underlying_price=snap_data["underlying_price"],
+                    ))
+                except (KeyError, ValueError):
+                    pass
+            leg.entry_reason = leg_data.get("entry_reason", "")
+            leg.entry_timestamp = datetime.fromisoformat(leg_data["entry_timestamp"]) if leg_data.get("entry_timestamp") else None
+            leg.exit_timestamp = datetime.fromisoformat(leg_data["exit_timestamp"]) if leg_data.get("exit_timestamp") else None
+            leg.exit_reason = leg_data.get("exit_reason", "")
+            leg.exit_price = leg_data.get("exit_price")
             legs[tag] = leg
 
         state = StrategyState(
@@ -142,4 +189,19 @@ class StatePersistence:
             entered_today=data.get("entered_today", False),
             minutes_to_exit=data.get("minutes_to_exit", 0),
         )
+        # Restore adjustment history
+        for evt_data in data.get("adjustment_history", []):
+            try:
+                state.adjustment_history.append(AdjustmentEvent(
+                    timestamp=datetime.fromisoformat(evt_data["timestamp"]),
+                    rule_name=evt_data["rule_name"],
+                    action_type=evt_data["action_type"],
+                    affected_legs=evt_data.get("affected_legs", []),
+                    reason=evt_data.get("reason", ""),
+                    market_data_snapshot=evt_data.get("market_data_snapshot", {}),
+                ))
+            except (KeyError, ValueError):
+                pass
+        state.entry_reason = data.get("entry_reason", "")
+        state.exit_reason = data.get("exit_reason", "")
         return state

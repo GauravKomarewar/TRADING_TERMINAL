@@ -100,7 +100,9 @@ class ExitEngine:
         if amount is not None and self.state.combined_pnl >= amount:
             self.last_exit_reason = f"profit_target_amount:{amount}"
             return cfg.get("action", "exit_all")
-        if pct is not None and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) >= pct:
+        # BUG-A4 FIX: Use combined_pnl_pct (which guards against zero division)
+        # instead of raw division by total_premium.
+        if pct is not None and self.state.combined_pnl_pct >= pct:
             self.last_exit_reason = f"profit_target_pct:{pct}"
             return cfg.get("action", "exit_all")
         return None
@@ -120,7 +122,8 @@ class ExitEngine:
         if amount is not None and self.state.combined_pnl <= -amount:
             self.last_exit_reason = f"stop_loss_amount:{amount}"
             return cfg.get("action", "exit_all")
-        if pct is not None and self.state.total_premium != 0 and (self.state.combined_pnl / self.state.total_premium * 100) <= -pct:
+        # BUG-A4 FIX: Use combined_pnl_pct instead of raw division by total_premium.
+        if pct is not None and self.state.combined_pnl_pct <= -pct:
             self.last_exit_reason = f"stop_loss_pct:{pct}"
             return cfg.get("action", "exit_all")
         return None
@@ -184,7 +187,11 @@ class ExitEngine:
             return f"profit_step_{action}"
         return None
 
-    def _check_time_exit(self, current_time: datetime) -> Optional[str]:
+    def _check_time_exit(self, current_time: Optional[datetime]) -> Optional[str]:
+        # ✅ BUG-010 FIX: Guard against None current_time
+        if current_time is None:
+            current_time = datetime.now()
+
         exit_time_str = self.exit_config.get("time", {}).get("strategy_exit_time")
         if exit_time_str:
             try:
@@ -193,7 +200,7 @@ class ExitEngine:
                     self.last_exit_reason = f"time_exit:{exit_time_str}"
                     return "exit_all"
             except ValueError:
-                pass
+                logger.error("Invalid exit time format: %s", exit_time_str)
         return None
 
     def _check_leg_rule(self, rule: Dict[str, Any]) -> bool:

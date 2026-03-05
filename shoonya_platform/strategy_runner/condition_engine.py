@@ -54,18 +54,18 @@ class ConditionEngine:
             if isinstance(x, bool):
                 return x
             # BUG-025 FIX: numeric 0/1 must be accepted as boolean bounds.
-            # Config files often serialize True/False as 0/1 (e.g. JSON).
-            # Without this, BETWEEN bounds stored as numbers returned None → silent False.
             if isinstance(x, (int, float)) and not isinstance(x, bool):
                 if x == 0:
                     return False
                 if x == 1:
                     return True
                 return None  # 2, -1, etc. — ambiguous, reject
+            # ✅ BUG-011 FIX: Extended string boolean support
             if isinstance(x, str):
-                if x.lower() == 'true':
+                lower = x.lower().strip()
+                if lower in ('true', 'yes', '1'):
                     return True
-                if x.lower() == 'false':
+                if lower in ('false', 'no', '0'):
                     return False
             return None
 
@@ -409,6 +409,49 @@ class ConditionEngine:
             return self.state.pe_iv
         elif param == "adj_count_today":
             return self.state.adjustments_today
+        # BUG-A5 FIX: Breakeven and market params declared in config_schema KNOWN_PARAMETERS
+        # but were missing from _resolve_parameter, causing them to fall through to
+        # getattr(state, param, 0.0) which silently returns 0.0 for properties.
+        elif param == "breakeven_upper":
+            return self.state.breakeven_upper
+        elif param == "breakeven_lower":
+            return self.state.breakeven_lower
+        elif param == "breakeven_distance":
+            return self.state.breakeven_distance
+        elif param == "spot_vs_upper_be":
+            return self.state.spot_vs_upper_be
+        elif param == "spot_vs_lower_be":
+            return self.state.spot_vs_lower_be
+        elif param == "spot_vs_max_pain":
+            return self.state.spot_vs_max_pain
+        elif param == "max_pain_strike":
+            return self.state.max_pain_strike
+        elif param == "total_oi_ce":
+            return self.state.total_oi_ce
+        elif param == "total_oi_pe":
+            return self.state.total_oi_pe
+        elif param == "oi_buildup_ce":
+            return self.state.oi_buildup_ce
+        elif param == "oi_buildup_pe":
+            return self.state.oi_buildup_pe
+        elif param == "portfolio_delta":
+            return self.state.portfolio_delta
+        elif param == "portfolio_gamma":
+            return self.state.portfolio_gamma
+        elif param == "portfolio_theta":
+            return self.state.portfolio_theta
+        elif param == "portfolio_vega":
+            return self.state.portfolio_vega
+        elif param == "active_legs_count":
+            return self.state.active_legs_count
+        elif param == "closed_legs_count":
+            return self.state.closed_legs_count
+        elif param == "any_leg_active":
+            return self.state.any_leg_active
+        elif param == "time_in_position_sec":
+            return self.state.time_in_position_sec
+        elif param == "time_since_last_adj_sec":
+            return self.state.time_since_last_adj_sec
         elif param.startswith("index_"):
             payload = param[len("index_"):]
             attr = None

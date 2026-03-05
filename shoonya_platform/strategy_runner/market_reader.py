@@ -82,13 +82,13 @@ class MarketReader:
     and dynamic strike step detection.
     """
 
-    def __init__(self, exchange: str, symbol: str, max_stale_seconds: int = 30):
+    def __init__(self, exchange: str, symbol: str, max_stale_seconds: int = 120):
         """
         Args:
             exchange: NFO, MCX, etc.
             symbol: NIFTY, BANKNIFTY, etc.
             max_stale_seconds: Maximum allowed age of snapshot (seconds) before
-                                raising an exception in data retrieval.
+                                warning in data retrieval (default 120s).
         """
         self.exchange = exchange.upper()
         self.symbol = symbol.upper()
@@ -265,11 +265,22 @@ class MarketReader:
             return 50.0
 
     def _check_freshness(self, expiry: Optional[str] = None):
-        """Raise an exception if snapshot is older than max_stale_seconds."""
+        """Warn (but don't crash) if snapshot is older than max_stale_seconds.
+        Uses time-of-day awareness: pre/post market allows 5x staler data."""
         age = self.get_snapshot_age_seconds(expiry)
-        if age > self.max_stale_seconds:
-            raise RuntimeError(
-                f"Snapshot too old: {age:.1f}s > {self.max_stale_seconds}s"
+        now = datetime.now()
+        market_start = now.replace(hour=9, minute=15, second=0, microsecond=0)
+        market_end = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        # Allow staler data outside market hours
+        if now < market_start or now > market_end:
+            effective_max = self.max_stale_seconds * 5
+        else:
+            effective_max = self.max_stale_seconds
+        if age > effective_max:
+            logger.warning(
+                "Option chain data stale: %.1fs > %.1fs "
+                "(continuing with stale data)",
+                age, effective_max,
             )
 
     # ----------------------------------------------------------------------

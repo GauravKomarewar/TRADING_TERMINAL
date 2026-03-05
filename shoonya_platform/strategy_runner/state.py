@@ -397,13 +397,27 @@ class StrategyState:
         return (datetime.now() - self.last_adjustment_time).total_seconds()
 
     # Breakeven calculations (simplified – assumes short strangle/straddle)
+    # BUG-H1 FIX: Use per-unit premium (sum of entry prices), not total_premium
+    # which includes lot_size multiplication and would be off by a factor of lot_size.
+    @property
+    def _per_unit_premium(self) -> float:
+        """Net per-unit premium collected (sum of entry_prices, not multiplied by qty)."""
+        total = 0.0
+        for leg in self.legs.values():
+            if leg.is_active and leg.instrument == InstrumentType.OPT:
+                if leg.side == Side.SELL:
+                    total += leg.entry_price
+                else:
+                    total -= leg.entry_price
+        return total
+
     @property
     def breakeven_upper(self) -> float:
-        return self.atm_strike + self.total_premium
+        return self.atm_strike + self._per_unit_premium
 
     @property
     def breakeven_lower(self) -> float:
-        return self.atm_strike - self.total_premium
+        return self.atm_strike - self._per_unit_premium
 
     @property
     def breakeven_distance(self) -> float:

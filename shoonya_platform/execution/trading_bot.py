@@ -537,7 +537,7 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
     def send_telegram(self, message: str, *, category: str = "system") -> bool:
         """Safe wrapper for sending Telegram messages.
         
-        Always logs to JSONL for dashboard display.
+        Always logs to JSONL for dashboard display (with sent=True/False).
         Only sends via HTTP to Telegram if preferences allow.
 
         Args:
@@ -548,8 +548,6 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
         if self.telegram_enabled and self.telegram:
             try:
                 normalized = sanitize_text(message, ascii_only=False)
-                # Always log for dashboard
-                self.telegram._append_message_log(normalized)
                 # Check BOTH master + category toggle
                 prefs_allow = self.telegram._should_send_to_telegram(
                     "send_generic", category=category,
@@ -562,7 +560,12 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
                     normalized.replace('\n', ' ')[:40],
                 )
                 if prefs_allow:
-                    return self.telegram.send_message(normalized, _skip_log=True)
+                    result = self.telegram.send_message(normalized, _skip_log=True)
+                    # Log for dashboard with actual sent status
+                    self.telegram._append_message_log(normalized, sent=result)
+                    return result
+                # Log for dashboard with sent=False so UI shows blocked
+                self.telegram._append_message_log(normalized, sent=False)
                 return True
             except Exception as e:
                 logger.error(f"Telegram send error: {e}")

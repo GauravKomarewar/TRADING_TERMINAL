@@ -297,10 +297,13 @@ class ConditionEngine:
             return abs(self._resolve_parameter(inner))
 
         # Handle moneyness (needs spot price)
+        # BUG-M1 FIX: For PE, use (spot - strike) / spot so OTM PE → positive.
         if param in ("ce_moneyness", "pe_moneyness"):
             opt_type = "CE" if param.startswith("ce") else "PE"
             leg = self._find_leg_by_option_type(opt_type)
             if leg and leg.strike and self.state.spot_price:
+                if opt_type == "PE":
+                    return (self.state.spot_price - leg.strike) / self.state.spot_price
                 return (leg.strike - self.state.spot_price) / self.state.spot_price
             return 0.0
 
@@ -447,8 +450,9 @@ class ConditionEngine:
                     elif metric == "moneyness":
                         if leg.strike is None or leg.option_type is None or not self.state.spot_price:
                             return 0.0
-                        # Use the same formula as ce_moneyness/pe_moneyness helpers:
-                        # (strike - spot) / spot  for both CE and PE
+                        # BUG-M1 FIX: For PE, use (spot - strike) / spot so OTM PE → positive.
+                        if leg.option_type.value == "PE":
+                            return (self.state.spot_price - leg.strike) / self.state.spot_price
                         return (leg.strike - self.state.spot_price) / self.state.spot_price
                     elif hasattr(leg, metric):
                         return getattr(leg, metric)

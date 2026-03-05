@@ -119,7 +119,9 @@ class EntryEngine:
             fut_tsym = ""
             try:
                 from scripts.scriptmaster import get_future
-                fut_info = get_future(symbol, "NFO", result=0)
+                # BUG-M5 FIX: Use the strategy's configured exchange instead of hardcoded "NFO".
+                _exchange = getattr(self.market, 'exchange', 'NFO')
+                fut_info = get_future(symbol, _exchange, result=0)
                 if isinstance(fut_info, dict):
                     fut_tsym = str(fut_info.get("TradingSymbol") or fut_info.get("tsym") or "")
             except Exception:

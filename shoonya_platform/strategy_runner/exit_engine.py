@@ -129,7 +129,6 @@ class ExitEngine:
         cfg = self.exit_config.get("trailing", {})
         trail_amt = self._to_float(cfg.get("trail_amount"))
         lock_in = self._to_float(cfg.get("lock_in_at"))
-        step = self._to_float(cfg.get("trail_step"))
         step_trigger = self._to_float(cfg.get("step_trigger"))
 
         if trail_amt is None:
@@ -139,13 +138,22 @@ class ExitEngine:
         if current_pnl > self.state.peak_pnl:
             self.state.peak_pnl = current_pnl
 
-        if not self.state.trailing_stop_active and lock_in and current_pnl >= lock_in:
+        # BUG-C2 FIX: Use 'is not None' so lock_in_at=0 (breakeven) works
+        if not self.state.trailing_stop_active and lock_in is not None and current_pnl >= lock_in:
             self.state.trailing_stop_active = True
             self.state.trailing_stop_level = current_pnl - trail_amt
 
         if self.state.trailing_stop_active:
-            if step_trigger and (self.state.peak_pnl - self.state.trailing_stop_level) >= step_trigger:
-                self.state.trailing_stop_level = self.state.peak_pnl - trail_amt
+            # BUG-C2 FIX: Continuous trailing when step_trigger is not configured
+            if step_trigger:
+                # Step-based trailing: only ratchet up when gap exceeds step_trigger
+                if (self.state.peak_pnl - self.state.trailing_stop_level) >= step_trigger:
+                    self.state.trailing_stop_level = self.state.peak_pnl - trail_amt
+            else:
+                # Continuous trailing: always ratchet the stop level up with peak PnL
+                new_level = self.state.peak_pnl - trail_amt
+                if new_level > self.state.trailing_stop_level:
+                    self.state.trailing_stop_level = new_level
 
             if current_pnl <= self.state.trailing_stop_level:
                 self.last_exit_reason = (
@@ -167,9 +175,12 @@ class ExitEngine:
         step = int(current_pnl // step_size)
         if max_steps is not None and step > int(max_steps):
             step = int(max_steps)
-        if step > self.state.current_profit_step:
-            self.state.current_profit_step = step
-            self.last_exit_reason = f"profit_step:{step}"
+        # BUG-H2 FIX: Fire only the NEXT step to avoid skipping intermediate steps.
+        # Each step typically triggers a partial hedge/reduce action.
+        next_step = self.state.current_profit_step + 1
+        if step >= next_step:
+            self.state.current_profit_step = next_step
+            self.last_exit_reason = f"profit_step:{next_step}"
             return f"profit_step_{action}"
         return None
 

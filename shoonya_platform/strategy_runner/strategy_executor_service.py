@@ -877,6 +877,10 @@ class PerStrategyExecutor:
         self.name = name
         self.config = config
         self.bot = bot
+        # BUG-H4 FIX: Lock for thread-safe access to state between
+        # process_tick (main loop thread) and notify_fill (OrderWatcher thread).
+        import threading
+        self._tick_lock = threading.Lock()
 
         # State persistence (use name‑based file)
         state_file = Path(state_db_path).parent / f"{name}_state.pkl"
@@ -935,6 +939,11 @@ class PerStrategyExecutor:
 
     def process_tick(self):
         """Called by the service loop each tick."""
+        with self._tick_lock:
+            self._process_tick_inner()
+
+    def _process_tick_inner(self):
+        """Core tick logic (runs under _tick_lock)."""
         now = datetime.now()
 
         # Daily reset
@@ -942,6 +951,12 @@ class PerStrategyExecutor:
             self.state.adjustments_today = 0
             self.state.total_trades_today = 0
             self.state.entered_today = False
+            # BUG-H3 FIX: Reset trailing stop and profit step state on new day.
+            self.state.trailing_stop_active = False
+            self.state.trailing_stop_level = 0.0
+            self.state.peak_pnl = 0.0
+            self.state.current_profit_step = -1
+            self.state.cumulative_daily_pnl = 0.0
             self._last_date = now.date()
             logger.info(f"Daily counters reset for {self.name}")
 
@@ -1181,7 +1196,13 @@ class PerStrategyExecutor:
 
     def notify_fill(self, symbol: str, side: str, qty: int, price: float,
                     delta: Optional[float], broker_order_id: str, command_id: Optional[str] = None):
-        """Immediate fill notification from OrderWatcher."""
+        """Immediate fill notification from OrderWatcher (runs on watcher thread)."""
+        with self._tick_lock:
+            self._notify_fill_inner(symbol, side, qty, price, delta, broker_order_id, command_id)
+
+    def _notify_fill_inner(self, symbol: str, side: str, qty: int, price: float,
+                           delta: Optional[float], broker_order_id: str, command_id: Optional[str] = None):
+        """Core fill logic (runs under _tick_lock)."""
         fill_symbol = str(symbol or "").strip()
         fill_side = str(side or "").upper()
         # Pass 1: match PENDING legs (entry / adjustment open orders)
@@ -1535,6 +1556,11 @@ class PerStrategyExecutor:
             for leg in self.state.legs.values():
                 leg.is_active = False
             self.state.cumulative_daily_pnl += pnl_snapshot
+            # BUG-H3 FIX: Reset trailing stop and profit step state for clean re-entry.
+            self.state.trailing_stop_active = False
+            self.state.trailing_stop_level = 0.0
+            self.state.peak_pnl = 0.0
+            self.state.current_profit_step = -1
             # ✅ BUG FIX: Detect stop-loss exit via exit_engine.last_exit_reason
             # (the 'source' param is the action string like 'exit_all', not 'stop_loss').
             exit_reason = getattr(self.exit_engine, 'last_exit_reason', '') or ''
@@ -1552,11 +1578,28 @@ class PerStrategyExecutor:
         elif action.startswith("leg_rule_"):
             self._execute_leg_rule_exit(action)
         elif action == "partial_50":
-            # Close 50% of each leg (simplified)
+            # BUG-C3 FIX: Submit broker orders for the closed half, then update local state.
+            alert_legs = []
+            reductions: List[Tuple[LegState, int]] = []
             for leg in self.state.legs.values():
-                if leg.is_active:
-                    leg.qty = leg.qty // 2
-            logger.info(f"Partial 50% exit for {self.name}")
+                if leg.is_active and leg.qty > 0:
+                    close_qty = max(1, int(leg.qty // 2))
+                    alert_legs.append(
+                        self._build_alert_leg(
+                            leg=leg,
+                            direction="BUY" if leg.side.value == "SELL" else "SELL",
+                            qty=close_qty,
+                        )
+                    )
+                    reductions.append((leg, close_qty))
+            if alert_legs:
+                result = self._submit_alert(execution_type="EXIT", legs=alert_legs)
+                if not self._is_failure_status((result or {}).get("status")):
+                    for leg, qty in reductions:
+                        leg.qty = max(0, int(leg.qty) - qty)
+                        if leg.qty == 0:
+                            leg.is_active = False
+            logger.info(f"Partial 50% exit for {self.name} — {len(alert_legs)} legs submitted")
 
     @staticmethod
     def _is_no_position_exit_result(result: Dict[str, Any]) -> bool:
@@ -1920,8 +1963,8 @@ class PerStrategyExecutor:
         return os.getenv("WEBHOOK_SECRET_KEY", os.getenv("WEBHOOK_SECRET", ""))
 
     def _resolve_test_mode(self) -> Optional[str]:
-        """Return test_mode if paper mode is enabled."""
+        """Return test_mode if paper mode or test mode is enabled."""
         identity = self.config.get("identity", {})
-        if identity.get("paper_mode"):
+        if identity.get("paper_mode") or identity.get("test_mode"):
             return "SUCCESS"
         return None

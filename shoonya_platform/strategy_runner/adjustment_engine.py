@@ -87,12 +87,14 @@ class AdjustmentEngine:
                 return False
 
         max_day = rule.get("max_per_day")
-        if max_day and self.state.adjustments_today >= max_day:
+        # BUG-M3 FIX: Use 'is not None' so max_per_day=0 (no adjustments) is respected.
+        if max_day is not None and self.state.adjustments_today >= max_day:
             self._last_guard_reason = "max_per_day"
             return False
 
         max_total = rule.get("max_total")
-        if max_total and self.state.lifetime_adjustments >= max_total:
+        # BUG-M3 FIX: Use 'is not None' so max_total=0 is respected.
+        if max_total is not None and self.state.lifetime_adjustments >= max_total:
             self._last_guard_reason = "max_total"
             return False
 

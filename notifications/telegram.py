@@ -45,6 +45,12 @@ class TelegramNotifier:
         # Granular preferences (set by dashboard toggle, default all on)
         self._prefs = {"all": True, "system": True, "strategy": True, "reports": True}
 
+        # Eagerly establish connection so is_connected is True from the start
+        try:
+            self.test_connection()
+        except Exception as e:
+            logger.warning("Telegram initial connection test failed: %s", e)
+
     def set_preferences(self, prefs: dict) -> None:
         """Update notification category preferences."""
         for k in ("all", "system", "strategy", "reports"):
@@ -57,19 +63,27 @@ class TelegramNotifier:
             return False
         return self._prefs.get(category, True)
 
-    def _should_send_to_telegram(self, method_name: str) -> bool:
+    def _should_send_to_telegram(self, method_name: str, *, category: str = "") -> bool:
         """Check whether a notification should actually be sent to Telegram.
         
         This only controls HTTP delivery to Telegram.
         Messages are ALWAYS logged to the JSONL file for dashboard display.
+        
+        Args:
+            method_name: The method name (e.g. 'send_heartbeat').
+            category: Explicit category override ('system', 'strategy', 'reports').
+                      If given, skips prefix matching.
         """
         if not self._prefs.get("all", True):
             return False
-        for prefix, category in self._CATEGORY_MAP.items():
+        # Explicit category takes priority
+        if category in ("system", "strategy", "reports"):
+            return self._prefs.get(category, True)
+        for prefix, cat in self._CATEGORY_MAP.items():
             if method_name.startswith(prefix):
-                return self._prefs.get(category, True)
-        # Unknown methods: allow by default
-        return True
+                return self._prefs.get(cat, True)
+        # Unknown methods: DENY by default (safety-first)
+        return False
 
     # Keep backward-compat alias
     _should_send = _should_send_to_telegram
@@ -106,12 +120,21 @@ class TelegramNotifier:
         message: str,
         parse_mode: Literal["HTML", "MarkdownV2"] = "HTML",
         _skip_log: bool = False,
+        _force: bool = False,
     ) -> bool:
         """Send message to Telegram using HTTP request.
         
         Args:
             _skip_log: If True, skip appending to JSONL (caller already logged).
         """
+        # ── FAILSAFE: master toggle blocks ALL Telegram HTTP sends ──
+        if not _force and not self._prefs.get("all", True):
+            logger.info(
+                "send_message BLOCKED by master toggle (all=False) | preview=%.60s",
+                (message or "").replace('\n', ' ')[:60],
+            )
+            return True  # Return True so callers don't treat it as an error
+
         if not self.is_connected:
             logger.warning("Telegram not connected, attempting to reconnect...")
             if not self.test_connection():
@@ -159,11 +182,12 @@ class TelegramNotifier:
         log_dir.mkdir(parents=True, exist_ok=True)
         return log_dir / "telegram_messages.jsonl"
 
-    def _append_message_log(self, message: str) -> None:
+    def _append_message_log(self, message: str, *, sent: bool = True) -> None:
         try:
             payload = {
                 "ts": time.time(),
                 "message": sanitize_text(message, ascii_only=False),
+                "sent": sent,
             }
             with open(self._log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(payload, ensure_ascii=True) + "\n")
@@ -178,19 +202,22 @@ class TelegramNotifier:
         real-time, regardless of telegram toggle state.
         """
         safe_message = sanitize_text(message, ascii_only=False)
-        # ALWAYS log for dashboard display
-        self._append_message_log(safe_message)
         # Only send to Telegram if prefs allow
         prefs_allow = self._should_send_to_telegram(method_name)
-        logger.debug(
+        logger.info(
             "_send_with_log: method=%s prefs_allow=%s _prefs=%s",
             method_name,
             prefs_allow,
             self._prefs,
         )
         if not prefs_allow:
+            # Log for dashboard with sent=False so UI can show blocked status
+            self._append_message_log(safe_message, sent=False)
             return True
-        return self.send_message(message, _skip_log=True)
+        result = self.send_message(message, _skip_log=True)
+        # Log for dashboard with actual sent status
+        self._append_message_log(safe_message, sent=result)
+        return result
 
     @staticmethod
     def _format_price(order_type: str, price: Any) -> str:
@@ -436,5 +463,7 @@ class TelegramNotifier:
             f"✅ Connection working!"
         )
         safe_message = sanitize_text(message, ascii_only=False)
-        self._append_message_log(safe_message)
-        return self.send_message(message, _skip_log=True)
+        # _force=True bypasses master toggle so test always sends
+        result = self.send_message(message, _skip_log=True, _force=True)
+        self._append_message_log(safe_message, sent=result)
+        return result

@@ -321,6 +321,8 @@ class AdjustmentEngine:
                     or old_leg.trading_symbol
                 ),
             )
+            # ✅ BUG-015 FIX: Carry over lot_size from old leg being rolled
+            new_leg.lot_size = old_leg.lot_size
             new_leg.is_active = False
             new_leg.order_status = "PENDING"
             new_leg.order_placed_at = datetime.now()
@@ -505,6 +507,16 @@ class AdjustmentEngine:
         except ValueError:
             mode = StrikeMode.STANDARD
 
+        # ✅ BUG-019 FIX: Validate strike rounding parameter
+        rounding = leg_cfg.get("rounding")
+        if rounding is not None:
+            rounding = float(rounding)
+            if rounding <= 0:
+                logger.warning(
+                    "ADJUSTMENT_WARNING | invalid rounding=%s, ignoring", rounding,
+                )
+                rounding = None
+
         # Build StrikeConfig
         strike_cfg = StrikeConfig(
             mode=mode,
@@ -521,7 +533,7 @@ class AdjustmentEngine:
             match_param=leg_cfg.get("match_param"),
             match_offset=leg_cfg.get("match_offset", 0.0),
             match_multiplier=leg_cfg.get("match_multiplier", 1.0),
-            rounding=leg_cfg.get("rounding")
+            rounding=rounding,
         )
 
         # Determine symbol and expiry from existing legs
@@ -629,6 +641,12 @@ class AdjustmentEngine:
                 or ""
             ),
         )
+
+        # ✅ BUG-015 FIX: Populate lot_size from market reader for adjustment legs
+        try:
+            leg.lot_size = max(1, int(self.market.get_lot_size(expiry)))
+        except Exception:
+            pass  # Executor service will stamp lot_size as fallback
 
         # 🔒 Mark as pending, not active – will become active only after fill
         leg.is_active = False

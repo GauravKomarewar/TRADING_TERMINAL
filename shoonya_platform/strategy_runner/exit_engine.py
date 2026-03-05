@@ -131,8 +131,24 @@ class ExitEngine:
     def _check_trailing_stop(self) -> Optional[str]:
         cfg = self.exit_config.get("trailing", {})
         trail_amt = self._to_float(cfg.get("trail_amount"))
+        trail_pct = self._to_float(cfg.get("trail_pct"))
         lock_in = self._to_float(cfg.get("lock_in_at"))
+        lock_in_pct = self._to_float(cfg.get("lock_in_at_pct"))
         step_trigger = self._to_float(cfg.get("step_trigger"))
+
+        # ✅ ISSUE-020 FIX: Support percentage-based trailing stop.
+        # Convert trail_pct to absolute amount using total_premium as base.
+        if trail_amt is None and trail_pct is not None:
+            base = abs(self.state.total_premium) or abs(self.state.total_cost_basis)
+            if base > 0:
+                trail_amt = base * trail_pct / 100.0
+            else:
+                trail_amt = None
+
+        if lock_in is None and lock_in_pct is not None:
+            base = abs(self.state.total_premium) or abs(self.state.total_cost_basis)
+            if base > 0:
+                lock_in = base * lock_in_pct / 100.0
 
         if trail_amt is None:
             return None

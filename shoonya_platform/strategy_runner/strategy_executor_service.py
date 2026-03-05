@@ -1295,6 +1295,14 @@ class PerStrategyExecutor:
                     leg.volume = opt_data.get("volume", leg.volume)
             # For futures legs, we could update via a different method, but not implemented here
 
+        # ✅ BUG-001 FIX: Record PnL snapshots for all active filled legs
+        for leg in self.state.legs.values():
+            if leg.is_active and leg.order_status == "FILLED":
+                try:
+                    leg.record_pnl_snapshot(self.state.spot_price)
+                except Exception:
+                    pass  # Non-critical - don't let snapshot recording break the loop
+
     def _execute_entry(self):
         """Run entry engine and send orders via bot."""
         symbol = self.config["identity"]["underlying"]

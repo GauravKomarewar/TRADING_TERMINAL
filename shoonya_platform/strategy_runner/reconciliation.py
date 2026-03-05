@@ -87,11 +87,40 @@ class BrokerReconciliation:
             return warnings
 
         broker_netqty: Dict[str, int] = {}
+        # ✅ BUG-003 FIX: Also collect avg entry price from broker for sync
+        broker_avg_price: Dict[str, float] = {}
         for pos in broker_positions:
             tsym = pos.get("tsym", "")
             net = int(pos.get("netqty", 0))
             if tsym:
                 broker_netqty[tsym] = broker_netqty.get(tsym, 0) + net
+                # Capture average entry price if available
+                avg = pos.get("netavgprc") or pos.get("upldprc") or pos.get("daybuyavgprc") or pos.get("daysellavgprc")
+                if avg:
+                    try:
+                        broker_avg_price[tsym] = float(avg)
+                    except (ValueError, TypeError):
+                        pass
+
+        # ✅ BUG-003 FIX: Attempt to fetch LTP from broker quotes for active legs
+        active_symbols = [
+            getattr(leg, "trading_symbol", None) or leg.symbol
+            for leg in self.state.legs.values()
+            if leg.is_active
+        ]
+        broker_ltp: Dict[str, float] = {}
+        try:
+            if hasattr(broker_view, 'get_quotes') and active_symbols:
+                quotes = broker_view.get_quotes(active_symbols)
+                if isinstance(quotes, dict):
+                    for sym, q in quotes.items():
+                        if isinstance(q, dict) and 'ltp' in q:
+                            try:
+                                broker_ltp[sym] = float(q['ltp'])
+                            except (ValueError, TypeError):
+                                pass
+        except Exception as e:
+            logger.debug("RECONCILE | Could not fetch broker quotes for LTP: %s", e)
 
         for tag, leg in list(self.state.legs.items()):
             if not leg.is_active:
@@ -123,6 +152,20 @@ class BrokerReconciliation:
                 continue
 
             net = broker_netqty.get(sym, 0)
+
+            # ✅ BUG-003 FIX: Update LTP from broker quotes if available
+            if sym in broker_ltp and broker_ltp[sym] > 0:
+                leg.ltp = broker_ltp[sym]
+
+            # ✅ BUG-003 FIX: Sync average entry price from broker if available
+            if sym in broker_avg_price and broker_avg_price[sym] > 0:
+                broker_entry = broker_avg_price[sym]
+                if abs(broker_entry - leg.entry_price) > 0.01:
+                    logger.info(
+                        "RECONCILE | %s (%s) | avg_price sync state=%.2f -> broker=%.2f",
+                        tag, sym, leg.entry_price, broker_entry,
+                    )
+                    leg.entry_price = broker_entry
 
             if net == 0:
                 warnings.append(

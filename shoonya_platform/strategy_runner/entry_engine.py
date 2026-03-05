@@ -159,12 +159,35 @@ class EntryEngine:
                 ltp=ltp,
                 trading_symbol=fut_tsym,
             )
+            # ✅ BUG-015 FIX: Populate lot_size from market reader at entry time
+            try:
+                leg.lot_size = max(1, int(self.market.get_lot_size(expiry)))
+            except Exception:
+                pass  # Executor service will stamp lot_size as fallback
             return leg
 
         else:
             # Option leg
             opt_type = OptionType(exec_config.get("option_type", "CE"))
             strike_mode = StrikeMode(exec_config.get("strike_mode", "standard"))
+
+            # ✅ BUG-019 FIX: Validate strike rounding parameter
+            rounding = exec_config.get("rounding")
+            if rounding is not None:
+                try:
+                    rounding = float(rounding)
+                    if rounding <= 0:
+                        logger.warning(
+                            "ENTRY_WARNING | tag=%s | invalid rounding=%s, ignoring",
+                            tag, rounding,
+                        )
+                        rounding = None
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "ENTRY_WARNING | tag=%s | non-numeric rounding=%s, ignoring",
+                        tag, rounding,
+                    )
+                    rounding = None
 
             strike_cfg = StrikeConfig(
                 mode=strike_mode,
@@ -181,7 +204,7 @@ class EntryEngine:
                 match_param=exec_config.get("match_param"),
                 match_offset=exec_config.get("match_offset", 0.0),
                 match_multiplier=exec_config.get("match_multiplier", 1.0),
-                rounding=exec_config.get("rounding")
+                rounding=rounding,
             )
 
             reference_leg = None
@@ -215,6 +238,11 @@ class EntryEngine:
                     or ""
                 ),
             )
+            # ✅ BUG-015 FIX: Populate lot_size from market reader at entry time
+            try:
+                leg.lot_size = max(1, int(self.market.get_lot_size(expiry)))
+            except Exception:
+                pass  # Executor service will stamp lot_size as fallback
             return leg
 
     def _dict_to_condition(self, d: Dict[str, Any]) -> Condition:

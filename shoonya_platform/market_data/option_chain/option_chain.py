@@ -1563,6 +1563,7 @@ def _auto_greeks_refresher(
     """
     consecutive_failures = 0
     max_consecutive_failures = 10
+    warned_no_ticks = False
     
     while not stop_event.is_set():
         try:
@@ -1571,6 +1572,7 @@ def _auto_greeks_refresher(
             
             success = False  # ✅ FIX: Initialize to avoid NameError
             if updated > 0:
+                warned_no_ticks = False
                 # Compute Greeks with fresh data
                 success = refresh_greeks(oc, min_live_contracts=min_live_contracts)
             
@@ -1580,11 +1582,18 @@ def _auto_greeks_refresher(
                 consecutive_failures += 1
                 
                 if consecutive_failures >= max_consecutive_failures:
-                    logger.warning(
-                        "Greek refresh failed %d times consecutively - "
-                        "possible data quality issue",
-                        consecutive_failures
-                    )
+                    if updated == 0 and not warned_no_ticks:
+                        logger.info(
+                            "No live ticks received — Greek refresh paused "
+                            "(pre-market or data unavailable)"
+                        )
+                        warned_no_ticks = True
+                    elif updated > 0:
+                        logger.warning(
+                            "Greek refresh failed %d times consecutively - "
+                            "possible data quality issue",
+                            consecutive_failures
+                        )
                     consecutive_failures = 0  # Reset to avoid spam
         
         except Exception as exc:

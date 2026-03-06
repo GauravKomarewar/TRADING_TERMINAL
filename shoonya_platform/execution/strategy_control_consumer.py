@@ -69,7 +69,7 @@ class StrategyControlConsumer:
     """
 
     def __init__(self, *, strategy_manager, stop_event):
-        logger.critical("🔥 StrategyControlConsumer initialized")
+        logger.info("🔥 StrategyControlConsumer initialized")
         self.strategy_manager = strategy_manager
         self.stop_event = stop_event
         self.recovery_handlers = {}  # Track ongoing recoveries

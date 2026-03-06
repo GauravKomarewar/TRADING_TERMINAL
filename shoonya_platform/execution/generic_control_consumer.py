@@ -65,7 +65,7 @@ class GenericControlIntentConsumer:
     """
 
     def __init__(self, *, bot, stop_event):
-        logger.critical("🔥 ControlIntentConsumer initialized")
+        logger.info("🔥 ControlIntentConsumer initialized")
         self.bot = bot
         self.stop_event = stop_event
 

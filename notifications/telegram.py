@@ -52,10 +52,39 @@ class TelegramNotifier:
             logger.warning("Telegram initial connection test failed: %s", e)
 
     def set_preferences(self, prefs: dict) -> None:
-        """Update notification category preferences."""
+        """Update notification category preferences.
+
+        When the master toggle (all) is turned OFF, the HTTP session is
+        physically closed so that no code path can accidentally send.
+        """
+        old_all = self._prefs.get("all", True)
         for k in ("all", "system", "strategy", "reports"):
             if k in prefs:
                 self._prefs[k] = bool(prefs[k])
+
+        new_all = self._prefs.get("all", True)
+        if old_all and not new_all:
+            # HARD KILL: tear down the HTTP session
+            self._kill_session()
+        elif not old_all and new_all:
+            # Restore the HTTP session so messages can flow again
+            self._restore_session()
+
+    def _kill_session(self) -> None:
+        """Close and nullify the HTTP session so no HTTP calls can be made."""
+        if self.session is not None:
+            try:
+                self.session.close()
+            except Exception:
+                pass
+            self.session = None
+            logger.warning("🔒 Telegram HTTP session DESTROYED — all notifications OFF")
+
+    def _restore_session(self) -> None:
+        """Recreate the HTTP session after master toggle is turned back ON."""
+        if self.session is None:
+            self.session = requests.Session()
+            logger.info("🔓 Telegram HTTP session restored — notifications ON")
 
     def is_category_enabled(self, category: str) -> bool:
         """Check if a notification category is enabled."""
@@ -92,7 +121,8 @@ class TelegramNotifier:
         """Test Telegram bot connection"""
         try:
             url = f"{self.base_url}/getMe"
-            response = self.session.get(url, timeout=10)
+            session = self.session or requests.Session()
+            response = session.get(url, timeout=10)
 
             if response.status_code == 200:
                 bot_info = response.json()
@@ -134,6 +164,19 @@ class TelegramNotifier:
                 (message or "").replace('\n', ' ')[:60],
             )
             return True  # Return True so callers don't treat it as an error
+
+        # ── HARD KILL: session was destroyed when all=OFF ──
+        if self.session is None:
+            if _force:
+                # Test messages get a temporary session
+                self.session = requests.Session()
+                logger.info("Temporary session created for _force send")
+            else:
+                logger.warning(
+                    "send_message BLOCKED — HTTP session is NULL (hard kill active) | preview=%.60s",
+                    (message or "").replace('\n', ' ')[:60],
+                )
+                return True
 
         if not self.is_connected:
             logger.warning("Telegram not connected, attempting to reconnect...")
@@ -465,5 +508,8 @@ class TelegramNotifier:
         safe_message = sanitize_text(message, ascii_only=False)
         # _force=True bypasses master toggle so test always sends
         result = self.send_message(message, _skip_log=True, _force=True)
+        # If master toggle is OFF, destroy the temporary session that was created
+        if not self._prefs.get("all", True):
+            self._kill_session()
         self._append_message_log(safe_message, sent=result)
         return result

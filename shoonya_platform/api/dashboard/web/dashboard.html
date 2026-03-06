@@ -204,7 +204,14 @@
         }
         .msg-badge.sent { background: var(--success); color: #fff; }
         .msg-badge.blocked { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+        .msg-badge.legacy { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); font-style: italic; }
         .msg-text { color: var(--text-secondary); }
+        .tg-status-banner { padding: 8px 14px; border-radius: var(--radius-sm); margin-bottom: 10px; font-size: 12px; font-weight: 600; }
+        .tg-status-banner.tg-off { background: rgba(255,59,48,0.15); color: var(--danger); border: 1px solid var(--danger); }
+        .tg-status-banner.tg-on { background: rgba(52,199,89,0.15); color: var(--success); border: 1px solid var(--success); }
+        .tg-toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; z-index: 9999; animation: fadeInOut 2.5s ease; pointer-events: none; }
+        .tg-toast.saved { background: var(--success); color: #fff; }
+        @keyframes fadeInOut { 0% { opacity: 0; transform: translateY(10px); } 15% { opacity: 1; transform: translateY(0); } 85% { opacity: 1; } 100% { opacity: 0; } }
 
         /* ── Force Exit Banner ── */
         .force-exit-banner {
@@ -589,6 +596,7 @@
                     <span id="telegramBadge" class="status-badge neutral">--</span>
                 </div>
                 <div class="card-body-pad">
+                    <div id="tgStatusBanner" class="tg-status-banner tg-off" style="display:none">🔇 All Telegram notifications are OFF — messages are logged but NOT sent to your phone</div>
                     <div class="toggle-row">
                         <div class="toggle-label">
                             <span class="toggle-label-main">All Messages</span>
@@ -628,6 +636,9 @@
                             <input type="checkbox" id="tgToggleReports" onchange="toggleTelegram('reports', this.checked)">
                             <span class="toggle-slider"></span>
                         </label>
+                    </div>
+                    <div style="margin-top: 10px; text-align: right;">
+                        <button onclick="testTelegram()" style="background:var(--accent);color:#fff;border:none;padding:6px 16px;border-radius:var(--radius-sm);font-size:11px;cursor:pointer;">🧪 Send Test Message</button>
                     </div>
                 </div>
             </div>
@@ -1184,14 +1195,21 @@
         }
 
         var recent = messages.slice(-30).reverse();
-        countEl.textContent = messages.length + ' messages';
+        // Count only messages with explicit sent tracking
+        var sentCount = messages.filter(function(m) { return m.sent === true; }).length;
+        var blockedCount = messages.filter(function(m) { return m.sent === false; }).length;
+        countEl.textContent = messages.length + ' total (' + sentCount + ' sent, ' + blockedCount + ' blocked)';
 
         container.innerHTML = recent.map(function(m) {
             var raw = (m.message || '').replace(/<[^>]*>/g, '');
-            var wasSent = m.sent !== false;  // default true for old entries without 'sent' field
-            var badgeClass = wasSent ? 'sent' : 'blocked';
-            var badgeText = wasSent ? 'SENT' : 'BLOCKED';
-            var itemClass = wasSent ? 'msg-item msg-sent' : 'msg-item msg-blocked';
+            var badgeClass, badgeText, itemClass;
+            if (m.sent === true) {
+                badgeClass = 'sent'; badgeText = 'SENT'; itemClass = 'msg-item msg-sent';
+            } else if (m.sent === false) {
+                badgeClass = 'blocked'; badgeText = 'BLOCKED'; itemClass = 'msg-item msg-blocked';
+            } else {
+                badgeClass = 'legacy'; badgeText = 'OLD'; itemClass = 'msg-item msg-blocked';
+            }
             return '<div class="' + itemClass + '">'
                 + '<div class="msg-time">' + timeStr(m.ts)
                 + '<span class="msg-badge ' + badgeClass + '">' + badgeText + '</span>'
@@ -1268,6 +1286,14 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(prefs),
             credentials: 'include',
+        }).then(function(res) {
+            if (res && res.ok) {
+                var toast = document.createElement('div');
+                toast.className = 'tg-toast saved';
+                toast.textContent = '\u2705 Telegram preferences saved';
+                document.body.appendChild(toast);
+                setTimeout(function() { toast.remove(); }, 2600);
+            }
         }).catch(function(err) { console.error('Telegram prefs save failed:', err); });
     }
 
@@ -1280,21 +1306,58 @@
 
     function updateTelegramBadge(prefs) {
         var badge = document.getElementById('telegramBadge');
+        var banner = document.getElementById('tgStatusBanner');
         if (!prefs.all) {
             badge.textContent = 'OFF';
             badge.className = 'status-badge danger';
+            banner.className = 'tg-status-banner tg-off';
+            banner.textContent = '\uD83D\uDD07 All Telegram notifications are OFF \u2014 messages are logged but NOT sent to your phone';
+            banner.style.display = 'block';
         } else if (prefs.system && prefs.strategy && prefs.reports) {
             badge.textContent = 'ALL ON';
             badge.className = 'status-badge safe';
+            banner.className = 'tg-status-banner tg-on';
+            banner.textContent = '\uD83D\uDD14 All Telegram notifications are ON \u2014 messages will be sent to your phone';
+            banner.style.display = 'block';
         } else {
             var count = (prefs.system ? 1 : 0) + (prefs.strategy ? 1 : 0) + (prefs.reports ? 1 : 0);
             badge.textContent = count + '/3 ON';
             badge.className = 'status-badge warning';
+            banner.style.display = 'none';
         }
     }
 
     // Load prefs on page load
     loadTelegramPrefs();
+
+    function testTelegram() {
+        fetch('/dashboard/telegram/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            var toast = document.createElement('div');
+            toast.className = 'tg-toast saved';
+            if (data.sent) {
+                toast.textContent = '\u2705 Test message sent to Telegram! Check your phone.';
+            } else {
+                toast.style.background = 'var(--danger)';
+                toast.textContent = '\u274c Test failed: ' + (data.error || 'Unknown error');
+            }
+            document.body.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 2600);
+        })
+        .catch(function() {
+            var toast = document.createElement('div');
+            toast.className = 'tg-toast saved';
+            toast.style.background = 'var(--danger)';
+            toast.textContent = '\u274c Could not reach server';
+            document.body.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 2600);
+        });
+    }
 
     // ─── Cleanup ───
     window.addEventListener('beforeunload', stopAutoRefresh);

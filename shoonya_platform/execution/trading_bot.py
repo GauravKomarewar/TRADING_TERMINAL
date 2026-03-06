@@ -425,8 +425,13 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
                         }
                         self.telegram.set_preferences(self._telegram_prefs)
                         logger.info("Telegram prefs loaded from disk: %s", self._telegram_prefs)
+                        if not self._telegram_prefs.get("all", True):
+                            logger.warning(
+                                "📵 TELEGRAM NOTIFICATIONS DISABLED by dashboard toggle (all=OFF). "
+                                "Messages will be logged but NOT sent to Telegram."
+                            )
                 except Exception as _prefs_err:
-                    logger.debug("No saved telegram prefs: %s", _prefs_err)
+                    logger.warning("⚠️ Failed to load telegram prefs from disk: %s — defaulting to all=ON", _prefs_err)
             except Exception as e:
                 logger.error(f"Failed to initialize Telegram: {e}")
                 self.telegram_enabled = False

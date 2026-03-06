@@ -140,3 +140,25 @@ def set_telegram_preferences(
         "preferences": prefs,
         "telegram_enabled": bot.telegram_enabled if bot else False,
     }
+
+
+# ==================================================
+# TEST TELEGRAM (force-send to verify connectivity)
+# ==================================================
+@sub_router.post("/telegram/test")
+def test_telegram(ctx=Depends(require_dashboard_auth)):
+    """Send a test message to Telegram (bypasses prefs) to verify connectivity."""
+    bot = ctx.get("bot")
+    if not bot or not bot.telegram:
+        return {"sent": False, "error": "Telegram not configured"}
+
+    result = bot.telegram.send_test_message()
+
+    # Also return current pref state for display
+    prefs = getattr(bot, "_telegram_prefs", {})
+
+    return {
+        "sent": result,
+        "preferences": prefs,
+        "note": "Test messages always bypass notification preferences",
+    }

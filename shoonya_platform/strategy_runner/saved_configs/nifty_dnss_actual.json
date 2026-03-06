@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "STOPPED",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -15,8 +15,8 @@
     "lots": 1,
     "db_file": "NFO_NIFTY_02-MAR-2026.sqlite",
     "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_02-MAR-2026.sqlite",
-    "paper_mode": true,
-    "test_mode": "SUCCESS"
+    "paper_mode": false,
+    "test_mode": null
   },
   "timing": {
     "entry_window_start": "09:18",
@@ -233,6 +233,6 @@
   "paper_mode": true,
   "test_mode": "SUCCESS",
   "created_at": "2026-02-27T12:53:41",
-  "updated_at": "2026-03-04T17:29:00",
-  "status_updated_at": "2026-03-06T11:01:23.277616"
+  "updated_at": "2026-03-06T18:19:44",
+  "status_updated_at": "2026-03-06T13:24:20.085163"
 }

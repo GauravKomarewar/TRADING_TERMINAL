@@ -942,6 +942,32 @@ html[data-theme="solar"] body::before {
   </div>
 </div>
 
+<div id="stop-modal" class="modal">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-head">
+      <span>■ Stop Strategy</span>
+      <button class="x-btn" onclick="closeModal('stop-modal')">×</button>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+      Stopping: <strong id="stop-strat-name" style="color:var(--primary);font-family:var(--font-mono)"></strong>
+      <span id="stop-mode-badge" class="badge" style="margin-left:6px"></span>
+    </p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-secondary" style="text-align:left;padding:14px 16px;height:auto;display:flex;flex-direction:column;gap:4px;border-radius:8px" onclick="confirmStopAction('monitoring')">
+        <span style="font-size:13px;font-weight:700;color:var(--text)">⏹ Stop Monitoring Only</span>
+        <span style="font-size:11px;color:var(--muted);font-weight:400">Stops the strategy runner. Existing open positions remain as-is and are not closed.</span>
+      </button>
+      <button class="btn btn-danger" style="text-align:left;padding:14px 16px;height:auto;display:flex;flex-direction:column;gap:4px;border-radius:8px" onclick="confirmStopAction('kill')">
+        <span style="font-size:13px;font-weight:700">⚡ Close All Legs & Stop (Kill Switch)</span>
+        <span style="font-size:11px;opacity:0.8;font-weight:400">Force-exits all open positions for this strategy, then stops monitoring. Use as emergency kill switch.</span>
+      </button>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('stop-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // =====================================================================
 // GLOBALS
@@ -950,7 +976,7 @@ const API_BASE = '/dashboard';
 let allStrategies = [];
 let currentFilter = 'all';
 let chartRange = 3600;
-let currentToggle = null, currentDelete = null, currentDetails = null;
+let currentToggle = null, currentDelete = null, currentDetails = null, currentStopName = null;
 const mCache = {summary:'',groups:'',completed:'',orphans:''};
 let monitorGroupNames = '';
 const monitorTableCache = {}; // { stratName: { active: lastHtml, closed: lastHtml } }
@@ -1301,7 +1327,10 @@ async function bulkAction(action){
   for(const s of targets){
     try{
       if(action==='start') await api('POST',`/strategy/${encodeURIComponent(s.name)}/start-execution`);
-      else if(action==='stop') await api('POST',`/strategy/${encodeURIComponent(s.name)}/stop-execution`);
+      else if(action==='stop'){
+        _saveSnapshot(s.name); // always preserve run history
+        await api('POST',`/strategy/${encodeURIComponent(s.name)}/stop-execution`);
+      }
       else await api('POST',`/strategy/config/save-all`,{...s,enabled:action==='enable'});
       ok++;
     }catch{ fail++; }
@@ -1320,20 +1349,68 @@ async function startStrategy(name){
     toast(`"${name}" started`,'s'); setTimeout(loadStrategies,1000);
   }catch(e){ toast('Start failed: '+e.message,'e'); }
 }
-async function stopStrategy(name){
+
+// Build a run-history snapshot for a strategy that is about to be stopped.
+// Uses live overview data when available; falls back to config data for short runs.
+function _buildSnapshot(name){
+  const g=latestOverview?(latestOverview.strategy_groups||[]).find(x=>x.strategy_name===name):null;
+  if(g) return {...g, archived_at:new Date().toISOString(), runtime_state:'STOPPED_BY_USER', _source:'frontend_snapshot'};
+  const s=allStrategies.find(x=>x.name===name)||{};
+  return {
+    strategy_name:name,
+    mode:String(s.mode||'LIVE').toUpperCase(),
+    archived_at:new Date().toISOString(),
+    runtime_state:'STOPPED_BY_USER',
+    _source:'frontend_snapshot',
+    total_pnl:Number(s.pnl||0),
+    realized_pnl:0, unrealized_pnl:0,
+    runtime_seconds:0, active_legs:0, closed_legs:0, lifetime_adjustments:0,
+  };
+}
+
+function _saveSnapshot(name){
+  const snap=_buildSnapshot(name);
+  const snaps=JSON.parse(localStorage.getItem('shoonya_stopped_snapshots')||'[]');
+  snaps.push(snap);
+  if(snaps.length>200) snaps.splice(0,snaps.length-200);
+  localStorage.setItem('shoonya_stopped_snapshots',JSON.stringify(snaps));
+}
+
+// Opens the two-option stop dialog instead of stopping immediately.
+function stopStrategy(name){
+  currentStopName=name;
+  const s=allStrategies.find(x=>x.name===name)||{};
+  const isLive=String(s.mode||'LIVE').toUpperCase()==='LIVE';
+  $('stop-strat-name').textContent=name;
+  const badge=$('stop-mode-badge');
+  badge.textContent=isLive?'LIVE':'MOCK';
+  badge.className='badge '+(isLive?'b-live':'b-mock');
+  openModal('stop-modal');
+}
+
+// Called by the stop modal when the user picks a stop mode.
+async function confirmStopAction(mode){
+  const name=currentStopName;
+  if(!name) return;
+  closeModal('stop-modal');
+  // Save a frontend snapshot as fallback (backend also archives now, so this is belt-and-suspenders)
+  _saveSnapshot(name);
+  delete perfSeries[name]; delete sparklineCache[name]; delete analyticsCache[name];
   try{
-    if(latestOverview){
-      const g=(latestOverview.strategy_groups||[]).find(x=>x.strategy_name===name);
-      if(g){
-        const snap={...g, archived_at:new Date().toISOString(), runtime_state:'STOPPED_BY_USER', _source:'frontend_snapshot'};
-        const snaps=JSON.parse(localStorage.getItem('shoonya_stopped_snapshots')||'[]');
-        snaps.push(snap); if(snaps.length>100) snaps.splice(0,snaps.length-100);
-        localStorage.setItem('shoonya_stopped_snapshots',JSON.stringify(snaps));
-      }
+    if(mode==='kill'){
+      // Use the synchronous stop-and-exit endpoint — this closes positions AND stops in one call.
+      // Unlike /system/force-exit which queues an async intent, this is immediate.
+      toast(`Closing all legs for "${name}" and stopping…`,'w');
+      const r=await api('POST',`/strategy/${encodeURIComponent(name)}/stop-and-exit`);
+      const exitOk=r.exit_performed&&!r.exit_error;
+      toast(`"${name}" kill-switch applied${exitOk?'':' (exit warning: '+(r.exit_error||'unknown')+')'}`,'s');
+    } else {
+      // Stop monitoring only — no position changes
+      await api('POST',`/strategy/${encodeURIComponent(name)}/stop-execution`);
+      toast(`"${name}" stopped (monitoring only)`,'i');
     }
-    delete perfSeries[name]; delete sparklineCache[name]; delete analyticsCache[name];
-    await api('POST',`/strategy/${encodeURIComponent(name)}/stop-execution`);
-    toast(`"${name}" stopped`,'i'); setTimeout(loadStrategies,1000);
+    setTimeout(loadStrategies,800);
+    setTimeout(()=>{ loadLiveMonitor(); renderRunHistory(); },2000);
   }catch(e){ toast('Stop failed: '+e.message,'e'); }
 }
 function editStrategy(name){ openBuilderPage(name); }
@@ -2124,6 +2201,7 @@ function hideChartTooltip(){ $('chart-tt').style.display='none'; }
 // MODAL HELPERS
 // =====================================================================
 function closeModal(id){ $(id).classList.remove('show'); }
+function openModal(id){ $(id).classList.add('show'); }
 
 function toggleEnabled(name,enabled){
   currentToggle={name,enabled};

@@ -190,6 +190,11 @@ def stop_strategy_execution(
         was_running_in_memory = strategy_key in service._strategies
 
         if was_running_in_memory:
+            # Archive before unregistering so the run always appears in completed history.
+            try:
+                service._archive_completed_strategy(strategy_key, runtime_state="STOPPED_BY_USER")
+            except Exception as ae:
+                logger.warning("Could not archive strategy snapshot for %s: %s", strategy_key, ae)
             service.unregister_strategy(strategy_key)
             with bot._live_strategies_lock:
                 bot._live_strategies.pop(strategy_key, None)
@@ -233,6 +238,93 @@ def stop_strategy_execution(
         }
     except Exception as e:
         logger.error(f"Error stopping strategy execution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@sub_router.post("/strategy/{strategy_name}/stop-and-exit")
+def stop_strategy_and_exit(
+    strategy_name: str,
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Kill-switch: synchronously close all open broker positions for this strategy,
+    archive the run snapshot, then stop the strategy executor.
+
+    Unlike /stop-execution, this does NOT rely on the async intent queue.
+    The position exit is performed directly and synchronously in this request.
+    """
+    try:
+        requested_key = _slugify(strategy_name)
+        bot = ctx["bot"]
+        service = bot.strategy_executor_service
+        strategy_file = _resolve_strategy_config_file(strategy_name)
+        strategy_key = strategy_file.stem if strategy_file else requested_key
+        logger.warning("Kill-switch stop-and-exit requested for strategy: %s", strategy_key)
+
+        # --- 1. Synchronously close all broker positions for this strategy ---
+        exit_performed = False
+        exit_error = None
+        try:
+            bot.request_exit(
+                scope="STRATEGY",
+                strategy_name=strategy_key,
+                symbols=None,
+                product_type="ALL",
+                reason="KILL_SWITCH_DASHBOARD",
+                source="KILL_SWITCH",
+            )
+            exit_performed = True
+            logger.warning("Kill-switch exit submitted for strategy: %s", strategy_key)
+        except Exception as ee:
+            exit_error = str(ee)
+            logger.error("Kill-switch exit failed for %s: %s", strategy_key, ee)
+
+        # --- 2. Archive snapshot then unregister ---
+        was_running_in_memory = strategy_key in service._strategies
+        if was_running_in_memory:
+            try:
+                service._archive_completed_strategy(strategy_key, runtime_state="STOPPED_BY_USER")
+            except Exception as ae:
+                logger.warning("Could not archive strategy snapshot for %s: %s", strategy_key, ae)
+            service.unregister_strategy(strategy_key)
+            with bot._live_strategies_lock:
+                bot._live_strategies.pop(strategy_key, None)
+
+        # --- 3. Clear persisted state files ---
+        if hasattr(service, "state_mgr") and service.state_mgr:
+            try:
+                service.state_mgr.delete(strategy_key)
+            except Exception as se:
+                logger.warning("Could not clear persisted state for %s: %s", strategy_key, se)
+        try:
+            sf = _strategy_state_file(service, strategy_key)
+            if sf.exists():
+                sf.unlink()
+        except Exception:
+            pass
+
+        # --- 4. Update config status ---
+        try:
+            cfg_file = _resolve_strategy_config_file(strategy_key) or (STRATEGY_CONFIG_DIR / f"{strategy_key}.json")
+            if cfg_file.exists():
+                cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+                cfg["status"] = "STOPPED"
+                cfg["status_updated_at"] = datetime.now().isoformat()
+                _write_json_file(cfg_file, cfg)
+        except Exception as se:
+            logger.warning("Could not update status for %s: %s", strategy_key, se)
+
+        return {
+            "success": True,
+            "strategy_name": strategy_key,
+            "exit_performed": exit_performed,
+            "exit_error": exit_error,
+            "in_memory_running": was_running_in_memory,
+            "message": f"Kill-switch applied to {strategy_key}",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error("Error in stop-and-exit for %s: %s", strategy_name, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

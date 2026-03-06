@@ -618,17 +618,15 @@ class StrategyExecutorService:
                     logger.debug("Could not persist monitor cache for %s: %s", strategy_name, e)
         return snapshot
 
-    def _archive_completed_strategy(self, strategy_name: str) -> None:
+    def _archive_completed_strategy(self, strategy_name: str, runtime_state: str = "COMPLETED") -> None:
         """
         Persist a completed strategy monitor snapshot before unregistering it.
+        Always saves a record, even for short/no-trade runs, so history is never lost.
         """
         with self._lock:
             cache = dict((self._monitor_cache.get(strategy_name) or {}))
             state = self._exec_states.get(strategy_name)
             config = self._strategies.get(strategy_name, {}) or {}
-
-            if not cache:
-                return
 
             mode = "MOCK" if self._is_paper_mode(config) else "LIVE"
             legs_payload: List[Dict[str, Any]] = list(cache.values())
@@ -669,7 +667,7 @@ class StrategyExecutorService:
                 "strategy_name": strategy_name,
                 "mode": mode,
                 "active": False,
-                "runtime_state": "COMPLETED",
+                "runtime_state": runtime_state,
                 "runtime_seconds": runtime_seconds,
                 "realized_pnl": realized_pnl,
                 "unrealized_pnl": float(unrealized_pnl),

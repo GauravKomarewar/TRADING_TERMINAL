@@ -1,17 +1,17 @@
 {
   "schema_version": "4.0",
-  "name": "crudeoilm_dnss_actual",
-  "id": "CRUDEOILM_DNSS_ACTUAL",
+  "name": "test",
+  "id": "TEST",
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "STOPPED",
   "identity": {
     "exchange": "MCX",
     "underlying": "CRUDEOILM",
     "instrument_type": "OPTIDX",
     "product_type": "NRML",
-    "order_type": "MARKET",
+    "order_type": "LIMIT",
     "lots": 1,
     "db_file": "MCX_CRUDEOILM_17-MAR-2026.sqlite",
     "db_path": "shoonya_platform/market_data/option_chain/data/MCX_CRUDEOILM_17-MAR-2026.sqlite",
@@ -19,7 +19,7 @@
     "test_mode": "SUCCESS"
   },
   "timing": {
-    "entry_window_start": "09:03",
+    "entry_window_start": "09:00",
     "entry_window_end": "23:00",
     "eod_exit_time": "23:15"
   },
@@ -40,10 +40,10 @@
         "option_type": "CE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "MARKET",
+        "order_type": "LIMIT",
         "strike_mode": "standard",
-        "strike_selection": "delta",
-        "strike_value": "0.3",
+        "strike_selection": "atm",
+        "strike_value": "",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -58,10 +58,10 @@
         "option_type": "PE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "MARKET",
+        "order_type": "LIMIT",
         "strike_mode": "standard",
         "strike_selection": "delta",
-        "strike_value": "0.3",
+        "strike_value": "",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -75,90 +75,38 @@
       {
         "name": "Adjustment 1",
         "priority": 1,
-        "max_per_day": 20,
+        "max_per_day": 5,
         "max_total": null,
         "cooldown_sec": 60,
         "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
-            "parameter": "net_delta",
-            "comparator": ">=",
-            "value": "0.2"
-          },
-          {
             "parameter": "combined_pnl",
-            "comparator": ">=",
-            "value": "1000",
-            "join": "OR"
-          },
-          {
-            "parameter": "max_leg_delta",
-            "comparator": "<",
-            "value": "0.65",
-            "join": "AND"
+            "comparator": ">",
+            "value": "200"
           }
         ],
         "action": {
           "type": "simple_close_open_new",
           "leg_swaps": [
             {
-              "close_tag": "LOWER_DELTA_LEG",
+              "close_tag": "MOST_PROFITABLE_LEG",
               "new_leg": {
                 "side": "SELL",
                 "option_type": "MATCH_CLOSING",
                 "lots": 1,
                 "order_type": "",
-                "strike_mode": "match_leg",
-                "strike_selection": "match_leg_param",
-                "match_leg": "HIGHER_DELTA_LEG",
-                "match_param": "abs_delta",
-                "match_offset": 0,
-                "match_multiplier": 1
+                "strike_mode": "standard",
+                "strike_selection": "atm+2",
+                "strike_value": ""
               }
             }
           ]
         },
-        "else_enabled": true,
-        "else_conditions": [
-          {
-            "parameter": "net_delta",
-            "comparator": ">=",
-            "value": "0.2"
-          },
-          {
-            "parameter": "combined_pnl",
-            "comparator": ">=",
-            "value": "1000",
-            "join": "OR"
-          },
-          {
-            "parameter": "max_leg_delta",
-            "comparator": ">=",
-            "value": "0.65",
-            "join": "AND"
-          }
-        ],
-        "else_action": {
-          "type": "simple_close_open_new",
-          "leg_swaps": [
-            {
-              "close_tag": "HIGHER_DELTA_LEG",
-              "new_leg": {
-                "side": "SELL",
-                "option_type": "MATCH_CLOSING",
-                "lots": 1,
-                "order_type": "",
-                "strike_mode": "match_leg",
-                "strike_selection": "match_leg_param",
-                "match_leg": "LOWER_DELTA_LEG",
-                "match_param": "abs_delta",
-                "match_offset": 0,
-                "match_multiplier": 1
-              }
-            }
-          ]
-        }
+        "else_enabled": false,
+        "else_conditions": [],
+        "else_action": null
       }
     ]
   },
@@ -216,7 +164,7 @@
       "thu",
       "fri"
     ],
-    "entry_time": "09:03",
+    "entry_time": "09:00",
     "entry_window_end": "23:00",
     "exit_time": "23:15",
     "expiry_mode": "weekly_auto",
@@ -228,25 +176,9 @@
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-02-27T10:16:44.326Z"
+    "created_at": "2026-03-06T14:05:39.490Z"
   },
-  "deployment_notes": {
-    "risk_parameters": {
-      "max_lots": 4,
-      "max_adjustments_per_day": 20,
-      "validation": "Within platform risk manager limits. SupremeRiskManager enforces daily loss, cooldown, and manual trade detection."
-    },
-    "pre_production_checklist": {
-      "connectivity": "Verified: API, broker, and database connectivity tested.",
-      "order_throttling": "Verified: CommandService and ExecutionGuard enforce throttling.",
-      "kill_switch": "Verified: SupremeRiskManager triggers global exit and cooldown on breach.",
-      "monitoring_alerts": "Verified: Telegram and logger integration for all risk and execution events.",
-      "rollbacks": "Verified: All config and code changes versioned; rollback tested."
-    },
-    "approval": "Live trading NOT enabled. paper_mode=true as default. Change to false only with explicit written approval.",
-    "checklist_signoff": "Completed by automation on 2026-02-28."
-  },
-  "created_at": "2026-02-27T15:39:19",
-  "updated_at": "2026-02-27T20:34:38",
-  "status_updated_at": "2026-03-06T11:01:28.853802"
+  "created_at": "2026-03-06T19:35:53",
+  "updated_at": "2026-03-06T19:35:53",
+  "status_updated_at": "2026-03-06T20:00:59.150595"
 }

@@ -46,6 +46,7 @@ from scripts.scriptmaster import requires_limit_order, refresh_scriptmaster  # n
 # ---------------- CORE ----------------
 from shoonya_platform.core.config import Config
 from shoonya_platform.brokers.shoonya.client import ShoonyaClient
+from shoonya_platform.brokers.base import BrokerInterface  # noqa: F401
 
 # ---------------- LOGGING ----------------
 from shoonya_platform.logging.logger_config import get_component_logger
@@ -123,7 +124,8 @@ class ShoonyaApiProxy:
         'ensure_session',
     }
 
-    def __init__(self, client: ShoonyaClient):
+    def __init__(self, client):
+        # Accepts any broker adapter (ShoonyaClient, FyersBrokerClient, etc.)
         self._client = client
         self._lock = threading.RLock()
         self._logger = get_component_logger('trading_bot')
@@ -218,9 +220,17 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
         self.trade_records: List[TradeRecord] = []
 
         # -------------------------------------------------
-        # BROKER CLIENT (LAZY LOGIN)
+        # BROKER CLIENT — driven by config.broker (set via BROKER= in the
+        # client's own .env file; each client process has its own .env).
         # -------------------------------------------------
-        self.api = ShoonyaClient(self.config)
+        if self.config.broker == "fyers":
+            from shoonya_platform.brokers.fyers.client import FyersBrokerClient
+            from shoonya_platform.brokers.fyers.config import FyersConfig
+            self.api = FyersBrokerClient(FyersConfig.from_config(self.config))
+            logger.info("🟠 Using Fyers broker adapter (client: %s)", self.config.user_id)
+        else:
+            self.api = ShoonyaClient(self.config)
+            logger.info("🟢 Using Shoonya broker adapter (client: %s)", self.config.user_id)
         self.api_proxy = ShoonyaApiProxy(self.api)
 
         # -------------------------------------------------

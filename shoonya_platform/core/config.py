@@ -101,8 +101,11 @@ class Config:
 
     def _load_values(self) -> None:
         """Load configuration values from environment."""
-        
-        # === Shoonya Credentials ===
+
+        # === Broker Selector (must be loaded first — other sections depend on it) ===
+        self.broker: str = self._strip_comment(os.getenv("BROKER", "shoonya")).lower()
+
+        # === Shoonya Credentials (required when BROKER=shoonya) ===
         self.user_name: Optional[str] = self._strip_comment(os.getenv("USER_NAME", "")) or None
         self.user_id: Optional[str] = self._strip_comment(os.getenv("USER_ID", "")) or None
         self.password: Optional[str] = self._strip_comment(os.getenv("PASSWORD", "")) or None
@@ -110,6 +113,23 @@ class Config:
         self.vendor_code: Optional[str] = self._strip_comment(os.getenv("VC", "")) or None
         self.api_secret: Optional[str] = self._strip_comment(os.getenv("APP_KEY", "")) or None
         self.imei: str = self._strip_comment(os.getenv("IMEI", "mac"))
+
+        # === Fyers Credentials (required when BROKER=fyers) ===
+        self.fyers_id: Optional[str] = self._strip_comment(os.getenv("FYERS_ID", "")) or None
+        self.fyers_app_id: Optional[str] = self._strip_comment(os.getenv("FYERS_APP_ID", "")) or None
+        self.fyers_secret_id: Optional[str] = self._strip_comment(os.getenv("FYERS_SECRET_ID", "")) or None
+        self.fyers_totp_key: Optional[str] = self._strip_comment(os.getenv("FYERS_T_OTP_KEY", "")) or None
+        self.fyers_pin: Optional[str] = self._strip_comment(os.getenv("FYERS_PIN", "")) or None
+        self.fyers_redirect_url: Optional[str] = self._strip_comment(os.getenv("FYERS_REDIRECT_URL", "")) or None
+        self.fyers_token_file: str = self._strip_comment(os.getenv("FYERS_TOKEN_FILE", "fyers_token.json"))
+
+        # Unified identity — for Fyers clients that don't set USER_ID/USER_NAME,
+        # fall back to FYERS_ID so the rest of the system (log dirs, aliases) works.
+        if self.broker == "fyers":
+            if not self.user_id:
+                self.user_id = self.fyers_id
+            if not self.user_name:
+                self.user_name = self.fyers_id
 
         # === Risk Management Config ===
         self.risk_base_max_loss: float = self._parse_float(
@@ -304,50 +324,76 @@ class Config:
         """
         
         # -------------------------------------------------
-        # 1️⃣ Required Credentials Check
+        # 0️⃣ Broker selector validation
         # -------------------------------------------------
-        required = {
-            "USER_NAME": self.user_name,
-            "USER_ID": self.user_id,
-            "PASSWORD": self.password,
-            "TOKEN": self.totp_key,
-            "VC": self.vendor_code,
-            "APP_KEY": self.api_secret,
-            "WEBHOOK_SECRET_KEY": self.webhook_secret,
-        }
+        _valid_brokers = {"shoonya", "fyers"}
+        if self.broker not in _valid_brokers:
+            raise ConfigValidationError(
+                f"BROKER must be one of {_valid_brokers}, got: '{self.broker}'"
+            )
+
+        # -------------------------------------------------
+        # 1️⃣ Required Credentials Check (broker-specific)
+        # -------------------------------------------------
+        if self.broker == "fyers":
+            required = {
+                "FYERS_ID": self.fyers_id,
+                "FYERS_APP_ID": self.fyers_app_id,
+                "FYERS_SECRET_ID": self.fyers_secret_id,
+                "FYERS_T_OTP_KEY": self.fyers_totp_key,
+                "FYERS_PIN": self.fyers_pin,
+                "FYERS_REDIRECT_URL": self.fyers_redirect_url,
+                "WEBHOOK_SECRET_KEY": self.webhook_secret,
+            }
+        else:  # shoonya
+            required = {
+                "USER_NAME": self.user_name,
+                "USER_ID": self.user_id,
+                "PASSWORD": self.password,
+                "TOKEN": self.totp_key,
+                "VC": self.vendor_code,
+                "APP_KEY": self.api_secret,
+                "WEBHOOK_SECRET_KEY": self.webhook_secret,
+            }
 
         missing = [k for k, v in required.items() if not v]
         if missing:
             raise ConfigValidationError(f"Missing required config values: {missing}")
 
         # -------------------------------------------------
-        # 2️⃣ Format Validation (NEW)
+        # 2️⃣ Format Validation (broker-specific)
         # -------------------------------------------------
-        
-        # TOTP key validation
-        if self.totp_key and len(self.totp_key) < 16:
-            raise ConfigValidationError(
-                "TOTP TOKEN appears invalid (too short). "
-                "Expected base32 string of 16+ characters"
-            )
-        
-        # API secret validation
-        if self.api_secret and len(self.api_secret) < 20:
-            raise ConfigValidationError(
-                "API APP_KEY appears invalid (too short). "
-                "Expected 20+ characters"
-            )
-        
-        # User ID validation
-        if self.user_id and not self.user_id.strip():
-            raise ConfigValidationError("USER_ID cannot be empty/whitespace")
-        
-        # Password validation
-        if self.password and len(self.password) < 6:
-            logger.warning(
-                "⚠️ PASSWORD is very short (< 6 chars). "
-                "This may be intentional but is unusual."
-            )
+        if self.broker == "shoonya":
+            # TOTP key validation
+            if self.totp_key and len(self.totp_key) < 16:
+                raise ConfigValidationError(
+                    "TOTP TOKEN appears invalid (too short). "
+                    "Expected base32 string of 16+ characters"
+                )
+
+            # API secret validation
+            if self.api_secret and len(self.api_secret) < 20:
+                raise ConfigValidationError(
+                    "API APP_KEY appears invalid (too short). "
+                    "Expected 20+ characters"
+                )
+
+            # User ID validation
+            if self.user_id and not self.user_id.strip():
+                raise ConfigValidationError("USER_ID cannot be empty/whitespace")
+
+            # Password validation
+            if self.password and len(self.password) < 6:
+                logger.warning(
+                    "⚠️ PASSWORD is very short (< 6 chars). "
+                    "This may be intentional but is unusual."
+                )
+        else:  # fyers
+            if self.fyers_totp_key and len(self.fyers_totp_key) < 16:
+                raise ConfigValidationError(
+                    "FYERS_T_OTP_KEY appears invalid (too short). "
+                    "Expected base32 string of 16+ characters"
+                )
         
         # -------------------------------------------------
         # 3️⃣ Risk Configuration Validation (SAFE)
@@ -480,13 +526,17 @@ class Config:
             )
 
         # -------------------------------------------------
-        # 8️⃣ Type Narrowing (IMPORTANT)
+        # 8️⃣ Type Narrowing (broker-conditional)
         # -------------------------------------------------
-        assert self.user_id is not None
-        assert self.password is not None
-        assert self.totp_key is not None
-        assert self.vendor_code is not None
-        assert self.api_secret is not None
+        assert self.user_id is not None  # always set (falls back to fyers_id for Fyers clients)
+        if self.broker == "shoonya":
+            assert self.password is not None
+            assert self.totp_key is not None
+            assert self.vendor_code is not None
+            assert self.api_secret is not None
+        else:  # fyers
+            assert self.fyers_id is not None
+            assert self.fyers_app_id is not None
         assert self.webhook_secret is not None
 
         logger.info("✅ Configuration validated successfully")
@@ -513,6 +563,24 @@ class Config:
             "websocket": self.shoonya_websocket,
         }
 
+    def get_fyers_credentials(self) -> Dict[str, str]:
+        """
+        Get Fyers credentials dictionary.
+
+        ⚠️ WARNING: Contains sensitive data. Handle securely.
+        Do NOT log or expose this dictionary.
+        Only valid when self.broker == 'fyers'.
+        """
+        return {
+            "fyers_id": self.fyers_id or "",
+            "app_id": self.fyers_app_id or "",
+            "secret_id": self.fyers_secret_id or "",
+            "totp_key": self.fyers_totp_key or "",
+            "pin": self.fyers_pin or "",
+            "redirect_url": self.fyers_redirect_url or "",
+            "token_file": self.fyers_token_file,
+        }
+
     # ------------------------------------------------------------------
     # 🔐 CLIENT IDENTITY (COPY-TRADING-Purpose)
     # ------------------------------------------------------------------
@@ -521,17 +589,20 @@ class Config:
     def get_client_identity(self) -> dict:
         """
         Canonical client identity adapter.
-        FOR EXAMPLE:
+        FOR EXAMPLE (Shoonya):
             USER_ID=FA14667
             USER_NAME=GAURAV_Y_KOMAREWAR  
+        FOR EXAMPLE (Fyers):
+            FYERS_ID=FG0158  → user_id=FG0158, user_name=FG0158
+
         This is the ONLY approved way to access client identity.
         Safe for single-client today, mandatory for multi-client tomorrow.
         """
         return {
-            "user_id": self.user_id,          #client-userID (Shoonya)
-            "user_name": self.user_name,      #client-username (Shoonya-Client name) 
-            #for protect againtst if one user have more than 1 account in shoonya and good visibility
-            "client_id": f"{self.user_name}:{self.user_id}"
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "client_id": f"{self.user_name}:{self.user_id}",
+            "broker": self.broker,
         }
 
     def get_shoonya_config(self) -> Dict[str, str]:

@@ -22,13 +22,13 @@ ARCHITECTURE:
 - Consumers = Pull from tick_data_store on-demand
 """
 
-from shoonya_platform.brokers.shoonya.client import ShoonyaClient
-
+from typing import Dict, List, Optional, Any
+# ShoonyaClient kept for legacy type references; all public functions accept Any broker adapter
+from shoonya_platform.brokers.shoonya.client import ShoonyaClient  # noqa: F401
 import time
 import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional, Any
 from colorama import Fore, Style
 import logging
 from cachetools import TTLCache

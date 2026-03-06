@@ -19,7 +19,7 @@ from typing import Literal, List, Optional
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from shoonya_platform.brokers.shoonya.client import ShoonyaClient
+from shoonya_platform.brokers.base import BrokerInterface  # noqa: F401
 from shoonya_platform.persistence.repository import OrderRepository
 from shoonya_platform.persistence.order_record import OrderRecord
 
@@ -40,7 +40,7 @@ class PositionExitService:
     def __init__(
         self,
         *,
-        broker_client: ShoonyaClient,
+        broker_client,         # Any BrokerInterface-compliant adapter
         order_repo: OrderRepository,
         client_id: str,
     ):

@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "STOPPED",
+  "status": "RUNNING",
   "identity": {
     "exchange": "MCX",
     "underlying": "CRUDEOILM",
@@ -16,7 +16,7 @@
     "db_file": "MCX_CRUDEOILM_17-MAR-2026.sqlite",
     "db_path": "shoonya_platform/market_data/option_chain/data/MCX_CRUDEOILM_17-MAR-2026.sqlite",
     "paper_mode": true,
-    "test_mode": null
+    "test_mode": "SUCCESS"
   },
   "timing": {
     "entry_window_start": "09:03",
@@ -248,5 +248,5 @@
   },
   "created_at": "2026-02-27T15:39:19",
   "updated_at": "2026-02-27T20:34:38",
-  "status_updated_at": "2026-03-04T13:23:20.581761"
+  "status_updated_at": "2026-03-06T11:01:28.853802"
 }

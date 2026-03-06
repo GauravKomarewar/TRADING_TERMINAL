@@ -877,10 +877,13 @@ class PerStrategyExecutor:
         self.name = name
         self.config = config
         self.bot = bot
-        # BUG-H4 FIX: Lock for thread-safe access to state between
+        # BUG-H4 FIX: Reentrant lock for thread-safe access to state between
         # process_tick (main loop thread) and notify_fill (OrderWatcher thread).
+        # Must be RLock (reentrant) because MOCK fills fire synchronously:
+        # process_tick → _execute_entry → bot.process_alert → execute_command
+        # → notify_fill, all on the same thread while _tick_lock is held.
         import threading
-        self._tick_lock = threading.Lock()
+        self._tick_lock = threading.RLock()
 
         # State persistence (use name‑based file)
         state_file = Path(state_db_path).parent / f"{name}_state.pkl"

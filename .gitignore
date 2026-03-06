@@ -35,6 +35,9 @@ venv/
 .env.local
 primary.env
 yeleshwar_a_komarewar.env
+config_env/gateway.env
+config_env/master.env
+config_env/client_routes.json
 credentials.json
 cookies.txt
 

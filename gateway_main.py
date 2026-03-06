@@ -325,8 +325,15 @@ if __name__ == "__main__":
     else:
         logger.warning("Gateway env file not found: %s — using defaults", args.env)
 
-    host = os.getenv("GATEWAY_HOST", "0.0.0.0")
+    host = os.getenv("GATEWAY_HOST", "127.0.0.1")
     port = int(os.getenv("GATEWAY_PORT", "7000"))
+
+    if host == "0.0.0.0":
+        logger.warning(
+            "⚠️  GATEWAY_HOST=0.0.0.0 — gateway is exposed on ALL interfaces. "
+            "Only use this behind a firewall or reverse proxy. "
+            "Set GATEWAY_HOST=127.0.0.1 for local-only access."
+        )
     routes_file = os.getenv(
         "GATEWAY_ROUTES_FILE",
         str(Path(__file__).resolve().parent / "config_env" / "client_routes.json"),

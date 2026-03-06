@@ -625,18 +625,30 @@ class ExecutionMixin:
                 f"type={order_params.get('price_type')}"
             )
 
-            if is_mock_execution:
-                logger.info(
-                    "STEP_4_MOCK_EXECUTION | cmd_id=%s | strategy=%s | mode=MOCK",
-                    command.command_id,
-                    strategy_id,
-                )
+            # GLOBAL PAPER TRADING GUARD — blocks ALL real broker submissions
+            _trading_mode = os.environ.get("TRADING_MODE", "LIVE").upper()
+            _force_paper = _trading_mode == "PAPER"
+
+            if is_mock_execution or _force_paper:
+                if _force_paper and not is_mock_execution:
+                    logger.info(
+                        "STEP_4_PAPER_MODE | cmd_id=%s | strategy=%s | TRADING_MODE=PAPER — broker call blocked",
+                        command.command_id,
+                        strategy_id,
+                    )
+                else:
+                    logger.info(
+                        "STEP_4_MOCK_EXECUTION | cmd_id=%s | strategy=%s | mode=MOCK",
+                        command.command_id,
+                        strategy_id,
+                    )
                 if explicit_mock_failure:
                     result = OrderResult(success=False, error_message="MOCK_TEST_FAILURE")
                 else:
                     _cmd_suffix = (command.command_id or "NOCMD")[:8]
                     mock_order_id = f"MOCK_{int(time.time() * 1000)}_{_cmd_suffix}"
-                    result = OrderResult(success=True, order_id=mock_order_id, status="MOCK_EXECUTED")
+                    _paper_status = "PAPER_EXECUTED" if _force_paper else "MOCK_EXECUTED"
+                    result = OrderResult(success=True, order_id=mock_order_id, status=_paper_status)
             else:
                 result = self.api.place_order(order_params)
 

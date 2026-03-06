@@ -46,6 +46,12 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD")
 if not DASHBOARD_PASSWORD:
     raise RuntimeError("DASHBOARD_PASSWORD not set in environment")
+_WEAK_DEFAULTS = {"change_me", "password", "admin", "12345678"}
+if DASHBOARD_PASSWORD in _WEAK_DEFAULTS or len(DASHBOARD_PASSWORD) < 8:
+    raise RuntimeError(
+        "DASHBOARD_PASSWORD is a weak default or too short (min 8 chars). "
+        "Set a strong, unique value in your .env file."
+    )
 
 # --------------------------------------------------
 # MODELS

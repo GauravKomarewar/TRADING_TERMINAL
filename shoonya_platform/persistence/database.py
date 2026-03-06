@@ -299,6 +299,38 @@ def get_connection():
             except Exception:
                 conn.rollback()
 
+            # Ensure audit_log table exists (order change audit trail)
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS audit_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        client_id TEXT NOT NULL,
+                        command_id TEXT,
+                        action TEXT NOT NULL,
+                        old_value TEXT,
+                        new_value TEXT,
+                        source TEXT,
+                        detail TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_audit_client "
+                    "ON audit_log(client_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_audit_timestamp "
+                    "ON audit_log(timestamp)"
+                )
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
                 
         except Exception:
             # Best-effort: if schema creation fails, tests will report error

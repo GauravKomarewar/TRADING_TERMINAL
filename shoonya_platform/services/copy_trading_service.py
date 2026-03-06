@@ -40,6 +40,7 @@ import hashlib
 import hmac
 import json
 import logging
+import threading
 import time
 import urllib.request
 import urllib.error
@@ -50,6 +51,79 @@ from typing import Any, Dict, List, Optional, Tuple
 from shoonya_platform.logging.logger_config import get_component_logger
 
 logger = get_component_logger("copy_trading_service")
+
+
+# ---------------------------------------------------------------------------
+# Circuit Breaker (per-follower failure tracking)
+# ---------------------------------------------------------------------------
+
+class _FollowerCircuitBreaker:
+    """
+    Tracks consecutive failures per follower URL.
+    After FAILURE_THRESHOLD consecutive failures, the follower is tripped
+    (open circuit) for a backoff period that doubles each time.
+    """
+
+    FAILURE_THRESHOLD: int = 3
+    BASE_BACKOFF_SECONDS: float = 30.0
+    MAX_BACKOFF_SECONDS: float = 600.0  # 10 minutes cap
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        # follower_url → {"failures": int, "tripped_until": float, "backoff": float}
+        self._state: Dict[str, Dict[str, Any]] = {}
+
+    def is_available(self, follower_url: str) -> bool:
+        """Return True if the follower is healthy or its backoff has expired."""
+        with self._lock:
+            info = self._state.get(follower_url)
+            if info is None:
+                return True
+            if info["failures"] < self.FAILURE_THRESHOLD:
+                return True
+            # Circuit is open — check if backoff has expired (half-open)
+            if time.monotonic() >= info["tripped_until"]:
+                return True
+            return False
+
+    def record_success(self, follower_url: str) -> None:
+        """Reset failure count on successful delivery."""
+        with self._lock:
+            self._state.pop(follower_url, None)
+
+    def record_failure(self, follower_url: str) -> None:
+        """Increment failure count; trip circuit if threshold reached."""
+        with self._lock:
+            info = self._state.get(follower_url)
+            if info is None:
+                info = {"failures": 0, "tripped_until": 0.0, "backoff": self.BASE_BACKOFF_SECONDS}
+                self._state[follower_url] = info
+
+            info["failures"] += 1
+
+            if info["failures"] >= self.FAILURE_THRESHOLD:
+                info["tripped_until"] = time.monotonic() + info["backoff"]
+                logger.warning(
+                    "CircuitBreaker: TRIPPED for %s | consecutive_failures=%d | "
+                    "backoff=%.0fs",
+                    follower_url, info["failures"], info["backoff"],
+                )
+                # Exponential backoff for next trip
+                info["backoff"] = min(info["backoff"] * 2, self.MAX_BACKOFF_SECONDS)
+
+    def get_status(self) -> Dict[str, Any]:
+        """Return a snapshot of all follower circuit states."""
+        with self._lock:
+            now = time.monotonic()
+            return {
+                url: {
+                    "failures": s["failures"],
+                    "tripped": s["failures"] >= self.FAILURE_THRESHOLD
+                               and now < s["tripped_until"],
+                    "backoff_s": s["backoff"],
+                }
+                for url, s in self._state.items()
+            }
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -117,6 +191,7 @@ class CopyTradingService:
         self._client_id: str = config.get_client_identity()["client_id"]
 
         self._enabled: bool = self._role in ("master", "follower")
+        self._circuit_breaker = _FollowerCircuitBreaker()
 
         if self._role == "master":
             logger.info(
@@ -181,7 +256,22 @@ class CopyTradingService:
         )
 
         results: List[Dict[str, Any]] = []
-        with ThreadPoolExecutor(max_workers=min(self.MAX_WORKERS, len(self._followers))) as pool:
+        # Filter out followers with tripped circuit breakers
+        available_followers = []
+        for f_url in self._followers:
+            if self._circuit_breaker.is_available(f_url):
+                available_followers.append(f_url)
+            else:
+                logger.warning(
+                    "CopyTrading: SKIPPING %s — circuit breaker tripped", f_url
+                )
+                results.append({
+                    "follower": f_url,
+                    "status": "circuit_breaker_open",
+                    "error": "Too many consecutive failures — temporarily disabled",
+                })
+
+        with ThreadPoolExecutor(max_workers=min(self.MAX_WORKERS, max(len(available_followers), 1))) as pool:
             future_map = {
                 pool.submit(
                     self._deliver_to_follower,
@@ -189,7 +279,7 @@ class CopyTradingService:
                     payload_bytes,
                     signature,
                 ): follower_url
-                for follower_url in self._followers
+                for follower_url in available_followers
             }
             for future in as_completed(future_map):
                 follower_url = future_map[future]
@@ -201,6 +291,13 @@ class CopyTradingService:
                         "status": "error",
                         "error": str(exc),
                     }
+
+                # Update circuit breaker based on delivery outcome
+                if result.get("status") == "delivered":
+                    self._circuit_breaker.record_success(follower_url)
+                else:
+                    self._circuit_breaker.record_failure(follower_url)
+
                 results.append(result)
 
         ok_count = sum(1 for r in results if r.get("status") == "delivered")
@@ -359,3 +456,8 @@ class CopyTradingService:
     @property
     def follower_count(self) -> int:
         return len(self._followers)
+
+    @property
+    def circuit_breaker_status(self) -> Dict[str, Any]:
+        """Snapshot of per-follower circuit breaker states."""
+        return self._circuit_breaker.get_status()

@@ -34,6 +34,24 @@ from shoonya_platform.persistence.database import get_connection
 from shoonya_platform.persistence.order_record import OrderRecord
 
 
+def _write_audit(conn, client_id: str, command_id: str, action: str,
+                 old_value: str = None, new_value: str = None,
+                 source: str = "system", detail: str = None):
+    """Append a row to audit_log. Best-effort — never raises."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO audit_log (timestamp, client_id, command_id, action,
+                                   old_value, new_value, source, detail)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (datetime.utcnow().isoformat(), client_id, command_id, action,
+             old_value, new_value, source, detail),
+        )
+    except Exception:
+        pass  # audit is best-effort; never block order flow
+
+
 class OrderRepository:
     """
     SINGLE SOURCE OF TRUTH for order persistence.
@@ -114,6 +132,9 @@ class OrderRepository:
                 record.tag,
             ),
         )
+        _write_audit(conn, self.client_id, record.command_id, "ORDER_CREATED",
+                     new_value=record.status, source=record.source,
+                     detail=f"{record.exchange}:{record.symbol} {record.side} qty={record.quantity}")
         conn.commit()
 
     # -----------------------------
@@ -130,6 +151,8 @@ class OrderRepository:
             """,
             (status, datetime.utcnow().isoformat(), command_id, self.client_id),
         )
+        _write_audit(conn, self.client_id, command_id, "STATUS_CHANGE",
+                     new_value=status)
         conn.commit()
 
     def update_stop_loss(self, command_id: str, new_sl: float):
@@ -166,6 +189,8 @@ class OrderRepository:
                 self.client_id,
             ),
         )
+        _write_audit(conn, self.client_id, command_id, "BROKER_ID_ASSIGNED",
+                     new_value=broker_order_id)
         conn.commit()
 
     def update_tag(self, command_id: str, tag: str):
@@ -184,6 +209,8 @@ class OrderRepository:
             """,
             (tag, datetime.utcnow().isoformat(), command_id, self.client_id),
         )
+        _write_audit(conn, self.client_id, command_id, "TAG_UPDATE",
+                     new_value=tag)
         conn.commit()
 
     # -----------------------------

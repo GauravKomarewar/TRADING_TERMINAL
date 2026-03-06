@@ -90,7 +90,12 @@ def main() -> None:
     else:
         logger.warning("Env file not found: %s — using environment defaults", env_path)
 
-    host = os.getenv("MASTER_HOST", "0.0.0.0")
+    host = os.getenv("MASTER_HOST", "127.0.0.1")
+    if host == "0.0.0.0":
+        logger.warning(
+            "⚠️  MASTER_HOST=0.0.0.0 — exposed on ALL interfaces. "
+            "Use 127.0.0.1 for local-only access."
+        )
     port = parse_int_env("MASTER_PORT", 9000, min_val=1, max_val=65535)
     registry_file = os.getenv(
         "MASTER_REGISTRY_FILE",

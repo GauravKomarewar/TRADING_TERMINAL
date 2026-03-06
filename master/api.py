@@ -57,11 +57,34 @@ logger = logging.getLogger("master.api")
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 
+def _validate_credential(name: str, value: str, forbidden: tuple) -> str:
+    """Validate a credential is not a weak default and meets minimum length."""
+    if not value or value in forbidden:
+        raise RuntimeError(
+            f"SECURITY: {name} is not set or uses a default value. "
+            f"Set a strong, unique value in your .env file."
+        )
+    if len(value) < 12:
+        raise RuntimeError(
+            f"SECURITY: {name} is too short ({len(value)} chars). "
+            f"Use at least 12 characters."
+        )
+    return value
+
+
 def create_master_app(registry: MasterRegistry, poller: HealthPoller) -> FastAPI:
     """Build the FastAPI master manager application."""
 
-    admin_password: str = os.getenv("MASTER_ADMIN_PASSWORD", "change_me")
-    api_token: str = os.getenv("MASTER_API_TOKEN", "change_me_master_token")
+    _WEAK_PASSWORDS = (
+        "change_me", "password", "admin", "master", "12345678",
+        "123456789012", "change_me_master_token",
+    )
+
+    admin_password: str = os.getenv("MASTER_ADMIN_PASSWORD", "")
+    api_token: str = os.getenv("MASTER_API_TOKEN", "")
+
+    _validate_credential("MASTER_ADMIN_PASSWORD", admin_password, _WEAK_PASSWORDS)
+    _validate_credential("MASTER_API_TOKEN", api_token, _WEAK_PASSWORDS)
 
     # In-memory sessions: session_id → expiry_timestamp (seconds since epoch)
     _sessions: Dict[str, float] = {}

@@ -446,7 +446,7 @@ class StrategyControlConsumer:
 
             # Fallback: match by config "id"/"name" in saved files.
             for path in sorted(config_dir.glob("*.json")):
-                if path.name == "STRATEGY_CONFIG_SCHEMA.json":
+                if "schema" in path.stem.lower():
                     continue
                 try:
                     cfg = json.loads(path.read_text(encoding="utf-8-sig"))

@@ -1221,7 +1221,7 @@ function extractCondsList(container){
     const prevEl=row.previousElementSibling;
     const join=i>0?(prevEl?.classList.contains('cond-join-indicator')?prevEl.querySelector('.join-badge')?.getAttribute('data-join'):'AND')||'AND':undefined;
     const c={parameter:p,comparator:op,value:v};if(v2)c.value2=v2;if(join)c.join=join;return c;
-  });
+  }).filter(c=>c.parameter&&c.parameter.trim()!==''); // skip rows where parameter was left blank
 }
 const extractConds=id=>extractCondsList($(id));
 

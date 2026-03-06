@@ -293,4 +293,94 @@
         initTicker();
     }
 
+    /* ────────────────────────────────────────────────────
+       THEME SYSTEM
+       ──────────────────────────────────────────────────── */
+    const THEMES = [
+        { id: 'midnight', label: 'Midnight', swatch: 'linear-gradient(135deg,#0c1d47 0%,#1e3a8a 100%)' },
+        { id: 'matrix',   label: 'Matrix',   swatch: 'linear-gradient(135deg,#021808 0%,#00e676 100%)' },
+        { id: 'ember',    label: 'Ember',    swatch: 'linear-gradient(135deg,#2c0f04 0%,#ff7043 100%)' },
+        { id: 'iris',     label: 'Iris',     swatch: 'linear-gradient(135deg,#1a0840 0%,#a78bfa 100%)' },
+        { id: 'solar',    label: 'Solar',    swatch: 'linear-gradient(135deg,#2c2500 0%,#ffca28 100%)' },
+    ];
+
+    function getStoredTheme() {
+        try { return localStorage.getItem('shoonya_theme') || 'midnight'; } catch(_) { return 'midnight'; }
+    }
+
+    function applyTheme(id) {
+        document.documentElement.dataset.theme = id;
+        try { localStorage.setItem('shoonya_theme', id); } catch(_) {}
+        document.querySelectorAll('.theme-item').forEach(el => {
+            const match = el.dataset.themeId === id;
+            el.classList.toggle('active', match);
+            const chk = el.querySelector('.theme-check');
+            if (chk) chk.style.display = match ? '' : 'none';
+        });
+    }
+
+    // Apply immediately before any rendering
+    applyTheme(getStoredTheme());
+
+    // Build theme picker button
+    const themeBtn = document.createElement('button');
+    themeBtn.className = 'theme-btn';
+    themeBtn.type = 'button';
+    themeBtn.title = 'Change colour theme';
+    themeBtn.setAttribute('aria-label', 'Change colour theme');
+
+    // Build picker panel
+    const themePanel = document.createElement('div');
+    themePanel.className = 'theme-panel';
+    themePanel.id = 'themePanel';
+    themePanel.innerHTML =
+        '<div class="theme-panel-title">Colour Theme</div>' +
+        '<div class="theme-list">' +
+        THEMES.map(t =>
+            `<button class="theme-item" type="button" data-theme-id="${t.id}">` +
+            `<span class="theme-swatch" style="background:${t.swatch}"></span>` +
+            `<span>${t.label}</span>` +
+            `<span class="theme-check"></span>` +
+            `</button>`
+        ).join('') +
+        '</div>';
+
+    // Toggle picker on button click
+    themeBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        themePanel.classList.toggle('open');
+        // Re-sync checkmarks
+        applyTheme(getStoredTheme());
+    });
+
+    // Select theme on item click
+    themePanel.addEventListener('click', function(e) {
+        const item = e.target.closest('.theme-item');
+        if (!item) return;
+        applyTheme(item.dataset.themeId);
+        themePanel.classList.remove('open');
+    });
+
+    // Close picker on outside click
+    document.addEventListener('click', function(e) {
+        if (!themeBtn.contains(e.target) && !themePanel.contains(e.target)) {
+            themePanel.classList.remove('open');
+        }
+    });
+
+    // Insert theme button before logout in actions bar
+    actions.insertBefore(themeBtn, logoutBtn);
+
+    // Append panel to body (after DOM ready)
+    function mountThemePanel() {
+        document.body.appendChild(themePanel);
+        // Sync checkmarks after DOM is ready
+        applyTheme(getStoredTheme());
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', mountThemePanel);
+    } else {
+        mountThemePanel();
+    }
+
 })();

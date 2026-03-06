@@ -307,7 +307,7 @@ def list_strategy_configs(ctx=Depends(require_dashboard_auth)):
     service = getattr(bot, "strategy_executor_service", None)
 
     for f in sorted(cfg_dir.glob("*.json")):
-        if f.name == "STRATEGY_CONFIG_SCHEMA.json":
+        if "schema" in f.stem.lower():
             continue
         try:
             data = json.loads(f.read_text(encoding="utf-8-sig"))
@@ -388,7 +388,7 @@ def get_all_strategies_execution_status(
         runtime_running = _get_runtime_running_slugs(ctx)
         all_configs = []
         for f in sorted(cfg_dir.glob("*.json")):
-            if f.name == "STRATEGY_CONFIG_SCHEMA.json":
+            if "schema" in f.stem.lower():
                 continue
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))

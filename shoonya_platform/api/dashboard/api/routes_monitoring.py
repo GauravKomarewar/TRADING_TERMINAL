@@ -720,3 +720,29 @@ def list_available_indices(ctx=Depends(require_dashboard_auth)):
             status_code=500,
             detail=f"Error listing indices: {str(e)}"
         )
+
+
+# ==================================================
+# DELETE COMPLETED STRATEGY HISTORY
+# ==================================================
+
+@sub_router.delete("/monitoring/completed-history")
+def delete_completed_history(
+    strategy_name: Optional[str] = Query(None, description="Delete only entries for this strategy"),
+    archived_at: Optional[str] = Query(None, description="Delete specific entry by archived_at timestamp"),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Delete completed strategy monitor history entries."""
+    bot = ctx.get("bot")
+    svc = getattr(bot, "strategy_executor_service", None) if bot else None
+    if not svc:
+        raise HTTPException(status_code=503, detail="Strategy executor service not available")
+    try:
+        count = svc.delete_completed_strategy_monitor_history(
+            strategy_name=strategy_name or None,
+            archived_at=archived_at or None,
+        )
+        return {"status": "ok", "deleted": count}
+    except Exception as e:
+        logger.error(f"Error deleting completed history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

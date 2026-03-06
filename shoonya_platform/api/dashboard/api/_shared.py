@@ -78,8 +78,102 @@ logger = logging.getLogger("DASHBOARD.INTENT.API")
 # STUB HELPERS (kept for backward compat)
 # ======================================================================
 
+def _drop_empty_conditions(conds):
+    """Remove condition objects with missing/empty 'parameter' from a list."""
+    if not isinstance(conds, list):
+        return conds
+    out = []
+    for c in conds:
+        if not isinstance(c, dict):
+            continue
+        # Compound condition (operator + rules) — keep as-is, recurse into rules
+        if "operator" in c and "rules" in c:
+            c = dict(c)
+            c["rules"] = _drop_empty_conditions(c.get("rules", []))
+            out.append(c)
+        else:
+            # Simple condition — skip if parameter is absent or blank
+            if not c.get("parameter", ""):
+                continue
+            out.append(c)
+    return out
+
+
+def _sanitize_config_conditions(cfg: Dict) -> Dict:
+    """
+    Walk the config and strip condition objects with empty 'parameter' from:
+    - entry.global_conditions
+    - entry.legs[*].conditions / else_conditions
+    - adjustment.rules[*].conditions / else_conditions
+    - exit.per_leg_exit[*].conditions
+    This lets old/partially-filled JSONs import cleanly instead of failing validation.
+    """
+    if not isinstance(cfg, dict):
+        return cfg
+    cfg = dict(cfg)  # shallow copy to avoid mutating caller's dict
+
+    # entry.global_conditions
+    entry = cfg.get("entry")
+    if isinstance(entry, dict):
+        entry = dict(entry)
+        if "global_conditions" in entry:
+            entry["global_conditions"] = _drop_empty_conditions(entry["global_conditions"])
+        legs = entry.get("legs")
+        if isinstance(legs, list):
+            new_legs = []
+            for leg in legs:
+                if isinstance(leg, dict):
+                    leg = dict(leg)
+                    if "conditions" in leg:
+                        leg["conditions"] = _drop_empty_conditions(leg["conditions"])
+                    if "else_conditions" in leg:
+                        leg["else_conditions"] = _drop_empty_conditions(leg["else_conditions"])
+                new_legs.append(leg)
+            entry["legs"] = new_legs
+        cfg["entry"] = entry
+
+    # adjustment.rules[*].conditions / else_conditions
+    adjustment = cfg.get("adjustment")
+    if isinstance(adjustment, dict):
+        adjustment = dict(adjustment)
+        rules = adjustment.get("rules")
+        if isinstance(rules, list):
+            new_rules = []
+            for rule in rules:
+                if isinstance(rule, dict):
+                    rule = dict(rule)
+                    if "conditions" in rule:
+                        rule["conditions"] = _drop_empty_conditions(rule["conditions"])
+                    if "else_conditions" in rule:
+                        rule["else_conditions"] = _drop_empty_conditions(rule["else_conditions"])
+                new_rules.append(rule)
+            adjustment["rules"] = new_rules
+        cfg["adjustment"] = adjustment
+
+    # exit.per_leg_exit[*].conditions
+    exit_cfg = cfg.get("exit")
+    if isinstance(exit_cfg, dict):
+        exit_cfg = dict(exit_cfg)
+        per_leg = exit_cfg.get("per_leg_exit")
+        if isinstance(per_leg, list):
+            new_per_leg = []
+            for rule in per_leg:
+                if isinstance(rule, dict):
+                    rule = dict(rule)
+                    if "conditions" in rule:
+                        rule["conditions"] = _drop_empty_conditions(rule["conditions"])
+                new_per_leg.append(rule)
+            exit_cfg["per_leg_exit"] = new_per_leg
+        exit_conds = exit_cfg.get("conditions")
+        if exit_conds is not None:
+            exit_cfg["conditions"] = _drop_empty_conditions(exit_conds)
+        cfg["exit"] = exit_cfg
+
+    return cfg
+
+
 def ensure_complete_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    return cfg or {}
+    return _sanitize_config_conditions(cfg) if cfg else {}
 
 
 def convert_v2_to_factory_format(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -200,7 +294,7 @@ def _resolve_strategy_config_file(strategy_name: str) -> Optional[Path]:
         return direct
 
     for path in sorted(STRATEGY_CONFIG_DIR.glob("*.json")):
-        if path.name == "STRATEGY_CONFIG_SCHEMA.json":
+        if "schema" in path.stem.lower():
             continue
         try:
             cfg = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -313,7 +407,7 @@ def get_all_strategies():
 
     strategies = []
     for json_file in STRATEGY_CONFIG_DIR.glob("*.json"):
-        if json_file.name == "STRATEGY_CONFIG_SCHEMA.json":
+        if "schema" in json_file.stem.lower():
             continue
         try:
             with open(json_file, 'r', encoding='utf-8-sig') as f:

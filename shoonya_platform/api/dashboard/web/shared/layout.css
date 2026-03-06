@@ -383,3 +383,132 @@ body.dashboard-shell {
     .ticker-pct { font-size: 8px; padding: 1px 3px; }
     .ticker-chip { padding: 0 8px; gap: 4px; }
 }
+
+/* ================================================================
+   COLOUR THEMES — html[data-theme="name"]
+   Layout.js applies theme from localStorage on every page.
+   ================================================================ */
+
+/* ── Matrix (green terminal) ── */
+html[data-theme="matrix"] {
+    --bg: #020b04; --panel: #040e07; --panel-2: #081508; --panel-3: #0d1f0d;
+    --border: #1a3820; --border-light: #265c2a;
+    --text: #c8f7c5; --text-secondary: #8fcf8c; --muted: #5a8a58;
+    --primary: #00e676; --primary-hover: #00c853;
+    --success: #76ff03; --success-bg: rgba(118,255,3,0.10);
+    --danger: #ff5252;  --danger-bg: rgba(255,82,82,0.10);
+    --warning: #ffeb3b; --warning-bg: rgba(255,235,59,0.10);
+    --info: #64ffda;    --info-bg: rgba(100,255,218,0.10);
+}
+html[data-theme="matrix"] body { background: #020b04; background-color: #020b04; }
+html[data-theme="matrix"] .app-header { background: #040e07; }
+html[data-theme="matrix"] .nav-link.active { color: #00e676; background: rgba(0,230,118,0.08); }
+html[data-theme="matrix"] .nav-link:hover { background: rgba(0,230,118,0.05); }
+html[data-theme="matrix"] .global-ticker { background: linear-gradient(90deg,#010602 0%,#020b04 50%,#010602 100%); }
+
+/* ── Ember (warm orange) ── */
+html[data-theme="ember"] {
+    --bg: #0d0804; --panel: #1a0f07; --panel-2: #25160b; --panel-3: #311e10;
+    --border: #4a2810; --border-light: #6a3a18;
+    --text: #fff3e8; --text-secondary: #e8c8a0; --muted: #a07050;
+    --primary: #ff7043; --primary-hover: #f4511e;
+    --success: #66bb6a; --success-bg: rgba(102,187,106,0.12);
+    --danger: #ef5350;  --danger-bg: rgba(239,83,80,0.12);
+    --warning: #ffa726; --warning-bg: rgba(255,167,38,0.12);
+    --info: #26c6da;    --info-bg: rgba(38,198,218,0.12);
+}
+html[data-theme="ember"] body { background: #0d0804; background-color: #0d0804; }
+html[data-theme="ember"] .app-header { background: #1a0f07; }
+html[data-theme="ember"] .nav-link.active { color: #ff7043; background: rgba(255,112,67,0.08); }
+html[data-theme="ember"] .nav-link:hover { background: rgba(255,112,67,0.05); }
+html[data-theme="ember"] .global-ticker { background: linear-gradient(90deg,#080402 0%,#0d0804 50%,#080402 100%); }
+
+/* ── Iris (purple/violet) ── */
+html[data-theme="iris"] {
+    --bg: #09061a; --panel: #110d28; --panel-2: #181433; --panel-3: #201c40;
+    --border: #2e2855; --border-light: #44407a;
+    --text: #f0eeff; --text-secondary: #c4bce8; --muted: #8880b8;
+    --primary: #a78bfa; --primary-hover: #8b5cf6;
+    --success: #34d399; --success-bg: rgba(52,211,153,0.12);
+    --danger: #f87171;  --danger-bg: rgba(248,113,113,0.12);
+    --warning: #fbbf24; --warning-bg: rgba(251,191,36,0.12);
+    --info: #60a5fa;    --info-bg: rgba(96,165,250,0.12);
+}
+html[data-theme="iris"] body { background: #09061a; background-color: #09061a; }
+html[data-theme="iris"] .app-header { background: #110d28; }
+html[data-theme="iris"] .nav-link.active { color: #a78bfa; background: rgba(167,139,250,0.08); }
+html[data-theme="iris"] .nav-link:hover { background: rgba(167,139,250,0.05); }
+html[data-theme="iris"] .global-ticker { background: linear-gradient(90deg,#06040f 0%,#09061a 50%,#06040f 100%); }
+
+/* ── Solar (gold/amber) ── */
+html[data-theme="solar"] {
+    --bg: #0a0700; --panel: #181400; --panel-2: #221e00; --panel-3: #2c2800;
+    --border: #4a3e00; --border-light: #6a5a00;
+    --text: #fff8e7; --text-secondary: #eedba0; --muted: #9e8840;
+    --primary: #ffca28; --primary-hover: #ffb300;
+    --success: #81c784; --success-bg: rgba(129,199,132,0.12);
+    --danger: #e57373;  --danger-bg: rgba(229,115,115,0.12);
+    --warning: #ff8f00; --warning-bg: rgba(255,143,0,0.12);
+    --info: #4dd0e1;    --info-bg: rgba(77,208,225,0.12);
+}
+html[data-theme="solar"] body { background: #0a0700; background-color: #0a0700; }
+html[data-theme="solar"] .app-header { background: #181400; }
+html[data-theme="solar"] .nav-link.active { color: #ffca28; background: rgba(255,202,40,0.08); }
+html[data-theme="solar"] .nav-link:hover { background: rgba(255,202,40,0.05); }
+html[data-theme="solar"] .global-ticker { background: linear-gradient(90deg,#060400 0%,#0a0700 50%,#060400 100%); }
+
+/* ================================================================
+   THEME PICKER — injected by layout.js into .app-actions
+   ================================================================ */
+.theme-btn {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.18);
+    background: conic-gradient(#3b82f6 0deg 90deg, #00e676 90deg 180deg, #a78bfa 180deg 270deg, #ffca28 270deg 360deg);
+    cursor: pointer; padding: 0; margin-right: 4px;
+    transition: transform 0.22s, box-shadow 0.22s;
+    flex-shrink: 0;
+}
+.theme-btn:hover {
+    transform: scale(1.15) rotate(36deg);
+    box-shadow: 0 0 14px rgba(255,255,255,0.18);
+}
+.theme-panel {
+    position: fixed;
+    top: 88px; /* ticker 36px + header 48px + 4px gap */
+    right: 12px;
+    z-index: 9995;
+    background: var(--panel, #151b26);
+    border: 1px solid var(--border, #2d3548);
+    border-radius: 12px;
+    padding: 14px 12px;
+    box-shadow: 0 14px 44px rgba(0,0,0,0.65);
+    min-width: 188px;
+    display: none;
+}
+.theme-panel.open { display: block; animation: themePanelIn 0.18s ease; }
+@keyframes themePanelIn {
+    from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+    to   { opacity: 1; transform: none; }
+}
+.theme-panel-title {
+    font-size: 9px; font-weight: 700;
+    color: var(--muted, #94a3b8);
+    text-transform: uppercase; letter-spacing: 0.9px;
+    margin-bottom: 8px;
+}
+.theme-list { display: flex; flex-direction: column; gap: 3px; }
+.theme-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 8px; border-radius: 7px; cursor: pointer;
+    border: none; background: transparent;
+    color: var(--text, #f1f5f9); font-size: 12px; font-weight: 500;
+    width: 100%; text-align: left; transition: background 0.12s;
+}
+.theme-item:hover { background: rgba(255,255,255,0.06); }
+.theme-item.active { background: rgba(255,255,255,0.04); }
+.theme-swatch {
+    width: 15px; height: 15px; border-radius: 50%;
+    flex-shrink: 0; border: 1.5px solid rgba(255,255,255,0.15);
+}
+.theme-check { margin-left: auto; font-size: 11px; color: var(--primary, #3b82f6); }

@@ -318,6 +318,27 @@ class StateManager:
         finally:
             conn.close()
 
+    def delete_completed_monitor_history(self, strategy_name: str = None, archived_at: str = None) -> int:
+        """Delete completed monitor history entries. If strategy_name and archived_at given, delete one entry. If only strategy_name, delete all for that strategy. If neither, delete all."""
+        conn = self._connect()
+        try:
+            if strategy_name and archived_at:
+                cursor = conn.execute(
+                    "DELETE FROM completed_monitor_history WHERE strategy_name = ? AND archived_at = ?",
+                    (strategy_name, archived_at),
+                )
+            elif strategy_name:
+                cursor = conn.execute(
+                    "DELETE FROM completed_monitor_history WHERE strategy_name = ?",
+                    (strategy_name,),
+                )
+            else:
+                cursor = conn.execute("DELETE FROM completed_monitor_history")
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            conn.close()
+
 class StrategyExecutorService:
     """
     Service that manages multiple strategies using the Universal Engine.
@@ -698,6 +719,26 @@ class StrategyExecutorService:
                 logger.debug("Could not load completed monitor history from DB: %s", e)
             rows = self._completed_monitor_history[:normalized_limit]
             return copy.deepcopy(rows)
+
+    def delete_completed_strategy_monitor_history(self, strategy_name: str = None, archived_at: str = None) -> int:
+        """Delete completed strategy monitor history. Supports deleting specific entry, all for a strategy, or all."""
+        with self._lock:
+            count = self.state_mgr.delete_completed_monitor_history(
+                strategy_name=strategy_name, archived_at=archived_at
+            )
+            if strategy_name and archived_at:
+                self._completed_monitor_history = [
+                    r for r in self._completed_monitor_history
+                    if not (r.get("strategy_name") == strategy_name and r.get("archived_at") == archived_at)
+                ]
+            elif strategy_name:
+                self._completed_monitor_history = [
+                    r for r in self._completed_monitor_history
+                    if r.get("strategy_name") != strategy_name
+                ]
+            else:
+                self._completed_monitor_history.clear()
+            return count
 
     # BUG-026 FIX: STRATEGY_RECOVER_RESUME intent was submitted by the dashboard but
     # had NO consumer anywhere. The intent was stored in DB forever; recovery never happened.

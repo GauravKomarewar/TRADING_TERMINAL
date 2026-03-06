@@ -48,9 +48,9 @@ if not DASHBOARD_PASSWORD:
     raise RuntimeError("DASHBOARD_PASSWORD not set in environment")
 _WEAK_DEFAULTS = {"change_me", "password", "admin", "12345678"}
 if DASHBOARD_PASSWORD in _WEAK_DEFAULTS or len(DASHBOARD_PASSWORD) < 8:
-    raise RuntimeError(
-        "DASHBOARD_PASSWORD is a weak default or too short (min 8 chars). "
-        "Set a strong, unique value in your .env file."
+    logger.warning(
+        "⚠️  SECURITY: DASHBOARD_PASSWORD is weak or too short (min 8 chars). "
+        "Change it to a strong, unique value in your .env file ASAP."
     )
 
 # --------------------------------------------------

@@ -323,10 +323,33 @@ class StateManager:
         conn = self._connect()
         try:
             if strategy_name and archived_at:
-                cursor = conn.execute(
-                    "DELETE FROM completed_monitor_history WHERE strategy_name = ? AND archived_at = ?",
-                    (strategy_name, archived_at),
-                )
+                # The archived_at DB column is stored as a Unix timestamp float.
+                # The frontend passes back an ISO-string from the payload JSON
+                # (e.g. "2026-03-09T15:33:36.123456"). SQLite's type affinity
+                # rules mean a REAL column value never equals a TEXT literal,
+                # so the WHERE clause matched 0 rows every time.
+                # Convert the incoming value to float before comparing.
+                archived_at_float: Optional[float] = None
+                try:
+                    archived_at_float = float(archived_at)  # already a float string
+                except (ValueError, TypeError):
+                    pass
+                if archived_at_float is None:
+                    try:
+                        archived_at_float = datetime.fromisoformat(str(archived_at)).timestamp()
+                    except Exception:
+                        pass
+                if archived_at_float is not None:
+                    cursor = conn.execute(
+                        "DELETE FROM completed_monitor_history WHERE strategy_name = ? AND ABS(archived_at - ?) < 1.0",
+                        (strategy_name, archived_at_float),
+                    )
+                else:
+                    # Cannot parse archived_at; delete all entries for this strategy
+                    cursor = conn.execute(
+                        "DELETE FROM completed_monitor_history WHERE strategy_name = ?",
+                        (strategy_name,),
+                    )
             elif strategy_name:
                 cursor = conn.execute(
                     "DELETE FROM completed_monitor_history WHERE strategy_name = ?",

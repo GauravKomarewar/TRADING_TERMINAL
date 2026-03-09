@@ -712,6 +712,11 @@ html[data-theme="solar"] body::before {
       <div class="sidebar-nav-item" id="snav-performance" onclick="switchTabAndNav('performance',this)">
         <span class="sidebar-nav-icon">📊</span>Performance
       </div>
+      <!-- Close button — always tappable on mobile even if header is behind nav bar -->
+      <div class="sidebar-nav-item" onclick="toggleSidebar()" id="snav-close"
+           style="color:var(--muted);border-top:1px solid var(--border);margin-top:4px">
+        <span class="sidebar-nav-icon">✕</span>Close Panel
+      </div>
     </nav>
 
     <!-- Quick Stats -->

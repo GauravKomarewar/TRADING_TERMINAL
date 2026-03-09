@@ -367,6 +367,57 @@ class StrategyExecutorService:
         except Exception as e:
             logger.debug("Could not load completed monitor history from DB: %s", e)
 
+    def _ensure_strategy_chain(self, name: str, config: dict):
+        """Auto-load the option chain required by a strategy if not already active."""
+        sup = getattr(self.bot, "option_supervisor", None)
+        if sup is None:
+            logger.warning("No option_supervisor on bot — cannot auto-load chain for %s", name)
+            return
+
+        identity = config.get("identity", {}) or {}
+        exchange = str(identity.get("exchange", "NFO")).strip().upper()
+        symbol = str(identity.get("underlying", "")).strip().upper()
+        if not symbol:
+            return
+
+        # Determine the expiry the strategy needs
+        db_file = str(identity.get("db_file") or (config.get("market_data", {}) or {}).get("db_file") or "").strip()
+        expiry = None
+        if db_file:
+            m = _DB_FILE_EXPIRY_RE.match(db_file)
+            if m:
+                expiry = m.group(1)
+
+        if not expiry:
+            # Try resolving from MarketReader's expiry mode (reads existing DB files)
+            # If no DB exists yet, fall back to ScriptMaster expiry lookup
+            try:
+                from scripts.scriptmaster import options_expiry as sm_options_expiry
+                expiries = sm_options_expiry(symbol, exchange) or []
+                if expiries:
+                    expiry = expiries[0]  # nearest expiry
+                    logger.info("Strategy %s: resolved expiry %s from ScriptMaster for %s:%s", name, expiry, exchange, symbol)
+            except Exception as e:
+                logger.warning("Strategy %s: ScriptMaster expiry lookup failed for %s:%s: %s", name, exchange, symbol, e)
+
+        if not expiry:
+            logger.warning("Strategy %s: could not determine expiry, skipping auto-load", name)
+            return
+
+        key = f"{exchange}:{symbol}:{expiry}"
+        # Check if already active
+        with sup._lock:
+            if key in sup._chains:
+                logger.debug("Strategy %s: chain %s already active", name, key)
+                return
+
+        logger.info("Strategy %s: auto-loading option chain %s", name, key)
+        ok = sup.ensure_chain(exchange=exchange, symbol=symbol, expiry=expiry, source="strategy")
+        if ok:
+            logger.info("Strategy %s: ✅ chain %s loaded successfully", name, key)
+        else:
+            logger.error("Strategy %s: ❌ failed to auto-load chain %s", name, key)
+
     def register_strategy(self, name: str, config_path: str):
         """Register a strategy with the service."""
         with self._lock:
@@ -375,6 +426,10 @@ class StrategyExecutorService:
             # Load config – assume it's valid (validation should be done by caller)
             with open(config_path, 'r') as f:
                 config = json.load(f)
+
+            # Auto-load required option chain if not already active
+            self._ensure_strategy_chain(name, config)
+
             self._strategies[name] = config
             # Create per‑strategy executor
             executor = PerStrategyExecutor(

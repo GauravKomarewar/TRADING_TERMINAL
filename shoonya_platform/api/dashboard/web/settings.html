@@ -48,6 +48,9 @@
         .chain-table tr:hover td{background:rgba(59,130,246,.04)}
         .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
         .badge-live{background:rgba(16,185,129,.12);color:var(--success)}
+        .badge-user{background:rgba(59,130,246,.12);color:var(--primary)}
+        .badge-strategy{background:rgba(168,85,247,.12);color:#a855f7}
+        .badge-bootstrap{background:rgba(107,114,128,.15);color:var(--muted)}
         .empty-msg{text-align:center;padding:24px;color:var(--muted);font-size:13px}
 
         /* ── Health cards ── */
@@ -63,6 +66,26 @@
         .toast.show{opacity:1;transform:translateY(0)}
         .toast.success{background:#059669}
         .toast.error{background:#dc2626}
+
+        /* ── Mobile responsive ── */
+        @media (max-width: 640px) {
+            body{padding:72px 10px 24px}
+            h1{font-size:20px;margin-bottom:16px}
+            .section{padding:14px}
+            .chain-controls{flex-direction:column;align-items:stretch}
+            .chain-controls .field{width:100%}
+            .chain-controls select,.chain-controls input{width:100%;min-width:0}
+            .chain-controls .btn{width:100%;justify-content:center}
+            .chain-table{font-size:12px}
+            .chain-table th,.chain-table td{padding:8px 6px}
+            .chain-table .hide-mobile{display:none}
+            .health-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+            .health-card{padding:10px}
+            .health-value{font-size:15px}
+            .theme-grid{grid-template-columns:repeat(3,1fr);gap:8px}
+            .theme-card{padding:10px 8px}
+            .theme-swatch-lg{width:36px;height:36px}
+        }
     </style>
 </head>
 <body data-page="settings">
@@ -389,17 +412,21 @@ async function refreshChains() {
         }
 
         let html = '<table class="chain-table"><thead><tr>' +
-            '<th>Exchange</th><th>Symbol</th><th>Expiry</th><th>Uptime</th><th>Status</th><th></th>' +
+            '<th>Exchange</th><th>Symbol</th><th>Expiry</th><th>Source</th><th class="hide-mobile">Uptime</th><th>Status</th><th></th>' +
             '</tr></thead><tbody>';
 
         chains.forEach(c => {
             const mins = Math.floor(c.uptime_seconds / 60);
             const upStr = mins < 60 ? mins + 'm' : Math.floor(mins/60) + 'h ' + (mins%60) + 'm';
+            const src = c.source || 'unknown';
+            const srcBadge = src === 'user' ? 'badge-user' : src === 'strategy' ? 'badge-strategy' : 'badge-bootstrap';
+            const srcLabel = src === 'user' ? '👤 User' : src === 'strategy' ? '🤖 Strategy' : src === 'bootstrap' ? '⚙ Default' : src;
             html += '<tr>' +
                 '<td>' + esc(c.exchange) + '</td>' +
                 '<td style="font-weight:600">' + esc(c.symbol) + '</td>' +
                 '<td>' + esc(c.expiry) + '</td>' +
-                '<td style="font-variant-numeric:tabular-nums">' + upStr + '</td>' +
+                '<td><span class="badge ' + srcBadge + '">' + srcLabel + '</span></td>' +
+                '<td class="hide-mobile" style="font-variant-numeric:tabular-nums">' + upStr + '</td>' +
                 '<td><span class="badge badge-live">LIVE</span></td>' +
                 '<td><button class="btn btn-danger btn-sm btn-unload" data-chain-key="' + esc(c.key) + '">Unload</button></td>' +
                 '</tr>';

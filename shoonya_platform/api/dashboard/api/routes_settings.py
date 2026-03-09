@@ -165,7 +165,7 @@ def load_chain(
             raise HTTPException(status_code=400, detail="strike_gap must be a positive integer")
 
     sup = _get_supervisor(ctx)
-    ok = sup.ensure_chain(exchange=exchange, symbol=symbol, expiry=expiry)
+    ok = sup.ensure_chain(exchange=exchange, symbol=symbol, expiry=expiry, source="user")
     if not ok:
         raise HTTPException(status_code=500, detail=f"Failed to start chain {exchange}:{symbol}:{expiry}")
 

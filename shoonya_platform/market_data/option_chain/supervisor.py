@@ -293,7 +293,7 @@ class OptionChainSupervisor:
                         failed += 1
                         continue
 
-                    if self._start_chain(exchange, symbol, expiry):
+                    if self._start_chain(exchange, symbol, expiry, source="bootstrap"):
                         time.sleep(0.5)  # 500ms between chain startups
                         successful += 1
                     else:
@@ -327,6 +327,7 @@ class OptionChainSupervisor:
         symbol: str, 
         expiry: str,
         retry: bool = True,
+        source: str = "user",
     ) -> bool:
         key = f"{exchange}:{symbol}:{expiry}"
 
@@ -373,6 +374,7 @@ class OptionChainSupervisor:
                             "db_path": db_path,
                             "start_time": time.time(),
                             "last_health_check": time.time(),
+                            "source": source,
                         }
                         self._failed_chains.pop(key, None)
                 except Exception:
@@ -398,6 +400,15 @@ class OptionChainSupervisor:
                             self._failed_chains[key] = (time.time(), count + 1)
                         else:
                             self._failed_chains[key] = (time.time(), 1)
+                    # Clean up orphaned DB file from failed chain start
+                    db_path = DB_BASE_DIR / f"{exchange}_{symbol}_{expiry}.sqlite"
+                    for suffix in ("", "-wal", "-shm"):
+                        p = Path(str(db_path) + suffix)
+                        try:
+                            if p.exists():
+                                p.unlink()
+                        except Exception:
+                            pass
                     logger.error("❌ Chain failed after %d attempts | %s", max_attempts, key)
                     return False
 
@@ -412,16 +423,20 @@ class OptionChainSupervisor:
         exchange: str,
         symbol: str,
         expiry: str,
+        source: str = "user",
     ) -> bool:
         """
         🔥 IMPROVED: Ensure an option chain exists (with retry).
         
         Safe to call repeatedly.
         
+        Args:
+            source: Who requested this chain — 'user', 'strategy', 'bootstrap'
+        
         Returns:
             True if chain exists or was started, False otherwise
         """
-        return self._start_chain(exchange, symbol, expiry, retry=True)
+        return self._start_chain(exchange, symbol, expiry, retry=True, source=source)
 
     # --------------------------------------------------
     # 🔥 NEW: FEED RECOVERY
@@ -1002,6 +1017,7 @@ class OptionChainSupervisor:
                 "expiry": expiry,
                 "uptime_seconds": round(uptime, 1),
                 "db_path": str(bundle.get("db_path", "")),
+                "source": bundle.get("source", "unknown"),
             })
         return result
 

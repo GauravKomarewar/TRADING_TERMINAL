@@ -27,6 +27,25 @@ canvas{width:100%;height:280px;display:block;border:1px solid var(--border);bord
 .status{margin-bottom:8px;color:var(--muted);font-size:11px}
 .history-box{margin-top:10px}
 @media (max-width:1080px){.charts{grid-template-columns:1fr}}
+@media (max-width:768px){
+  main{padding:10px}
+  .toolbar{gap:6px}
+  .sel,.oa-btn{padding:6px 8px;font-size:12px}
+  .grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+  .v{font-size:15px}
+  canvas{height:220px}
+}
+@media (max-width:480px){
+  main{padding:8px}
+  .toolbar{flex-direction:column;align-items:stretch}
+  .sel,.oa-btn{width:100%}
+  .grid{grid-template-columns:repeat(2,1fr);gap:6px}
+  .card{padding:8px}
+  .v{font-size:14px}
+  canvas{height:180px}
+  .chart{padding:8px}
+  .chart h3{font-size:12px}
+}
 </style>
 </head>
 <body data-page="option-analytics">

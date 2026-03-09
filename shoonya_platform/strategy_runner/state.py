@@ -116,19 +116,19 @@ class LegState:
 
     @property
     def abs_delta(self) -> float:
-        return abs(self.delta)
+        return abs(self.delta or 0.0)
 
     @property
     def abs_gamma(self) -> float:
-        return abs(self.gamma)
+        return abs(self.gamma or 0.0)
 
     @property
     def abs_theta(self) -> float:
-        return abs(self.theta)
+        return abs(self.theta or 0.0)
 
     @property
     def abs_vega(self) -> float:
-        return abs(self.vega)
+        return abs(self.vega or 0.0)
 
    
 @dataclass
@@ -203,7 +203,7 @@ class StrategyState:
     def net_delta(self) -> float:
         if self._net_delta_override is not None:
             return self._net_delta_override
-        return sum(leg.delta for leg in self.legs.values() if leg.is_active)
+        return sum((leg.delta or 0.0) for leg in self.legs.values() if leg.is_active)
 
     @net_delta.setter
     def net_delta(self, value: float):
@@ -213,7 +213,7 @@ class StrategyState:
     def delta_diff(self) -> float:
         ce = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.CE), None)
         pe = next((leg for leg in self.legs.values() if leg.is_active and leg.option_type == OptionType.PE), None)
-        return (ce.delta if ce else 0.0) - (pe.delta if pe else 0.0)
+        return ((ce.delta or 0.0) if ce else 0.0) - ((pe.delta or 0.0) if pe else 0.0)
 
     @property
     def portfolio_delta(self) -> float:
@@ -372,15 +372,15 @@ class StrategyState:
     # New computed properties
     @property
     def portfolio_gamma(self) -> float:
-        return sum(leg.gamma for leg in self.legs.values() if leg.is_active)
+        return sum((leg.gamma or 0.0) for leg in self.legs.values() if leg.is_active)
 
     @property
     def portfolio_theta(self) -> float:
-        return sum(leg.theta for leg in self.legs.values() if leg.is_active)
+        return sum((leg.theta or 0.0) for leg in self.legs.values() if leg.is_active)
 
     @property
     def portfolio_vega(self) -> float:
-        return sum(leg.vega for leg in self.legs.values() if leg.is_active)
+        return sum((leg.vega or 0.0) for leg in self.legs.values() if leg.is_active)
 
     @property
     def combined_pnl_pct(self) -> float:

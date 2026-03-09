@@ -1594,14 +1594,14 @@ class PerStrategyExecutor:
                     continue
                 opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, leg.expiry)
                 if opt_data:
-                    leg.ltp = opt_data.get("ltp", leg.ltp)
-                    leg.delta = opt_data.get("delta", leg.delta)
-                    leg.gamma = opt_data.get("gamma", leg.gamma)
-                    leg.theta = opt_data.get("theta", leg.theta)
-                    leg.vega = opt_data.get("vega", leg.vega)
-                    leg.iv = opt_data.get("iv", leg.iv)
-                    leg.oi = opt_data.get("oi", leg.oi)
-                    leg.volume = opt_data.get("volume", leg.volume)
+                    leg.ltp = opt_data.get("ltp") or leg.ltp
+                    leg.delta = opt_data.get("delta") if opt_data.get("delta") is not None else leg.delta
+                    leg.gamma = opt_data.get("gamma") if opt_data.get("gamma") is not None else leg.gamma
+                    leg.theta = opt_data.get("theta") if opt_data.get("theta") is not None else leg.theta
+                    leg.vega = opt_data.get("vega") if opt_data.get("vega") is not None else leg.vega
+                    leg.iv = opt_data.get("iv") if opt_data.get("iv") is not None else leg.iv
+                    leg.oi = opt_data.get("oi") or leg.oi
+                    leg.volume = opt_data.get("volume") or leg.volume
             # For futures legs, we could update via a different method, but not implemented here
 
         # ✅ BUG-001 FIX: Record PnL snapshots for all active filled legs

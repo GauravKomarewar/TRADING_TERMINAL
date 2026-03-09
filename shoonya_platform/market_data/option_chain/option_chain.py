@@ -1310,18 +1310,36 @@ def _prepare_greeks_df(oc) -> pd.DataFrame:
 
     return pivot
 
+
+# ============================================================================
+# EXCHANGE-SPECIFIC GREEK PARAMETERS
+# ============================================================================
+# RBI repo rate as of Mar 2026: ~6.0%.  Use 91-day T-bill yield as proxy.
+# Dividend yield: NIFTY ~1.2%, BANKNIFTY ~0.8%, MCX commodities = 0.
+_EXCHANGE_GREEK_DEFAULTS: Dict[str, Dict[str, float]] = {
+    "NFO": {"risk_free_rate": 0.065, "dividend_yield": 0.012},
+    "BFO": {"risk_free_rate": 0.065, "dividend_yield": 0.012},
+    "MCX": {"risk_free_rate": 0.065, "dividend_yield": 0.0},
+    "NSE": {"risk_free_rate": 0.065, "dividend_yield": 0.012},
+}
+
+
 def calculate_greeks(
     *,
     df: pd.DataFrame,
     spot_price: float,
     expiry: str,
     exchange: str,
-    risk_free_rate: float = 0.066,
+    risk_free_rate: float | None = None,
+    dividend_yield: float | None = None,
     config: Optional[GreekConfig] = None,
 ) -> pd.DataFrame:
     """
     Calculate option Greeks on OptionChainData-derived dataframe.
-    Requires dataframe returned by _prepare_greeks_df()
+
+    Uses exchange-specific risk-free rate and dividend yield when not
+    explicitly supplied.  MCX commodities use q=0 (no dividend);
+    NFO/BFO equity indices use q≈1.2%.
     """
 
     if config is None:
@@ -1329,6 +1347,14 @@ def calculate_greeks(
 
     if spot_price <= 0:
         raise ValueError("Invalid spot price")
+
+    # ── Resolve exchange-specific parameters ──────────────────────────
+    _defaults = _EXCHANGE_GREEK_DEFAULTS.get(exchange, _EXCHANGE_GREEK_DEFAULTS["NFO"])
+    if risk_free_rate is None:
+        risk_free_rate = _defaults["risk_free_rate"]
+    if dividend_yield is None:
+        dividend_yield = _defaults["dividend_yield"]
+    q = dividend_yield
 
     market_close = "23:30" if exchange == "MCX" else "15:30"
     expiry_norm = _normalize_expiry_for_greeks(expiry)
@@ -1373,7 +1399,8 @@ def calculate_greeks(
 
             try:
                 iv_raw = implied_volatility(
-                    price, spot_price, strike, T, risk_free_rate, opt
+                    price, spot_price, strike, T, risk_free_rate, opt,
+                    q=q,
                 )
                 sigma = iv_raw / 100 if iv_raw > 1 else iv_raw
 
@@ -1387,6 +1414,7 @@ def calculate_greeks(
                     r=risk_free_rate,
                     sigma=sigma,
                     opt_type=opt,
+                    q=q,
                 )
 
                 ivs[i] = iv_raw

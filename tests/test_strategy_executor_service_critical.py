@@ -268,7 +268,9 @@ def test_strategy_leg_monitor_snapshot_exposes_live_leg_metrics():
         assert demo["mode"] == "MOCK"
         assert demo["active_legs"] == 1
         assert demo["closed_legs"] == 1
-        assert float(demo["realized_pnl"]) == 123.45
+        # realized_pnl is computed from monitor leg transitions only
+        # (cumulative_daily_pnl is NOT added to avoid double-counting)
+        assert float(demo["realized_pnl"]) == 0.0
         assert float(demo["unrealized_pnl"]) == float(active_leg.pnl)
 
         rows = demo["legs"]

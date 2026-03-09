@@ -83,6 +83,7 @@ from shoonya_platform.api.dashboard.services.broker_service import BrokerView
 
 # ---------------------- option data writer ----------------
 from shoonya_platform.market_data.option_chain.supervisor import OptionChainSupervisor
+from shoonya_platform.market_data.option_chain.fyers_chain_service import FyersChainService
 from shoonya_platform.market_data.feeds.live_feed import start_live_feed
 from shoonya_platform.market_data.feeds import index_tokens_subscriber
 
@@ -321,6 +322,18 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
             daemon=False,
         )
         self._option_supervisor_thread.start()
+
+        # Fyers parallel data pipeline (enrichment + fallback)
+        fyers_enabled = os.getenv("FYERS_CHAIN_ENABLED", "1") == "1"
+        self.fyers_chain_service = FyersChainService(
+            self.option_supervisor,
+            enabled=fyers_enabled,
+        )
+        if fyers_enabled:
+            try:
+                self.fyers_chain_service.start()
+            except Exception:
+                logger.exception("FyersChainService startup failed — continuing without it")
 
         # Strategy executor service
         executor_db = str(

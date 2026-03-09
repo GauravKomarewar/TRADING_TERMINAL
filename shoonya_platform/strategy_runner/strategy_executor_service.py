@@ -651,12 +651,11 @@ class StrategyExecutorService:
                 closed_legs = len([r for r in legs_payload if str(r.get("status", "")).upper() == "CLOSED"])
                 unrealized_pnl = sum(float(r.get("unrealized_pnl", 0) or 0) for r in legs_payload if str(r.get("status", "")).upper() == "ACTIVE")
                 realized_leg_pnl = sum(float(r.get("realized_pnl", 0) or 0) for r in legs_payload if str(r.get("status", "")).upper() == "CLOSED")
-                realized_pnl = float(getattr(state, "cumulative_daily_pnl", 0) or 0.0)
                 snapshot[strategy_name] = {
                     "mode": mode,
                     "active_legs": active_legs,
                     "closed_legs": closed_legs,
-                    "realized_pnl": float(realized_pnl + realized_leg_pnl),
+                    "realized_pnl": float(realized_leg_pnl),
                     "unrealized_pnl": float(unrealized_pnl),
                     "adjustments_today": int(getattr(state, "adjustments_today", 0) or 0),
                     "lifetime_adjustments": int(getattr(state, "lifetime_adjustments", 0) or 0),
@@ -678,6 +677,15 @@ class StrategyExecutorService:
         Persist a completed strategy monitor snapshot before unregistering it.
         Always saves a record, even for short/no-trade runs, so history is never lost.
         """
+        # Force-refresh monitor cache from current state so that any
+        # legs that were deactivated (e.g. by exit) since the last
+        # polling snapshot are properly captured as CLOSED with their
+        # final PnL values.
+        try:
+            self.get_strategy_leg_monitor_snapshot()
+        except Exception:
+            pass
+
         with self._lock:
             cache = dict((self._monitor_cache.get(strategy_name) or {}))
             state = self._exec_states.get(strategy_name)
@@ -694,8 +702,7 @@ class StrategyExecutorService:
             closed_rows = [r for r in legs_payload if str(r.get("status", "")).upper() == "CLOSED"]
             unrealized_pnl = sum(float(r.get("unrealized_pnl", 0) or 0) for r in active_rows)
             realized_leg_pnl = sum(float(r.get("realized_pnl", 0) or 0) for r in closed_rows)
-            realized_state_pnl = float(getattr(state, "cumulative_daily_pnl", 0) or 0.0) if state else 0.0
-            realized_pnl = float(realized_state_pnl + realized_leg_pnl)
+            realized_pnl = float(realized_leg_pnl)
 
             opened_ts_all: List[float] = []
             closed_ts_all: List[float] = []
@@ -759,6 +766,17 @@ class StrategyExecutorService:
                 self.state_mgr.clear_monitor_snapshot(strategy_name)
             except Exception as e:
                 logger.debug("Could not persist completed monitor history for %s: %s", strategy_name, e)
+
+            # Reset cumulative counters in the persisted state file so that
+            # the next run of this strategy starts with a clean slate.
+            if state is not None:
+                state.cumulative_daily_pnl = 0.0
+                executor = self._executors.get(strategy_name)
+                if executor and hasattr(executor, "persistence") and hasattr(executor, "state_file"):
+                    try:
+                        executor.persistence.save(str(executor.state_file), state)
+                    except Exception:
+                        pass
 
     def get_completed_strategy_monitor_history(self, limit: int = 20) -> List[Dict[str, Any]]:
         normalized_limit = max(1, int(limit or 20))
@@ -1580,6 +1598,13 @@ class PerStrategyExecutor:
         """Check if entry is allowed and return explicit reason."""
         if self.state.entered_today:
             return False, "already_entered_today"
+
+        # Wait for option chain data to become available (spot & ATM must be non-zero).
+        spot = getattr(self.state, "spot_price", 0) or 0
+        atm = getattr(self.state, "atm_strike", 0) or 0
+        if spot <= 0 or atm <= 0:
+            return False, "waiting_for_chain_data"
+
         timing = self.config.get("timing", {})
         entry_start = timing.get("entry_window_start", "09:15")
         entry_end = timing.get("entry_window_end", "14:00")

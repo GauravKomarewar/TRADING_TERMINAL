@@ -203,3 +203,17 @@ def get_supervisor_health(ctx: dict = Depends(require_dashboard_auth)):
     """Return supervisor health report."""
     sup = _get_supervisor(ctx)
     return sup.get_health_report()
+
+
+# ── Fyers pipeline health ────────────────────────────────────────────
+
+@sub_router.get("/settings/fyers-pipeline/status")
+def get_fyers_pipeline_status(ctx: dict = Depends(require_dashboard_auth)):
+    """Return Fyers parallel data pipeline telemetry."""
+    bot = ctx.get("bot")
+    if bot is None:
+        raise HTTPException(status_code=503, detail="Trading bot unavailable")
+    svc = getattr(bot, "fyers_chain_service", None)
+    if svc is None:
+        return {"enabled": False, "message": "FyersChainService not initialized"}
+    return {"enabled": True, **svc.get_stats()}

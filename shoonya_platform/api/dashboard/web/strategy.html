@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Strategy Manager | Shoonya Platform</title>
 <link rel="stylesheet" href="/dashboard/web/styles/common.css">
 <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
@@ -530,7 +530,11 @@ select.form-ctrl{appearance:auto}
 
 /* ====== RESPONSIVE ====== */
 @media(max-width:900px){
-  .sidebar{position:fixed;left:0;top:0;z-index:10100;height:100vh;padding-top:0}
+  /* position:fixed makes sidebar overlay the full screen on mobile.
+     padding-top pushes content below the device status bar / notch
+     so the "Shoonya" logo and hide button are always visible. */
+  .sidebar{position:fixed;left:0;top:0;z-index:10100;height:100vh;
+           padding-top:env(safe-area-inset-top,0px)}
   .sidebar.hidden{transform:translateX(calc(-1 * var(--sidebar-w)));margin-left:0}
   .sidebar-open-btn{display:flex!important}
   .kpi-strip{grid-template-columns:repeat(2,1fr)}

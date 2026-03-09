@@ -1033,7 +1033,18 @@ class OptionChainSupervisor:
         except Exception as e:
             logger.error("Error closing store for %s: %s", key, e)
 
-        logger.info("🗑️ Removed chain %s", key)
+        # Delete the sqlite file and WAL/SHM companions
+        db_path = bundle.get("db_path")
+        if db_path:
+            for suffix in ("", "-wal", "-shm"):
+                p = Path(str(db_path) + suffix)
+                try:
+                    if p.exists():
+                        p.unlink()
+                except Exception as e:
+                    logger.error("Error deleting %s: %s", p, e)
+
+        logger.info("🗑️ Removed chain %s (db deleted)", key)
         return True
 
     # --------------------------------------------------

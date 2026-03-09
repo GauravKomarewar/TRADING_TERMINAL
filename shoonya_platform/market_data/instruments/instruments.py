@@ -130,6 +130,10 @@ MCX_STRIKE_GAPS = {
     "SILVERM": 100,
 }
 
+# Runtime overrides set via dashboard custom chain loader.
+# Key: "EXCHANGE:SYMBOL", Value: int gap.
+STRIKE_GAP_OVERRIDES: Dict[str, int] = {}
+
 
 # =============================================================================
 # CORE SCRIPTMASTER HELPERS
@@ -376,10 +380,15 @@ def _derive_strike_gap(symbol: str, exchange: str) -> int:
 def get_strike_gap(symbol: str, exchange: str) -> int:
     """
     Get strike gap for a symbol.
-    Falls back to auto-derivation from ScriptMaster if not in hardcoded maps.
+    Checks runtime overrides first, then hardcoded maps, then auto-derives.
     """
     symbol = symbol.upper()
     exchange = exchange.upper()
+
+    # Check runtime override (set by dashboard custom loader)
+    override_key = f"{exchange}:{symbol}"
+    if override_key in STRIKE_GAP_OVERRIDES:
+        return STRIKE_GAP_OVERRIDES[override_key]
 
     if exchange == "MCX":
         if symbol in MCX_STRIKE_GAPS:

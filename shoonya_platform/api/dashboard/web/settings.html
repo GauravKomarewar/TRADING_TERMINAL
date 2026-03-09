@@ -122,6 +122,11 @@
                 <label>Expiry</label>
                 <select id="cExpiry"></select>
             </div>
+            <div class="field" id="cGapWrap" style="display:none">
+                <label>Strike Gap</label>
+                <input id="cGap" type="number" min="1" step="1" placeholder="e.g. 10, 50, 100" style="width:90px">
+                <span id="cGapHint" style="font-size:11px;color:var(--muted);margin-left:4px"></span>
+            </div>
             <button class="btn btn-primary" id="btnCustomLoad" disabled style="display:none">Load Chain</button>
         </div>
 
@@ -297,6 +302,9 @@ const cExchange = document.getElementById('cExchange');
 const cSymbol   = document.getElementById('cSymbol');
 const cExpiry   = document.getElementById('cExpiry');
 const cExpiryWrap = document.getElementById('cExpiryWrap');
+const cGap      = document.getElementById('cGap');
+const cGapWrap  = document.getElementById('cGapWrap');
+const cGapHint  = document.getElementById('cGapHint');
 const btnLookup = document.getElementById('btnLookup');
 const btnCustomLoad = document.getElementById('btnCustomLoad');
 
@@ -310,15 +318,25 @@ btnLookup.addEventListener('click', async () => {
         const data = await fetchJSON(API + '/settings/option-chains/search-expiries?exchange=' + encodeURIComponent(exchange) + '&symbol=' + encodeURIComponent(symbol));
         if (!data) return;
         const expiries = data.expiries || [];
-        if (!expiries.length) { toast('No option expiries found for ' + exchange + ':' + symbol, 'error'); cExpiryWrap.style.display = 'none'; btnCustomLoad.style.display = 'none'; return; }
+        if (!expiries.length) { toast('No option expiries found for ' + exchange + ':' + symbol, 'error'); cExpiryWrap.style.display = 'none'; cGapWrap.style.display = 'none'; btnCustomLoad.style.display = 'none'; return; }
         cExpiry.innerHTML = expiries.map(e => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join('');
         cExpiryWrap.style.display = '';
+        /* Populate strike gap */
+        if (data.strike_gap) {
+            cGap.value = data.strike_gap;
+            cGapHint.textContent = data.gap_source === 'auto' ? '(auto-detected)' : data.gap_source === 'known' ? '(known)' : '';
+        } else {
+            cGap.value = '';
+            cGapHint.textContent = '(could not detect — enter manually)';
+        }
+        cGapWrap.style.display = '';
         btnCustomLoad.style.display = '';
         btnCustomLoad.disabled = false;
         toast(expiries.length + ' expiries found', 'success');
     } catch(e) {
         toast('Lookup failed: ' + e.message, 'error');
         cExpiryWrap.style.display = 'none';
+        cGapWrap.style.display = 'none';
         btnCustomLoad.style.display = 'none';
     } finally {
         btnLookup.disabled = false;
@@ -332,20 +350,22 @@ btnCustomLoad.addEventListener('click', async () => {
     const exchange = cExchange.value;
     const symbol = (cSymbol.value || '').trim().toUpperCase();
     const expiry = cExpiry.value;
+    const gapVal = parseInt(cGap.value, 10);
     if (!exchange || !symbol || !expiry) return;
+    if (!gapVal || gapVal <= 0) { toast('Enter a valid strike gap (positive integer)', 'error'); cGap.focus(); return; }
     btnCustomLoad.disabled = true;
     btnCustomLoad.textContent = 'Loading…';
     try {
         await fetchJSON(API + '/settings/option-chains/load', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ exchange, symbol, expiry }),
+            body: JSON.stringify({ exchange, symbol, expiry, strike_gap: gapVal }),
         });
-        toast('Chain loaded: ' + exchange + ':' + symbol + ':' + expiry, 'success');
+        toast('Chain loaded: ' + exchange + ':' + symbol + ':' + expiry + ' (gap=' + gapVal + ')', 'success');
         refreshChains();
         refreshHealth();
     } catch(e) {
-        toast('Failed: ' + e.message, 'error');
+        toast('Failed to load chain — check strike gap and try again. ' + e.message, 'error');
     } finally {
         btnCustomLoad.disabled = false;
         btnCustomLoad.textContent = 'Load Chain';

@@ -7,7 +7,15 @@ import logging
 import re
 
 from shoonya_platform.api.dashboard.deps import require_dashboard_auth
-from shoonya_platform.market_data.instruments.instruments import get_expiry
+from shoonya_platform.market_data.instruments.instruments import (
+    get_expiry,
+    get_strike_gap,
+    _derive_strike_gap,
+    STRIKE_GAP_OVERRIDES,
+    EQUITY_STRIKE_GAPS,
+    MCX_STRIKE_GAPS,
+    FNOError,
+)
 
 logger = logging.getLogger("DASHBOARD.SETTINGS.API")
 
@@ -49,7 +57,34 @@ def search_symbol_expiries(
     except Exception:
         expiries = []
 
-    return {"exchange": exchange, "symbol": symbol, "expiries": expiries}
+    # Auto-derive suggested strike gap
+    suggested_gap = None
+    gap_source = None
+    if expiries:
+        try:
+            key = f"{exchange}:{symbol}"
+            if key in STRIKE_GAP_OVERRIDES:
+                suggested_gap = STRIKE_GAP_OVERRIDES[key]
+                gap_source = "override"
+            elif exchange == "MCX" and symbol in MCX_STRIKE_GAPS:
+                suggested_gap = MCX_STRIKE_GAPS[symbol]
+                gap_source = "known"
+            elif symbol in EQUITY_STRIKE_GAPS:
+                suggested_gap = EQUITY_STRIKE_GAPS[symbol]
+                gap_source = "known"
+            else:
+                suggested_gap = _derive_strike_gap(symbol, exchange)
+                gap_source = "auto"
+        except Exception:
+            pass
+
+    return {
+        "exchange": exchange,
+        "symbol": symbol,
+        "expiries": expiries,
+        "strike_gap": suggested_gap,
+        "gap_source": gap_source,
+    }
 
 
 # ── Available instruments (from supervisor defaults) ──────────────────
@@ -102,13 +137,14 @@ def load_chain(
     """
     Load an option chain into the supervisor.
 
-    Body: {"exchange": "NFO", "symbol": "NIFTY", "expiry": "10-MAR-2026"}
+    Body: {"exchange": "NFO", "symbol": "NIFTY", "expiry": "10-MAR-2026", "strike_gap": 50}
     """
     _EXPIRY_RE = re.compile(r"^\d{1,2}-[A-Z]{3}-\d{4}$")
     try:
         exchange = str(payload.get("exchange") or "").strip().upper()
         symbol = str(payload.get("symbol") or "").strip().upper()
         expiry = str(payload.get("expiry") or "").strip()
+        raw_gap = payload.get("strike_gap")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid field types")
 
@@ -116,6 +152,17 @@ def load_chain(
         raise HTTPException(status_code=400, detail="exchange, symbol, and expiry are required")
     if not _EXPIRY_RE.match(expiry):
         raise HTTPException(status_code=400, detail=f"Invalid expiry format '{expiry}'. Expected DD-MMM-YYYY")
+
+    # Apply strike-gap override if provided
+    if raw_gap is not None:
+        try:
+            gap_val = int(float(raw_gap))
+            if gap_val <= 0:
+                raise ValueError
+            STRIKE_GAP_OVERRIDES[f"{exchange}:{symbol}"] = gap_val
+            logger.info("Strike gap override set: %s:%s = %d", exchange, symbol, gap_val)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="strike_gap must be a positive integer")
 
     sup = _get_supervisor(ctx)
     ok = sup.ensure_chain(exchange=exchange, symbol=symbol, expiry=expiry)

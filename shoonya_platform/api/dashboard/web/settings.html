@@ -277,7 +277,7 @@ async function refreshChains() {
                 '<td>' + esc(c.expiry) + '</td>' +
                 '<td style="font-variant-numeric:tabular-nums">' + upStr + '</td>' +
                 '<td><span class="badge badge-live">LIVE</span></td>' +
-                '<td><button class="btn btn-danger btn-sm" onclick="unloadChain(\'' + esc(c.key) + '\')">Unload</button></td>' +
+                '<td><button class="btn btn-danger btn-sm btn-unload" data-chain-key="' + esc(c.key) + '">Unload</button></td>' +
                 '</tr>';
         });
 
@@ -290,7 +290,16 @@ async function refreshChains() {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-window.unloadChain = async function(key) {
+/* Event delegation for unload buttons (avoids inline onclick / XSS) */
+chainTableWrap.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-unload');
+    if (!btn) return;
+    const key = btn.dataset.chainKey;
+    if (!key) return;
+    unloadChain(key);
+});
+
+async function unloadChain(key) {
     if (!confirm('Unload chain ' + key + '?')) return;
     try {
         await fetchJSON(API + '/settings/option-chains/unload', {
@@ -304,7 +313,7 @@ window.unloadChain = async function(key) {
     } catch(e) {
         toast('Failed: ' + e.message, 'error');
     }
-};
+}
 
 /* Supervisor health */
 const healthGrid = document.getElementById('healthGrid');

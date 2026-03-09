@@ -156,18 +156,24 @@ class FyersBrokerClient:
         """
         Enforce a sliding-window rate limit on API calls.
         Blocks (sleeps) until a call slot is available.
+        Thread-safe: uses self._lock to protect deque access.
         """
-        now = _time.monotonic()
-        # Purge timestamps outside the window
-        while self._api_call_times and self._api_call_times[0] <= now - self._RATE_LIMIT_WINDOW:
-            self._api_call_times.popleft()
-        if len(self._api_call_times) >= self._RATE_LIMIT_MAX_CALLS:
-            sleep_until = self._api_call_times[0] + self._RATE_LIMIT_WINDOW
-            delay = sleep_until - now
-            if delay > 0:
-                logger.debug("Fyers rate limit: sleeping %.3fs", delay)
-                _time.sleep(delay)
-        self._api_call_times.append(_time.monotonic())
+        with self._lock:
+            now = _time.monotonic()
+            # Purge timestamps outside the window
+            while self._api_call_times and self._api_call_times[0] <= now - self._RATE_LIMIT_WINDOW:
+                self._api_call_times.popleft()
+            if len(self._api_call_times) >= self._RATE_LIMIT_MAX_CALLS:
+                sleep_until = self._api_call_times[0] + self._RATE_LIMIT_WINDOW
+                delay = sleep_until - now
+            else:
+                delay = 0
+        # Sleep outside the lock to avoid blocking other threads
+        if delay > 0:
+            logger.debug("Fyers rate limit: sleeping %.3fs", delay)
+            _time.sleep(delay)
+        with self._lock:
+            self._api_call_times.append(_time.monotonic())
 
     # =========================================================================
     # Session management
@@ -434,8 +440,11 @@ class FyersBrokerClient:
         self._rate_limit()
         resp = self._fyers_client.fyers.positions()
         if not isinstance(resp, dict) or resp.get("s") != "ok":
+            self._consecutive_failures += 1
             logger.error("get_positions: bad Fyers response: %s", resp)
             raise RuntimeError(f"FYERS_API_ERROR: get_positions returned {resp}")
+        self._consecutive_failures = 0
+        self._last_successful_call = _time.monotonic()
         raw_list = resp.get("netPositions") or resp.get("positions", [])
         return [self._normalise_position(p) for p in (raw_list or [])]
 
@@ -450,7 +459,10 @@ class FyersBrokerClient:
         self._rate_limit()
         resp = self._fyers_client.fyers.funds()
         if not isinstance(resp, dict) or resp.get("s") != "ok":
+            self._consecutive_failures += 1
             raise RuntimeError(f"FYERS_API_ERROR: get_limits returned {resp}")
+        self._consecutive_failures = 0
+        self._last_successful_call = _time.monotonic()
         fund_limit = resp.get("fund_limit") or []
         # Fyers returns a list of {title, equityAmount} dicts
         lookup = {item.get("title", ""): item.get("equityAmount", 0.0)
@@ -474,7 +486,10 @@ class FyersBrokerClient:
         self._rate_limit()
         resp = self._fyers_client.fyers.orderbook()
         if not isinstance(resp, dict) or resp.get("s") != "ok":
+            self._consecutive_failures += 1
             raise RuntimeError(f"FYERS_API_ERROR: get_order_book returned {resp}")
+        self._consecutive_failures = 0
+        self._last_successful_call = _time.monotonic()
         raw_orders = resp.get("orderBook") or []
         return [self._normalise_order(o) for o in raw_orders]
 
@@ -661,8 +676,11 @@ class FyersBrokerClient:
         api_ok = False
         try:
             self._rate_limit()
-            resp = self._fyers_client.fyers.get_profile()
-            api_ok = isinstance(resp, dict) and resp.get("s") == "ok"
+            with self._lock:
+                fyers_obj = getattr(self._fyers_client, 'fyers', None)
+            if fyers_obj:
+                resp = fyers_obj.get_profile()
+                api_ok = isinstance(resp, dict) and resp.get("s") == "ok"
         except Exception as exc:
             logger.debug("health_check API test failed: %s", exc)
 

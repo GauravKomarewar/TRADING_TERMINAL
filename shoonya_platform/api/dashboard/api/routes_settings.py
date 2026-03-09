@@ -4,6 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from typing import Any, Dict, List
 import logging
+import re
 
 from shoonya_platform.api.dashboard.deps import require_dashboard_auth
 from shoonya_platform.market_data.instruments.instruments import get_expiry
@@ -40,7 +41,10 @@ def get_available_instruments(ctx: dict = Depends(require_dashboard_auth)):
         symbol = inst["symbol"]
         expiries = []
         for i in range(5):  # up to 5 nearest expiries
-            exp = get_expiry(exchange=exchange, symbol=symbol, kind="option", index=i)
+            try:
+                exp = get_expiry(exchange=exchange, symbol=symbol, kind="option", index=i)
+            except Exception:
+                break
             if exp:
                 expiries.append(exp)
         result.append({
@@ -73,12 +77,18 @@ def load_chain(
 
     Body: {"exchange": "NFO", "symbol": "NIFTY", "expiry": "10-MAR-2026"}
     """
-    exchange = (payload.get("exchange") or "").strip().upper()
-    symbol = (payload.get("symbol") or "").strip().upper()
-    expiry = (payload.get("expiry") or "").strip()
+    _EXPIRY_RE = re.compile(r"^\d{1,2}-[A-Z]{3}-\d{4}$")
+    try:
+        exchange = str(payload.get("exchange") or "").strip().upper()
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        expiry = str(payload.get("expiry") or "").strip()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid field types")
 
     if not exchange or not symbol or not expiry:
         raise HTTPException(status_code=400, detail="exchange, symbol, and expiry are required")
+    if not _EXPIRY_RE.match(expiry):
+        raise HTTPException(status_code=400, detail=f"Invalid expiry format '{expiry}'. Expected DD-MMM-YYYY")
 
     sup = _get_supervisor(ctx)
     ok = sup.ensure_chain(exchange=exchange, symbol=symbol, expiry=expiry)

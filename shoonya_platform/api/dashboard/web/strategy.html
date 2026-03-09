@@ -50,6 +50,8 @@ body::before{
 }
 .sidebar.hidden{transform:translateX(calc(-1 * var(--sidebar-w)));opacity:0;pointer-events:none;margin-left:calc(-1 * var(--sidebar-w));}
 .sidebar-header{
+  position:sticky;top:0;z-index:2;
+  background:rgba(5,9,24,0.98);backdrop-filter:blur(24px);
   padding:18px 16px 12px;
   border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;
@@ -530,9 +532,16 @@ select.form-ctrl{appearance:auto}
 
 /* ====== RESPONSIVE ====== */
 @media(max-width:900px){
-  /* position:fixed makes sidebar overlay the full screen on mobile.
-     padding-top pushes content below the device status bar / notch
-     so the "Shoonya" logo and hide button are always visible. */
+  /* layout.js injects global-ticker (z-index:10000) and app-header (z-index:9990)
+     as direct children of <body> (root stacking context).
+     .app-shell has z-index:1 which creates a STACKING CONTEXT, trapping the
+     sidebar inside it. The ticker (10000) > app-shell (1) in root context, so
+     the ticker paints over the entire sidebar including its header.
+     Fix: set z-index:auto to dissolve the stacking context — the sidebar's
+     own z-index:10100 is then evaluated in the root context and beats
+     the ticker (10000) and header (9990) correctly. */
+  .app-shell{z-index:auto}
+  /* Push sidebar content below device notch / status bar (iOS safe area) */
   .sidebar{position:fixed;left:0;top:0;z-index:10100;height:100vh;
            padding-top:env(safe-area-inset-top,0px)}
   .sidebar.hidden{transform:translateX(calc(-1 * var(--sidebar-w)));margin-left:0}

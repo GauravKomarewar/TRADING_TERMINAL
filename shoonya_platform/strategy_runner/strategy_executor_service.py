@@ -1237,6 +1237,7 @@ class PerStrategyExecutor:
         self._adjustment_block_until: Optional[datetime] = None
         self._adjustment_block_reason: str = ""
         self._adjustment_block_announced: bool = False
+        self._last_persist_at: Optional[datetime] = None
         self._last_adjustment_validation_alert_at: Optional[datetime] = None
         self._last_entry_skip_reason: str = ""
         self._last_entry_skip_log_at: Optional[datetime] = None
@@ -1363,8 +1364,12 @@ class PerStrategyExecutor:
                 except Exception as e:
                     logger.error(f"Broker reconciliation failed for {self.name}: {e}")
 
-        # Persist state periodically (every minute)
-        if now.second == 0:
+        # Persist state periodically (every ~30 seconds)
+        # NOTE: previous `now.second == 0` condition was fragile — the 2-second
+        # tick loop could stay on odd seconds and never hit 0.
+        elapsed = (now - self._last_persist_at).total_seconds() if self._last_persist_at else 999
+        if elapsed >= 30:
+            self._last_persist_at = now
             self.persistence.save(self.state, str(self.state_file))
 
     # ==================== NEW METHODS ====================
@@ -1689,6 +1694,12 @@ class PerStrategyExecutor:
             filled,
             pending,
         )
+
+        # Persist state immediately after entry so crash-recovery can find it
+        try:
+            self.persistence.save(self.state, str(self.state_file))
+        except Exception as _e:
+            logger.warning("State persist after entry failed for %s: %s", self.name, _e)
 
     def _extract_expiry_from_db_file(self, config: Dict[str, Any]) -> Optional[str]:
         """

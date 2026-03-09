@@ -348,22 +348,48 @@ def get_ltp(*, api_client, exchange: str, token: str) -> Optional[float]:
 # STRIKE HELPERS
 # =============================================================================
 
+def _derive_strike_gap(symbol: str, exchange: str) -> int:
+    """
+    Auto-derive strike gap from ScriptMaster option contracts.
+    Fetches all option records for the nearest expiry, extracts unique
+    strike prices, and returns the most common consecutive gap.
+    """
+    from collections import Counter
+
+    expiries = options_expiry(exchange=exchange, symbol=symbol)
+    if not expiries:
+        raise FNOError(f"No option expiries found for {symbol} on {exchange}")
+
+    opts = get_options(exchange=exchange, symbol=symbol, expiry=expiries[0])
+    strikes = sorted({float(o["StrikePrice"]) for o in opts if o.get("StrikePrice")})
+
+    if len(strikes) < 2:
+        raise FNOError(f"Not enough strikes to derive gap for {symbol} on {exchange}")
+
+    gaps = [round(strikes[i + 1] - strikes[i], 2) for i in range(len(strikes) - 1)]
+    gap = Counter(gaps).most_common(1)[0][0]
+    gap = int(gap) if gap == int(gap) else gap
+    logger.info("Auto-derived strike gap for %s (%s): %s", symbol, exchange, gap)
+    return gap
+
+
 def get_strike_gap(symbol: str, exchange: str) -> int:
     """
     Get strike gap for a symbol.
+    Falls back to auto-derivation from ScriptMaster if not in hardcoded maps.
     """
     symbol = symbol.upper()
     exchange = exchange.upper()
 
     if exchange == "MCX":
-        if symbol not in MCX_STRIKE_GAPS:
-            raise FNOError(f"MCX strike gap not defined for {symbol}")
-        return MCX_STRIKE_GAPS[symbol]
+        if symbol in MCX_STRIKE_GAPS:
+            return MCX_STRIKE_GAPS[symbol]
+        return _derive_strike_gap(symbol, exchange)
 
-    if symbol not in EQUITY_STRIKE_GAPS:
-        raise FNOError(f"Equity strike gap not defined for {symbol}")
+    if symbol in EQUITY_STRIKE_GAPS:
+        return EQUITY_STRIKE_GAPS[symbol]
 
-    return EQUITY_STRIKE_GAPS[symbol]
+    return _derive_strike_gap(symbol, exchange)
 
 
 def calculate_atm(price: float, gap: int, method: str = "round") -> Optional[int]:

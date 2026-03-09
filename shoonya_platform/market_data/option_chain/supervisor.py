@@ -981,6 +981,62 @@ class OptionChainSupervisor:
             return None
 
     # --------------------------------------------------
+    # PUBLIC: LIST / REMOVE CHAINS (SETTINGS API)
+    # --------------------------------------------------
+
+    def list_chains(self) -> List[Dict[str, Any]]:
+        """Return summary of every active chain."""
+        result = []
+        with self._lock:
+            items = list(self._chains.items())
+        for key, bundle in items:
+            parts = key.split(":", 2)
+            exchange = parts[0] if len(parts) > 0 else ""
+            symbol = parts[1] if len(parts) > 1 else ""
+            expiry = parts[2] if len(parts) > 2 else ""
+            uptime = time.time() - bundle.get("start_time", time.time())
+            result.append({
+                "key": key,
+                "exchange": exchange,
+                "symbol": symbol,
+                "expiry": expiry,
+                "uptime_seconds": round(uptime, 1),
+                "db_path": str(bundle.get("db_path", "")),
+            })
+        return result
+
+    def remove_chain(self, key: str) -> bool:
+        """
+        Stop and remove an active chain.
+
+        Args:
+            key: Chain key in format ``exchange:symbol:expiry``
+
+        Returns:
+            True if removed, False if not found.
+        """
+        with self._lock:
+            bundle = self._chains.pop(key, None)
+        if bundle is None:
+            logger.warning("remove_chain: key %s not found", key)
+            return False
+
+        # Clean up resources outside the lock
+        try:
+            oc = bundle.get("oc")
+            if oc and hasattr(oc, "cleanup"):
+                oc.cleanup()
+        except Exception as e:
+            logger.error("Error cleaning up chain %s: %s", key, e)
+        try:
+            bundle["store"].close()
+        except Exception as e:
+            logger.error("Error closing store for %s: %s", key, e)
+
+        logger.info("🗑️ Removed chain %s", key)
+        return True
+
+    # --------------------------------------------------
     # SHUTDOWN / CLEANUP
     # --------------------------------------------------
 

@@ -63,7 +63,13 @@ const PAGES = [
         id: 'diagnostics',
         label: 'Diagnostics',
         href: '/dashboard/web/diagnostics.html',
-        icon: 'ðŸ”'
+        icon: '🔍'
+    },
+    {
+        id: 'settings',
+        label: 'Settings',
+        href: '/dashboard/web/settings.html',
+        icon: '⚙️'
     }
     // Add more pages here as needed!
 ];

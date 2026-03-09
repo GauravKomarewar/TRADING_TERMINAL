@@ -22,6 +22,7 @@
         { id: 'strategy',     label: 'Strategy',      href: '/dashboard/web/strategy.html' },
         { id: 'strategy-logs',label: 'Strategy Logs', href: '/dashboard/web/strategy_logs.html' },
         { id: 'diagnostics',  label: 'Diagnostics',   href: '/dashboard/web/diagnostics.html' },
+        { id: 'settings',     label: 'Settings',      href: '/dashboard/web/settings.html' },
     ];
 
     // Check if pages-config.js is loaded and use it

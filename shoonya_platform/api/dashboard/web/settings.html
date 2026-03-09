@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Settings - Shoonya OMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/pages-config.js" defer></script>
+    <script src="/dashboard/web/shared/layout.js" defer></script>
+    <style>
+        :root{--bg:#0a0e13;--panel:#151b26;--panel-2:#1c2333;--border:#2d3548;--text:#f1f5f9;--muted:#94a3b8;--primary:#3b82f6;--success:#10b981;--danger:#ef4444;--warning:#f59e0b}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;background:var(--bg);color:var(--text);padding:92px 20px 40px;line-height:1.6}
+        main{max-width:960px;margin:0 auto}
+        h1{color:var(--primary);margin-bottom:24px;font-size:26px;font-weight:700}
+        .section{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:24px}
+        .section-title{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+
+        /* ── Theme picker ── */
+        .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+        .theme-card{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 12px;background:var(--panel-2);border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all .2s}
+        .theme-card:hover{border-color:var(--primary);transform:translateY(-2px)}
+        .theme-card.active{border-color:var(--primary);box-shadow:0 0 0 2px rgba(59,130,246,.25)}
+        .theme-swatch-lg{width:48px;height:48px;border-radius:50%;border:2px solid rgba(255,255,255,.1)}
+        .theme-label{font-size:13px;font-weight:600;color:var(--text)}
+        .theme-card .check-icon{display:none;color:var(--success);font-size:16px;font-weight:700}
+        .theme-card.active .check-icon{display:block}
+
+        /* ── Chain controls ── */
+        .chain-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+        .chain-controls .field{display:flex;flex-direction:column;gap:4px}
+        .chain-controls label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;letter-spacing:.3px}
+        .chain-controls select,.chain-controls input{padding:8px 12px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;min-width:140px}
+        .chain-controls select:focus,.chain-controls input:focus{outline:none;border-color:var(--primary)}
+        .btn{border:none;padding:9px 18px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+        .btn-primary{background:var(--primary);color:#fff}
+        .btn-primary:hover{background:#2563eb}
+        .btn-danger{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid var(--danger)}
+        .btn-danger:hover{background:rgba(239,68,68,.25)}
+        .btn-sm{padding:5px 12px;font-size:12px}
+        .btn:disabled{opacity:.4;cursor:not-allowed}
+
+        /* ── Chain table ── */
+        .chain-table{width:100%;border-collapse:collapse;font-size:13px}
+        .chain-table th{text-align:left;padding:10px 12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);font-weight:600}
+        .chain-table td{padding:10px 12px;border-bottom:1px solid rgba(45,53,72,.5)}
+        .chain-table tr:last-child td{border-bottom:none}
+        .chain-table tr:hover td{background:rgba(59,130,246,.04)}
+        .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+        .badge-live{background:rgba(16,185,129,.12);color:var(--success)}
+        .empty-msg{text-align:center;padding:24px;color:var(--muted);font-size:13px}
+
+        /* ── Health cards ── */
+        .health-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:12px}
+        .health-card{background:var(--panel-2);padding:14px;border-radius:8px;border-left:4px solid var(--border)}
+        .health-card.ok{border-left-color:var(--success)}
+        .health-card.warn{border-left-color:var(--warning)}
+        .health-card.bad{border-left-color:var(--danger)}
+        .health-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;margin-bottom:4px}
+        .health-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+
+        .toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;color:#fff;opacity:0;transform:translateY(12px);transition:all .3s;z-index:9999;pointer-events:none}
+        .toast.show{opacity:1;transform:translateY(0)}
+        .toast.success{background:#059669}
+        .toast.error{background:#dc2626}
+    </style>
+</head>
+<body data-page="settings">
+<div id="app-header"></div>
+<main>
+    <h1>Settings</h1>
+
+    <!-- ═══════════════ THEME SECTION ═══════════════ -->
+    <div class="section">
+        <div class="section-title">🎨 Colour Theme</div>
+        <div class="theme-grid" id="themeGrid"></div>
+    </div>
+
+    <!-- ═══════════════ OPTION CHAIN MANAGEMENT ═══════════════ -->
+    <div class="section">
+        <div class="section-title">📡 Option Chain Management</div>
+
+        <!-- Load new chain -->
+        <div class="chain-controls" id="chainControls">
+            <div class="field">
+                <label>Instrument</label>
+                <select id="selInstrument">
+                    <option value="">Loading…</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Expiry</label>
+                <select id="selExpiry">
+                    <option value="">Select instrument first</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" id="btnLoad" disabled>Load Chain</button>
+        </div>
+
+        <!-- Currently loaded -->
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">
+            Loaded Chains <span id="chainCount" style="color:var(--primary)"></span>
+        </div>
+        <div id="chainTableWrap">
+            <div class="empty-msg">Loading…</div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ SUPERVISOR HEALTH ═══════════════ -->
+    <div class="section">
+        <div class="section-title">❤️ Supervisor Health</div>
+        <div class="health-grid" id="healthGrid">
+            <div class="empty-msg">Loading…</div>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+const API = '/dashboard';
+
+/* ── Toast helper ── */
+const toastEl = document.getElementById('toast');
+function toast(msg, type) {
+    toastEl.textContent = msg;
+    toastEl.className = 'toast ' + type + ' show';
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(() => toastEl.classList.remove('show'), 3000);
+}
+
+/* ── Theme section ── */
+const THEMES = [
+    { id:'midnight', label:'Midnight', swatch:'linear-gradient(135deg,#0c1d47 0%,#1e3a8a 100%)' },
+    { id:'matrix',   label:'Matrix',   swatch:'linear-gradient(135deg,#021808 0%,#00e676 100%)' },
+    { id:'ember',    label:'Ember',    swatch:'linear-gradient(135deg,#2c0f04 0%,#ff7043 100%)' },
+    { id:'iris',     label:'Iris',     swatch:'linear-gradient(135deg,#1a0840 0%,#a78bfa 100%)' },
+    { id:'solar',    label:'Solar',    swatch:'linear-gradient(135deg,#2c2500 0%,#ffca28 100%)' },
+];
+
+function getStoredTheme() {
+    try { return localStorage.getItem('shoonya_theme') || 'midnight'; } catch(_) { return 'midnight'; }
+}
+
+function applyTheme(id) {
+    document.documentElement.dataset.theme = id;
+    try { localStorage.setItem('shoonya_theme', id); } catch(_) {}
+    document.querySelectorAll('.theme-card').forEach(el => {
+        const match = el.dataset.themeId === id;
+        el.classList.toggle('active', match);
+    });
+    // Also update the header theme system if present
+    document.querySelectorAll('.theme-item').forEach(el => {
+        const match = el.dataset.themeId === id;
+        el.classList.toggle('active', match);
+        const chk = el.querySelector('.theme-check');
+        if (chk) chk.style.display = match ? '' : 'none';
+    });
+}
+
+const themeGrid = document.getElementById('themeGrid');
+THEMES.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'theme-card';
+    card.dataset.themeId = t.id;
+    card.innerHTML =
+        `<div class="theme-swatch-lg" style="background:${t.swatch}"></div>` +
+        `<span class="theme-label">${t.label}</span>` +
+        `<span class="check-icon">✓</span>`;
+    card.addEventListener('click', () => applyTheme(t.id));
+    themeGrid.appendChild(card);
+});
+applyTheme(getStoredTheme());
+
+
+/* ══════════════ Option Chain Management ══════════════ */
+let availableInstruments = [];
+const selInstrument = document.getElementById('selInstrument');
+const selExpiry     = document.getElementById('selExpiry');
+const btnLoad       = document.getElementById('btnLoad');
+
+async function fetchJSON(url, opts) {
+    const r = await fetch(url, { credentials:'include', ...opts });
+    if (r.status === 401 || r.status === 403) { window.location.href = '/'; return null; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.statusText); }
+    return r.json();
+}
+
+/* Load available instruments into dropdown */
+async function loadAvailable() {
+    try {
+        const data = await fetchJSON(API + '/settings/option-chains/available');
+        if (!data) return;
+        availableInstruments = data.instruments || [];
+        selInstrument.innerHTML = '<option value="">-- Select --</option>';
+        availableInstruments.forEach((inst, i) => {
+            const o = document.createElement('option');
+            o.value = i;
+            o.textContent = inst.exchange + ':' + inst.symbol;
+            selInstrument.appendChild(o);
+        });
+    } catch(e) {
+        console.error('Failed to load instruments', e);
+    }
+}
+
+selInstrument.addEventListener('change', () => {
+    const idx = selInstrument.value;
+    selExpiry.innerHTML = '';
+    btnLoad.disabled = true;
+    if (idx === '') { selExpiry.innerHTML = '<option value="">Select instrument first</option>'; return; }
+    const inst = availableInstruments[idx];
+    if (!inst || !inst.expiries.length) { selExpiry.innerHTML = '<option value="">No expiries available</option>'; return; }
+    inst.expiries.forEach(exp => {
+        const o = document.createElement('option');
+        o.value = exp;
+        o.textContent = exp;
+        selExpiry.appendChild(o);
+    });
+    btnLoad.disabled = false;
+});
+
+btnLoad.addEventListener('click', async () => {
+    const idx = selInstrument.value;
+    const expiry = selExpiry.value;
+    if (idx === '' || !expiry) return;
+    const inst = availableInstruments[idx];
+    btnLoad.disabled = true;
+    btnLoad.textContent = 'Loading…';
+    try {
+        await fetchJSON(API + '/settings/option-chains/load', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ exchange: inst.exchange, symbol: inst.symbol, expiry }),
+        });
+        toast('Chain loaded: ' + inst.exchange + ':' + inst.symbol + ':' + expiry, 'success');
+        refreshChains();
+        refreshHealth();
+    } catch(e) {
+        toast('Failed: ' + e.message, 'error');
+    } finally {
+        btnLoad.disabled = false;
+        btnLoad.textContent = 'Load Chain';
+    }
+});
+
+/* Loaded chains table */
+const chainTableWrap = document.getElementById('chainTableWrap');
+const chainCount = document.getElementById('chainCount');
+
+async function refreshChains() {
+    try {
+        const data = await fetchJSON(API + '/settings/option-chains/loaded');
+        if (!data) return;
+        const chains = data.chains || [];
+        chainCount.textContent = '(' + chains.length + ')';
+
+        if (!chains.length) {
+            chainTableWrap.innerHTML = '<div class="empty-msg">No option chains loaded</div>';
+            return;
+        }
+
+        let html = '<table class="chain-table"><thead><tr>' +
+            '<th>Exchange</th><th>Symbol</th><th>Expiry</th><th>Uptime</th><th>Status</th><th></th>' +
+            '</tr></thead><tbody>';
+
+        chains.forEach(c => {
+            const mins = Math.floor(c.uptime_seconds / 60);
+            const upStr = mins < 60 ? mins + 'm' : Math.floor(mins/60) + 'h ' + (mins%60) + 'm';
+            html += '<tr>' +
+                '<td>' + esc(c.exchange) + '</td>' +
+                '<td style="font-weight:600">' + esc(c.symbol) + '</td>' +
+                '<td>' + esc(c.expiry) + '</td>' +
+                '<td style="font-variant-numeric:tabular-nums">' + upStr + '</td>' +
+                '<td><span class="badge badge-live">LIVE</span></td>' +
+                '<td><button class="btn btn-danger btn-sm" onclick="unloadChain(\'' + esc(c.key) + '\')">Unload</button></td>' +
+                '</tr>';
+        });
+
+        html += '</tbody></table>';
+        chainTableWrap.innerHTML = html;
+    } catch(e) {
+        console.error('Failed to refresh chains', e);
+    }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+window.unloadChain = async function(key) {
+    if (!confirm('Unload chain ' + key + '?')) return;
+    try {
+        await fetchJSON(API + '/settings/option-chains/unload', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ key }),
+        });
+        toast('Unloaded: ' + key, 'success');
+        refreshChains();
+        refreshHealth();
+    } catch(e) {
+        toast('Failed: ' + e.message, 'error');
+    }
+};
+
+/* Supervisor health */
+const healthGrid = document.getElementById('healthGrid');
+
+async function refreshHealth() {
+    try {
+        const data = await fetchJSON(API + '/settings/option-chains/health');
+        if (!data) return;
+
+        const sup = data.supervisor || {};
+        const client = data.client || {};
+        const feed = data.feed || {};
+
+        const cards = [
+            { label:'Active Chains', value: sup.active_chains ?? '?', cls: sup.active_chains > 0 ? 'ok' : 'warn' },
+            { label:'Failed Chains', value: sup.failed_chains ?? 0, cls: (sup.failed_chains || 0) === 0 ? 'ok' : 'bad' },
+            { label:'Broker Login',  value: client.logged_in ? 'Connected' : 'Disconnected', cls: client.logged_in ? 'ok' : 'bad' },
+            { label:'Feed Stalls',   value: feed.stall_count ?? 0, cls: (feed.stall_count || 0) === 0 ? 'ok' : 'warn' },
+            { label:'Feed Stale',    value: feed.stale ? 'YES' : 'No', cls: feed.stale ? 'bad' : 'ok' },
+            { label:'Snapshot Age',  value: feed.snapshot_age_seconds != null ? Math.round(feed.snapshot_age_seconds) + 's' : 'N/A', cls: (feed.snapshot_age_seconds || 0) < 30 ? 'ok' : 'warn' },
+        ];
+
+        healthGrid.innerHTML = cards.map(c =>
+            '<div class="health-card ' + c.cls + '">' +
+            '<div class="health-label">' + c.label + '</div>' +
+            '<div class="health-value">' + c.value + '</div></div>'
+        ).join('');
+
+    } catch(e) {
+        console.error('Failed to load health', e);
+        healthGrid.innerHTML = '<div class="empty-msg">Failed to load health data</div>';
+    }
+}
+
+/* ── Init ── */
+async function init() {
+    await loadAvailable();
+    await refreshChains();
+    await refreshHealth();
+    // Auto-refresh every 15s
+    setInterval(refreshChains, 15000);
+    setInterval(refreshHealth, 15000);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
+
+})();
+</script>
+</body>
+</html>

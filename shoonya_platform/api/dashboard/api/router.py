@@ -29,6 +29,7 @@ from shoonya_platform.api.dashboard.api.routes_intents_optionchain import sub_ro
 from shoonya_platform.api.dashboard.api.routes_monitoring import sub_router as _monitoring
 from shoonya_platform.api.dashboard.api.routes_runner import sub_router as _runner
 from shoonya_platform.api.dashboard.api.routes_telegram import sub_router as _telegram
+from shoonya_platform.api.dashboard.api.routes_settings import sub_router as _settings
 
 router.include_router(_orders_recovery)
 router.include_router(_strategy_execution)
@@ -37,6 +38,7 @@ router.include_router(_intents_optionchain)
 router.include_router(_monitoring)
 router.include_router(_runner)
 router.include_router(_telegram)
+router.include_router(_settings)
 
 # --------------- backward-compatible re-exports ---------------
 # tests/test_strategy_hardening_regression.py imports this directly:

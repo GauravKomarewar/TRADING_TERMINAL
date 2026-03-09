@@ -1,31 +1,31 @@
 {
   "schema_version": "4.0",
-  "name": "test",
-  "id": "TEST",
+  "name": "nat test",
+  "id": "NAT_TEST",
   "description": "",
   "type": "neutral",
   "enabled": true,
   "status": "RUNNING",
   "identity": {
     "exchange": "MCX",
-    "underlying": "CRUDEOILM",
+    "underlying": "NATGASMINI",
     "instrument_type": "OPTIDX",
     "product_type": "NRML",
-    "order_type": "LIMIT",
+    "order_type": "MARKET",
     "lots": 1,
-    "db_file": "MCX_CRUDEOILM_17-MAR-2026.sqlite",
-    "db_path": "shoonya_platform/market_data/option_chain/data/MCX_CRUDEOILM_17-MAR-2026.sqlite",
+    "db_file": "MCX_NATGASMINI_24-MAR-2026.sqlite",
+    "db_path": "shoonya_platform/market_data/option_chain/data/MCX_NATGASMINI_24-MAR-2026.sqlite",
     "paper_mode": true,
     "test_mode": "SUCCESS"
   },
   "timing": {
-    "entry_window_start": "09:00",
+    "entry_window_start": "09:05",
     "entry_window_end": "23:00",
     "eod_exit_time": "23:15"
   },
   "market_data": {
     "source": "sqlite",
-    "db_file": "MCX_CRUDEOILM_17-MAR-2026.sqlite"
+    "db_file": "MCX_NATGASMINI_24-MAR-2026.sqlite"
   },
   "entry": {
     "entry_sequence": "parallel",
@@ -40,10 +40,10 @@
         "option_type": "CE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "LIMIT",
+        "order_type": "MARKET",
         "strike_mode": "standard",
-        "strike_selection": "atm",
-        "strike_value": "",
+        "strike_selection": "delta",
+        "strike_value": "0.5",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -58,10 +58,10 @@
         "option_type": "PE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "LIMIT",
+        "order_type": "MARKET",
         "strike_mode": "standard",
         "strike_selection": "delta",
-        "strike_value": "",
+        "strike_value": "0.5",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -75,16 +75,16 @@
       {
         "name": "Adjustment 1",
         "priority": 1,
-        "max_per_day": 5,
+        "max_per_day": 20,
         "max_total": null,
         "cooldown_sec": 60,
         "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
-            "parameter": "combined_pnl",
+            "parameter": "net_delta",
             "comparator": ">",
-            "value": "200"
+            "value": "0.1"
           }
         ],
         "action": {
@@ -97,9 +97,12 @@
                 "option_type": "MATCH_CLOSING",
                 "lots": 1,
                 "order_type": "",
-                "strike_mode": "standard",
-                "strike_selection": "atm+2",
-                "strike_value": ""
+                "strike_mode": "match_leg",
+                "strike_selection": "match_leg_param",
+                "match_leg": "LEAST_PROFITABLE_LEG",
+                "match_param": "abs_delta",
+                "match_offset": 0,
+                "match_multiplier": 1
               }
             }
           ]
@@ -164,7 +167,7 @@
       "thu",
       "fri"
     ],
-    "entry_time": "09:00",
+    "entry_time": "09:05",
     "entry_window_end": "23:00",
     "exit_time": "23:15",
     "expiry_mode": "weekly_auto",
@@ -176,9 +179,9 @@
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-03-06T14:05:39.490Z"
+    "created_at": "2026-03-09T12:20:41.552Z"
   },
-  "created_at": "2026-03-06T19:35:53",
-  "updated_at": "2026-03-06T19:35:53",
-  "status_updated_at": "2026-03-09T20:55:25.759579"
+  "created_at": "2026-03-09T17:50:53",
+  "updated_at": "2026-03-09T17:50:53",
+  "status_updated_at": "2026-03-09T20:41:41.924716"
 }

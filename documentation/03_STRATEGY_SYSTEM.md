@@ -1,6 +1,6 @@
 # Strategy System Guide
 
-> Last verified: 2026-03-01 | Source: `shoonya_platform/strategy_runner/`
+> Last verified: 2026-03-09 | Source: `shoonya_platform/strategy_runner/`
 
 ## Overview
 
@@ -105,6 +105,21 @@ In-memory state tracking:
 - `last_adjustment_time` — timestamp
 - `set_index_ticks(data)` — inject index data (VIX, etc.)
 - Dynamic leg references: `higher_delta_leg`, `most_profitable_leg`, `deepest_itm_leg`, etc.
+
+**Portfolio Greeks** (None-safe aggregation):
+- `net_delta` — sum of active leg deltas (with override support)
+- `portfolio_gamma`, `portfolio_theta`, `portfolio_vega` — aggregated from active legs
+- `iv_skew`, `atm_iv`, `ce_iv`, `pe_iv` — IV metrics
+- All use `(value or 0.0)` guards against None during startup
+
+### State Persistence (`persistence/`)
+
+Strategy state is automatically persisted to JSON files at `persistence/data/{name}_state.pkl`:
+- **After entry** — immediate save ensures crash recovery can find filled legs
+- **After exit/adjustment** — state reflects latest position changes
+- **Every ~30s** — periodic save via elapsed-time check (`_last_persist_at`)
+
+On restart, `auto_resume_strategies()` in `StrategyExecutorService` scans for configs with `"status": "RUNNING"` and valid state files, then re-registers them. See [06_OPERATIONS_GUIDE.md](06_OPERATIONS_GUIDE.md) and [08_FEATURES_REFERENCE.md](08_FEATURES_REFERENCE.md) for details.
 
 ### Universal Settings (`universal_settings/`)
 

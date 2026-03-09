@@ -1,6 +1,6 @@
 # Feature Reference: Index Tokens & Analytics
 
-> Last verified: 2026-03-01
+> Last verified: 2026-03-09
 
 ## Index Tokens Subscriber
 
@@ -100,9 +100,90 @@ ShoonyaClient (WebSocket) → LiveFeed → tick_data_store → MarketReader → 
 
 ## Greeks Calculator
 
-**Module:** `shoonya_platform/utils/bs_greeks.py`
+**Modules:**
+- `shoonya_platform/utils/bs_greeks.py` — Core pricing (`bs_price`, `bs_greeks`, `implied_vol`)
+- `shoonya_platform/market_data/option_chain/option_chain.py` — Exchange-aware pipeline
 
-Black-Scholes Greeks calculation for options:
-- Delta, Gamma, Theta, Vega, IV
-- Used by strategy condition engine for delta-based adjustments
-- Used by dashboard for position Greeks display
+### Models
+
+| Exchange | Model | `q` (dividend yield) | `r` (risk-free) | Spot Source |
+|----------|-------|---------------------|-----------------|-------------|
+| NFO (NIFTY, BANKNIFTY) | Generalized Black-Scholes | 0.012 | 0.065 | Spot LTP |
+| BFO (SENSEX) | Generalized Black-Scholes | 0.012 | 0.065 | Spot LTP |
+| MCX (CRUDEOIL, NATGAS, etc.) | Black-76 (`q = r`) | 0.065 | 0.065 | Futures LTP |
+
+**Black-76 for MCX:** Commodity options are on futures contracts, not spot. Setting `q = r` in the generalized Black-Scholes formula reduces it to the Black-76 model — the forward price replaces the spot price, and the dividend yield cancels the risk-free discount.
+
+### Computed Greeks
+
+- **Delta** — First-order price sensitivity to underlying
+- **Gamma** — Rate of change of Delta
+- **Theta** — Daily time decay (divided by 365)
+- **Vega** — Sensitivity to 1% IV change (divided by 100)
+- **IV** — Implied volatility via Newton-Raphson on `bs_price`
+
+### None-Safety
+
+All portfolio-level Greeks in `StrategyState` use `(leg.value or 0.0)` guards to handle periods when Greeks haven't been computed yet (e.g., immediately after restart before the first option chain refresh).
+
+### Integration Points
+
+- **Strategy Condition Engine** — `combined_delta`, `leg_delta`, `gamma`, `theta`, `vega`, `iv` parameters
+- **Adjustment Engine** — Delta-based rebalancing triggers
+- **Dashboard** — Real-time position Greeks display
+- **Option Chain** — Auto-refreshes Greeks every ~2 seconds with spot-movement invalidation
+
+---
+
+## Crash Recovery & Auto-Resume
+
+**Modules:**
+- `shoonya_platform/services/recovery_service.py` — Phase-2 RecoveryBootstrap
+- `shoonya_platform/strategy_runner/strategy_executor_service.py` — Phase-3 `auto_resume_strategies()`
+- `shoonya_platform/execution/trading_bot.py` — Startup orchestration
+
+### Recovery Phases
+
+| Phase | Component | Purpose |
+|-------|-----------|---------|
+| Phase 1 | Service restart (systemd) | Process restarts automatically on crash |
+| Phase 2 | `RecoveryBootstrap` | Reconciles broker positions with local DB |
+| Phase 3 | `auto_resume_strategies()` | Resumes strategies that were actively running |
+
+### Phase-3 Auto-Resume Logic
+
+On startup, the system scans `strategy_runner/saved_configs/` for strategies eligible to resume. A strategy is eligible when **all** conditions are met:
+
+1. Config JSON has `"status": "RUNNING"`
+2. A state file exists (`persistence/data/{name}_state.pkl`)
+3. State has at least one active leg with `order_status: FILLED`
+4. Entry time is from today (not stale from a previous session)
+
+After re-registration:
+- Executor loads the full persisted `StrategyState` (legs, entry prices, PnL history, adjustment counters)
+- Broker reconciliation runs to validate positions match what the broker reports
+- Normal tick loop resumes — exit, adjustment, and trailing-stop monitoring continue
+- Telegram notification sent with recovery details
+
+### State Persistence Lifecycle
+
+| Trigger | When |
+|---------|------|
+| **Immediate** (after entry) | Right after `_execute_entry()` fills all legs |
+| **Immediate** (after exit) | After legs are closed |
+| **Immediate** (after adjustment) | After any leg adjustment |
+| **Periodic** (every ~30s) | Elapsed-time check via `_last_persist_at` |
+
+State files are JSON at `persistence/data/{name}_state.pkl` containing: legs (with Greeks, PnL, order IDs), spot/ATM data, adjustment history, entry/exit times, trailing stop state.
+
+### Config Status Tracking
+
+The `"status"` field in `saved_configs/{name}.json` tracks lifecycle:
+
+| Status | Meaning |
+|--------|---------|
+| `RUNNING` | Strategy actively executing — eligible for auto-resume |
+| `STOPPED` | User manually stopped — won't auto-resume |
+| `COMPLETED` | All exit conditions met, cycle finished |
+
+Updates use atomic `os.replace()` via a temp file to prevent corruption on crash.

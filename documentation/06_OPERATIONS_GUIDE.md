@@ -1,6 +1,71 @@
 # Operations Guide
 
-> Last verified: 2026-03-01
+> Last verified: 2026-03-09
+
+## Crash Recovery & Auto-Resume
+
+The system includes a 3-phase recovery pipeline that runs automatically on every startup.
+
+### How It Works
+
+1. **Phase 1 (systemd):** Service restarts automatically on crash via `Restart=always`
+2. **Phase 2 (RecoveryBootstrap):** Reconciles broker positions with the local order database, detects orphan positions, and generates an audit log at `logs/recovery/`
+3. **Phase 3 (auto_resume_strategies):** Scans `saved_configs/` for strategy configs with `"status": "RUNNING"`, validates matching state files with active filled legs from today, and re-registers them into the executor service
+
+### Verifying Recovery
+
+After a restart, check the logs for the recovery sequence:
+
+```bash
+# Look for the 3 recovery phases
+journalctl -u trading --since "5 min ago" | grep -E "Phase-2|AUTO-RESUME|Phase-3"
+```
+
+Expected output:
+```
+♻️ Phase-2 Recovery Bootstrap started
+♻️ Recovery complete | strategies=N | active_commands=0
+♻️ AUTO-RESUME | Recovering strategy 'name' with active legs from state file
+♻️ AUTO-RESUME COMPLETE | 1 strategy(ies) recovered: ['name']
+♻️ Phase-3 auto-resume complete | 1 strategy(ies): ['name']
+```
+
+### State Persistence
+
+Strategy state is saved to JSON files at `persistence/data/{name}_state.pkl`:
+- **Immediately** after entry, exit, and each adjustment
+- **Periodically** every ~30 seconds during the tick loop
+
+This ensures minimal data loss on crash — at most 30 seconds of PnL history.
+
+### What Survives a Restart
+
+| Data | Preserved? |
+|------|------------|
+| Leg positions (symbol, strike, entry price) | ✅ Yes |
+| PnL history | ✅ Yes |
+| Adjustment counters & history | ✅ Yes |
+| Entry/exit timestamps | ✅ Yes |
+| Trailing stop state | ✅ Yes |
+| Live Greeks (delta, gamma, etc.) | ⚡ Re-computed on first tick |
+| Option chain subscriptions | ⚡ Re-subscribed automatically |
+
+### Manual Recovery
+
+If auto-resume doesn't pick up a strategy (e.g., stale state from yesterday):
+
+```bash
+# Check config status
+cat shoonya_platform/strategy_runner/saved_configs/<name>.json | python3 -m json.tool | grep status
+
+# Check state file
+cat shoonya_platform/persistence/data/<name>_state.pkl | python3 -m json.tool | head -5
+
+# Re-start manually via dashboard
+curl -b cookies.txt -X POST http://localhost:8000/dashboard/strategy/<name>/start-execution
+```
+
+---
 
 ## Monitoring
 

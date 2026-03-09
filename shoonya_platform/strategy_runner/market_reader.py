@@ -979,7 +979,6 @@ class MarketReader:
                 opt_data = self.get_option_at_strike(strike, opt_type, expiry)
                 if opt_data is None:
                     raise ValueError(f"No option found for moneyness-preserved strike {strike}")
-                assert opt_data is not None
                 return strike, opt_data
             if not hasattr(reference_leg_state, match_param):
                 raise ValueError(
@@ -1004,8 +1003,10 @@ class MarketReader:
             raise ValueError(f"Unknown strike mode: {mode}")
 
         # At this point, strike must be a numeric value and opt_data must be set.
-        assert isinstance(strike, (int, float)), "Strike must be numeric"
-        assert opt_data is not None, "Internal error: opt_data not assigned"
+        if not isinstance(strike, (int, float)):
+            raise ValueError(f"Strike must be numeric, got {type(strike).__name__}: {strike}")
+        if opt_data is None:
+            raise ValueError(f"Internal error: opt_data not assigned for strike {strike}")
         return strike, opt_data
 
     def get_max_pain_strike(self, expiry: Optional[str] = None) -> float:
@@ -1492,5 +1493,6 @@ class MockMarketReader(MarketReader):
         else:
             strike = self._atm
         opt_data = self.get_option_at_strike(strike, config.option_type)
-        assert opt_data is not None
+        if opt_data is None:
+            raise ValueError(f"No option found at strike {strike} for {config.option_type}")
         return strike, opt_data

@@ -753,7 +753,7 @@ class StrategyExecutorService:
                 executor = self._executors.get(strategy_name)
                 seen_keys: set[str] = set()
 
-                for leg in (getattr(state, "legs", {}) or {}).values():
+                for leg in list((getattr(state, "legs", {}) or {}).values()):
                     side_val = getattr(getattr(leg, "side", None), "value", getattr(leg, "side", ""))
                     side = str(side_val or "").upper()
                     qty = int(getattr(leg, "qty", 0) or 0)
@@ -1338,7 +1338,11 @@ class PerStrategyExecutor:
                     self.state.adjustments_today = pre_adjustments_today
                     self.state.lifetime_adjustments = pre_lifetime_adjustments
                     self.state.last_adjustment_time = pre_last_adjustment_time
-                    logger.warning(f"Adjustment rollback applied for {self.name}")
+                    # Set cooldown to prevent spamming rejected adjustments every tick
+                    self._adjustment_block_until = now + timedelta(seconds=self._adjustment_validation_backoff_sec)
+                    self._adjustment_block_reason = "dispatch_rejected"
+                    self._adjustment_block_announced = False
+                    logger.warning(f"Adjustment rollback applied for {self.name}, blocking for {self._adjustment_validation_backoff_sec}s")
                 else:
                     # Stamp lot_size on any newly created adjustment legs
                     for leg in self.state.legs.values():
@@ -2273,7 +2277,8 @@ class PerStrategyExecutor:
             resolved = int(self.market.get_lot_size(expiry))
             if resolved > 0:
                 lot_size = resolved
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to resolve lot_size for expiry %s: %s, defaulting to 1", expiry, e)
             lot_size = 1
         return normalized_lots * lot_size
 

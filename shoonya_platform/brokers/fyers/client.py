@@ -70,9 +70,11 @@ def _import_fyers_client():
         pass
 
     # Resolve relative path: shoonya_platform/ → ../option_trading_system_fyers/
-    fyers_root = Path(__file__).resolve().parents[5] / "option_trading_system_fyers"
+    # client.py is at shoonya_platform/shoonya_platform/brokers/fyers/client.py
+    # parents[4] = /home/ubuntu (where option_trading_system_fyers lives)
+    fyers_root = Path(__file__).resolve().parents[4] / "option_trading_system_fyers"
     if fyers_root.exists() and str(fyers_root) not in sys.path:
-        sys.path.insert(0, str(fyers_root))
+        sys.path.append(str(fyers_root))  # append, not insert(0), to avoid shadowing shoonya_platform.core
 
     try:
         from core.fyers_final import FyersV3Client  # type: ignore

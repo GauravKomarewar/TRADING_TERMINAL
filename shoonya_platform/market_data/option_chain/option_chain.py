@@ -1315,11 +1315,12 @@ def _prepare_greeks_df(oc) -> pd.DataFrame:
 # EXCHANGE-SPECIFIC GREEK PARAMETERS
 # ============================================================================
 # RBI repo rate as of Mar 2026: ~6.0%.  Use 91-day T-bill yield as proxy.
-# Dividend yield: NIFTY ~1.2%, BANKNIFTY ~0.8%, MCX commodities = 0.
+# Dividend yield: NIFTY ~1.2%, BANKNIFTY ~0.8%.
+# MCX: Options on futures → Black-76 model requires q = r (dividend_yield = risk_free_rate).
 _EXCHANGE_GREEK_DEFAULTS: Dict[str, Dict[str, float]] = {
     "NFO": {"risk_free_rate": 0.065, "dividend_yield": 0.012},
     "BFO": {"risk_free_rate": 0.065, "dividend_yield": 0.012},
-    "MCX": {"risk_free_rate": 0.065, "dividend_yield": 0.0},
+    "MCX": {"risk_free_rate": 0.065, "dividend_yield": 0.065},
     "NSE": {"risk_free_rate": 0.065, "dividend_yield": 0.012},
 }
 
@@ -1338,8 +1339,8 @@ def calculate_greeks(
     Calculate option Greeks on OptionChainData-derived dataframe.
 
     Uses exchange-specific risk-free rate and dividend yield when not
-    explicitly supplied.  MCX commodities use q=0 (no dividend);
-    NFO/BFO equity indices use q≈1.2%.
+    explicitly supplied.  MCX commodity options (on futures) use q=r
+    (Black-76 model); NFO/BFO equity indices use q≈1.2%.
     """
 
     if config is None:
@@ -1466,7 +1467,12 @@ def refresh_greeks(
 
     # 🔥 FIXED: Thread-safe spot price read
     with oc._lock:
-        spot = oc._spot_ltp or oc._fut_ltp
+        # MCX options are on futures — prefer live fut_ltp (spot_ltp is never
+        # updated after init because MCX has no real spot token).
+        if oc._exchange == "MCX":
+            spot = oc._fut_ltp or oc._spot_ltp
+        else:
+            spot = oc._spot_ltp or oc._fut_ltp
         last_greek_spot = oc._last_greek_spot
         expiry = oc._expiry
         exchange = oc._exchange

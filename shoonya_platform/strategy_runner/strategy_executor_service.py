@@ -484,6 +484,171 @@ class StrategyExecutorService:
                 logger.debug("Could not clear persisted monitor snapshot for %s: %s", name, e)
             logger.info(f"Strategy unregistered: {name}")
 
+    # ------------------------------------------------------------------
+    # CRASH-RECOVERY: AUTO-RESUME STRATEGIES
+    # ------------------------------------------------------------------
+
+    def auto_resume_strategies(self) -> List[str]:
+        """
+        Scan saved_configs/ for strategies that were RUNNING before a
+        crash/restart and re-register them so monitoring, adjustments,
+        and exits continue from the persisted state.
+
+        A strategy is eligible for auto-resume when ALL of:
+          1. Its config JSON has ``"status": "RUNNING"``
+          2. A state file exists with at least one active (FILLED) leg
+          3. The state was persisted today (not stale from a previous day)
+
+        After re-registration the executor picks up the persisted
+        StrategyState (with legs, entered_today, adjustment history, etc.)
+        and the normal tick loop resumes exit/adjustment monitoring.
+
+        Returns:
+            List of strategy names that were successfully resumed.
+        """
+        config_dir = (
+            Path(__file__).resolve().parent / "saved_configs"
+        )
+        if not config_dir.exists():
+            return []
+
+        state_base = Path(self.state_db_path).parent
+        today = datetime.now().date()
+        resumed: List[str] = []
+
+        for cfg_path in sorted(config_dir.glob("*.json")):
+            if cfg_path.name.endswith(".schema.json"):
+                continue
+            try:
+                config = json.loads(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            status = str(config.get("status", "")).strip().upper()
+            if status != "RUNNING":
+                continue
+
+            strategy_key = cfg_path.stem
+
+            # Already running — skip
+            if strategy_key in self._strategies:
+                continue
+
+            # Check for valid state file with active legs
+            state_file = state_base / f"{strategy_key}_state.pkl"
+            if not state_file.exists():
+                logger.debug("auto_resume: no state file for %s", strategy_key)
+                continue
+
+            try:
+                state_data = json.loads(state_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning("auto_resume: could not read state for %s: %s", strategy_key, e)
+                continue
+
+            # Must have at least one active, filled leg
+            legs_raw = state_data.get("legs") or {}
+            has_active = False
+            for leg in legs_raw.values():
+                if not isinstance(leg, dict):
+                    continue
+                if bool(leg.get("is_active")) and str(leg.get("order_status", "")).upper() == "FILLED":
+                    has_active = True
+                    break
+
+            if not has_active:
+                logger.debug("auto_resume: no active legs for %s — skipping", strategy_key)
+                continue
+
+            # Staleness check: state must be from today
+            entry_time_raw = state_data.get("entry_time")
+            if entry_time_raw:
+                try:
+                    entry_date = datetime.fromisoformat(str(entry_time_raw)).date()
+                    if entry_date != today:
+                        logger.info(
+                            "auto_resume: %s entry_time=%s is not today (%s) — skipping",
+                            strategy_key, entry_date, today,
+                        )
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
+            # Re-register strategy
+            try:
+                logger.warning(
+                    "♻️ AUTO-RESUME | Recovering strategy '%s' with active legs from state file",
+                    strategy_key,
+                )
+                self.register_strategy(name=strategy_key, config_path=str(cfg_path))
+                resumed.append(strategy_key)
+            except Exception as e:
+                logger.error("auto_resume: failed to register %s: %s", strategy_key, e)
+
+        # Force immediate broker reconciliation for all resumed strategies
+        if resumed:
+            broker_view = getattr(self.bot, "broker_view", None)
+            for name in resumed:
+                executor = self._executors.get(name)
+                if executor and broker_view and not executor._resolve_test_mode():
+                    try:
+                        warnings = executor.reconciliation.reconcile_from_broker(broker_view)
+                        if warnings:
+                            logger.warning(
+                                "♻️ AUTO-RESUME RECONCILE [%s]: %d mismatch(es) — %s",
+                                name, len(warnings), "; ".join(warnings),
+                            )
+                        else:
+                            logger.info("♻️ AUTO-RESUME RECONCILE [%s]: broker in sync ✅", name)
+                        # Persist reconciled state immediately
+                        executor.persistence.save(executor.state, str(executor.state_file))
+                    except Exception as e:
+                        logger.error("♻️ AUTO-RESUME RECONCILE [%s] failed: %s", name, e)
+
+            # Send telegram notification
+            telegram = getattr(self.bot, "telegram", None)
+            if telegram:
+                try:
+                    msg = (
+                        f"<b>♻️ STRATEGY AUTO-RESUME</b>\n"
+                        f"Strategies recovered: {len(resumed)}\n"
+                        f"Names: {', '.join(resumed)}\n"
+                        f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                        f"Monitoring, adjustments, and exits will continue "
+                        f"from last persisted state."
+                    )
+                    telegram.send_message(msg, parse_mode="HTML")
+                except Exception:
+                    pass
+
+            logger.warning(
+                "♻️ AUTO-RESUME COMPLETE | %d strategy(ies) recovered: %s",
+                len(resumed), resumed,
+            )
+
+        return resumed
+
+    @staticmethod
+    def _mark_config_status(strategy_key: str, status: str) -> None:
+        """Update the ``status`` field in a strategy's saved config JSON."""
+        config_dir = Path(__file__).resolve().parent / "saved_configs"
+        cfg_path = config_dir / f"{strategy_key}.json"
+        if not cfg_path.exists():
+            return
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            cfg["status"] = status
+            cfg["status_updated_at"] = datetime.now().isoformat()
+            tmp = str(cfg_path) + ".tmp"
+            with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+                json.dump(cfg, f, indent=2)
+                f.write("\n")
+                f.flush()
+            import os
+            os.replace(tmp, str(cfg_path))
+        except Exception as e:
+            logger.debug("Could not update config status for %s: %s", strategy_key, e)
+
     def start(self):
         """Start the background processing thread."""
         if self._running:
@@ -520,6 +685,7 @@ class StrategyExecutorService:
             for name in completed_names:
                 try:
                     self._archive_completed_strategy(name)
+                    self._mark_config_status(name, "COMPLETED")
                     self.unregister_strategy(name)
                     logger.info(f"Strategy cycle completed and auto-stopped: {name}")
                 except Exception as e:

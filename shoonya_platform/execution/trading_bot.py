@@ -474,6 +474,29 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
         RecoveryBootstrap(self).run()
 
         # -------------------------------------------------
+        # PHASE-3: AUTO-RESUME STRATEGIES THAT WERE RUNNING
+        # -------------------------------------------------
+        try:
+            resumed = self.strategy_executor_service.auto_resume_strategies()
+            if resumed:
+                for name in resumed:
+                    with self._live_strategies_lock:
+                        self._live_strategies[name] = {
+                            "type": "executor_service",
+                            "config_path": "",
+                            "started_at": time.time(),
+                            "resumed": True,
+                        }
+                logger.warning(
+                    "♻️ Phase-3 auto-resume complete | %d strategy(ies): %s",
+                    len(resumed), resumed,
+                )
+            else:
+                logger.info("♻️ Phase-3 auto-resume: no strategies to recover")
+        except Exception as e:
+            logger.error("♻️ Phase-3 auto-resume failed: %s", e, exc_info=True)
+
+        # -------------------------------------------------
         # DASHBOARD / API CONTROL CONSUMERS
         # -------------------------------------------------
         self._shutdown_event = threading.Event()

@@ -619,6 +619,125 @@ class OptionChainSupervisor:
         return health_status
 
     # --------------------------------------------------
+    # 🔥 NEW: CHAIN RE-CENTERING ON GAP DAYS
+    # --------------------------------------------------
+
+    # Number of strike-steps the spot can move from chain ATM before triggering rebuild.
+    # For NIFTY (step=50), 5 steps = 250 points; for BANKNIFTY (step=100), 5 steps = 500 points.
+    RECENTER_THRESHOLD_STEPS = 5
+    # Minimum seconds between re-center attempts for the same chain.
+    RECENTER_COOLDOWN = 120  # 2 minutes
+
+    def _check_and_recenter_chains(self) -> None:
+        """
+        Detect when the live spot price has moved far from the chain ATM
+        center (e.g. gap-up/down at market open) and rebuild the chain so
+        that delta-based and other criteria-based strike selection has the
+        full range of OTM strikes available.
+        """
+        with self._lock:
+            items = list(self._chains.items())
+
+        for key, bundle in items:
+            try:
+                oc = bundle["oc"]
+                stats = oc.get_stats()
+                if stats.get("status") != "loaded":
+                    continue
+
+                chain_atm = stats.get("atm")
+                spot_ltp = stats.get("spot_ltp") or stats.get("fut_ltp")
+                if not chain_atm or not spot_ltp:
+                    continue
+
+                exchange = stats.get("exchange", "")
+                symbol = stats.get("symbol", "")
+                expiry = stats.get("expiry", "")
+
+                # Only re-center during active market session
+                if not self._is_market_session_active(exchange):
+                    continue
+
+                # Determine strike step from chain data
+                strike_range = stats.get("strike_range", {})
+                num_strikes = stats.get("strikes", 0)
+                if num_strikes > 1:
+                    step = (strike_range.get("max", 0) - strike_range.get("min", 0)) / max(num_strikes - 1, 1)
+                else:
+                    step = 50  # safe default for NIFTY
+
+                distance = abs(spot_ltp - chain_atm)
+                threshold = step * self.RECENTER_THRESHOLD_STEPS
+
+                if distance <= threshold:
+                    continue
+
+                # Cooldown check to avoid hammering rebuilds
+                last_recenter = bundle.get("last_recenter_ts", 0.0)
+                if time.time() - last_recenter < self.RECENTER_COOLDOWN:
+                    continue
+
+                logger.warning(
+                    "🔄 CHAIN RE-CENTER TRIGGERED | %s | spot=%.1f chain_atm=%d "
+                    "distance=%.1f threshold=%.1f (step=%.0f × %d)",
+                    key, spot_ltp, chain_atm, distance, threshold,
+                    step, self.RECENTER_THRESHOLD_STEPS,
+                )
+
+                # Rebuild the chain: stop old, start new
+                self._recenter_chain(key, exchange, symbol, expiry)
+
+            except Exception as e:
+                logger.error("Re-center check failed for %s: %s", key, e)
+
+    def _recenter_chain(self, key: str, exchange: str, symbol: str, expiry: str) -> None:
+        """
+        Tear down an existing chain and rebuild it with a fresh ATM center.
+        """
+        try:
+            # Remove old chain
+            with self._lock:
+                old_bundle = self._chains.pop(key, None)
+            if old_bundle:
+                try:
+                    old_bundle["oc"].cleanup()
+                except Exception:
+                    pass
+                try:
+                    old_bundle["store"].close()
+                except Exception:
+                    pass
+
+            # Start fresh chain (live_option_chain will fetch current spot for ATM)
+            ok = self._start_chain(exchange, symbol, expiry, retry=True)
+            if ok:
+                logger.info("✅ Chain re-centered successfully | %s", key)
+                with self._lock:
+                    if key in self._chains:
+                        self._chains[key]["last_recenter_ts"] = time.time()
+
+                # Re-subscribe tokens for the new chain
+                with self._lock:
+                    new_bundle = self._chains.get(key)
+                if new_bundle:
+                    oc = new_bundle["oc"]
+                    tokens = oc.get_tokens()
+                    oc_exchange = oc._exchange or exchange
+                    if tokens:
+                        try:
+                            subscribe_livedata(self.api_client, tokens, exchange=oc_exchange)
+                        except Exception as e:
+                            logger.error("Failed to subscribe re-centered chain tokens: %s", e)
+            else:
+                logger.error("❌ Chain re-center failed | %s — restoring old chain", key)
+                # Re-add old chain if rebuild failed
+                if old_bundle:
+                    with self._lock:
+                        self._chains[key] = old_bundle
+        except Exception as e:
+            logger.exception("Re-center chain critical error for %s: %s", key, e)
+
+    # --------------------------------------------------
     # MAIN LOOP
     # --------------------------------------------------
     
@@ -631,6 +750,7 @@ class OptionChainSupervisor:
         - Session validation
         - Feed stall detection + recovery
         - Chain health monitoring
+        - Chain re-centering on gap days
         - Periodic ScriptMaster refresh
         - Graceful error handling
         """
@@ -640,6 +760,7 @@ class OptionChainSupervisor:
         last_session_check = 0.0
         last_scriptmaster_refresh = 0.0
         last_heartbeat = 0.0
+        last_recenter_check = 0.0
 
         try:
             while not self._stop_event.is_set():
@@ -704,6 +825,16 @@ class OptionChainSupervisor:
                 # 🔥 NEW: CHAIN HEALTH MONITORING
                 # --------------------------------------------------
                 self._monitor_all_chains()
+
+                # --------------------------------------------------
+                # 🔥 NEW: CHAIN RE-CENTERING (every 30 seconds)
+                # --------------------------------------------------
+                if now - last_recenter_check > 30:
+                    try:
+                        self._check_and_recenter_chains()
+                    except Exception as e:
+                        logger.error("Chain re-center check failed: %s", e)
+                    last_recenter_check = now
 
                 # --------------------------------------------------
                 # 🔥 NEW: RETRY FAILED CHAINS (with backoff)

@@ -1697,7 +1697,9 @@ async function loadLiveMonitor(){
     const comp=r.completed_strategy_groups||[];
     setIfChanged('monitor-completed','completed',!comp.length?'<div style="color:var(--muted);font-size:12px">No completed history.</div>':
       comp.map((g,idx)=>{
-        const closed=(g.closed_leg_rows?.length?g.closed_leg_rows:(g.all_legs||[]).filter(x=>String(x.status||'').toUpperCase()==='CLOSED'));
+        const allLegs=g.all_legs||[];
+        const closedLegs=allLegs.filter(x=>String(x.status||'').toUpperCase()==='CLOSED');
+        const activeLegs=allLegs.filter(x=>String(x.status||'').toUpperCase()!=='CLOSED');
         const archKey=esc(g.archived_at||'');
         return `
         <div class="strat-card" style="margin-bottom:10px">
@@ -1719,7 +1721,9 @@ async function loadLiveMonitor(){
             <span><strong>Adj:</strong> ${g.lifetime_adjustments||0}</span>
           </div>
           <div class="monitor-section">
-            <div class="section-title" style="margin-top:10px">Closed Legs</div>${monitorTable(closed)}
+            ${activeLegs.length?`<div class="section-title" style="margin-top:10px">Open Legs (at stop)</div>${monitorTable(activeLegs)}`:''}
+            ${closedLegs.length?`<div class="section-title" style="margin-top:10px">Closed Legs</div>${monitorTable(closedLegs)}`:''}
+            ${!allLegs.length?'<div style="color:var(--muted);font-size:12px">No legs recorded.</div>':''}
           </div>
         </div>`; }).join(''));
 

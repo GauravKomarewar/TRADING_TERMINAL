@@ -449,32 +449,43 @@ class MarketReader:
                 return dict(row)
 
             # Fallback: if strict tolerance has no hit, choose nearest available
-            # non-null delta. This keeps strategy entry/adjustment alive on sparse
-            # chains (common in commodities) instead of failing every tick.
+            # non-null delta — but enforce a hard maximum deviation to prevent
+            # entering positions with wildly wrong risk profiles (e.g. on gap days
+            # where the option chain is truncated).
+            MAX_DELTA_FALLBACK = 0.15  # never accept delta off by more than 0.15 from target
             cur.execute(
                 """
                 SELECT * FROM option_chain
                 WHERE option_type = ?
                   AND delta IS NOT NULL
                   AND ltp > 0
+                  AND ABS(ABS(delta) - ?) <= ?
                 ORDER BY ABS(ABS(delta) - ?) ASC
                 LIMIT 1
                 """,
-                (option_type.upper(), target_delta),
+                (option_type.upper(), target_delta, MAX_DELTA_FALLBACK, target_delta),
             )
             row = cur.fetchone()
             if row:
                 best = dict(row)
                 logger.warning(
                     "Delta target %.4f not found within tolerance %.4f for %s; "
-                    "using nearest strike=%s delta=%s",
+                    "using nearest strike=%s delta=%s (within max fallback %.4f)",
                     target_delta,
                     tolerance,
                     option_type.upper(),
                     best.get("strike"),
                     best.get("delta"),
+                    MAX_DELTA_FALLBACK,
                 )
                 return best
+
+            # Nothing within max fallback — log critical and reject
+            logger.critical(
+                "DELTA MATCH REJECTED: target=%.4f tolerance=%.4f max_fallback=%.4f "
+                "for %s — no suitable strike in chain. Chain may need re-centering.",
+                target_delta, tolerance, MAX_DELTA_FALLBACK, option_type.upper(),
+            )
             return None
         except Exception as e:
             logger.error(f"find_option_by_delta error: {e}")
@@ -709,26 +720,38 @@ class MarketReader:
             if row:
                 return dict(row)
 
-            # Fallback: nearest match without tolerance (keeps sparse chains alive)
+            # Fallback: nearest match with a hard max deviation limit.
+            # Prevents entering positions with wildly wrong attributes on
+            # truncated/stale chains.
+            max_fallback = _adaptive_tolerance(target_attr, target_value)
             fallback_query = f"""
                 SELECT * FROM option_chain
                 WHERE option_type = ?
                   AND {sql_expr} IS NOT NULL
                   AND ltp > 0
+                  AND ABS({sql_expr} - ?) <= ?
                 ORDER BY ABS({sql_expr} - ?) ASC
                 LIMIT 1
             """
-            cur.execute(fallback_query, (option_type.upper(), target_value))
+            cur.execute(fallback_query, (option_type.upper(), target_value, max_fallback, target_value))
             row = cur.fetchone()
             if row:
                 best = dict(row)
                 logger.warning(
                     "%s target %.6f not within tolerance %.4f for %s; "
-                    "using nearest strike=%s value=%s",
+                    "using nearest strike=%s value=%s (within max fallback %.4f)",
                     target_attr, target_value, tolerance, option_type.upper(),
                     best.get("strike"), best.get(target_attr, best.get("strike")),
+                    max_fallback,
                 )
                 return best
+
+            # Nothing within max fallback — reject
+            logger.critical(
+                "CRITERIA MATCH REJECTED: %s target=%.6f tolerance=%.4f max_fallback=%.4f "
+                "for %s — no suitable strike in chain. Chain may need re-centering.",
+                target_attr, target_value, tolerance, max_fallback, option_type.upper(),
+            )
             return None
         except Exception as e:
             logger.error(f"find_option_by_criteria error: {e}")

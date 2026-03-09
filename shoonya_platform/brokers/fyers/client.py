@@ -39,6 +39,8 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+import time as _time
+from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from threading import RLock
@@ -106,6 +108,14 @@ class FyersBrokerClient:
     dropped in wherever a proxy object is expected.
     """
 
+    # Rate limiting: max API calls per sliding window
+    _RATE_LIMIT_MAX_CALLS = 10
+    _RATE_LIMIT_WINDOW = 1.0  # seconds
+
+    # Order placement retry
+    _ORDER_MAX_RETRIES = 3
+    _ORDER_RETRY_BASE_DELAY = 0.5  # seconds (exponential backoff)
+
     def __init__(self, config: FyersConfig) -> None:
         self._config = config
         self._lock = RLock()
@@ -129,7 +139,35 @@ class FyersBrokerClient:
         self._fyers_ws = None
         self._subscribed_symbols: set = set()
 
+        # Rate limiting: sliding window of call timestamps
+        self._api_call_times: deque = deque()
+
+        # Session health tracking
+        self._last_successful_call: float = 0.0
+        self._consecutive_failures: int = 0
+
         logger.info("FyersBrokerClient initialised (user: %s)", config.fyers_id)
+
+    # =========================================================================
+    # Rate limiting
+    # =========================================================================
+
+    def _rate_limit(self) -> None:
+        """
+        Enforce a sliding-window rate limit on API calls.
+        Blocks (sleeps) until a call slot is available.
+        """
+        now = _time.monotonic()
+        # Purge timestamps outside the window
+        while self._api_call_times and self._api_call_times[0] <= now - self._RATE_LIMIT_WINDOW:
+            self._api_call_times.popleft()
+        if len(self._api_call_times) >= self._RATE_LIMIT_MAX_CALLS:
+            sleep_until = self._api_call_times[0] + self._RATE_LIMIT_WINDOW
+            delay = sleep_until - now
+            if delay > 0:
+                logger.debug("Fyers rate limit: sleeping %.3fs", delay)
+                _time.sleep(delay)
+        self._api_call_times.append(_time.monotonic())
 
     # =========================================================================
     # Session management
@@ -312,36 +350,47 @@ class FyersBrokerClient:
 
     def place_order(self, order_params: Any) -> OrderResult:
         """
-        Place an order with Fyers.
+        Place an order with Fyers, with retry logic and rate limiting.
 
-        Accepts either a plain dict using Fyers API keys or a normalised
-        dict using Shoonya-style keys (auto-translated).
-
-        Fyers order keys:
-            symbol      : "NSE:NIFTY2531024550CE"
-            qty         : 50
-            type        : 1 (LIMIT) / 2 (MARKET) / 3 (SL) / 4 (SL-M)
-            side        : 1 (BUY) / -1 (SELL)
-            productType : "INTRADAY" / "MARGIN" / "CNC" / "BO" / "CO"
-            limitPrice  : 0 (for market)
-            stopPrice   : 0
-            validity    : "DAY" / "IOC"
-            disclosedQty: 0
-            offlineOrder: False
+        Retries up to _ORDER_MAX_RETRIES times with exponential backoff
+        on transient failures. Permanent failures (e.g. REJECTED) are not retried.
         """
         self.ensure_session()
-
         params = self._normalize_order_params(order_params)
-        try:
-            resp = self._fyers_client.fyers.place_order(data=params)
-            return self._parse_order_result(resp)
-        except Exception as exc:
-            logger.error("Fyers place_order failed: %s", exc)
-            return OrderResult(success=False, error_message=str(exc))
+
+        last_error = ""
+        for attempt in range(1, self._ORDER_MAX_RETRIES + 1):
+            try:
+                self._rate_limit()
+                resp = self._fyers_client.fyers.place_order(data=params)
+                result = self._parse_order_result(resp)
+                if result.success:
+                    self._consecutive_failures = 0
+                    self._last_successful_call = _time.monotonic()
+                    return result
+                # Permanent rejection — do not retry
+                err_msg = str(result.error_message or "").upper()
+                if any(kw in err_msg for kw in ("REJECT", "INVALID", "INSUFFICIENT", "NOT ALLOWED")):
+                    logger.warning("Fyers order rejected (permanent): %s", result.error_message)
+                    return result
+                last_error = result.error_message or "unknown"
+            except Exception as exc:
+                last_error = str(exc)
+                logger.warning("Fyers place_order attempt %d/%d failed: %s", attempt, self._ORDER_MAX_RETRIES, exc)
+
+            if attempt < self._ORDER_MAX_RETRIES:
+                delay = self._ORDER_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.info("Retrying order in %.1fs...", delay)
+                _time.sleep(delay)
+
+        self._consecutive_failures += 1
+        logger.error("Fyers place_order failed after %d attempts: %s", self._ORDER_MAX_RETRIES, last_error)
+        return OrderResult(success=False, error_message=f"Failed after {self._ORDER_MAX_RETRIES} attempts: {last_error}")
 
     def modify_order(self, order_id: str, modifications: Dict[str, Any]) -> Optional[dict]:
         """Modify an existing Fyers order."""
         self.ensure_session()
+        self._rate_limit()
         data = {"id": order_id, **modifications}
         try:
             resp = self._fyers_client.fyers.modify_order(data=data)
@@ -356,6 +405,7 @@ class FyersBrokerClient:
     def cancel_order(self, order_id: str) -> Optional[dict]:
         """Cancel a Fyers order."""
         self.ensure_session()
+        self._rate_limit()
         try:
             resp = self._fyers_client.fyers.cancel_order(data={"id": order_id})
             return resp
@@ -381,6 +431,7 @@ class FyersBrokerClient:
             urmtom / unrealised_pnl — unrealised P&L
         """
         self.ensure_session()
+        self._rate_limit()
         resp = self._fyers_client.fyers.positions()
         if not isinstance(resp, dict) or resp.get("s") != "ok":
             logger.error("get_positions: bad Fyers response: %s", resp)
@@ -396,6 +447,7 @@ class FyersBrokerClient:
             available_cash, used_margin, total_balance
         """
         self.ensure_session()
+        self._rate_limit()
         resp = self._fyers_client.fyers.funds()
         if not isinstance(resp, dict) or resp.get("s") != "ok":
             raise RuntimeError(f"FYERS_API_ERROR: get_limits returned {resp}")
@@ -419,6 +471,7 @@ class FyersBrokerClient:
             status      ← Fyers numeric status → string (COMPLETE/REJECTED/CANCELLED/PENDING)
         """
         self.ensure_session()
+        self._rate_limit()
         resp = self._fyers_client.fyers.orderbook()
         if not isinstance(resp, dict) or resp.get("s") != "ok":
             raise RuntimeError(f"FYERS_API_ERROR: get_order_book returned {resp}")
@@ -514,6 +567,113 @@ class FyersBrokerClient:
         except Exception as exc:
             logger.warning("get_quotes(%s) error: %s", sym, exc)
         return None
+
+    def get_ltp(self, exchange: str, token: str) -> Optional[float]:
+        """
+        Fetch the last traded price for a symbol.
+
+        Wraps get_quotes() and extracts LTP for code that calls get_ltp() directly.
+        """
+        quote = self.get_quotes(exchange, token)
+        if quote and isinstance(quote, dict):
+            v = quote.get("v") or {}
+            return float(v.get("lp", 0) or 0) or None
+        return None
+
+    def get_time_price_series(
+        self,
+        exchange: str,
+        token: str,
+        starttime: Optional[Any] = None,
+        endtime: Optional[Any] = None,
+        interval: Optional[str] = None,
+    ) -> Optional[List[dict]]:
+        """
+        Fetch OHLC candle data from Fyers history API.
+
+        Maps Shoonya-style parameters to the Fyers history endpoint.
+        Returns a list of candle dicts or None on failure.
+        """
+        if ":" in exchange:
+            sym = exchange
+        else:
+            sym = f"{exchange}:{token}"
+
+        resolution_map = {
+            "1": "1", "5": "5", "15": "15", "30": "30", "60": "60",
+            "D": "1D", "W": "1W", "M": "1M",
+        }
+        res = resolution_map.get(str(interval or "1"), "1")
+
+        try:
+            self._rate_limit()
+            data = {
+                "symbol": sym,
+                "resolution": res,
+                "date_format": "1",
+                "range_from": str(starttime or ""),
+                "range_to": str(endtime or ""),
+                "cont_flag": "1",
+            }
+            resp = self._fyers_client.fyers.history(data=data)
+            if isinstance(resp, dict) and resp.get("s") == "ok":
+                candles = resp.get("candles") or []
+                return [
+                    {
+                        "time": c[0],
+                        "into": str(c[0]),
+                        "intoi": str(c[0]),
+                        "inthigh": str(c[2]),
+                        "intlow": str(c[3]),
+                        "intopen": str(c[1]),
+                        "intclose": str(c[4]),
+                        "intvol": str(c[5]) if len(c) > 5 else "0",
+                        "ssboe": str(c[0]),
+                    }
+                    for c in candles
+                ]
+            logger.warning("get_time_price_series non-ok: %s", resp)
+        except Exception as exc:
+            logger.warning("get_time_price_series error: %s", exc)
+        return None
+
+    def health_check(self) -> Dict[str, Any]:
+        """
+        Comprehensive health check — mirrors ShoonyaClient.health_check().
+
+        Returns a dict with session, WebSocket, and API connectivity status.
+        """
+        result: Dict[str, Any] = {
+            "broker": "fyers",
+            "logged_in": self._logged_in,
+            "token_expired": False,
+            "websocket_active": self._fyers_ws is not None,
+            "subscribed_symbols": len(self._subscribed_symbols),
+            "consecutive_failures": self._consecutive_failures,
+            "healthy": False,
+        }
+        try:
+            result["token_expired"] = self._fyers_client._is_token_expired()
+        except Exception:
+            result["token_expired"] = True
+
+        # Quick API connectivity test (profile fetch is lightweight)
+        api_ok = False
+        try:
+            self._rate_limit()
+            resp = self._fyers_client.fyers.get_profile()
+            api_ok = isinstance(resp, dict) and resp.get("s") == "ok"
+        except Exception as exc:
+            logger.debug("health_check API test failed: %s", exc)
+
+        result["api_reachable"] = api_ok
+        result["healthy"] = (
+            self._logged_in
+            and not result["token_expired"]
+            and api_ok
+            and self._consecutive_failures < 5
+        )
+        return result
 
     # =========================================================================
     # Direct Fyers-specific helpers (not part of BrokerInterface)

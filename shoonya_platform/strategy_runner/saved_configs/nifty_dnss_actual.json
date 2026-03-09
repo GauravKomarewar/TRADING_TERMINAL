@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "STOPPED",
+  "status": "RUNNING",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -13,10 +13,10 @@
     "product_type": "NRML",
     "order_type": "MARKET",
     "lots": 1,
-    "db_file": "NFO_NIFTY_02-MAR-2026.sqlite",
-    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_02-MAR-2026.sqlite",
-    "paper_mode": false,
-    "test_mode": null
+    "db_file": "NFO_NIFTY_10-MAR-2026.sqlite",
+    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_10-MAR-2026.sqlite",
+    "paper_mode": true,
+    "test_mode": "SUCCESS"
   },
   "timing": {
     "entry_window_start": "09:18",
@@ -25,7 +25,7 @@
   },
   "market_data": {
     "source": "sqlite",
-    "db_file": "NFO_NIFTY_02-MAR-2026.sqlite"
+    "db_file": "NFO_NIFTY_10-MAR-2026.sqlite"
   },
   "entry": {
     "entry_sequence": "parallel",
@@ -233,6 +233,6 @@
   "paper_mode": true,
   "test_mode": "SUCCESS",
   "created_at": "2026-02-27T12:53:41",
-  "updated_at": "2026-03-06T18:19:44",
-  "status_updated_at": "2026-03-06T13:24:20.085163"
+  "updated_at": "2026-03-09T09:28:35",
+  "status_updated_at": "2026-03-09T12:39:07"
 }

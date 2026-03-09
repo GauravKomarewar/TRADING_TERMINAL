@@ -25,6 +25,33 @@ def _get_supervisor(ctx: dict):
     return sup
 
 
+# ── Search symbols via scriptmaster (for custom chain loading) ────────
+
+@sub_router.get("/settings/option-chains/search-expiries")
+def search_symbol_expiries(
+    exchange: str,
+    symbol: str,
+    ctx: dict = Depends(require_dashboard_auth),
+):
+    """
+    Look up option expiries for any exchange+symbol from scriptmaster.
+    Used by the custom chain loader to support non-default symbols.
+    """
+    from scripts.scriptmaster import options_expiry as sm_options_expiry
+
+    exchange = exchange.strip().upper()
+    symbol = symbol.strip().upper()
+    if not exchange or not symbol:
+        raise HTTPException(status_code=400, detail="exchange and symbol are required")
+
+    try:
+        expiries = sm_options_expiry(symbol, exchange) or []
+    except Exception:
+        expiries = []
+
+    return {"exchange": exchange, "symbol": symbol, "expiries": expiries}
+
+
 # ── Available instruments (from supervisor defaults) ──────────────────
 
 @sub_router.get("/settings/option-chains/available")

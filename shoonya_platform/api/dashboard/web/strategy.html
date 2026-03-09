@@ -541,10 +541,20 @@ select.form-ctrl{appearance:auto}
      own z-index:10100 is then evaluated in the root context and beats
      the ticker (10000) and header (9990) correctly. */
   .app-shell{z-index:auto}
-  /* Push sidebar content below device notch / status bar (iOS safe area) */
+  /* Push sidebar content below device notch / status bar (iOS safe area).
+     CRITICAL for Safari: the base .sidebar has transform:translateX(0) which
+     creates a stacking context. On Safari, a position:fixed element with any
+     transform set loses proper z-index stacking — the nav bar paints over it
+     even though z-index:10100 > z-index:9990. Setting transform:none removes
+     the transform-based stacking context so Safari evaluates z-index correctly.
+     (.sidebar.hidden has higher specificity (2 classes) and still gets its
+     transform:translateX(-300px) for the slide-out animation.) */
   .sidebar{position:fixed;left:0;top:0;z-index:10100;height:100vh;
-           padding-top:env(safe-area-inset-top,0px)}
-  .sidebar.hidden{transform:translateX(calc(-1 * var(--sidebar-w)));margin-left:0}
+           padding-top:env(safe-area-inset-top,0px);
+           transform:none;-webkit-transform:none}
+  .sidebar.hidden{transform:translateX(calc(-1 * var(--sidebar-w)));
+                  -webkit-transform:translateX(calc(-1 * var(--sidebar-w)));
+                  margin-left:0}
   .sidebar-open-btn{display:flex!important}
   .kpi-strip{grid-template-columns:repeat(2,1fr)}
 }

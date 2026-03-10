@@ -13,8 +13,6 @@
     "product_type": "NRML",
     "order_type": "MARKET",
     "lots": 1,
-    "db_file": "NFO_NIFTY_10-MAR-2026.sqlite",
-    "db_path": "shoonya_platform/market_data/option_chain/data/NFO_NIFTY_10-MAR-2026.sqlite",
     "paper_mode": true,
     "test_mode": "SUCCESS"
   },
@@ -24,8 +22,7 @@
     "eod_exit_time": "15:28"
   },
   "market_data": {
-    "source": "sqlite",
-    "db_file": "NFO_NIFTY_10-MAR-2026.sqlite"
+    "source": "sqlite"
   },
   "entry": {
     "entry_sequence": "parallel",
@@ -216,9 +213,6 @@
       "thu",
       "fri"
     ],
-    "entry_time": "09:18",
-    "entry_window_end": "15:10",
-    "exit_time": "15:28",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,

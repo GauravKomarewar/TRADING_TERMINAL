@@ -459,7 +459,7 @@ class AdjustmentEngine:
                         )
                         continue
                 if close_tag and close_tag in self.state.legs:
-                    closing_pnl = self.state.legs[close_tag].pnl
+                    closing_pnl = self.state.legs[close_tag].pnl or 0.0
                     self.state.cumulative_daily_pnl += closing_pnl
                     self.state.legs[close_tag].is_active = False
                 new_tag = self._open_new_leg(new_leg_cfg, closing_leg=closing_leg)

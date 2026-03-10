@@ -158,6 +158,8 @@ class SQLiteHistoricalStore:
 
     @staticmethod
     def _ts_str(val) -> str:
+        if val is None:
+            raise ValueError("ts must not be None")
         if isinstance(val, datetime):
             return val.isoformat()
         return str(val)
@@ -338,7 +340,11 @@ class SQLiteHistoricalStore:
                 try:
                     row["details"] = json.loads(details)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Malformed JSON in strategy_events.details for strategy=%s ts=%s: %s",
+                        row.get("strategy_name"), row.get("ts"), details[:200] if details else details,
+                        exc_info=True,
+                    )
         return rows
 
     def fetch_index_ticks(

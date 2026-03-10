@@ -219,7 +219,8 @@ class HistoricalAnalyticsService:
                     if (not prev.get("is_active")) and is_active:
                         events.append({"ts": ts, "strategy_name": name, "event_type": "ENTRY", "details": {"source": "state_transition"}})
                     if prev.get("is_active") and (not is_active):
-                        events.append({"ts": ts, "strategy_name": name, "event_type": "EXIT", "details": {"source": "state_transition"}})
+                        exit_reason = getattr(state, "exit_reason", "") if state else ""
+                        events.append({"ts": ts, "strategy_name": name, "event_type": "EXIT", "details": {"source": "state_transition", "exit_reason": exit_reason}})
                     prev_adj = int(prev.get("lifetime_adjustments", 0) or 0)
                     if lifetime_adj > prev_adj:
                         events.append(

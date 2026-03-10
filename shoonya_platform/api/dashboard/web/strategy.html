@@ -730,8 +730,8 @@ html[data-theme="solar"] body::before {
       <div class="stat-row"><span class="sk">LIVE mode</span><span class="sv" style="color:#fda4af" id="sb-live">—</span></div>
       <div class="stat-row"><span class="sk">MOCK mode</span><span class="sv kpi-warn" id="sb-mock">—</span></div>
       <div class="stat-row"><span class="sk">Enabled</span><span class="sv kpi-success" id="sb-enabled">—</span></div>
-      <div class="stat-row"><span class="sk">Portfolio PnL</span><span class="sv" id="sb-pnl">—</span></div>
-      <div class="stat-row"><span class="sk">Realized</span><span class="sv" id="sb-realized">—</span></div>
+      <div class="stat-row"><span class="sk">Day's PnL</span><span class="sv" id="sb-pnl">—</span></div>
+      <div class="stat-row"><span class="sk">Realized (Day)</span><span class="sv" id="sb-realized">—</span></div>
       <div class="stat-row"><span class="sk">Unrealized</span><span class="sv" id="sb-unrealized">—</span></div>
       <div class="stat-row"><span class="sk">Net Delta</span><span class="sv kpi-primary" id="sb-delta">—</span></div>
       <div class="stat-row"><span class="sk">Net Theta</span><span class="sv" id="sb-theta">—</span></div>
@@ -741,7 +741,7 @@ html[data-theme="solar"] body::before {
 
     <!-- Portfolio PnL mini chart -->
     <div class="sidebar-mini-chart">
-      <div class="mini-chart-title">Portfolio PnL (live)</div>
+      <div class="mini-chart-title">Day's PnL (cumulative)</div>
       <canvas class="mini-chart-canvas" id="sb-pnl-chart" width="268" height="72"></canvas>
     </div>
 
@@ -789,8 +789,8 @@ html[data-theme="solar"] body::before {
       <div class="kpi-card" style="animation-delay:.0s"><div class="kpi-label">Total</div><div class="kpi-value kpi-primary" id="k-total">—</div></div>
       <div class="kpi-card" style="animation-delay:.04s"><div class="kpi-label">Running</div><div class="kpi-value kpi-success" id="k-running">—</div></div>
       <div class="kpi-card" style="animation-delay:.08s"><div class="kpi-label">LIVE Mode</div><div class="kpi-value" style="color:#fda4af" id="k-live">—</div></div>
-      <div class="kpi-card" style="animation-delay:.12s"><div class="kpi-label">Portfolio PnL</div><div class="kpi-value" id="k-pnl">—</div><div class="kpi-delta" id="k-pnl-d"></div></div>
-      <div class="kpi-card" style="animation-delay:.16s"><div class="kpi-label">Realized</div><div class="kpi-value" id="k-real">—</div></div>
+      <div class="kpi-card" style="animation-delay:.12s"><div class="kpi-label">Day's PnL</div><div class="kpi-value" id="k-pnl">—</div><div class="kpi-delta" id="k-pnl-d"></div></div>
+      <div class="kpi-card" style="animation-delay:.16s"><div class="kpi-label">Realized (Day)</div><div class="kpi-value" id="k-real">—</div></div>
       <div class="kpi-card" style="animation-delay:.20s"><div class="kpi-label">Unrealized</div><div class="kpi-value" id="k-unreal">—</div></div>
       <div class="kpi-card" style="animation-delay:.24s"><div class="kpi-label">Net Delta</div><div class="kpi-value kpi-primary" id="k-delta">—</div></div>
       <div class="kpi-card" style="animation-delay:.28s"><div class="kpi-label">Net Theta</div><div class="kpi-value" id="k-theta">—</div></div>
@@ -1706,9 +1706,9 @@ async function loadLiveMonitor(){
       ['Tracked Legs',s.total_strategy_legs_tracked||0,''],
       ['Closed Legs',s.total_closed_strategy_legs||0,''],
       ['Completed Runs',s.completed_strategy_runs||0,''],
-      ['Realized',s.portfolio_realized_pnl,'pnl'],
+      ['Realized (Day)',s.portfolio_realized_pnl,'pnl'],
       ['Unrealized',s.portfolio_unrealized_pnl,'pnl'],
-      ['Portfolio PnL',s.portfolio_total_pnl,'pnl'],
+      ["Day's PnL",s.portfolio_total_pnl,'pnl'],
       ['Net Delta',s.portfolio_combined_delta,''],
       ['Gamma',s.portfolio_combined_gamma,''],
       ['Theta',s.portfolio_combined_theta,'pnl'],

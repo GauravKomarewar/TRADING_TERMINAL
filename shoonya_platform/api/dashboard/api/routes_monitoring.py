@@ -604,6 +604,29 @@ def get_live_positions_overview(
         portfolio_realized = strategy_realized + float(orphan_aggregate.get("realized_pnl", 0) or 0)
         portfolio_unrealized = strategy_unrealized + float(orphan_aggregate.get("unrealized_pnl", 0) or 0)
 
+        # Include today's completed strategy runs in day's portfolio totals so the
+        # KPI cards continue to show cumulative performance after all strategies stop.
+        today_date = datetime.now().date()
+
+        def _is_today(row: dict) -> bool:
+            archived = row.get("archived_at")
+            if not archived:
+                return True  # no date → assume today
+            try:
+                return datetime.fromisoformat(str(archived)).date() == today_date
+            except Exception:
+                return True
+
+        todays_completed = [g for g in completed_strategy_groups if _is_today(g)]
+        completed_realized = sum(
+            float(g.get("realized_pnl", 0) or 0) for g in todays_completed
+        )
+        completed_unrealized = sum(
+            float(g.get("unrealized_pnl", 0) or 0) for g in todays_completed
+        )
+        daily_portfolio_realized = portfolio_realized + completed_realized
+        daily_portfolio_unrealized = portfolio_unrealized + completed_unrealized
+
         return {
             "timestamp": datetime.now().isoformat(),
             "active_strategy_names": sorted(active_strategies),
@@ -613,9 +636,9 @@ def get_live_positions_overview(
                 "orphan_positions": len(orphan_positions),
                 "strategy_active_positions": len([p for p in classified if p["owner_type"] == "strategy_active"]),
                 "strategy_inactive_positions": len([p for p in classified if p["owner_type"] == "strategy_inactive"]),
-                "portfolio_total_pnl": float(portfolio_realized + portfolio_unrealized),
-                "portfolio_realized_pnl": float(portfolio_realized),
-                "portfolio_unrealized_pnl": float(portfolio_unrealized),
+                "portfolio_total_pnl": float(daily_portfolio_realized + daily_portfolio_unrealized),
+                "portfolio_realized_pnl": float(daily_portfolio_realized),
+                "portfolio_unrealized_pnl": float(daily_portfolio_unrealized),
                 "strategy_realized_pnl": float(strategy_realized),
                 "strategy_unrealized_pnl": float(strategy_unrealized),
                 "total_strategy_legs_tracked": sum(len(g.get("all_legs") or []) for g in by_strategy.values()),

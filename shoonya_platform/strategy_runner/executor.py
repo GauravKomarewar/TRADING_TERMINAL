@@ -328,6 +328,7 @@ class StrategyExecutor:
                 if leg_action == "close_leg":
                     targets = self._resolve_exit_targets(ref, group)
                     for leg in targets:
+                        self.state.cumulative_daily_pnl += leg.pnl
                         leg.is_active = False
                 elif leg_action == "close_all":
                     pnl_snapshot = self.state.combined_pnl

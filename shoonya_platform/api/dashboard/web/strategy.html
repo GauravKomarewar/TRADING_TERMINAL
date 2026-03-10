@@ -1794,7 +1794,7 @@ function updateKpiFromOverview(s){
 // =====================================================================
 function stratUnderlying(name){ const s=allStrategies.find(x=>x.name===name); return String(s?.identity?.underlying||s?.basic?.underlying||'').toUpperCase(); }
 function stratExchange(name){ const s=allStrategies.find(x=>x.name===name); return String(s?.identity?.exchange||s?.basic?.exchange||'').toUpperCase(); }
-function isNfoBfo(name){ const ex=stratExchange(name); return ex==='NFO'||ex==='BFO'||ex==='NSE'||ex==='BSE'; }
+function isNfoBfo(name){ const ex=stratExchange(name); return ex==='NFO'||ex==='BFO'; }
 function toggleChartSeries(el,series){ chartSeriesVisible[series]=!chartSeriesVisible[series]; el.classList.toggle('off',!chartSeriesVisible[series]); renderChart(); }
 async function refreshIndexPrices(){
   try{
@@ -1824,7 +1824,7 @@ function refreshChartStratOptions(){
 }
 
 function capturePerfSample(overview){
-  const groups=[...(overview?.strategy_groups||[])];
+  const groups=[...(overview?.strategy_groups||[]),...(overview?.completed_strategy_groups||[]).map(g=>({...g,active:false}))];
   const ts=Date.now();
   for(const g of groups){
     const name=String(g.strategy_name||'').trim(); if(!name) continue;
@@ -2002,7 +2002,7 @@ async function loadAnalyticsHistory(name){
     }
     analyticsCache[name]=data;
     return data;
-  }catch(e){ return null; }
+  }catch(e){ console.warn('loadAnalyticsHistory failed:',e.message); return null; }
 }
 
 async function onChartStratChange(){
@@ -2128,14 +2128,18 @@ function renderChart(){
   if(vixLeg) vixLeg.style.display=isNfoBfo(strategy)?'':'none';
   // Use analytics history if available (persistent across page refresh), else in-memory
   const analytics=analyticsCache[strategy];
+  const live=perfSeries[strategy]||{samples:[],events:[]};
   let all, allEvents;
   if(analytics && analytics.samples.length>=2){
-    all=analytics.samples;
-    allEvents=analytics.events||[];
+    // Merge: use analytics history + append any live samples newer than the analytics cache
+    const cutoff=analytics.loadedAt||0;
+    const newer=(live.samples||[]).filter(s=>s.ts>cutoff);
+    all=newer.length?[...analytics.samples,...newer]:analytics.samples;
+    const newerEvts=(live.events||[]).filter(e=>e.ts>cutoff);
+    allEvents=newerEvts.length?[...(analytics.events||[]),...newerEvts]:(analytics.events||[]);
   } else {
-    const series=perfSeries[strategy]||{samples:[],events:[]};
-    all=series.samples||[];
-    allEvents=series.events||[];
+    all=live.samples||[];
+    allEvents=live.events||[];
   }
   const now=Date.now();
   let rawSamples=chartRange>0?all.filter(x=>x.ts>=now-(chartRange*1000)):all.slice();

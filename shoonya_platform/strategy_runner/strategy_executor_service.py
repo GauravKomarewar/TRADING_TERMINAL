@@ -1505,6 +1505,7 @@ class PerStrategyExecutor:
             if leg.order_placed_at and (datetime.now() - leg.order_placed_at).total_seconds() > 60:
                 logger.warning(f"CLOSE_PENDING TIMEOUT | {leg.tag} – marking CLOSED")
                 leg.order_status = "CLOSED"
+                self.state.cumulative_daily_pnl += leg.pnl
                 leg.is_active = False
 
     def notify_fill(self, symbol: str, side: str, qty: int, price: float,
@@ -1546,6 +1547,7 @@ class PerStrategyExecutor:
             if fill_symbol not in self._leg_symbols(leg):
                 continue
             leg.order_status = "CLOSED"
+            self.state.cumulative_daily_pnl += leg.pnl
             leg.is_active = False
             leg.order_id = broker_order_id
             logger.info(f"CLOSE FILL NOTIFIED | {self.name} | {symbol} {side} {qty} @ {price}")

@@ -84,8 +84,33 @@ class HistoricalAnalyticsService:
         h["enabled"] = True
         return h
 
+    def _seed_last_state(self) -> None:
+        """Load last known strategy states from DB to avoid duplicate ENTRY events on restart."""
+        if self.store is None:
+            return
+        try:
+            svc = getattr(self.bot, "strategy_executor_service", None)
+            if svc is None:
+                return
+            for name in dict(getattr(svc, "_strategies", {}) or {}):
+                events = self.store.fetch_strategy_events(name, from_ts=None, to_ts=None, limit=1)
+                if events:
+                    last_evt = events[-1]
+                    evt_type = str(last_evt.get("event_type", "")).upper()
+                    is_active = evt_type != "EXIT"
+                    adj_count = 0
+                    samples = self.store.fetch_strategy_samples(name, from_ts=None, to_ts=None, limit=1)
+                    if samples:
+                        adj_count = int(samples[-1].get("lifetime_adjustments", 0) or 0)
+                    self._last_strategy_state[name] = {"is_active": is_active, "lifetime_adjustments": adj_count}
+                    logger.debug("Seeded last state for %s: active=%s, adj=%d", name, is_active, adj_count)
+        except Exception:
+            logger.debug("Failed to seed last strategy state from DB", exc_info=True)
+
     def _run_loop(self) -> None:
+        self._seed_last_state()
         next_option_at = 0.0
+        next_cleanup_at = time.time() + 3600  # first cleanup after 1 hour
         while not self._stop_event.is_set():
             started = time.time()
             try:
@@ -93,12 +118,27 @@ class HistoricalAnalyticsService:
                 if started >= next_option_at:
                     self._collect_option_chain_metrics()
                     next_option_at = started + self.option_sampling_sec
+                if started >= next_cleanup_at:
+                    self._cleanup_old_data()
+                    next_cleanup_at = started + 3600
             except Exception:
                 logger.exception("Historical analytics loop error")
 
             elapsed = time.time() - started
             sleep_for = max(0.2, self.sampling_sec - elapsed)
             self._stop_event.wait(sleep_for)
+
+    def _cleanup_old_data(self) -> None:
+        """Remove data older than 7 days to prevent DB bloat."""
+        if self.store is None:
+            return
+        cleanup = getattr(self.store, "cleanup_old_data", None)
+        if callable(cleanup):
+            try:
+                cleanup(days=7)
+                logger.info("Historical analytics cleanup completed")
+            except Exception:
+                logger.debug("Historical analytics cleanup failed", exc_info=True)
 
     @staticmethod
     def _utcnow() -> datetime:
@@ -131,9 +171,9 @@ class HistoricalAnalyticsService:
 
                 is_active = bool(getattr(state, "any_leg_active", False)) if state else False
                 lifetime_adj = int(getattr(state, "lifetime_adjustments", 0) or 0) if state else 0
-                total_pnl = float(getattr(state, "combined_pnl", 0.0) or 0.0) if state else 0.0
                 realized = float(getattr(state, "realised_pnl", 0.0) or 0.0) if state else 0.0
                 unrealized = float(getattr(state, "unrealised_pnl", 0.0) or 0.0) if state else 0.0
+                total_pnl = realized + unrealized
                 runtime_seconds = 0
                 entry_time = getattr(state, "entry_time", None) if state else None
                 if isinstance(entry_time, datetime):
@@ -263,6 +303,7 @@ class HistoricalAnalyticsService:
         expiry: str,
         db_path: Path,
     ) -> Optional[Dict[str, Any]]:
+        conn = None
         try:
             conn = sqlite3.connect(db_path, timeout=2, check_same_thread=False)
             conn.row_factory = sqlite3.Row
@@ -296,7 +337,6 @@ class HistoricalAnalyticsService:
                 ORDER BY strike ASC
                 """
             ).fetchall()
-            conn.close()
 
             total_ce_oi = float((agg["ce_oi"] if agg else 0) or 0)
             total_pe_oi = float((agg["pe_oi"] if agg else 0) or 0)
@@ -364,3 +404,9 @@ class HistoricalAnalyticsService:
         except Exception:
             logger.debug("Failed extracting option metrics from %s", db_path, exc_info=True)
             return None
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass

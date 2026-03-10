@@ -13,41 +13,49 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from shoonya_platform.analytics.historical_store import PostgresHistoricalStore
+from shoonya_platform.analytics.sqlite_historical_store import SQLiteHistoricalStore
 from shoonya_platform.market_data.feeds import index_tokens_subscriber
 
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _OPTION_DATA_DIR = _PROJECT_ROOT / "shoonya_platform" / "market_data" / "option_chain" / "data"
+_SQLITE_ANALYTICS_DIR = _PROJECT_ROOT / "shoonya_platform" / "persistence" / "data"
 _DB_NAME_RE = re.compile(r"^([A-Z]+)_([A-Z0-9]+)_(\d{2}-[A-Za-z]{3}-\d{4})\.sqlite$")
 
 
 class HistoricalAnalyticsService:
     def __init__(self, bot: Any):
         self.bot = bot
-        self.enabled = str(os.getenv("HISTORICAL_PG_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        self._pg_enabled = str(os.getenv("HISTORICAL_PG_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
         self.dsn = str(os.getenv("HISTORICAL_PG_DSN", "")).strip()
         self.sampling_sec = max(1, int(os.getenv("HISTORICAL_SAMPLING_SEC", "3") or 3))
         self.option_sampling_sec = max(2, int(os.getenv("HISTORICAL_OPTION_SAMPLING_SEC", "10") or 10))
 
-        self.store: Optional[PostgresHistoricalStore] = None
+        self.store = None
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
         self._last_strategy_state: Dict[str, Dict[str, Any]] = {}
         self._last_option_totals: Dict[Tuple[str, str, str], Dict[str, float]] = {}
 
-        if not self.enabled:
-            logger.info("Historical analytics disabled (HISTORICAL_PG_ENABLED != 1)")
-            return
-        if not self.dsn:
-            logger.warning("Historical analytics enabled but HISTORICAL_PG_DSN missing; disabling")
-            self.enabled = False
-            return
+        # Try PostgreSQL first, fall back to SQLite
+        if self._pg_enabled and self.dsn:
+            try:
+                self.store = PostgresHistoricalStore(self.dsn)
+                self.enabled = True
+                logger.info("Historical analytics PostgreSQL store initialized")
+                return
+            except Exception as e:
+                logger.warning("PostgreSQL store init failed (%s); falling back to SQLite", e)
 
+        # SQLite fallback – always enabled
         try:
-            self.store = PostgresHistoricalStore(self.dsn)
-            logger.info("Historical analytics PostgreSQL store initialized")
+            _SQLITE_ANALYTICS_DIR.mkdir(parents=True, exist_ok=True)
+            sqlite_path = _SQLITE_ANALYTICS_DIR / "analytics_history.sqlite"
+            self.store = SQLiteHistoricalStore(sqlite_path)
+            self.enabled = True
+            logger.info("Historical analytics SQLite fallback store initialized at %s", sqlite_path)
         except Exception as e:
             logger.error("Historical analytics store init failed: %s", e)
             self.enabled = False

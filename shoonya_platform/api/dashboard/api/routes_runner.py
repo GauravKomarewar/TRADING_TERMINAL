@@ -55,7 +55,7 @@ def analytics_strategy_samples(
 ):
     svc = _get_historical_service(ctx)
     if not svc.enabled or svc.store is None:
-        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+        raise HTTPException(status_code=503, detail="Historical analytics layer disabled")
     return {
         "strategy_name": strategy_name,
         "rows": svc.store.fetch_strategy_samples(
@@ -77,7 +77,7 @@ def analytics_strategy_events(
 ):
     svc = _get_historical_service(ctx)
     if not svc.enabled or svc.store is None:
-        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+        raise HTTPException(status_code=503, detail="Historical analytics layer disabled")
     return {
         "strategy_name": strategy_name,
         "rows": svc.store.fetch_strategy_events(
@@ -99,7 +99,7 @@ def analytics_index_ticks(
 ):
     svc = _get_historical_service(ctx)
     if not svc.enabled or svc.store is None:
-        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+        raise HTTPException(status_code=503, detail="Historical analytics layer disabled")
     syms = [s.strip().upper() for s in str(symbols).split(",") if s.strip()]
     if not syms:
         raise HTTPException(status_code=400, detail="At least one symbol is required")
@@ -126,7 +126,7 @@ def analytics_option_metrics(
 ):
     svc = _get_historical_service(ctx)
     if not svc.enabled or svc.store is None:
-        raise HTTPException(status_code=503, detail="Historical PostgreSQL layer disabled")
+        raise HTTPException(status_code=503, detail="Historical analytics layer disabled")
     return {
         "exchange": exchange,
         "symbol": symbol,

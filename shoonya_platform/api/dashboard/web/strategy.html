@@ -438,7 +438,9 @@ canvas.sparkline{display:block;width:100%;height:30px;border-radius:3px}
 .rpill{padding:3px 9px;background:rgba(0,0,0,0.2);border:1px solid var(--border);border-radius:12px;color:var(--muted);cursor:pointer;font-size:11px;font-weight:600;transition:all 0.2s;font-family:var(--font-mono)}
 .rpill:hover{border-color:rgba(255,255,255,0.18);color:var(--text)}
 .rpill.active{background:var(--primary-dim);border-color:var(--primary);color:var(--primary)}
-.chart-canvas{display:block;width:100%;height:240px}
+.chart-canvas{display:block;width:100%;height:340px}
+.leg-toggle{cursor:pointer;opacity:1;transition:opacity 0.2s}
+.leg-toggle.off{opacity:0.35;text-decoration:line-through}
 
 /* ====== CHART CROSSHAIR TOOLTIP ====== */
 #chart-crosshair{
@@ -689,6 +691,7 @@ html[data-theme="solar"] body::before {
   <div class="tt-title" id="tt-name"></div>
   <div class="tt-row"><span>PnL</span><span class="cv" id="tt-pnl"></span></div>
   <div class="tt-row"><span>Spot</span><span class="cv" id="tt-spot"></span></div>
+  <div class="tt-row" id="tt-vix-row" style="display:none"><span>VIX</span><span class="cv" id="tt-vix"></span></div>
   <div class="tt-row"><span>Time</span><span class="cv" id="tt-time"></span></div>
 </div>
 
@@ -907,8 +910,9 @@ html[data-theme="solar"] body::before {
         <div class="chart-outer" id="chart-outer">
           <div class="chart-header">
             <div class="chart-legend">
-              <span><span class="leg-line" style="background:#66e4ff"></span>PnL</span>
-              <span><span class="leg-line" style="background:#fbcb5c;opacity:.8"></span>Spot</span>
+              <span class="leg-toggle" data-series="pnl" onclick="toggleChartSeries(this,'pnl')"><span class="leg-line" style="background:#66e4ff"></span>PnL</span>
+              <span class="leg-toggle" data-series="spot" onclick="toggleChartSeries(this,'spot')"><span class="leg-line" style="background:#fbcb5c;opacity:.8"></span>Spot</span>
+              <span class="leg-toggle" id="vix-legend" data-series="vix" onclick="toggleChartSeries(this,'vix')" style="display:none"><span class="leg-line" style="background:#e879f9;opacity:.8"></span>VIX</span>
               <span><span class="leg-dot" style="background:#4ade80"></span>Entry</span>
               <span><span class="leg-dot" style="background:#fb7185"></span>Exit</span>
               <span><span class="leg-dot" style="background:#fbcb5c"></span>Adj</span>
@@ -918,9 +922,9 @@ html[data-theme="solar"] body::before {
               <div class="range-pills">
                 <button class="rpill" onclick="setRange(this,900)">15m</button>
                 <button class="rpill" onclick="setRange(this,1800)">30m</button>
-                <button class="rpill active" onclick="setRange(this,3600)">1h</button>
+                <button class="rpill" onclick="setRange(this,3600)">1h</button>
                 <button class="rpill" onclick="setRange(this,10800)">3h</button>
-                <button class="rpill" onclick="setRange(this,0)">All</button>
+                <button class="rpill active" onclick="setRange(this,0)">All</button>
               </div>
             </div>
           </div>
@@ -1003,7 +1007,7 @@ html[data-theme="solar"] body::before {
 const API_BASE = '/dashboard';
 let allStrategies = [];
 let currentFilter = 'all';
-let chartRange = 3600;
+let chartRange = 0;
 let currentToggle = null, currentDelete = null, currentDetails = null, currentStopName = null;
 const mCache = {summary:'',groups:'',completed:'',orphans:''};
 let monitorGroupNames = '';
@@ -1016,6 +1020,8 @@ const sparklineCache = {};     // { name: [ pnl samples ] }
 let chartMeta = null;
 let sidebarVisible = true;
 const analyticsCache = {};
+const vixCache = {};  // { loadedAt, ticks: [{ts,ltp}] }
+const chartSeriesVisible = {pnl:true, spot:true, vix:true};
 const dismissedRuns = new Set(JSON.parse(localStorage.getItem('shoonya_dismissed_runs')||'[]'));
 function saveDismissedRuns(){ localStorage.setItem('shoonya_dismissed_runs',JSON.stringify([...dismissedRuns])); }
 
@@ -1787,11 +1793,17 @@ function updateKpiFromOverview(s){
 // INDEX PRICES
 // =====================================================================
 function stratUnderlying(name){ const s=allStrategies.find(x=>x.name===name); return String(s?.identity?.underlying||s?.basic?.underlying||'').toUpperCase(); }
+function stratExchange(name){ const s=allStrategies.find(x=>x.name===name); return String(s?.identity?.exchange||s?.basic?.exchange||'').toUpperCase(); }
+function isNfoBfo(name){ const ex=stratExchange(name); return ex==='NFO'||ex==='BFO'||ex==='NSE'||ex==='BSE'; }
+function toggleChartSeries(el,series){ chartSeriesVisible[series]=!chartSeriesVisible[series]; el.classList.toggle('off',!chartSeriesVisible[series]); renderChart(); }
 async function refreshIndexPrices(){
   try{
     const syms=[...new Set(allStrategies.map(s=>stratUnderlying(s.name)).filter(Boolean))];
-    if(!syms.length) return;
-    const r=await api('GET',`/index-tokens/prices?symbols=${encodeURIComponent(syms.join(','))}`);
+    // Always include INDIAVIX for NFO/BFO strategy charts
+    if(allStrategies.some(s=>isNfoBfo(s.name))) syms.push('INDIAVIX');
+    const unique=[...new Set(syms)];
+    if(!unique.length) return;
+    const r=await api('GET',`/index-tokens/prices?symbols=${encodeURIComponent(unique.join(','))}`);
     latestIndexPrices=r.indices||{};
   }catch(_){}
 }
@@ -1819,7 +1831,8 @@ function capturePerfSample(overview){
     if(!perfSeries[name]) perfSeries[name]={samples:[],events:[],last:null};
     const d=perfSeries[name];
     const underlying=stratUnderlying(name);
-    const sample={ts,pnl:Number(g.total_pnl||0),spot:Number(latestIndexPrices?.[underlying]?.ltp||0),active:Boolean(g.active),adj:Number(g.lifetime_adjustments||0)};
+    const vixLtp=Number(latestIndexPrices?.['INDIAVIX']?.ltp||0);
+    const sample={ts,pnl:Number(g.total_pnl||0),spot:Number(latestIndexPrices?.[underlying]?.ltp||0),vix:vixLtp,active:Boolean(g.active),adj:Number(g.lifetime_adjustments||0)};
     d.samples.push(sample); if(d.samples.length>2400) d.samples.shift();
     const last=d.last;
     if(!last){ if(sample.active) d.events.push({ts,type:'entry'}); }
@@ -1956,15 +1969,37 @@ async function loadAnalyticsHistory(name){
   const c=analyticsCache[name];
   if(c && Date.now()-c.loadedAt<30000) return c;
   try{
-    const [sr,er]=await Promise.all([
+    const fetches=[
       api('GET',`/analytics/history/strategy-samples?strategy_name=${encodeURIComponent(name)}&limit=5000`),
       api('GET',`/analytics/history/strategy-events?strategy_name=${encodeURIComponent(name)}&limit=2000`)
-    ]);
+    ];
+    // Fetch VIX ticks for NFO/BFO strategies
+    const wantVix=isNfoBfo(name);
+    if(wantVix && (!vixCache.loadedAt || Date.now()-vixCache.loadedAt>30000)){
+      fetches.push(api('GET',`/analytics/history/index-ticks?symbols=INDIAVIX&limit=20000`));
+    }
+    const results=await Promise.all(fetches);
+    const sr=results[0], er=results[1];
     const data={
       samples:(sr.rows||[]).map(r=>({ts:new Date(r.ts).getTime(),pnl:Number(r.total_pnl||0),spot:Number(r.spot_price||0),active:Boolean(r.is_active),adj:Number(r.lifetime_adjustments||0)})),
       events:(er.rows||[]).map(r=>{const t=String(r.event_type||'').toLowerCase();return{ts:new Date(r.ts).getTime(),type:t==='adjustment'?'adj':t};}),
       loadedAt:Date.now()
     };
+    // Merge VIX from dedicated ticks into samples by nearest timestamp
+    if(wantVix){
+      if(results[2]){
+        vixCache.ticks=(results[2].rows||[]).map(r=>({ts:new Date(r.ts).getTime(),ltp:Number(r.ltp||0)}));
+        vixCache.loadedAt=Date.now();
+      }
+      if(vixCache.ticks?.length){
+        const vt=vixCache.ticks;
+        let vi=0;
+        for(const s of data.samples){
+          while(vi<vt.length-1 && Math.abs(vt[vi+1].ts-s.ts)<Math.abs(vt[vi].ts-s.ts)) vi++;
+          s.vix=vt[vi].ltp;
+        }
+      }
+    }
     analyticsCache[name]=data;
     return data;
   }catch(e){ return null; }
@@ -2085,6 +2120,12 @@ function renderChart(){
   const canvas=$('chart-canvas'), sel=$('chart-strat');
   if(!canvas||!sel) return;
   const strategy=sel.value;
+  const showVix=isNfoBfo(strategy)&&chartSeriesVisible.vix;
+  const showSpot=chartSeriesVisible.spot;
+  const showPnl=chartSeriesVisible.pnl;
+  // Toggle VIX legend visibility
+  const vixLeg=$('vix-legend');
+  if(vixLeg) vixLeg.style.display=isNfoBfo(strategy)?'':'none';
   // Use analytics history if available (persistent across page refresh), else in-memory
   const analytics=analyticsCache[strategy];
   let all, allEvents;
@@ -2105,7 +2146,7 @@ function renderChart(){
     rawSamples=rawSamples.filter((_,i)=>i%step===0||i===rawSamples.length-1);
   }
   const dpr=window.devicePixelRatio||1;
-  const cssW=canvas.clientWidth||900, cssH=canvas.clientHeight||240;
+  const cssW=canvas.clientWidth||900, cssH=canvas.clientHeight||340;
   canvas.width=Math.floor(cssW*dpr); canvas.height=Math.floor(cssH*dpr);
   const ctx=canvas.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -2115,40 +2156,56 @@ function renderChart(){
     ctx.fillText('Collecting samples… switch to Monitor to start streaming.',14,22);
     chartMeta=null; return;
   }
-  // Smooth PnL and spot to remove tick noise
+  // Smooth PnL, spot, and VIX to remove tick noise
   const smaW=Math.max(5, Math.floor(rawSamples.length/20));
   const smoothedPnl=smooth(rawSamples.map(x=>Number(x.pnl||0)), smaW);
   const smoothedSpot=smooth(rawSamples.map(x=>Number(x.spot||0)), smaW);
-  const samples=rawSamples.map((s,i)=>({...s, pnl:smoothedPnl[i], spot:smoothedSpot[i]}));
-  const pad={l:62,r:68,t:24,b:32};
+  const hasVixData=rawSamples.some(x=>Number(x.vix||0)>0);
+  const smoothedVix=hasVixData?smooth(rawSamples.map(x=>Number(x.vix||0)), smaW):null;
+  const samples=rawSamples.map((s,i)=>({...s, pnl:smoothedPnl[i], spot:smoothedSpot[i], vix:smoothedVix?smoothedVix[i]:0}));
+  const pad={l:62,r:showVix&&hasVixData?130:68,t:24,b:32};
   const w=cssW-pad.l-pad.r, h=cssH-pad.t-pad.b;
   const tMin=samples[0].ts, tMax=samples[samples.length-1].ts;
   const pnlVals=samples.map(x=>Number(x.pnl||0));
   const spotVals=samples.map(x=>Number(x.spot||0)).filter(v=>Number.isFinite(v)&&v!==0);
+  const vixVals=hasVixData?samples.map(x=>Number(x.vix||0)).filter(v=>Number.isFinite(v)&&v>0):[];
   let pMin=Math.min(0,Math.min(...pnlVals)), pMax=Math.max(0,Math.max(...pnlVals));
   { const pPad=Math.max((pMax-pMin)*0.1,1); pMin-=pPad; pMax+=pPad; }
   let sMin=spotVals.length?Math.min(...spotVals):0, sMax=spotVals.length?Math.max(...spotVals):1;
   if(sMin===sMax){sMin-=1;sMax+=1;}
   { const sMid=(sMax+sMin)/2; const sMinR=Math.max(sMid*0.005,10); if(sMax-sMin<sMinR){ sMin=sMid-sMinR/2; sMax=sMid+sMinR/2; } const sPad=(sMax-sMin)*0.05; sMin-=sPad; sMax+=sPad; }
+  let vMin=0,vMax=1;
+  if(vixVals.length){ vMin=Math.min(...vixVals); vMax=Math.max(...vixVals); if(vMin===vMax){vMin-=1;vMax+=1;} const vPad=(vMax-vMin)*0.1; vMin-=vPad; vMax+=vPad; }
   const xf=ts=>pad.l+((ts-tMin)/Math.max(1,(tMax-tMin)))*w;
   const yP=v=>pad.t+(1-((v-pMin)/Math.max(1e-9,(pMax-pMin))))*h;
   const yS=v=>pad.t+(1-((v-sMin)/Math.max(1e-9,(sMax-sMin))))*h;
-  chartMeta={xf,yP,yS,samples,pMin,pMax,sMin,sMax,pad,w,h,tMin,tMax,cssW,cssH,strategy};
+  const yV=v=>pad.t+(1-((v-vMin)/Math.max(1e-9,(vMax-vMin))))*h;
+  chartMeta={xf,yP,yS,yV,samples,pMin,pMax,sMin,sMax,vMin,vMax,pad,w,h,tMin,tMax,cssW,cssH,strategy,hasVix:showVix&&hasVixData};
 
   // grid
   for(let i=0;i<=4;i++){
     const y=pad.t+(i/4)*h;
     ctx.strokeStyle='rgba(255,255,255,0.055)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(pad.l+w,y); ctx.stroke();
+    // Left Y-axis: PnL
     const v=pMax-(i/4)*(pMax-pMin);
     ctx.fillStyle='rgba(102,228,255,0.55)'; ctx.textAlign='right'; ctx.font='9px IBM Plex Mono,monospace';
     ctx.fillText(f2(v),pad.l-5,y+3);
   }
+  // Right Y-axis: Spot
   ctx.textAlign='left';
   for(let i=0;i<=4;i++){
     const v=sMax-(i/4)*(sMax-sMin);
     ctx.fillStyle='rgba(251,203,92,0.55)'; ctx.font='9px IBM Plex Mono,monospace';
     ctx.fillText(f2(v),cssW-pad.r+5,pad.t+(i/4)*h+3);
+  }
+  // Far-right Y-axis: VIX (only for NFO/BFO)
+  if(showVix&&hasVixData){
+    for(let i=0;i<=4;i++){
+      const v=vMax-(i/4)*(vMax-vMin);
+      ctx.fillStyle='rgba(232,121,249,0.55)'; ctx.font='9px IBM Plex Mono,monospace';
+      ctx.fillText(v.toFixed(1),cssW-pad.r+68,pad.t+(i/4)*h+3);
+    }
   }
 
   // zero line
@@ -2162,8 +2219,23 @@ function renderChart(){
   ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,pad.t+h); ctx.lineTo(pad.l+w,pad.t+h); ctx.stroke();
 
+  // VIX line (draw first so it's behind spot and PnL)
+  if(showVix&&hasVixData){
+    ctx.beginPath(); let fv=true;
+    samples.forEach(s=>{ if(!s.vix) return; const px=xf(s.ts),py=yV(s.vix); if(fv){ctx.moveTo(px,py);fv=false;}else ctx.lineTo(px,py); });
+    ctx.strokeStyle='rgba(232,121,249,0.45)'; ctx.lineWidth=1.2;
+    if(!fv){
+      ctx.stroke();
+      // VIX area fill
+      ctx.lineTo(xf(samples[samples.length-1].ts),pad.t+h); ctx.lineTo(xf(samples[0].ts),pad.t+h); ctx.closePath();
+      const vg=ctx.createLinearGradient(0,pad.t,0,pad.t+h);
+      vg.addColorStop(0,'rgba(232,121,249,0.06)'); vg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=vg; ctx.fill();
+    }
+  }
+
   // spot line
-  if(spotVals.length){
+  if(showSpot&&spotVals.length){
     ctx.beginPath(); let f=true;
     samples.forEach(s=>{ if(!s.spot) return; const px=xf(s.ts),py=yS(s.spot); if(f){ctx.moveTo(px,py);f=false;}else ctx.lineTo(px,py); });
     ctx.strokeStyle='rgba(251,203,92,0.65)'; ctx.lineWidth=1.4;
@@ -2171,16 +2243,18 @@ function renderChart(){
   }
 
   // PnL area
-  const last=samples[samples.length-1]?.pnl||0;
-  ctx.beginPath();
-  samples.forEach((s,i)=>{ if(i===0) ctx.moveTo(xf(s.ts),yP(s.pnl)); else ctx.lineTo(xf(s.ts),yP(s.pnl)); });
-  ctx.lineTo(xf(samples[samples.length-1].ts),yP(0)); ctx.lineTo(xf(samples[0].ts),yP(0)); ctx.closePath();
-  const ag=ctx.createLinearGradient(0,pad.t,0,pad.t+h);
-  ag.addColorStop(0,last>=0?'rgba(102,228,255,0.18)':'rgba(251,113,133,0.18)'); ag.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=ag; ctx.fill();
-  // PnL line
-  ctx.strokeStyle=last>=0?'#66e4ff':'#fb7185'; ctx.lineWidth=2;
-  ctx.beginPath(); samples.forEach((s,i)=>{ if(i===0) ctx.moveTo(xf(s.ts),yP(s.pnl)); else ctx.lineTo(xf(s.ts),yP(s.pnl)); }); ctx.stroke();
+  if(showPnl){
+    const last=samples[samples.length-1]?.pnl||0;
+    ctx.beginPath();
+    samples.forEach((s,i)=>{ if(i===0) ctx.moveTo(xf(s.ts),yP(s.pnl)); else ctx.lineTo(xf(s.ts),yP(s.pnl)); });
+    ctx.lineTo(xf(samples[samples.length-1].ts),yP(0)); ctx.lineTo(xf(samples[0].ts),yP(0)); ctx.closePath();
+    const ag=ctx.createLinearGradient(0,pad.t,0,pad.t+h);
+    ag.addColorStop(0,last>=0?'rgba(102,228,255,0.18)':'rgba(251,113,133,0.18)'); ag.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=ag; ctx.fill();
+    // PnL line
+    ctx.strokeStyle=last>=0?'#66e4ff':'#fb7185'; ctx.lineWidth=2;
+    ctx.beginPath(); samples.forEach((s,i)=>{ if(i===0) ctx.moveTo(xf(s.ts),yP(s.pnl)); else ctx.lineTo(xf(s.ts),yP(s.pnl)); }); ctx.stroke();
+  }
 
   // events
   for(const ev of events){
@@ -2223,6 +2297,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     $('tt-pnl').textContent=(closest.pnl>=0?'+':'')+f2(closest.pnl);
     $('tt-pnl').style.color=closest.pnl>=0?'#4ade80':'#fb7185';
     $('tt-spot').textContent=closest.spot?f2(closest.spot):'—';
+    const vixRow=$('tt-vix-row');
+    if(meta.hasVix&&closest.vix){
+      vixRow.style.display='flex';
+      $('tt-vix').textContent=Number(closest.vix).toFixed(2);
+      $('tt-vix').style.color='#e879f9';
+    } else { vixRow.style.display='none'; }
     $('tt-time').textContent=new Date(closest.ts).toLocaleTimeString();
   });
   canvas.addEventListener('mouseleave',()=>{ hideChartTooltip(); $('chart-crosshair').style.display='none'; });

@@ -57,12 +57,17 @@ class ExitEngine:
         if action:
             return action
 
-        # 5. Time-based exit
+        # 5. Greek risk limits
+        action = self._check_greek_limits()
+        if action:
+            return action
+
+        # 6. Time-based exit
         action = self._check_time_exit(current_time)
         if action:
             return action
 
-        # 6. Combined conditions (custom)
+        # 7. Combined conditions (custom)
         combined = self.exit_config.get("combined_conditions", {})
         if combined.get("operator") == "OR":
             rules = combined.get("rules", [])
@@ -83,7 +88,7 @@ class ExitEngine:
                     self.last_exit_reason = "combined_conditions_and"
                     return "combined_conditions"
 
-        # 7. Per-leg exit rules
+        # 8. Per-leg exit rules
         leg_rules = self.exit_config.get("leg_rules", [])
         for rule in leg_rules:
             if self._check_leg_rule(rule):
@@ -97,14 +102,19 @@ class ExitEngine:
         cfg = self.exit_config.get("profit_target", {})
         amount = self._to_float(cfg.get("amount"))
         pct = self._to_float(cfg.get("pct"))
+        action = cfg.get("action", "exit_all")
         if amount is not None and self.state.combined_pnl >= amount:
             self.last_exit_reason = f"profit_target_amount:{amount}"
-            return cfg.get("action", "exit_all")
+            if action in ("trail", "lock_trail"):
+                return f"profit_target_{action}"
+            return action
         # BUG-A4 FIX: Use combined_pnl_pct (which guards against zero division)
         # instead of raw division by total_premium.
         if pct is not None and self.state.combined_pnl_pct >= pct:
             self.last_exit_reason = f"profit_target_pct:{pct}"
-            return cfg.get("action", "exit_all")
+            if action in ("trail", "lock_trail"):
+                return f"profit_target_{action}"
+            return action
         return None
 
     def _check_stop_loss(self) -> Optional[str]:
@@ -201,6 +211,35 @@ class ExitEngine:
             self.state.current_profit_step = next_step
             self.last_exit_reason = f"profit_step:{next_step}"
             return f"profit_step_{action}"
+        return None
+
+    def _check_greek_limits(self) -> Optional[str]:
+        """Enforce Greek‑based risk limits from exit.risk section."""
+        cfg = self.exit_config.get("risk", {})
+        # Max |net delta|
+        max_delta = self._to_float(cfg.get("max_delta"))
+        if max_delta is not None and abs(self.state.net_delta) > max_delta:
+            self.last_exit_reason = f"max_delta_exceeded:{abs(self.state.net_delta)}>{max_delta}"
+            # For now we always exit all; could later use delta_breach_action.
+            return "exit_all"
+
+        # Max IV / Min IV
+        max_iv = self._to_float(cfg.get("max_iv"))
+        min_iv = self._to_float(cfg.get("min_iv"))
+        atm_iv = self.state.atm_iv
+        if max_iv is not None and atm_iv > max_iv:
+            self.last_exit_reason = f"max_iv_exceeded:{atm_iv}>{max_iv}"
+            return "exit_all"
+        if min_iv is not None and atm_iv < min_iv:
+            self.last_exit_reason = f"min_iv_breached:{atm_iv}<{min_iv}"
+            return "exit_all"
+
+        # Breakeven buffer
+        buffer = self._to_float(cfg.get("breakeven_buffer"))
+        if buffer is not None and self.state.breakeven_distance <= buffer:
+            self.last_exit_reason = f"breakeven_buffer_hit:{self.state.breakeven_distance}<={buffer}"
+            return "exit_all"
+
         return None
 
     def _check_time_exit(self, current_time: Optional[datetime]) -> Optional[str]:

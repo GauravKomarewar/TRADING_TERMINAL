@@ -318,7 +318,7 @@ class StateManager:
         finally:
             conn.close()
 
-    def delete_completed_monitor_history(self, strategy_name: str = None, archived_at: str = None) -> int:
+    def delete_completed_monitor_history(self, strategy_name: Optional[str] = None, archived_at: Optional[str] = None) -> int:
         """Delete completed monitor history entries. If strategy_name and archived_at given, delete one entry. If only strategy_name, delete all for that strategy. If neither, delete all."""
         conn = self._connect()
         try:
@@ -818,7 +818,9 @@ class StrategyExecutorService:
                         "gamma": float(getattr(leg, "gamma", 0) or 0),
                         "theta": float(getattr(leg, "theta", 0) or 0),
                         "vega": float(getattr(leg, "vega", 0) or 0),
-                        "opened_at": row.get("opened_at") or (getattr(state, "entry_time", None).isoformat() if getattr(state, "entry_time", None) else now_iso),
+                        "opened_at": row.get("opened_at") or (
+                            (state.entry_time.isoformat() if state.entry_time else now_iso)
+                        ),
                         "closed_at": None if is_active else (row.get("closed_at") or now_iso),
                         "updated_at": now_iso,
                         "mode": mode,
@@ -849,9 +851,7 @@ class StrategyExecutorService:
                     "adjustments_today": int(getattr(state, "adjustments_today", 0) or 0),
                     "lifetime_adjustments": int(getattr(state, "lifetime_adjustments", 0) or 0),
                     "last_adjustment_time": (
-                        getattr(state, "last_adjustment_time", None).isoformat()
-                        if getattr(state, "last_adjustment_time", None)
-                        else None
+                        state.last_adjustment_time.isoformat() if state.last_adjustment_time else None
                     ),
                     "legs": legs_payload,
                 }
@@ -930,9 +930,7 @@ class StrategyExecutorService:
                 "adjustments_today": int(getattr(state, "adjustments_today", 0) or 0) if state else 0,
                 "lifetime_adjustments": int(getattr(state, "lifetime_adjustments", 0) or 0) if state else 0,
                 "last_adjustment_time": (
-                    getattr(state, "last_adjustment_time", None).isoformat()
-                    if state and getattr(state, "last_adjustment_time", None)
-                    else None
+                    state.last_adjustment_time.isoformat() if state and state.last_adjustment_time else None
                 ),
                 "leg_count": len(legs_payload),
                 "active_legs": len(active_rows),
@@ -963,7 +961,7 @@ class StrategyExecutorService:
                 executor = self._executors.get(strategy_name)
                 if executor and hasattr(executor, "persistence") and hasattr(executor, "state_file"):
                     try:
-                        executor.persistence.save(str(executor.state_file), state)
+                        executor.persistence.save(state, str(executor.state_file))
                     except Exception:
                         pass
 
@@ -980,7 +978,7 @@ class StrategyExecutorService:
             rows = self._completed_monitor_history[:normalized_limit]
             return copy.deepcopy(rows)
 
-    def delete_completed_strategy_monitor_history(self, strategy_name: str = None, archived_at: str = None) -> int:
+    def delete_completed_strategy_monitor_history(self, strategy_name: Optional[str] = None, archived_at: Optional[str] = None) -> int:
         """Delete completed strategy monitor history. Supports deleting specific entry, all for a strategy, or all."""
         with self._lock:
             count = self.state_mgr.delete_completed_monitor_history(
@@ -1273,6 +1271,9 @@ class PerStrategyExecutor:
 
         # Update market data (including leg data)
         self._update_market_data()
+
+        # NEW: Expiry day actions
+        self._check_expiry_day_action(now)
 
         # Check exits first
         exit_action = self.exit_engine.check_exits(now)
@@ -1600,14 +1601,23 @@ class PerStrategyExecutor:
                     continue
                 opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, leg.expiry)
                 if opt_data:
-                    leg.ltp = opt_data.get("ltp") or leg.ltp
-                    leg.delta = opt_data.get("delta") if opt_data.get("delta") is not None else leg.delta
-                    leg.gamma = opt_data.get("gamma") if opt_data.get("gamma") is not None else leg.gamma
-                    leg.theta = opt_data.get("theta") if opt_data.get("theta") is not None else leg.theta
-                    leg.vega = opt_data.get("vega") if opt_data.get("vega") is not None else leg.vega
-                    leg.iv = opt_data.get("iv") if opt_data.get("iv") is not None else leg.iv
-                    leg.oi = opt_data.get("oi") or leg.oi
-                    leg.volume = opt_data.get("volume") or leg.volume
+                    # Update fields only if present in opt_data
+                    if "ltp" in opt_data:
+                        leg.ltp = opt_data["ltp"]
+                    if "delta" in opt_data and opt_data["delta"] is not None:
+                        leg.delta = opt_data["delta"]
+                    if "gamma" in opt_data and opt_data["gamma"] is not None:
+                        leg.gamma = opt_data["gamma"]
+                    if "theta" in opt_data and opt_data["theta"] is not None:
+                        leg.theta = opt_data["theta"]
+                    if "vega" in opt_data and opt_data["vega"] is not None:
+                        leg.vega = opt_data["vega"]
+                    if "iv" in opt_data and opt_data["iv"] is not None:
+                        leg.iv = opt_data["iv"]
+                    if "oi" in opt_data:
+                        leg.oi = opt_data["oi"]
+                    if "volume" in opt_data:
+                        leg.volume = opt_data["volume"]
             # For futures legs, we could update via a different method, but not implemented here
 
         # ✅ BUG-001 FIX: Record PnL snapshots for all active filled legs
@@ -1618,8 +1628,35 @@ class PerStrategyExecutor:
                 except Exception:
                     pass  # Non-critical - don't let snapshot recording break the loop
 
+    # NEW: RMS limit check (copied from executor.py)
+    def _check_rms_limits(self, additional_lots: int = 0) -> bool:
+        """
+        Check strategy-level risk limits from config.rms section.
+        Returns True if limits are satisfied, False if entry should be blocked.
+        """
+        rms = self.config.get("rms", {})
+        daily = rms.get("daily", {})
+        loss_limit = daily.get("loss_limit")
+        if loss_limit is not None and self.state.cumulative_daily_pnl <= -loss_limit:
+            logger.warning(f"RMS block: daily loss limit {loss_limit} reached (PnL={self.state.cumulative_daily_pnl})")
+            return False
+
+        position = rms.get("position", {})
+        max_lots = position.get("max_lots")
+        if max_lots is not None:
+            total_lots = sum(leg.qty for leg in self.state.legs.values() if leg.is_active) + additional_lots
+            if total_lots > max_lots:
+                logger.warning(f"RMS block: max lots {max_lots} exceeded (would be {total_lots})")
+                return False
+        return True
+
     def _execute_entry(self):
         """Run entry engine and send orders via bot."""
+        # NEW: Check RMS limits before entry
+        if not self._check_rms_limits():
+            logger.warning("Entry blocked by RMS limits")
+            return
+
         symbol = self.config["identity"]["underlying"]
         default_expiry = self._cycle_expiry_date
         new_legs = self.entry_engine.process_entry(
@@ -1828,6 +1865,27 @@ class PerStrategyExecutor:
             day_name = now.strftime("%a").lower()[:3]
             if day_name not in [str(d).lower()[:3] for d in active_days]:
                 return False, f"inactive_day:{day_name}"
+
+        # Optional: square-off-before-min check
+        sq_off = self.config.get("schedule", {}).get("square_off_before_min")
+        if sq_off is not None and sq_off > 0:
+            # Determine market close time based on exchange
+            exchange = self.config.get("identity", {}).get("exchange", "NFO")
+            if exchange == "MCX":
+                close_time_str = "23:30"
+            else:
+                close_time_str = "15:30"
+            try:
+                close_t = datetime.strptime(close_time_str, "%H:%M").time()
+                close_dt = datetime.combine(now.date(), close_t)
+                if now >= close_dt:
+                    # Already past close – no entry anyway
+                    pass
+                elif (close_dt - now).total_seconds() / 60 < sq_off:
+                    return False, f"within_square_off_window:{sq_off}min"
+            except Exception:
+                pass
+
         return True, "ok"
 
     def _should_enter(self, now: datetime) -> bool:
@@ -1911,6 +1969,54 @@ class PerStrategyExecutor:
                 self.state.entered_today = True
                 self.cycle_completed = True
             logger.info(f"Exit executed for {self.name}")
+
+        # NEW: Handle partial_lots exit action
+        elif action.startswith("partial_lots"):
+            # Extract number of lots to close from config
+            lots_to_close = self.exit_engine.exit_config.get("profit_target", {}).get("lots", 1)
+            # Simplify: close from first active leg
+            active = [leg for leg in self.state.legs.values() if leg.is_active]
+            if active:
+                leg = active[0]
+                close_qty = min(lots_to_close, leg.qty)
+                # In this base executor we don't actually send orders, just update state
+                logger.info(f"Partial close: closing {close_qty} lots of {leg.tag}")
+                leg.qty -= close_qty
+                if leg.qty == 0:
+                    leg.is_active = False
+                self.state.cumulative_daily_pnl += leg.pnl  # Approximate PnL from closed portion
+            else:
+                logger.warning("partial_lots: no active legs to close")
+
+        # NEW: Handle profit step actions
+        elif action.startswith("profit_step_"):
+            step_action = action.replace("profit_step_", "")
+            if step_action == "adj":
+                # Trigger an adjustment rule – we simply log and let next tick handle it.
+                logger.info("Profit step triggered adjustment (will be handled in next adjustment cycle)")
+            elif step_action == "trail":
+                # Tighten the trailing stop (reduce the trail distance by 25% as an example)
+                current_trail = self.exit_engine.exit_config.get("trailing", {}).get("trail_amount", 0)
+                if current_trail > 0:
+                    self.state.trailing_stop_level = self.state.peak_pnl - current_trail * 0.75
+                logger.info("Profit step tightened trailing stop")
+            elif step_action == "partial":
+                # Close 25% of the position (simplified: close 25% from each leg)
+                for leg in self.state.legs.values():
+                    if leg.is_active and leg.qty > 0:
+                        close_qty = max(1, int(leg.qty * 0.25))
+                        leg.qty -= close_qty
+                        if leg.qty <= 0:
+                            leg.is_active = False
+                logger.info("Profit step closed 25% of position")
+
+        # NEW: Handle trail/lock_trail profit target actions
+        elif action == "profit_target_trail":
+            self.state.trailing_stop_active = True
+            trail_amt = self.exit_engine.exit_config.get("trailing", {}).get("trail_amount", 0)
+            self.state.trailing_stop_level = self.state.peak_pnl - trail_amt
+            logger.info("Trailing stop activated by profit target")
+
         elif action.startswith("leg_rule_"):
             self._execute_leg_rule_exit(action)
         elif action == "partial_50":
@@ -1936,6 +2042,8 @@ class PerStrategyExecutor:
                         if leg.qty == 0:
                             leg.is_active = False
             logger.info(f"Partial 50% exit for {self.name} — {len(alert_legs)} legs submitted")
+        else:
+            logger.warning(f"Unhandled exit action: {action}")
 
     @staticmethod
     def _is_no_position_exit_result(result: Dict[str, Any]) -> bool:
@@ -2084,6 +2192,17 @@ class PerStrategyExecutor:
         Translate state transitions from adjustment engine into broker orders.
         Returns False when broker rejects the adjustment payload.
         """
+        # NEW: Check RMS limits before sending adjustment orders
+        # Calculate additional lots from new legs (delta > 0)
+        additional_lots = 0
+        for tag in set(self.state.legs.keys()) - set(before_legs.keys()):
+            leg = self.state.legs.get(tag)
+            if leg and (leg.is_active or leg.order_status == "PENDING"):
+                additional_lots += leg.qty
+        if not self._check_rms_limits(additional_lots=additional_lots):
+            logger.warning("Adjustment blocked by RMS limits")
+            return False
+
         tags = sorted(set(before_legs.keys()) | set(self.state.legs.keys()))
         legs_payload: List[Dict[str, Any]] = []
         close_by_symbol: Dict[str, int] = {}
@@ -2194,6 +2313,74 @@ class PerStrategyExecutor:
 
         result = self._submit_alert(execution_type="ADJUSTMENT", legs=legs_payload)
         return not self._is_failure_status((result or {}).get("status"))
+
+    # NEW: Expiry day actions (copied from executor.py)
+    def _check_expiry_day_action(self, now: datetime):
+        """Handle expiry_day_action from exit config."""
+        exit_cfg = self.config.get("exit", {}).get("time", {})
+        action = exit_cfg.get("expiry_day_action", "none")
+        if action == "none" or not self.state.is_expiry_day:
+            return
+
+        if action == "time":
+            exit_time_str = exit_cfg.get("expiry_day_time")
+            if exit_time_str:
+                try:
+                    exit_t = datetime.strptime(exit_time_str, "%H:%M").time()
+                    if now.time() >= exit_t:
+                        logger.info("Expiry day time exit triggered")
+                        self._execute_exit("exit_all")
+                except ValueError:
+                    pass
+        elif action == "open":
+            # Exit at market open – i.e., now is after 09:15 and we haven't exited yet
+            if self.state.any_leg_active:
+                logger.info("Expiry day open exit triggered")
+                self._execute_exit("exit_all")
+        elif action == "roll":
+            # Roll all positions to next expiry
+            self._roll_all_positions_to_next_expiry()
+
+    def _roll_all_positions_to_next_expiry(self):
+        """Roll every active leg to the next expiry (same strike, same side)."""
+        new_legs = []
+        for leg in list(self.state.legs.values()):
+            if not leg.is_active or leg.instrument != InstrumentType.OPT:
+                continue
+            # For option legs, strike and option_type must be present
+            assert leg.strike is not None, f"Option leg {leg.tag} has no strike"
+            assert leg.option_type is not None, f"Option leg {leg.tag} has no option_type"
+
+            try:
+                new_expiry = self.market.get_next_expiry(leg.expiry, "weekly_next")
+                opt_data = self.market.get_option_at_strike(leg.strike, leg.option_type, new_expiry)
+                if not opt_data:
+                    logger.warning(f"Cannot roll {leg.tag}: no data for strike {leg.strike} at {new_expiry}")
+                    continue
+                # Create new leg (pending)
+                new_tag = f"{leg.tag}_ROLLED"
+                new_leg = LegState(
+                    tag=new_tag,
+                    symbol=leg.symbol,
+                    instrument=leg.instrument,
+                    option_type=leg.option_type,
+                    strike=leg.strike,
+                    expiry=new_expiry,
+                    side=leg.side,
+                    qty=leg.qty,
+                    entry_price=opt_data["ltp"],
+                    ltp=opt_data["ltp"],
+                    trading_symbol=opt_data.get("trading_symbol", ""),
+                )
+                new_leg.order_status = "PENDING"
+                new_leg.order_placed_at = datetime.now()
+                self.state.legs[new_tag] = new_leg
+                new_legs.append(new_leg)
+                # Deactivate old leg
+                leg.is_active = False
+            except Exception as e:
+                logger.error(f"Roll failed for {leg.tag}: {e}")
+        logger.info(f"Rolled {len(new_legs)} legs to next expiry")
 
     def _build_alert_leg(
         self,

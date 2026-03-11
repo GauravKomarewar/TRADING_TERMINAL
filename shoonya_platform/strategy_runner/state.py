@@ -44,6 +44,12 @@ class LegState:
     iv: float = 0.0
     is_active: bool = True
 
+    bid: float = 0.0
+    ask: float = 0.0
+    bid_qty: int = 0
+    ask_qty: int = 0
+    prev_oi: int = 0
+
     # New fields from gap analysis
     group: str = ""               # for group exits
     label: str = ""                # user label

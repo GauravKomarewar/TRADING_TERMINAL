@@ -297,7 +297,7 @@ class ConditionEngine:
             return abs(self._resolve_parameter(inner))
 
         # Handle moneyness (needs spot price)
-        # BUG-M1 FIX: For PE, use (spot - strike) / spot so OTM PE → positive.
+        # For PE, use (spot - strike) / spot so OTM PE → positive.
         if param in ("ce_moneyness", "pe_moneyness"):
             opt_type = "CE" if param.startswith("ce") else "PE"
             leg = self._find_leg_by_option_type(opt_type)
@@ -307,6 +307,13 @@ class ConditionEngine:
                 return (leg.strike - self.state.spot_price) / self.state.spot_price
             return 0.0
 
+        if param == "ce_bid_ask_spread":
+            leg = self._find_leg_by_option_type("CE")
+            return leg.bid_ask_spread if leg else 0.0
+        if param == "pe_bid_ask_spread":
+            leg = self._find_leg_by_option_type("PE")
+            return leg.bid_ask_spread if leg else 0.0
+        
         # New parameters
         if param == "days_to_expiry":
             return self.state.days_to_expiry

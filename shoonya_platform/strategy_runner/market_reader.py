@@ -96,7 +96,7 @@ class MarketReader:
         # Store connection info per expiry key: {key: {'conn': conn, 'path': str, 'mtime': float}}
         self._conn_info: Dict[str, Dict] = {}
         self._strike_step_cache: Dict[str, float] = {}  # expiry -> strike step
-
+        self._prev_total_oi: Dict[str, Dict[str, float]] = {}
     # ----------------------------------------------------------------------
     # Internal helpers
     # ----------------------------------------------------------------------
@@ -1142,6 +1142,8 @@ class MarketReader:
                     "oi_buildup_ce": 0.0,
                     "oi_buildup_pe": 0.0,
                     "max_pain_strike": 0.0,
+                    "prev_total_oi_ce": 0.0,
+                    "prev_total_oi_pe": 0.0,
                 }
 
             ce_oi = float(row["ce_oi"] or 0.0)
@@ -1149,16 +1151,23 @@ class MarketReader:
             ce_vol = float(row["ce_vol"] or 0.0)
             pe_vol = float(row["pe_vol"] or 0.0)
 
+            # Use a safe key: if expiry is None, store under "default"
+            cache_key = expiry if expiry is not None else "default"
+            prev = self._prev_total_oi.get(cache_key, {})
+            oi_buildup_ce = ce_oi - prev.get('CE', ce_oi)
+            oi_buildup_pe = pe_oi - prev.get('PE', pe_oi)
+            self._prev_total_oi[cache_key] = {'CE': ce_oi, 'PE': pe_oi}
+
             pcr = (pe_oi / ce_oi) if ce_oi > 0 else 0.0
             pcr_volume = (pe_vol / ce_vol) if ce_vol > 0 else 0.0
-            oi_buildup_ce = 0.0
-            oi_buildup_pe = 0.0
 
             return {
                 "pcr": pcr,
                 "pcr_volume": pcr_volume,
                 "total_oi_ce": ce_oi,
                 "total_oi_pe": pe_oi,
+                "prev_total_oi_ce": prev.get('CE', ce_oi),
+                "prev_total_oi_pe": prev.get('PE', pe_oi),
                 "oi_buildup_ce": oi_buildup_ce,
                 "oi_buildup_pe": oi_buildup_pe,
                 "max_pain_strike": self.get_max_pain_strike(expiry),
@@ -1170,6 +1179,8 @@ class MarketReader:
                 "pcr_volume": 0.0,
                 "total_oi_ce": 0.0,
                 "total_oi_pe": 0.0,
+                "prev_total_oi_ce": 0.0,
+                "prev_total_oi_pe": 0.0,
                 "oi_buildup_ce": 0.0,
                 "oi_buildup_pe": 0.0,
                 "max_pain_strike": 0.0,

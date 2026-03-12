@@ -900,9 +900,12 @@ def _validate_adjustment_rule(rule: Dict, path: str, errors: List[ValidationErro
     # retrigger (optional, bool)
     if "retriger" in rule and "retrigger" not in rule:
         errors.append(ValidationError(f"{path}.retriger", "retriger is deprecated; use retrigger", "warning"))
+    key = "retrigger"
+    if "retriger" in rule and "retrigger" not in rule:
+        key = "retriger"
     retrig = rule.get("retrigger", rule.get("retriger"))
     if retrig is not None and not isinstance(retrig, bool):
-        errors.append(ValidationError(f"{path}.retrigger", "retrigger must be a boolean"))
+        errors.append(ValidationError(f"{path}.{key}", "retrigger must be a boolean"))
 
     # leg_guard (optional) – should be a tag string
     leg_guard = rule.get("leg_guard")

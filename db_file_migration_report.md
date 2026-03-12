@@ -249,6 +249,6 @@ Config has:
 
 ---
 
-**Generated:** $(date)
+**Generated:** 2026-03-12
 **Files Scanned:** 10 Python files, 6 JSON configs
 **Status:** 🔴 Migration Required

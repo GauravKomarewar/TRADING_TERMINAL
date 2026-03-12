@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "PAPER_TRADING",
   "identity": {
     "exchange": "NFO",
     "underlying": "BANKNIFTY",
@@ -72,7 +72,7 @@
       {
         "name": "Adjustment 1",
         "priority": 1,
-        "max_per_day": 20,
+        "max_per_day": 5,
         "max_total": null,
         "cooldown_sec": 60,
         "leg_guard": "",
@@ -161,7 +161,7 @@
   },
   "exit": {
     "profit_target": {
-      "amount": null,
+      "amount": 2000,
       "pct": null,
       "action": "exit_all",
       "lots": 1
@@ -181,11 +181,11 @@
     "profit_steps": {
       "step_size": null,
       "max_steps": null,
-      "action": "adj"
+      "action": null
     },
     "risk": {
-      "max_loss_per_day": null,
-      "max_delta": null,
+      "max_loss_per_day": 12000,
+      "max_delta": 0.7,
       "delta_breach_action": "hedge",
       "max_iv": null,
       "min_iv": null,

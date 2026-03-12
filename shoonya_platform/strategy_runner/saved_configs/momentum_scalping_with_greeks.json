@@ -14,12 +14,12 @@
     "order_type": "MARKET",
     "lots": 1,
     "paper_mode": true,
-    "test_mode": "SUCCESS"
+    "test_mode": true
   },
   "timing": {
     "entry_window_start": "09:18",
     "entry_window_end": "14:00",
-    "eod_exit_time": "15:15"
+    "eod_exit_time": "15:20"
   },
   "market_data": {
     "source": "sqlite"
@@ -129,9 +129,10 @@
     },
     "time": {
       "strategy_exit_time": "15:20",
-      "expiry_day_action": "none",
+      "expiry_day_action": "roll",
       "expiry_day_time": "09:15",
-      "roll_target": "weekly_next"
+      "roll_target": "weekly_next",
+      "roll_note": "roll_target is evaluated when expiry_day_action=roll"
     },
     "combined_conditions": {
       "operator": "OR",
@@ -149,20 +150,15 @@
       "fri"
     ],
     "entry_time": "09:18",
-    "entry_window_end": "14:00",
-    "exit_time": "15:15",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
     "square_off_before_min": null,
     "entry_on_expiry_day": false,
-    "max_reentries_per_day": 3
+    "max_reentries_per_day": 0,
+    "reentry_note": "reentries disabled because stop_loss.allow_reentry=false"
   },
-  "meta": {
-    "schema_version": "4.0",
-    "created_at": "2025-03-21T10:00:00.000Z"
-  },
-  "created_at": "2026-03-10T17:55:29",
-  "updated_at": "2026-03-10T17:55:29",
-  "status_updated_at": "2026-03-11T09:01:01.694321"
+  "created_at": "2026-03-10T17:55:29Z",
+  "updated_at": "2026-03-10T17:55:29Z",
+  "status_updated_at": "2026-03-11T09:01:01.694321Z"
 }

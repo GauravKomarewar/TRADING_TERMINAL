@@ -14,7 +14,7 @@
     "order_type": "MARKET",
     "lots": 1,
     "paper_mode": true,
-    "test_mode": "SUCCESS"
+    "test_mode": true
   },
   "timing": {
     "entry_window_start": "09:05",
@@ -75,7 +75,6 @@
         "max_per_day": 20,
         "max_total": null,
         "cooldown_sec": 60,
-        "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
@@ -106,7 +105,8 @@
         },
         "else_enabled": false,
         "else_conditions": [],
-        "else_action": null
+        "else_action": null,
+        "retrigger": true
       }
     ]
   },

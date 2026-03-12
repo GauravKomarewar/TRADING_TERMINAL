@@ -14,7 +14,7 @@
     "order_type": "MARKET",
     "lots": 1,
     "paper_mode": true,
-    "test_mode": "SUCCESS"
+    "test_mode": true
   },
   "timing": {
     "entry_window_start": "09:18",
@@ -75,7 +75,6 @@
         "max_per_day": 20,
         "max_total": null,
         "cooldown_sec": 60,
-        "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
@@ -155,7 +154,8 @@
               }
             }
           ]
-        }
+        },
+        "retrigger": true
       }
     ]
   },
@@ -225,7 +225,7 @@
     "created_at": "2026-03-10T03:39:23.675Z"
   },
   "paper_mode": true,
-  "test_mode": "SUCCESS",
+  "test_mode": true,
   "created_at": "2026-03-10T09:08:50",
   "updated_at": "2026-03-10T09:08:50",
   "status_updated_at": "2026-03-10T15:28:13.637395"

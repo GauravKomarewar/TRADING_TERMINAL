@@ -153,6 +153,7 @@ This already implements the desired behavior! ✨
 1. **executor.py** - Remove `_extract_expiry_from_db_file()` method
 2. **strategy_executor_service.py** - Remove `_extract_expiry_from_db_file()` method
 3. **config_schema.py** - Remove db_file/db_path validation (mark as deprecated)
+4. **executor.py / strategy_executor_service.py** - No change needed: resolved expiry is already cached at strategy start in `StrategyExecutor.__init__` via `_resolve_cycle_expiry()` (stored in `_cycle_expiry_date`) and in `PerStrategyExecutor.__init__` via `_resolve_cycle_expiry()`; ensure this behavior remains.
 
 ### Phase 2: Update Saved Configs (Priority: MEDIUM)
 Batch update all 6 config files:
@@ -237,6 +238,8 @@ Config has:
 - [ ] Remove db_file parsing from executor.py
 - [ ] Remove db_file parsing from strategy_executor_service.py  
 - [ ] Update config_schema.py to ignore db_file/db_path
+- [ ] Verify expiry is cached once per strategy run (StrategyExecutor.__init__ and PerStrategyExecutor.__init__ set `_cycle_expiry_date` once and reuse it)
+- [ ] Add/verify tests that assert `_cycle_expiry_date` does not change mid-run (e.g., simulate multiple ticks and confirm expiry remains constant)
 - [ ] Strip db_file/db_path from all 6 saved configs
 - [ ] Test auto-resolution with weekly_auto mode
 - [ ] Test auto-resolution with monthly_current mode

@@ -14,7 +14,7 @@
     "order_type": "LIMIT",
     "lots": 1,
     "paper_mode": true,
-    "test_mode": "SUCCESS"
+    "test_mode": true
   },
   "timing": {
     "entry_window_start": "09:18",
@@ -81,7 +81,6 @@
         "max_per_day": 5,
         "max_total": null,
         "cooldown_sec": 0,
-        "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
@@ -96,7 +95,8 @@
         },
         "else_enabled": false,
         "else_conditions": [],
-        "else_action": null
+        "else_action": null,
+        "retrigger": true
       },
       {
         "name": "Close Put on IV drop",
@@ -104,7 +104,6 @@
         "max_per_day": 5,
         "max_total": null,
         "cooldown_sec": 0,
-        "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
@@ -119,7 +118,8 @@
         },
         "else_enabled": false,
         "else_conditions": [],
-        "else_action": null
+        "else_action": null,
+        "retrigger": true
       }
     ]
   },
@@ -157,7 +157,7 @@
       "breakeven_buffer": 50
     },
     "time": {
-      "strategy_exit_time": "15:28",
+      "strategy_exit_time": "15:15",
       "expiry_day_action": "exit",
       "expiry_day_time": "09:15",
       "roll_target": "weekly_next"

@@ -14,7 +14,7 @@
     "order_type": "MARKET",
     "lots": 1,
     "paper_mode": true,
-    "test_mode": "SUCCESS"
+    "test_mode": true
   },
   "timing": {
     "entry_window_start": "09:18",
@@ -75,7 +75,6 @@
         "max_per_day": 20,
         "max_total": null,
         "cooldown_sec": 60,
-        "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
@@ -155,7 +154,8 @@
               }
             }
           ]
-        }
+        },
+        "retrigger": true
       }
     ]
   },
@@ -214,8 +214,6 @@
       "fri"
     ],
     "entry_time": "09:18",
-    "entry_window_end": "15:10",
-    "exit_time": "15:28",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
@@ -224,10 +222,7 @@
     "max_reentries_per_day": 1
   },
   "meta": {
-    "schema_version": "4.0",
     "created_at": "2026-03-11T03:32:59.696Z"
   },
-  "paper_mode": true,
-  "test_mode": "SUCCESS",
   "status_updated_at": "2026-03-11T09:03:49.696195"
 }

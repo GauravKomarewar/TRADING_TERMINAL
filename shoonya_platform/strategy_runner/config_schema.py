@@ -356,6 +356,25 @@ def _validate_identity(identity: Dict, errors: List[ValidationError], prefix: st
             errors.append(ValidationError(f"{prefix}.lots", "lots must be a number"))
 
     # NOTE: db_file/db_path deprecated – auto-resolved from exchange+symbol+expiry_mode
+    if "db_file" in identity:
+        errors.append(
+            ValidationError(
+                f"{prefix}.db_file",
+                "db_file is deprecated – auto-resolved from exchange+symbol+expiry_mode",
+                "warning",
+            )
+        )
+    if "db_path" in identity:
+        errors.append(
+            ValidationError(
+                f"{prefix}.db_path",
+                "db_path is deprecated – auto-resolved from exchange+symbol+expiry_mode",
+                "warning",
+            )
+        )
+    test_mode = identity.get("test_mode")
+    if test_mode is not None and not isinstance(test_mode, bool):
+        errors.append(ValidationError(f"{prefix}.test_mode", "test_mode must be a boolean"))
 
 
 def _validate_timing(timing: Dict, errors: List[ValidationError], prefix: str):
@@ -431,6 +450,14 @@ def _validate_market_data(md: Dict, errors: List[ValidationError], prefix: str):
         errors.append(ValidationError(f"{prefix}.source", f"Invalid source '{source}'. Valid: sqlite, database"))
 
     # NOTE: db_file deprecated – auto-resolved from exchange+symbol+expiry_mode
+    if "db_file" in md:
+        errors.append(
+            ValidationError(
+                f"{prefix}.db_file",
+                "db_file is deprecated – auto-resolved from exchange+symbol+expiry_mode",
+                "warning",
+            )
+        )
 
 
 def _validate_entry(entry: Dict, errors: List[ValidationError], prefix: str):
@@ -870,10 +897,12 @@ def _validate_adjustment_rule(rule: Dict, path: str, errors: List[ValidationErro
         except (TypeError, ValueError):
             errors.append(ValidationError(f"{path}.cooldown_sec", "cooldown_sec must be a number"))
 
-    # retriger (optional, bool)
-    retrig = rule.get("retriger")
+    # retrigger (optional, bool)
+    if "retriger" in rule and "retrigger" not in rule:
+        errors.append(ValidationError(f"{path}.retriger", "retriger is deprecated; use retrigger", "warning"))
+    retrig = rule.get("retrigger", rule.get("retriger"))
     if retrig is not None and not isinstance(retrig, bool):
-        errors.append(ValidationError(f"{path}.retriger", "retriger must be a boolean"))
+        errors.append(ValidationError(f"{path}.retrigger", "retrigger must be a boolean"))
 
     # leg_guard (optional) – should be a tag string
     leg_guard = rule.get("leg_guard")

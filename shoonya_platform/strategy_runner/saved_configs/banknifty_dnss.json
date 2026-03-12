@@ -1,14 +1,14 @@
 {
   "schema_version": "4.0",
-  "name": "nifty_dnss_actual",
-  "id": "NIFTY_DNSS_ACTUAL",
+  "name": "banknifty_dnss",
+  "id": "BANKNIFTY_DNSS",
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "STOPPED",
+  "status": "RUNNING",
   "identity": {
     "exchange": "NFO",
-    "underlying": "NIFTY",
+    "underlying": "BANKNIFTY",
     "instrument_type": "OPTIDX",
     "product_type": "NRML",
     "order_type": "MARKET",
@@ -213,6 +213,9 @@
       "thu",
       "fri"
     ],
+    "entry_time": "09:18",
+    "entry_window_end": "15:10",
+    "exit_time": "15:28",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
@@ -222,11 +225,9 @@
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-02-26T09:44:35.873Z"
+    "created_at": "2026-03-11T03:32:59.696Z"
   },
   "paper_mode": true,
   "test_mode": "SUCCESS",
-  "created_at": "2026-02-27T12:53:41",
-  "updated_at": "2026-03-09T09:28:35",
-  "status_updated_at": "2026-03-11T10:21:56.617846"
+  "status_updated_at": "2026-03-11T09:03:49.696195"
 }

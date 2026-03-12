@@ -1,7 +1,6 @@
 import time
 import json
 import logging
-import re
 from datetime import datetime, timedelta
 from typing import Optional, List
 
@@ -20,10 +19,6 @@ from shoonya_platform.market_data.feeds import index_tokens_subscriber
 
 logger = logging.getLogger(__name__)
 
-_DB_FILE_EXPIRY_RE = re.compile(
-    r"^[A-Za-z0-9]+_[A-Za-z0-9]+_(\d{2}-[A-Za-z]{3}-\d{4})\.sqlite$"
-)
-
 class StrategyExecutor:
     def __init__(self, config_path: str, state_path: Optional[str] = None):
         with open(config_path, 'r') as f:
@@ -39,7 +34,6 @@ class StrategyExecutor:
             symbol=identity["underlying"],
             max_stale_seconds=30
         )
-        self._fixed_expiry_date = self._extract_expiry_from_db_file()
         self._cycle_expiry_date = self._resolve_cycle_expiry()
 
         # Initialize engines
@@ -61,34 +55,13 @@ class StrategyExecutor:
         self._sequential_legs: List[LegState] = []
         self._sequential_index = 0
 
-    def _extract_expiry_from_db_file(self) -> Optional[str]:
-        identity = self.config.get("identity", {}) or {}
-        market_data = self.config.get("market_data", {}) or {}
-        db_file = str(identity.get("db_file") or market_data.get("db_file") or "").strip()
-        if not db_file:
-            return None
-        match = _DB_FILE_EXPIRY_RE.match(db_file)
-        if not match:
-            logger.warning(
-                "Could not parse expiry from db_file '%s'; falling back to schedule.expiry_mode",
-                db_file,
-            )
-            return None
-        return match.group(1)
-
     def _resolve_cycle_expiry(self) -> str:
         schedule_mode = str(
             (self.config.get("schedule", {}) or {}).get("expiry_mode", "weekly_current")
         ).strip() or "weekly_current"
         if schedule_mode == "custom":
-            if self._fixed_expiry_date:
-                logger.info(
-                    "Using custom db_file expiry: %s",
-                    self._fixed_expiry_date,
-                )
-                return self._fixed_expiry_date
             logger.warning(
-                "schedule.expiry_mode=custom but db_file expiry is missing/invalid; falling back to weekly_current"
+                "schedule.expiry_mode=custom is deprecated; falling back to weekly_current"
             )
             schedule_mode = "weekly_current"
 
@@ -99,12 +72,6 @@ class StrategyExecutor:
                 resolved,
                 schedule_mode,
             )
-            if self._fixed_expiry_date and schedule_mode != "custom":
-                logger.info(
-                    "Ignoring db_file expiry because mode=%s is dynamic (db_file=%s)",
-                    schedule_mode,
-                    self._fixed_expiry_date,
-                )
             return resolved
         except Exception as e:
             logger.error(

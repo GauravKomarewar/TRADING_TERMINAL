@@ -1,25 +1,25 @@
 {
   "schema_version": "4.0",
-  "name": "test",
-  "id": "TEST",
-  "description": "",
-  "type": "neutral",
+  "name": "Momentum Scalping with Greeks",
+  "id": "MOMENTUM_GREEK_SCALP",
+  "description": "Buy ATM call when spot rises >0.5% and call delta >0.6; buy ATM put when spot falls >0.5% and put delta < -0.6.",
+  "type": "directional",
   "enabled": true,
   "status": "RUNNING",
   "identity": {
-    "exchange": "MCX",
-    "underlying": "CRUDEOILM",
+    "exchange": "NFO",
+    "underlying": "NIFTY",
     "instrument_type": "OPTIDX",
     "product_type": "NRML",
-    "order_type": "LIMIT",
+    "order_type": "MARKET",
     "lots": 1,
     "paper_mode": true,
     "test_mode": "SUCCESS"
   },
   "timing": {
-    "entry_window_start": "09:00",
-    "entry_window_end": "23:00",
-    "eod_exit_time": "23:15"
+    "entry_window_start": "09:18",
+    "entry_window_end": "14:00",
+    "eod_exit_time": "15:15"
   },
   "market_data": {
     "source": "sqlite"
@@ -30,36 +30,60 @@
     "legs": [
       {
         "tag": "LEG@1_CE",
-        "label": "Leg 1",
+        "label": "Momentum Call",
         "group": "",
         "instrument": "OPT",
-        "side": "SELL",
+        "side": "BUY",
         "option_type": "CE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "LIMIT",
+        "order_type": "",
         "strike_mode": "standard",
-        "strike_selection": "atm",
-        "strike_value": "",
-        "conditions": [],
+        "strike_selection": "delta",
+        "strike_value": "0.6",
+        "conditions": [
+          {
+            "parameter": "spot_change_pct",
+            "comparator": ">",
+            "value": "0.5",
+            "join": "AND"
+          },
+          {
+            "parameter": "ce_delta",
+            "comparator": ">",
+            "value": "0.6"
+          }
+        ],
         "else_enabled": false,
         "else_conditions": null,
         "else_action": null
       },
       {
         "tag": "LEG@2_PE",
-        "label": "Leg 2",
+        "label": "Momentum Put",
         "group": "",
         "instrument": "OPT",
-        "side": "SELL",
+        "side": "BUY",
         "option_type": "PE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "LIMIT",
+        "order_type": "",
         "strike_mode": "standard",
         "strike_selection": "delta",
-        "strike_value": "",
-        "conditions": [],
+        "strike_value": "0.6",
+        "conditions": [
+          {
+            "parameter": "spot_change_pct",
+            "comparator": "<",
+            "value": "-0.5",
+            "join": "AND"
+          },
+          {
+            "parameter": "pe_delta",
+            "comparator": "<",
+            "value": "-0.6"
+          }
+        ],
         "else_enabled": false,
         "else_conditions": null,
         "else_action": null
@@ -67,55 +91,18 @@
     ]
   },
   "adjustment": {
-    "enabled": true,
-    "rules": [
-      {
-        "name": "Adjustment 1",
-        "priority": 1,
-        "max_per_day": 5,
-        "max_total": null,
-        "cooldown_sec": 60,
-        "retriger": true,
-        "leg_guard": "",
-        "conditions": [
-          {
-            "parameter": "combined_pnl",
-            "comparator": ">",
-            "value": "200"
-          }
-        ],
-        "action": {
-          "type": "simple_close_open_new",
-          "leg_swaps": [
-            {
-              "close_tag": "MOST_PROFITABLE_LEG",
-              "new_leg": {
-                "side": "SELL",
-                "option_type": "MATCH_CLOSING",
-                "lots": 1,
-                "order_type": "",
-                "strike_mode": "standard",
-                "strike_selection": "atm+2",
-                "strike_value": ""
-              }
-            }
-          ]
-        },
-        "else_enabled": false,
-        "else_conditions": [],
-        "else_action": null
-      }
-    ]
+    "enabled": false,
+    "rules": []
   },
   "exit": {
     "profit_target": {
-      "amount": null,
+      "amount": 1000,
       "pct": null,
       "action": "exit_all",
-      "lots": 1
+      "lots": null
     },
     "stop_loss": {
-      "amount": null,
+      "amount": 500,
       "pct": null,
       "action": "exit_all",
       "allow_reentry": false
@@ -129,19 +116,19 @@
     "profit_steps": {
       "step_size": null,
       "max_steps": null,
-      "action": "adj"
+      "action": null
     },
     "risk": {
-      "max_loss_per_day": null,
-      "max_delta": null,
-      "delta_breach_action": "hedge",
+      "max_loss_per_day": 5000,
+      "max_delta": 0.8,
+      "delta_breach_action": "alert",
       "max_iv": null,
       "min_iv": null,
-      "max_lots": 4,
+      "max_lots": 2,
       "breakeven_buffer": null
     },
     "time": {
-      "strategy_exit_time": "23:15",
+      "strategy_exit_time": "15:20",
       "expiry_day_action": "none",
       "expiry_day_time": "09:15",
       "roll_target": "weekly_next"
@@ -161,21 +148,21 @@
       "thu",
       "fri"
     ],
-    "entry_time": "09:00",
-    "entry_window_end": "23:00",
-    "exit_time": "23:15",
+    "entry_time": "09:18",
+    "entry_window_end": "14:00",
+    "exit_time": "15:15",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
     "square_off_before_min": null,
     "entry_on_expiry_day": false,
-    "max_reentries_per_day": 1
+    "max_reentries_per_day": 3
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-03-06T14:05:39.490Z"
+    "created_at": "2025-03-21T10:00:00.000Z"
   },
-  "created_at": "2026-03-06T19:35:53",
-  "updated_at": "2026-03-06T19:35:53",
-  "status_updated_at": "2026-03-09T20:55:25.759579"
+  "created_at": "2026-03-10T17:55:29",
+  "updated_at": "2026-03-10T17:55:29",
+  "status_updated_at": "2026-03-11T09:01:01.694321"
 }

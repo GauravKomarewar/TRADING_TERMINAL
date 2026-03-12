@@ -355,10 +355,7 @@ def _validate_identity(identity: Dict, errors: List[ValidationError], prefix: st
         except (TypeError, ValueError):
             errors.append(ValidationError(f"{prefix}.lots", "lots must be a number"))
 
-    # db_file / db_path (optional, but if present check existence)
-    db_file = identity.get("db_file")
-    if db_file and not isinstance(db_file, str):
-        errors.append(ValidationError(f"{prefix}.db_file", "db_file must be a string"))
+    # NOTE: db_file/db_path deprecated – auto-resolved from exchange+symbol+expiry_mode
 
 
 def _validate_timing(timing: Dict, errors: List[ValidationError], prefix: str):
@@ -433,9 +430,7 @@ def _validate_market_data(md: Dict, errors: List[ValidationError], prefix: str):
     if source not in {"sqlite", "database"}:
         errors.append(ValidationError(f"{prefix}.source", f"Invalid source '{source}'. Valid: sqlite, database"))
 
-    db_file = md.get("db_file")
-    if db_file and not isinstance(db_file, str):
-        errors.append(ValidationError(f"{prefix}.db_file", "db_file must be a string"))
+    # NOTE: db_file deprecated – auto-resolved from exchange+symbol+expiry_mode
 
 
 def _validate_entry(entry: Dict, errors: List[ValidationError], prefix: str):

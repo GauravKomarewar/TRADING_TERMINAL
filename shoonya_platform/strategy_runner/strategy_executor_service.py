@@ -11,7 +11,6 @@ import sqlite3
 import threading
 import time
 import copy
-import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -31,11 +30,6 @@ from .persistence import StatePersistence
 from scripts.scriptmaster import requires_limit_order
 
 logger = logging.getLogger("STRATEGY_EXECUTOR_SERVICE")
-
-_DB_FILE_EXPIRY_RE = re.compile(
-    r"^[A-Za-z0-9]+_[A-Za-z0-9]+_(\d{2}-[A-Za-z]{3}-\d{4})\.sqlite$"
-)
-
 
 @dataclass
 class ExecutionState:
@@ -404,24 +398,59 @@ class StrategyExecutorService:
             return
 
         # Determine the expiry the strategy needs
-        db_file = str(identity.get("db_file") or (config.get("market_data", {}) or {}).get("db_file") or "").strip()
         expiry = None
-        if db_file:
-            m = _DB_FILE_EXPIRY_RE.match(db_file)
-            if m:
-                expiry = m.group(1)
+        schedule_mode = str(
+            (config.get("schedule", {}) or {}).get("expiry_mode", "weekly_current")
+        ).strip() or "weekly_current"
+        if schedule_mode == "custom":
+            logger.warning(
+                "Strategy %s: schedule.expiry_mode=custom is deprecated; falling back to weekly_current",
+                name,
+            )
+            schedule_mode = "weekly_current"
+
+        try:
+            reader = MarketReader(exchange=exchange, symbol=symbol, max_stale_seconds=30)
+            expiry = reader.resolve_expiry_mode(schedule_mode)
+            logger.info(
+                "Strategy %s: resolved expiry %s from MarketReader (mode=%s) for %s:%s",
+                name,
+                expiry,
+                schedule_mode,
+                exchange,
+                symbol,
+            )
+        except Exception as e:
+            logger.warning(
+                "Strategy %s: MarketReader expiry lookup failed for %s:%s: %s",
+                name,
+                exchange,
+                symbol,
+                e,
+            )
 
         if not expiry:
-            # Try resolving from MarketReader's expiry mode (reads existing DB files)
             # If no DB exists yet, fall back to ScriptMaster expiry lookup
             try:
                 from scripts.scriptmaster import options_expiry as sm_options_expiry
                 expiries = sm_options_expiry(symbol, exchange) or []
                 if expiries:
                     expiry = expiries[0]  # nearest expiry
-                    logger.info("Strategy %s: resolved expiry %s from ScriptMaster for %s:%s", name, expiry, exchange, symbol)
+                    logger.info(
+                        "Strategy %s: resolved expiry %s from ScriptMaster for %s:%s",
+                        name,
+                        expiry,
+                        exchange,
+                        symbol,
+                    )
             except Exception as e:
-                logger.warning("Strategy %s: ScriptMaster expiry lookup failed for %s:%s: %s", name, exchange, symbol, e)
+                logger.warning(
+                    "Strategy %s: ScriptMaster expiry lookup failed for %s:%s: %s",
+                    name,
+                    exchange,
+                    symbol,
+                    e,
+                )
 
         if not expiry:
             logger.warning("Strategy %s: could not determine expiry, skipping auto-load", name)
@@ -1194,7 +1223,6 @@ class PerStrategyExecutor:
         exchange = identity.get("exchange", "NFO")
         symbol = identity.get("underlying", "NIFTY")
         self.market = MarketReader(exchange, symbol, max_stale_seconds=30)
-        self._fixed_expiry_date = self._extract_expiry_from_db_file(config)
         self._cycle_expiry_date = self._resolve_cycle_expiry(config)
 
         # Engines
@@ -1744,32 +1772,11 @@ class PerStrategyExecutor:
         except Exception as _e:
             logger.warning("State persist after entry failed for %s: %s", self.name, _e)
 
-    def _extract_expiry_from_db_file(self, config: Dict[str, Any]) -> Optional[str]:
-        """
-        Extract concrete expiry date from configured DB filename, if present.
-        Example: NFO_NIFTY_02-MAR-2026.sqlite -> 02-MAR-2026
-        """
-        identity = config.get("identity", {}) or {}
-        market_data = config.get("market_data", {}) or {}
-        db_file = str(identity.get("db_file") or market_data.get("db_file") or "").strip()
-        if not db_file:
-            return None
-        match = _DB_FILE_EXPIRY_RE.match(db_file)
-        if not match:
-            logger.warning(
-                "Could not parse expiry from db_file '%s' for strategy %s; falling back to schedule.expiry_mode",
-                db_file,
-                self.name,
-            )
-            return None
-        return match.group(1)
-
     def _resolve_cycle_expiry(self, config: Dict[str, Any]) -> str:
         """
         Resolve one concrete expiry for this strategy run and keep it fixed.
         Rules:
-          1) If schedule.expiry_mode == custom -> use db_file-derived expiry
-          2) Otherwise resolve schedule.expiry_mode dynamically from available DBs
+          1) Resolve schedule.expiry_mode dynamically from available DBs
              and lock that resolved date for the full cycle.
         """
         schedule_mode = str(
@@ -1777,15 +1784,8 @@ class PerStrategyExecutor:
         ).strip() or "weekly_current"
 
         if schedule_mode == "custom":
-            if self._fixed_expiry_date:
-                logger.info(
-                    "Using custom db_file expiry for %s: %s",
-                    self.name,
-                    self._fixed_expiry_date,
-                )
-                return self._fixed_expiry_date
             logger.warning(
-                "schedule.expiry_mode=custom but db_file expiry is missing/invalid for %s; falling back to weekly_current",
+                "schedule.expiry_mode=custom is deprecated for %s; falling back to weekly_current",
                 self.name,
             )
             schedule_mode = "weekly_current"
@@ -1798,13 +1798,6 @@ class PerStrategyExecutor:
                 resolved,
                 schedule_mode,
             )
-            if self._fixed_expiry_date and schedule_mode != "custom":
-                logger.info(
-                    "Ignoring db_file expiry for %s because mode=%s is dynamic (db_file=%s)",
-                    self.name,
-                    schedule_mode,
-                    self._fixed_expiry_date,
-                )
             return resolved
         except Exception as e:
             logger.error(

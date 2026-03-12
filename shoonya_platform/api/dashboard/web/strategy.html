@@ -1201,6 +1201,8 @@ async function loadStrategies(){
     renderStrategies();
     updateKpiFromStrategies();
     refreshChartStratOptions();
+    // Ensure KPI strip has combined portfolio values on initial load
+    if(!latestOverview) loadLiveMonitor();
   }catch(e){ toast('Load failed: '+e.message,'e'); }
 }
 

@@ -1,11 +1,11 @@
 {
   "schema_version": "4.0",
-  "name": "nifty_dnss_actual",
-  "id": "NIFTY_DNSS_ACTUAL",
-  "description": "",
-  "type": "neutral",
+  "name": "Gamma Scalping Rolling Straddle",
+  "id": "GAMMA_ROLLING_STRADDLE",
+  "description": "Long ATM straddle, roll to new ATM when spot moves 100 points from current strike.",
+  "type": "gamma_scalp",
   "enabled": true,
-  "status": "STOPPED",
+  "status": "COMPLETED",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -18,8 +18,8 @@
   },
   "timing": {
     "entry_window_start": "09:18",
-    "entry_window_end": "15:10",
-    "eod_exit_time": "15:28"
+    "entry_window_end": "14:00",
+    "eod_exit_time": "15:15"
   },
   "market_data": {
     "source": "sqlite"
@@ -30,17 +30,17 @@
     "legs": [
       {
         "tag": "LEG@1_CE",
-        "label": "Leg 1",
+        "label": "Long ATM Call",
         "group": "",
         "instrument": "OPT",
-        "side": "SELL",
+        "side": "BUY",
         "option_type": "CE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "MARKET",
+        "order_type": "",
         "strike_mode": "standard",
-        "strike_selection": "delta",
-        "strike_value": "0.3",
+        "strike_selection": "straddle_delta",
+        "strike_value": "0.5",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -48,17 +48,17 @@
       },
       {
         "tag": "LEG@2_PE",
-        "label": "Leg 2",
+        "label": "Long ATM Put",
         "group": "",
         "instrument": "OPT",
-        "side": "SELL",
+        "side": "BUY",
         "option_type": "PE",
         "expiry": "strategy_default",
         "lots": 1,
-        "order_type": "MARKET",
+        "order_type": "",
         "strike_mode": "standard",
-        "strike_selection": "delta",
-        "strike_value": "0.3",
+        "strike_selection": "straddle_delta",
+        "strike_value": "0.5",
         "conditions": [],
         "else_enabled": false,
         "else_conditions": null,
@@ -70,104 +70,70 @@
     "enabled": true,
     "rules": [
       {
-        "name": "Adjustment 1",
+        "name": "Roll Straddle Up/Down",
         "priority": 1,
-        "max_per_day": 20,
+        "max_per_day": 10,
         "max_total": null,
         "cooldown_sec": 60,
         "retriger": true,
         "leg_guard": "",
         "conditions": [
           {
-            "parameter": "abs(net_delta)",
-            "comparator": ">=",
-            "value": "0.2"
-          },
-          {
-            "parameter": "combined_pnl",
-            "comparator": ">=",
-            "value": "1000",
+            "parameter": "spot_price",
+            "comparator": ">",
+            "value": "tag.LEG@1_CE.strike + 100",
             "join": "OR"
           },
           {
-            "parameter": "max_leg_delta",
+            "parameter": "spot_price",
             "comparator": "<",
-            "value": "0.65",
-            "join": "AND"
+            "value": "tag.LEG@1_CE.strike - 100"
           }
         ],
         "action": {
           "type": "simple_close_open_new",
           "leg_swaps": [
             {
-              "close_tag": "LOWER_DELTA_LEG",
+              "close_tag": "LEG@1_CE",
               "new_leg": {
-                "side": "SELL",
-                "option_type": "MATCH_CLOSING",
+                "side": "BUY",
+                "option_type": "CE",
                 "lots": 1,
                 "order_type": "",
-                "strike_mode": "match_leg",
-                "strike_selection": "match_leg_param",
-                "match_leg": "HIGHER_DELTA_LEG",
-                "match_param": "abs_delta",
-                "match_offset": 0,
-                "match_multiplier": 1
+                "strike_mode": "standard",
+                "strike_selection": "straddle_delta",
+                "strike_value": "0.5"
+              }
+            },
+            {
+              "close_tag": "LEG@2_PE",
+              "new_leg": {
+                "side": "BUY",
+                "option_type": "PE",
+                "lots": 1,
+                "order_type": "",
+                "strike_mode": "standard",
+                "strike_selection": "straddle_delta",
+                "strike_value": "0.5"
               }
             }
           ]
         },
-        "else_enabled": true,
-        "else_conditions": [
-          {
-            "parameter": "abs(net_delta)",
-            "comparator": ">=",
-            "value": "0.2"
-          },
-          {
-            "parameter": "combined_pnl",
-            "comparator": ">=",
-            "value": "1000",
-            "join": "OR"
-          },
-          {
-            "parameter": "max_leg_delta",
-            "comparator": ">=",
-            "value": "0.65",
-            "join": "AND"
-          }
-        ],
-        "else_action": {
-          "type": "simple_close_open_new",
-          "leg_swaps": [
-            {
-              "close_tag": "HIGHER_DELTA_LEG",
-              "new_leg": {
-                "side": "SELL",
-                "option_type": "MATCH_CLOSING",
-                "lots": 1,
-                "order_type": "",
-                "strike_mode": "match_leg",
-                "strike_selection": "match_leg_param",
-                "match_leg": "LOWER_DELTA_LEG",
-                "match_param": "abs_delta",
-                "match_offset": 0,
-                "match_multiplier": 1
-              }
-            }
-          ]
-        }
+        "else_enabled": false,
+        "else_conditions": [],
+        "else_action": null
       }
     ]
   },
   "exit": {
     "profit_target": {
-      "amount": null,
+      "amount": 5000,
       "pct": null,
       "action": "exit_all",
-      "lots": 1
+      "lots": null
     },
     "stop_loss": {
-      "amount": 5000,
+      "amount": 3000,
       "pct": null,
       "action": "exit_all",
       "allow_reentry": false
@@ -181,12 +147,12 @@
     "profit_steps": {
       "step_size": null,
       "max_steps": null,
-      "action": "adj"
+      "action": null
     },
     "risk": {
-      "max_loss_per_day": null,
-      "max_delta": null,
-      "delta_breach_action": "hedge",
+      "max_loss_per_day": 10000,
+      "max_delta": 0.5,
+      "delta_breach_action": "alert",
       "max_iv": null,
       "min_iv": null,
       "max_lots": 4,
@@ -213,20 +179,21 @@
       "thu",
       "fri"
     ],
+    "entry_time": "09:18",
+    "entry_window_end": "14:00",
+    "exit_time": "15:15",
     "expiry_mode": "weekly_auto",
     "dte_min": null,
     "dte_max": null,
     "square_off_before_min": null,
-    "entry_on_expiry_day": true,
+    "entry_on_expiry_day": false,
     "max_reentries_per_day": 1
   },
   "meta": {
     "schema_version": "4.0",
-    "created_at": "2026-02-26T09:44:35.873Z"
+    "created_at": "2025-03-21T10:00:00.000Z"
   },
-  "paper_mode": true,
-  "test_mode": "SUCCESS",
-  "created_at": "2026-02-27T12:53:41",
-  "updated_at": "2026-03-09T09:28:35",
-  "status_updated_at": "2026-03-11T10:21:56.617846"
+  "created_at": "2026-03-10T17:55:32",
+  "updated_at": "2026-03-10T17:55:32",
+  "status_updated_at": "2026-03-11T10:43:51.122349"
 }

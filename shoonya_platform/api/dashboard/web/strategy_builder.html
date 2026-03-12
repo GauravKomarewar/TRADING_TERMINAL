@@ -318,9 +318,11 @@ button,input,select,textarea{font-family:var(--sans);}
   <!-- 1. IDENTITY -->
   <div class="bsec active" id="sec-identity">
     <div class="sec-title">Strategy Identity</div>
-    <div class="f-row c3">
+    <div class="f-row c2">
       <div class="f-group"><label class="f-label">Strategy Name *</label><input class="f-input" id="sName" placeholder="e.g. NIFTY Skewed Straddle" oninput="onNameInput()"></div>
       <div class="f-group"><label class="f-label">Strategy ID (auto)</label><input class="f-input" id="sId" readonly></div>
+    </div>
+    <div class="f-row c3">
       <div class="f-group"><label class="f-label">Strategy Type</label>
         <select class="f-select" id="sType">
           <option value="neutral">Neutral / Premium Collect</option>
@@ -332,13 +334,8 @@ button,input,select,textarea{font-family:var(--sans);}
           <option value="custom">Custom</option>
         </select>
       </div>
-    </div>
-    <div class="f-row c3">
       <div class="f-group"><label class="f-label">Symbol *</label>
         <select class="f-select" id="sSymbol" onchange="onSymbolChange()"><option value="">Loading…</option></select>
-      </div>
-      <div class="f-group"><label class="f-label">Default DB File</label>
-        <select class="f-select" id="sDbFile" onchange="onDbFileChange()"><option>Select symbol first</option></select>
       </div>
       <div class="f-group"><label class="f-label">Lot Multiplier</label>
         <input class="f-input" id="sLots" type="number" value="1" min="1" oninput="markDirty()">
@@ -368,7 +365,7 @@ button,input,select,textarea{font-family:var(--sans);}
     </div>
     <div class="f-row c2">
       <div class="f-group"><label class="f-label">Description / Notes</label><input class="f-input" id="sDesc" placeholder="Strategy rationale, bias, targets…" oninput="markDirty()"></div>
-      <div class="f-group"><label class="f-label">DB Path (auto)</label><input class="f-input" id="sDbPath" readonly></div>
+      <!-- DB Path removed -->
     </div>
 
     <div class="sec-title" style="margin-top:18px;">Trading Schedule</div>
@@ -862,34 +859,13 @@ async function loadStrategyFromServer(name) {
     if (ident.product_type) sv('sProductType', ident.product_type);
     if (ident.order_type) sv('sOrderType', ident.order_type);
     if (ident.lots) sv('sLots', ident.lots);
-    if (ident.db_file) ST.pendingDbFile = ident.db_file;
-    // Apply symbol/db immediately when loading an existing strategy.
-    // Previously these were only applied in loadSymbols(), which already ran before this.
+    // db_file and db_path are ignored – no UI elements exist for them.
+
+    // Apply symbol immediately
     if (ident.underlying) {
       const symEl = $('sSymbol');
       if (symEl) symEl.value = ident.underlying;
       await onSymbolChange();
-    }
-    if (ident.db_file) {
-      const dbEl = $('sDbFile');
-      let found = false;
-      if (dbEl) {
-        for (const opt of dbEl.options) {
-          if (opt.value === ident.db_file) {
-            dbEl.value = ident.db_file;
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          const injected = document.createElement('option');
-          injected.value = ident.db_file;
-          injected.textContent = `${ident.db_file} (saved, not currently active)`;
-          dbEl.appendChild(injected);
-          dbEl.value = ident.db_file;
-        }
-      }
-      onDbFileChange();
     }
 
     // Schedule
@@ -2164,47 +2140,15 @@ async function loadSymbols(){
     }
   }catch(e){
     el.innerHTML='<option value="NIFTY">NIFTY</option>';
-    loadDbFiles('NIFTY','NFO',[]);
+    // No DB file loading needed – fallback to NIFTY only.
+    onSymbolChange(); // Still update exchange etc.
   }
 }
 async function onSymbolChange(){
   const sym=gv('sSymbol');const item=ST.symMap[sym];
   sv('sExchange',item?.exchange||'NFO');
-  await loadDbFiles(sym,item?.exchange||'NFO',item?.expiries);
-}
-async function loadDbFiles(sym,exchange,fallback){
-  const el=$('sDbFile');let exps=Array.isArray(fallback)?fallback.filter(Boolean):[];
-  if(!exps.length){try{const r=await fetch(`/dashboard/option-chain/active-expiries?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(sym)}`,{credentials:'include'});if(r.ok){const d=await r.json();exps=Array.isArray(d)?d.filter(Boolean):[];}}catch(e){}}
-  el.innerHTML=exps.length?exps.map((exp,i)=>`<option value="${exchange}_${sym}_${exp}.sqlite"${i===0?' selected':''}>${sym} ${exp}</option>`).join(''):`<option value="${exchange}_${sym}_current.sqlite">${sym} current</option>`;
-  onDbFileChange();
-  // If we have a pending DB file, set it now
-  if (ST.pendingDbFile) {
-    let found = false;
-    // Try to find matching option
-    for (let opt of el.options) {
-      if (opt.value === ST.pendingDbFile) {
-        opt.selected = true;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      const injected = document.createElement('option');
-      injected.value = ST.pendingDbFile;
-      injected.textContent = `${ST.pendingDbFile} (saved, not currently active)`;
-      el.appendChild(injected);
-      el.value = ST.pendingDbFile;
-    }
-    onDbFileChange();
-    delete ST.pendingDbFile;
-  }
-}
-function onDbFileChange(){
-  const f=gv('sDbFile');
-  const m=f.match(/^([A-Z]+)_([A-Z0-9]+)_(.+)\.sqlite$/i);
-  if(m) sv('sExchange',m[1].toUpperCase());
-  sv('sDbPath',f?`shoonya_platform/market_data/option_chain/data/${f}`:'');
-  updateJSONPreview();markDirty();
+  updateJSONPreview();
+  markDirty();
 }
 function onNameInput(){
   sv('sId',gv('sName').toUpperCase().replace(/\s+/g,'_').replace(/[^A-Z0-9_]/g,''));markDirty();
@@ -2285,13 +2229,13 @@ function buildJSON(){
     return{exit_leg_ref:card.querySelector('[data-role="exit-ref"]')?.value||'all',action:card.querySelector('[data-role="exit-action"]')?.value||'close_leg',group:card.querySelector('[data-role="exit-group"]')?.value||'',conditions:condEl?extractCondsList(condEl):[]};
   });
 
-  const sym=gv('sSymbol');const dbFile=gv('sDbFile');
+  const sym=gv('sSymbol');
   const out={
     schema_version:'4.0',name:gv('sName')||'Unnamed',id:gv('sId')||'UNNAMED',
     description:gv('sDesc'),type:gv('sType'),enabled:true,status:'IDLE',
-    identity:{exchange:gv('sExchange')||'NFO',underlying:sym,instrument_type:ST.preserve.instrument_type||'OPTIDX',product_type:gv('sProductType'),order_type:gv('sOrderType'),lots:parseInt(gv('sLots'))||1,db_file:dbFile,db_path:`shoonya_platform/market_data/option_chain/data/${dbFile}`},
+    identity:{exchange:gv('sExchange')||'NFO',underlying:sym,instrument_type:ST.preserve.instrument_type||'OPTIDX',product_type:gv('sProductType'),order_type:gv('sOrderType'),lots:parseInt(gv('sLots'))||1},
     timing:{entry_window_start:gv('schEntry'),entry_window_end:gv('schEntryEnd'),eod_exit_time:gv('schExit')},
-    market_data:{source:'sqlite',db_file:dbFile},
+    market_data:{source:'sqlite'},
     entry:{
       entry_sequence:gv('sEntrySeq')||'parallel',
       global_conditions:extractConds('entryCombinedList'),

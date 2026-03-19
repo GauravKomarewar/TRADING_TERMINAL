@@ -6,7 +6,7 @@ After=network.target
 Type=oneshot
 User=root
 WorkingDirectory=/home/ubuntu/shoonya_platform
-ExecStart=/usr/bin/systemctl stop trading.service
+ExecStart=/bin/bash -c "systemctl stop trading.service; systemctl stop master.service; systemctl stop gateway.service"
 StandardOutput=journal
 StandardError=journal
 

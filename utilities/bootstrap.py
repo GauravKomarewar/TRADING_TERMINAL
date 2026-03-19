@@ -743,7 +743,7 @@ def _gen_start_service() -> str:
         Type=oneshot
         User=root
         WorkingDirectory={PROJECT_ROOT}
-        ExecStart=/usr/bin/systemctl start trading.service
+        ExecStart=/bin/bash -c "systemctl start gateway.service && systemctl start master.service && systemctl start trading.service"
         StandardOutput=journal
         StandardError=journal
 
@@ -762,12 +762,52 @@ def _gen_stop_service() -> str:
         Type=oneshot
         User=root
         WorkingDirectory={PROJECT_ROOT}
-        ExecStart=/usr/bin/systemctl stop trading.service
+        ExecStart=/bin/bash -c "systemctl stop trading.service; systemctl stop master.service; systemctl stop gateway.service"
         StandardOutput=journal
         StandardError=journal
 
         [Install]
         WantedBy=multi-user.target
+    """)
+
+
+def _gen_start_timer() -> str:
+    return textwrap.dedent("""\
+        [Unit]
+        Description=Trading Platform Auto-Start Timer (Mon-Fri 8:45 AM IST)
+        Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+
+        [Timer]
+        # Start at 8:45 AM Monday through Friday (IST)
+        OnCalendar=Mon-Fri *-*-* 08:45:00
+        Timezone=Asia/Kolkata
+        # Catch up and fire if the system was down during scheduled time
+        Persistent=true
+        # Controls timing precision / allows timer coalescing for power efficiency
+        AccuracySec=1min
+
+        [Install]
+        WantedBy=timers.target
+    """)
+
+
+def _gen_stop_timer() -> str:
+    return textwrap.dedent("""\
+        [Unit]
+        Description=Trading Platform Auto-Stop Timer (Mon-Fri midnight IST)
+        Documentation=https://github.com/GauravKomarewar/TRADING_TERMINAL
+
+        [Timer]
+        # Stop at midnight Monday-Friday (covers all markets: NSE/NFO 15:30, MCX 23:30/23:55)
+        OnCalendar=Tue-Sat *-*-* 00:00:00
+        Timezone=Asia/Kolkata
+        Unit=trading_stop.service
+        # Catch up and fire if the system was down during scheduled time
+        Persistent=true
+        AccuracySec=1min
+
+        [Install]
+        WantedBy=timers.target
     """)
 
 
@@ -844,6 +884,8 @@ def _write_service_files_to_repo() -> None:
     (DEPLOYMENT_DIR / "master.service").write_text(_gen_master_service())
     (SYSTEMD_DIR / "trading_start.service").write_text(_gen_start_service())
     (SYSTEMD_DIR / "trading_stop.service").write_text(_gen_stop_service())
+    (SYSTEMD_DIR / "trading_start.timer").write_text(_gen_start_timer())
+    (SYSTEMD_DIR / "trading_stop.timer").write_text(_gen_stop_timer())
 
     # Write sudoers rule
     sudoers_dir = DEPLOYMENT_DIR / "sudoers.d"
@@ -971,21 +1013,21 @@ def _install_windows_scheduled_tasks(project: Path) -> None:
         </Task>
     """))
 
-    # Task Scheduler XML for auto-stop (Mon-Fri 4:00 PM IST)
+    # Task Scheduler XML for auto-stop (midnight after each trading day)
     stop_xml = project / "utilities" / "deployment" / "task_trading_stop.xml"
     stop_xml.write_text(textwrap.dedent(f"""\
         <?xml version="1.0" encoding="UTF-16"?>
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
           <RegistrationInfo>
-            <Description>Auto-stop Shoonya Trading Platform (Mon-Fri 4:00 PM)</Description>
+            <Description>Auto-stop Shoonya Trading Platform (Tue-Sat midnight, covers MCX)</Description>
           </RegistrationInfo>
           <Triggers>
             <CalendarTrigger>
-              <StartBoundary>2025-01-01T16:00:00+05:30</StartBoundary>
+              <StartBoundary>2025-01-01T00:00:00+05:30</StartBoundary>
               <Enabled>true</Enabled>
               <ScheduleByWeek>
                 <DaysOfWeek>
-                  <Monday /><Tuesday /><Wednesday /><Thursday /><Friday />
+                  <Tuesday /><Wednesday /><Thursday /><Friday /><Saturday />
                 </DaysOfWeek>
                 <WeeksInterval>1</WeeksInterval>
               </ScheduleByWeek>
@@ -1116,7 +1158,7 @@ def install_macos_services(args: argparse.Namespace) -> None:
     start_file.write_text(start_plist)
     print(f"  ✅ Created {start_file.name}")
 
-    # Auto-stop plist (Mon-Fri 4:00 PM)
+    # Auto-stop plist (midnight after each trading day — covers MCX close)
     stop_plist = textwrap.dedent(f"""\
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -1133,11 +1175,11 @@ def install_macos_services(args: argparse.Namespace) -> None:
             </array>
             <key>StartCalendarInterval</key>
             <array>
-                <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-                <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-                <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-                <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-                <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+                <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+                <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+                <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+                <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+                <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
             </array>
         </dict>
         </plist>

@@ -28,9 +28,9 @@ Automated Mon-Fri trading session management:
 | File | Purpose |
 |------|---------|
 | `trading_start.timer` | Triggers at **8:45 AM IST** Mon-Fri |
-| `trading_start.service` | Runs `systemctl start trading.service` |
-| `trading_stop.timer` | Triggers at **4:00 PM IST** Mon-Fri |
-| `trading_stop.service` | Runs `systemctl stop trading.service` |
+| `trading_start.service` | Runs `systemctl start gateway.service && master.service && trading.service` |
+| `trading_stop.timer` | Triggers at **midnight IST** Tue-Sat (covers MCX close) |
+| `trading_stop.service` | Runs `systemctl stop trading.service; stop master.service; stop gateway.service` |
 
 **Install timers:**
 ```bash

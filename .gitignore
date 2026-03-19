@@ -74,7 +74,8 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
-*.swofyersApi.log
+*.swo
+fyersApi.log
 fyersRequests.log
 fyers_token.json
 fyersApi.log

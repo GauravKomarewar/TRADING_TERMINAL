@@ -238,6 +238,8 @@ class TestTimeExit:
 
     def test_time_exit_valid(self):
         state = StrategyState()
+        # Add an active leg so the time-exit guard doesn't short-circuit
+        state.legs["CE_LEG"] = _make_leg()
         engine = ExitEngine(state)
         engine.load_config({"time": {"strategy_exit_time": "09:00"}})
         # Use a time that's definitely past 09:00

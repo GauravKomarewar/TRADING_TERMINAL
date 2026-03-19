@@ -149,7 +149,7 @@ def get_connection():
 
                 if need_migrate:
                     # Recreate table without UNIQUE constraint on command_id
-                    conn.execute('BEGIN')
+                    conn.execute('BEGIN IMMEDIATE')
                     conn.execute("ALTER TABLE orders RENAME TO orders_old")
                     conn.execute(
                         """
@@ -207,7 +207,10 @@ def get_connection():
                     
             except Exception:
                 # Migration best-effort; fall back to existing table
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
             # Ensure control_intents table exists (dashboard control plane)
             try:

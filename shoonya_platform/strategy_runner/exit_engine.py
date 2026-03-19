@@ -247,6 +247,13 @@ class ExitEngine:
         if current_time is None:
             current_time = datetime.now()
 
+        # ✅ BUG-TIMEEXIT FIX: Never fire time-exit when no legs are active.
+        # Without this guard, a redundant EXIT_TRIGGERED fires at 15:28 on every
+        # day that already had an early SL/PT exit.  In live mode this would send
+        # a second close-all order against an already-flat account.
+        if not self.state.any_leg_active:
+            return None
+
         exit_time_str = self.exit_config.get("time", {}).get("strategy_exit_time")
         if exit_time_str:
             try:

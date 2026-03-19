@@ -34,6 +34,8 @@ from shoonya_platform.core.config import Config
 # --------------------------------------------------
 active_sessions: Dict[str, dict] = {}
 SESSION_TTL_SEC = int(os.getenv("DASHBOARD_SESSION_TTL_SEC", str(60 * 60 * 8)))
+if SESSION_TTL_SEC <= 0:
+    SESSION_TTL_SEC = 60 * 60 * 8  # Enforce positive TTL (default 8 hours)
 COOKIE_SECURE = os.getenv("DASHBOARD_COOKIE_SECURE", "false").strip().lower() in ("1", "true", "yes")
 
 logger = logging.getLogger(__name__)

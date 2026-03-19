@@ -927,6 +927,14 @@ html[data-theme="solar"] body::before {
                 <button class="rpill active" onclick="setRange(this,0)">All</button>
               </div>
             </div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:6px;padding:0 4px">
+              <label style="font-size:11px;color:var(--muted);white-space:nowrap">From:</label>
+              <input type="datetime-local" id="chart-date-from" class="form-ctrl" style="font-size:11px;padding:3px 6px;width:168px">
+              <label style="font-size:11px;color:var(--muted);white-space:nowrap">To:</label>
+              <input type="datetime-local" id="chart-date-to" class="form-ctrl" style="font-size:11px;padding:3px 6px;width:168px">
+              <button class="btn btn-primary btn-sm" onclick="applyDateFilter()">Filter</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearDateFilter()">Clear</button>
+            </div>
           </div>
           <div id="chart-crosshair" class="chart-crosshair"></div>
           <canvas id="chart-canvas" class="chart-canvas"></canvas>
@@ -1008,6 +1016,8 @@ const API_BASE = '/dashboard';
 let allStrategies = [];
 let currentFilter = 'all';
 let chartRange = 0;
+let chartDateFrom = 0; // epoch ms; 0 = not set
+let chartDateTo = 0;   // epoch ms; 0 = not set
 let currentToggle = null, currentDelete = null, currentDetails = null, currentStopName = null;
 const mCache = {summary:'',groups:'',completed:'',orphans:''};
 let monitorGroupNames = '';
@@ -1530,6 +1540,7 @@ function monitorTable(positions, isOrphan=false){
       <th onclick="sortTbl(this,7)">Unrealized<span class="sort-icon">↕</span></th>
       <th onclick="sortTbl(this,8)">Total PnL<span class="sort-icon">↕</span></th>
       <th>Delta</th><th>Gamma</th><th>Theta</th><th>Vega</th>
+      <th>Reason</th>
       <th>Status</th><th>Source</th><th>Owner</th>
     </tr></thead>
     <tbody>
@@ -1546,6 +1557,9 @@ function monitorTable(positions, isOrphan=false){
         <td style="color:${pCol(p.total_pnl)};font-weight:700">${f2(p.total_pnl)}</td>
         <td class="${dClass(p.delta)}">${f2(p.delta)}</td>
         <td>${f2(p.gamma)}</td><td>${f2(p.theta)}</td><td>${f2(p.vega)}</td>
+        <td style="color:var(--muted);font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.reason||p.event_type||'')}">
+          ${esc(p.reason||p.event_type||'—')}
+        </td>
         <td><span class="badge ${p.status==='CLOSED'?'b-stop':p.status==='ACTIVE'?'b-run':'b-idle'}">${esc(p.status||'ACTIVE')}</span></td>
         <td style="color:var(--muted)">${esc(p.source||p.position_source||'BROKER')}</td>
         <td style="color:var(--muted)">${esc(p.owner||p.strategy_name||'ORPHAN')}</td>
@@ -2116,7 +2130,29 @@ function renderPerfCards(){
 // =====================================================================
 // MAIN CHART WITH CROSSHAIR TOOLTIP
 // =====================================================================
-function setRange(btn,sec){ document.querySelectorAll('.rpill').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); chartRange=sec; renderChart(); }
+function setRange(btn,sec){ document.querySelectorAll('.rpill').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); chartRange=sec; chartDateFrom=0; chartDateTo=0; if($('chart-date-from')) $('chart-date-from').value=''; if($('chart-date-to')) $('chart-date-to').value=''; renderChart(); }
+
+function applyDateFilter(){
+  const fromEl=$('chart-date-from'), toEl=$('chart-date-to');
+  chartDateFrom=fromEl&&fromEl.value?new Date(fromEl.value).getTime():0;
+  chartDateTo=toEl&&toEl.value?new Date(toEl.value).getTime():0;
+  // Deactivate quick-range pills when using custom date filter
+  document.querySelectorAll('.rpill').forEach(b=>b.classList.remove('active'));
+  chartRange=0;
+  renderChart();
+}
+
+function clearDateFilter(){
+  chartDateFrom=0; chartDateTo=0;
+  if($('chart-date-from')) $('chart-date-from').value='';
+  if($('chart-date-to')) $('chart-date-to').value='';
+  // Restore 'All' pill as active
+  const allBtn=[...document.querySelectorAll('.rpill')].find(b=>b.textContent.trim()==='All');
+  document.querySelectorAll('.rpill').forEach(b=>b.classList.remove('active'));
+  if(allBtn) allBtn.classList.add('active');
+  chartRange=0;
+  renderChart();
+}
 
 function renderChart(){
   const canvas=$('chart-canvas'), sel=$('chart-strat');
@@ -2144,8 +2180,16 @@ function renderChart(){
     allEvents=live.events||[];
   }
   const now=Date.now();
-  let rawSamples=chartRange>0?all.filter(x=>x.ts>=now-(chartRange*1000)):all.slice();
-  const events=chartRange>0?allEvents.filter(e=>e.ts>=now-(chartRange*1000)):allEvents.slice();
+  let rawSamples, events;
+  if(chartDateFrom||chartDateTo){
+    const tFrom=chartDateFrom||0;
+    const tTo=chartDateTo||Infinity;
+    rawSamples=all.filter(x=>x.ts>=tFrom&&x.ts<=tTo);
+    events=allEvents.filter(e=>e.ts>=tFrom&&e.ts<=tTo);
+  } else {
+    rawSamples=chartRange>0?all.filter(x=>x.ts>=now-(chartRange*1000)):all.slice();
+    events=chartRange>0?allEvents.filter(e=>e.ts>=now-(chartRange*1000)):allEvents.slice();
+  }
   // Downsample if too many points for smooth rendering
   if(rawSamples.length>500){
     const step=Math.ceil(rawSamples.length/500);

@@ -36,7 +36,6 @@ Python version: 3.9 compatible
 """
 from datetime import timedelta
 import os
-import tempfile
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
@@ -153,9 +152,10 @@ class Config:
             "RISK_STATUS_UPDATE_MIN"
         )
         # === Risk State ===
-        # Use cross-platform temp directory (Windows/Linux compatible)
+        # Default to project's logs/ directory (survives reboots, unlike /tmp).
+        _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         default_risk_state = os.path.join(
-            tempfile.gettempdir(), 
+            _project_root, "logs",
             "supreme_risk_state.json"
         )
         self.risk_state_file: str = self._strip_comment(

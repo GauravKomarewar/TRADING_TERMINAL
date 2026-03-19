@@ -4,7 +4,7 @@
   "id": "BANKNIFTY",
   "description": "",
   "type": "neutral",
-  "enabled": true,
+  "enabled": false,
   "status": "COMPLETED",
   "identity": {
     "exchange": "NFO",
@@ -228,5 +228,20 @@
   "test_mode": true,
   "created_at": "2026-03-10T09:08:50",
   "updated_at": "2026-03-10T09:08:50",
-  "status_updated_at": "2026-03-10T15:28:13.637395"
+  "status_updated_at": "2026-03-10T15:28:13.637395",
+  "strategy_type": "neutral",
+  "tags": [],
+  "file": "banknifty.json",
+  "status_file": "COMPLETED",
+  "status_runtime_running": false,
+  "sections": [
+    "identity",
+    "entry",
+    "adjustment",
+    "exit"
+  ],
+  "rms": {},
+  "mode": "MOCK",
+  "can_change_mode": true,
+  "mode_change_reason": null
 }

@@ -65,12 +65,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [GATEWAY] %(levelnam
 class ClientRoute:
     """Represents one client's routing entry."""
 
+    _ALLOWED_PREFIXES = (
+        "http://127.0.0.1",
+        "http://localhost",
+        "http://[::1]",
+    )
+
     def __init__(self, data: Dict[str, Any]) -> None:
         self.alias: str = data["alias"].strip().lower()
         self.webhook_url: str = data["webhook_url"].rstrip("/")
         self.dashboard_url: str = data["dashboard_url"].rstrip("/")
         self.display_name: str = data.get("display_name", self.alias)
         self.enabled: bool = data.get("enabled", True)
+
+        # Security: Only allow loopback URLs to prevent SSRF
+        for url_field, url_val in [("webhook_url", self.webhook_url), ("dashboard_url", self.dashboard_url)]:
+            if not any(url_val.startswith(prefix) for prefix in self._ALLOWED_PREFIXES):
+                raise ValueError(
+                    f"Client '{self.alias}': {url_field} must point to localhost/127.0.0.1, "
+                    f"got: {url_val}"
+                )
 
 
 class RouteRegistry:

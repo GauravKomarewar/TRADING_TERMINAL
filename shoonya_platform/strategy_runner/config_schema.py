@@ -1317,7 +1317,9 @@ def _validate_rms(rms: Dict, errors: List[ValidationError], prefix: str):
         loss_limit = daily.get("loss_limit")
         if loss_limit is not None:
             try:
-                float(loss_limit)
+                val = float(loss_limit)
+                if val < 0:
+                    errors.append(ValidationError(f"{prefix}.daily.loss_limit", "loss_limit must be >= 0"))
             except (TypeError, ValueError):
                 errors.append(ValidationError(f"{prefix}.daily.loss_limit", "loss_limit must be a number"))
         max_trades = daily.get("max_trades")

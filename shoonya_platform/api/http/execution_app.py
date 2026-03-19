@@ -66,6 +66,10 @@ class ExecutionApp:
                 signature = request.headers.get("X-Signature", "")
 
                 if not self.bot.validate_webhook_signature(payload, signature):
+                    logger.warning(
+                        "Rejected webhook: invalid signature | source=%s",
+                        request.remote_addr,
+                    )
                     return jsonify({"error": "Invalid signature"}), 401
 
                 alert_data, parse_error = parse_json_safely(payload)

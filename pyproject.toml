@@ -3,5 +3,5 @@ name = "shoonya-bot"
 version = "1.0.0"
 requires-python = ">=3.9"
 
-[tool.setuptools]
-packages = ["shoonya_bot"]
+[tool.setuptools.packages.find]
+include = ["shoonya_platform*"]

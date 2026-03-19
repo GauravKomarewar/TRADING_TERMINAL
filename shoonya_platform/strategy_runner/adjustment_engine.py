@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 import logging
 from .state import StrategyState, LegState
 from .condition_engine import ConditionEngine
@@ -21,6 +21,11 @@ class AdjustmentEngine:
         self._rule_last_fired: Dict[str, datetime] = {}
         self._rule_last_skip_log: Dict[str, datetime] = {}
         self._last_guard_reason: str = "ok"
+        # ✅ BUG-RETRIGGER FIX: track rules that must not retrigger (retrigger=false)
+        # keyed by rule_name → date the rule last fired (for day-scoped blocking).
+        self._rule_no_retrigger_fired: Dict[str, date] = {}
+        # Tracking: last rule that successfully fired (used by monitor snapshot for reason column)
+        self._last_triggered_rule_name: str = ""
 
     def load_rules(self, rules_config: List[Dict[str, Any]]):
         self.rules_config = sorted(rules_config, key=lambda r: r.get("priority", 999))
@@ -39,23 +44,41 @@ class AdjustmentEngine:
             cond_objs = [self._dict_to_condition(c) for c in if_conds]
             if self.condition_engine.evaluate(cond_objs):
                 action = rule["action"]
+                # ✅ BUG-COUNTER FIX: snapshot leg keys before execute to detect NOOP
+                legs_before = {t: (l.is_active, l.strike, l.option_type, l.expiry, l.qty)
+                               for t, l in self.state.legs.items()}
                 self._execute_action(action, "if", rule)
+                legs_after = {t: (l.is_active, l.strike, l.option_type, l.expiry, l.qty)
+                              for t, l in self.state.legs.items()}
+                if legs_before == legs_after:
+                    # Action was a complete NOOP — consume NO budget
+                    logger.info(
+                        "ADJUSTMENT_NOOP | rule=%s | branch=IF | leg_state_unchanged — counter NOT incremented",
+                        rule_name,
+                    )
+                    continue
                 actions_taken.append(f"Rule {rule.get('name')}: IF triggered")
                 self._rule_last_fired[rule_name] = current_time
+                self._last_triggered_rule_name = rule_name
                 self.state.last_adjustment_time = current_time
                 self.state.adjustments_today += 1
                 self.state.lifetime_adjustments += 1
+                # ✅ BUG-RETRIGGER FIX: mark no-retrigger rules as permanently fired today
+                retrigger = bool(rule.get("retrigger", rule.get("retriger", True)))
+                if not retrigger:
+                    self._rule_no_retrigger_fired[rule_name] = current_time.date()
                 # ✅ BUG-002 FIX: Record adjustment event for audit trail
                 self.state.record_adjustment(
                     rule_name=rule_name,
                     action_type=action.get("type", "unknown"),
                     affected_legs=[action.get("close_tag", ""), action.get("target_leg", "")],
-                    reason=f"IF conditions met",
+                    reason="IF conditions met",
                 )
                 logger.info(
-                    "ADJUSTMENT_TRIGGERED | rule=%s | branch=IF | action=%s",
+                    "ADJUSTMENT_TRIGGERED | rule=%s | branch=IF | action=%s | adjustments_today=%s",
                     rule_name,
                     action.get("type"),
+                    self.state.adjustments_today,
                 )
 
             elif rule.get("else_enabled"):
@@ -63,23 +86,39 @@ class AdjustmentEngine:
                 else_cond_objs = [self._dict_to_condition(c) for c in else_conds]
                 if self.condition_engine.evaluate(else_cond_objs):
                     else_action = rule["else_action"]
+                    # ✅ BUG-COUNTER FIX: snapshot leg keys before execute to detect NOOP
+                    legs_before = {t: (l.is_active, l.strike, l.option_type, l.expiry, l.qty)
+                                   for t, l in self.state.legs.items()}
                     self._execute_action(else_action, "else", rule)
+                    legs_after = {t: (l.is_active, l.strike, l.option_type, l.expiry, l.qty)
+                                  for t, l in self.state.legs.items()}
+                    if legs_before == legs_after:
+                        logger.info(
+                            "ADJUSTMENT_NOOP | rule=%s | branch=ELSE | leg_state_unchanged — counter NOT incremented",
+                            rule_name,
+                        )
+                        continue
                     actions_taken.append(f"Rule {rule.get('name')}: ELSE triggered")
                     self._rule_last_fired[rule_name] = current_time
+                    self._last_triggered_rule_name = rule_name
                     self.state.last_adjustment_time = current_time
                     self.state.adjustments_today += 1
                     self.state.lifetime_adjustments += 1
+                    retrigger = bool(rule.get("retrigger", rule.get("retriger", True)))
+                    if not retrigger:
+                        self._rule_no_retrigger_fired[rule_name] = current_time.date()
                     # ✅ BUG-002 FIX: Record adjustment event for audit trail
                     self.state.record_adjustment(
                         rule_name=rule_name,
                         action_type=else_action.get("type", "unknown"),
                         affected_legs=[else_action.get("close_tag", ""), else_action.get("target_leg", "")],
-                        reason=f"ELSE conditions met",
+                        reason="ELSE conditions met",
                     )
                     logger.info(
-                        "ADJUSTMENT_TRIGGERED | rule=%s | branch=ELSE | action=%s",
+                        "ADJUSTMENT_TRIGGERED | rule=%s | branch=ELSE | action=%s | adjustments_today=%s",
                         rule_name,
                         else_action.get("type"),
+                        self.state.adjustments_today,
                     )
                 else:
                     self._log_rule_skip(rule_name, "ELSE_CONDITIONS_FALSE", current_time)
@@ -93,6 +132,18 @@ class AdjustmentEngine:
         rule_name = rule.get("name") or str(id(rule))
         now = current_time or datetime.now()
         self._last_guard_reason = "ok"
+
+        # ✅ BUG-RETRIGGER FIX: honour retrigger=false (also accepts legacy typo 'retriger').
+        # Default is True (same behaviour as before this fix for all existing rules
+        # that don't set the field).  When retrigger=false the rule may fire at most
+        # once per calendar day — it is blocked for the rest of that day after its
+        # first successful execution.
+        retrigger = bool(rule.get("retrigger", rule.get("retriger", True)))
+        if not retrigger and rule_name in self._rule_no_retrigger_fired:
+            fired_date = self._rule_no_retrigger_fired[rule_name]
+            if fired_date == now.date():
+                self._last_guard_reason = "retrigger_disabled"
+                return False
 
         # ✅ Per‑rule cooldown (only)
         if cooldown > 0 and rule_name in self._rule_last_fired:

@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "STOPPED",
+  "status": "COMPLETED",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -226,7 +226,7 @@
   },
   "paper_mode": true,
   "test_mode": true,
-  "created_at": "2026-02-27T12:53:41",
-  "updated_at": "2026-03-09T09:28:35",
-  "status_updated_at": "2026-03-11T10:21:56.617846"
+  "created_at": "2026-02-27T12:53:41Z",
+  "updated_at": "2026-03-19T15:28:01.802462Z",
+  "status_updated_at": "2026-03-19T15:28:01.802462Z"
 }

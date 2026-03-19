@@ -56,7 +56,12 @@ class SupremeRiskManager:
         client_id = bot.client_id
 
         # ---------------- Risk state persistence ----------------
-        self.STATE_FILE = f"{cfg.risk_state_file.rstrip('.json')}_{client_id}.json"
+        # FIX: rstrip('.json') strips individual chars (j/s/o/n), not the suffix.
+        # Use removesuffix() for correct suffix removal.
+        _base = cfg.risk_state_file
+        if _base.endswith('.json'):
+            _base = _base[:-5]
+        self.STATE_FILE = f"{_base}_{client_id}.json"
         os.makedirs(os.path.dirname(self.STATE_FILE), exist_ok=True)
 
         # ---------------- Config ----------------

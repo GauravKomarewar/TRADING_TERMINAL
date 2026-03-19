@@ -21,6 +21,9 @@ def validate_order(cmd: UniversalOrderCommand) -> None:
     if cmd.order_type in ("LIMIT", "SL") and cmd.price is None:
         raise ValueError(f"{cmd.order_type} order requires price")
 
+    if cmd.order_type in ("LIMIT", "SL") and cmd.price is not None and cmd.price <= 0:
+        raise ValueError(f"{cmd.order_type} order price must be positive, got {cmd.price}")
+
     if cmd.order_type == "LEVEL":
         if cmd.trigger_type == "NONE":
             raise ValueError("LEVEL order requires trigger type")
@@ -33,6 +36,8 @@ def validate_order(cmd: UniversalOrderCommand) -> None:
     if cmd.trigger_type != "NONE":
         if cmd.trigger_price is None:
             raise ValueError("Trigger price missing")
+        if cmd.trigger_price <= 0:
+            raise ValueError("Trigger price must be positive")
 
         if cmd.trigger_execution == "LIMIT" and cmd.trigger_limit_price is None:
             raise ValueError("Trigger LIMIT requires trigger_limit_price")

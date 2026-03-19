@@ -810,11 +810,24 @@ class StrategyExecutorService:
 
                     row = cache.get(leg_key)
                     if row is None:
+                        # Determine event reason for the opening event
+                        if tag.startswith("LEG@"):
+                            open_reason = getattr(executor, '_last_event_reason', '') if executor else ''
+                            open_reason = open_reason if open_reason else 'entry_conditions_met'
+                            event_src = "ENTRY"
+                        else:
+                            adj_rule = getattr(
+                                getattr(executor, 'adjustment_engine', None),
+                                '_last_triggered_rule_name', ''
+                            ) if executor else ''
+                            open_reason = adj_rule if adj_rule else 'adjustment'
+                            event_src = "ADJUSTMENT"
                         row = {
                             "strategy_name": strategy_name,
                             "opened_at": now_iso,
                             "closed_at": None,
-                            "source": "ENTRY" if tag.startswith("LEG@") else "ADJUSTMENT",
+                            "source": event_src,
+                            "event_reason": open_reason,
                             "realized_pnl": 0.0,
                         }
                         cache[leg_key] = row
@@ -823,6 +836,11 @@ class StrategyExecutorService:
                     if was_active and not is_active and row.get("closed_at") is None:
                         row["closed_at"] = now_iso
                         row["realized_pnl"] = float(row.get("realized_pnl", 0) or 0) + float(leg_pnl)
+                        # Capture exit reason at transition time
+                        exit_rsn = getattr(executor, '_last_event_reason', '') if executor else ''
+                        if exit_rsn:
+                            row["event_reason"] = exit_rsn
+                            row["source"] = "EXIT"
 
                     display_qty = max(0, int(order_qty))
                     if not is_active:
@@ -853,6 +871,8 @@ class StrategyExecutorService:
                         "closed_at": None if is_active else (row.get("closed_at") or now_iso),
                         "updated_at": now_iso,
                         "mode": mode,
+                        "event_type": row.get("source", "ENTRY"),
+                        "reason": row.get("event_reason", ""),
                     })
                     row["total_pnl"] = float(row.get("realized_pnl", 0) or 0) + float(row.get("unrealized_pnl", 0) or 0)
                     if is_active:
@@ -1268,6 +1288,78 @@ class PerStrategyExecutor:
         self._last_entry_skip_reason: str = ""
         self._last_entry_skip_log_at: Optional[datetime] = None
 
+        # Event tracking for monitor snapshot reason/event_type columns
+        self._last_event_type: str = ""
+        self._last_event_reason: str = ""
+
+        # ✅ CONFIG AUDIT LOG: print every configured rule at startup so every run
+        # is fully auditable from logs alone — no need to open JSON files.
+        self._log_strategy_config_at_startup()
+
+    def _log_strategy_config_at_startup(self) -> None:
+        """Log the complete effective strategy configuration at startup.
+        Every run starts with a full human-readable rule dump in the log.
+        """
+        identity = self.config.get("identity", {})
+        timing = self.config.get("timing", {})
+        schedule = self.config.get("schedule", {})
+        exit_cfg = self.config.get("exit", {})
+        adj_cfg = self.config.get("adjustment", {})
+        entry_cfg = self.config.get("entry", {})
+
+        sl_cfg = exit_cfg.get("stop_loss", {})
+        pt_cfg = exit_cfg.get("profit_target", {})
+        trail_cfg = exit_cfg.get("trailing", {})
+        risk_cfg = exit_cfg.get("risk", {})
+        time_cfg = exit_cfg.get("time", {})
+
+        legs_info = ", ".join(
+            f"{l.get('tag')}({l.get('side')}/{l.get('option_type')}/delta={l.get('strike_value')})"
+            for l in entry_cfg.get("legs", [])
+        )
+
+        adj_rules = adj_cfg.get("rules", [])
+        rules_summary = []
+        for r in adj_rules:
+            retrigger_raw = r.get("retrigger", r.get("retriger", True))
+            retrigger_note = "" if retrigger_raw else " [ONCE-PER-DAY]"
+            has_typo = "retriger" in r and "retrigger" not in r
+            typo_note = " ⚠️TYPO:retriger" if has_typo else ""
+            rules_summary.append(
+                f"  Rule '{r.get('name')}' priority={r.get('priority',999)}"
+                f" cooldown={r.get('cooldown_sec',0)}s"
+                f" max_per_day={r.get('max_per_day')}"
+                f" retrigger={retrigger_raw}{retrigger_note}{typo_note}"
+                f" action={r.get('action', {}).get('type')}"
+            )
+        rules_block = "\n".join(rules_summary) if rules_summary else "  (none)"
+
+        logger.info(
+            "STRATEGY_CONFIG_LOADED | strategy=%s\n"
+            "  underlying=%s  exchange=%s  paper_mode=%s  test_mode=%s\n"
+            "  entry_window=%s–%s  exit_time=%s  active_days=%s\n"
+            "  expiry_mode=%s  entry_on_expiry_day=%s\n"
+            "  entry_legs=[%s]\n"
+            "  stop_loss=amount:%s pct:%s action:%s allow_reentry:%s\n"
+            "  profit_target=amount:%s pct:%s action:%s\n"
+            "  trailing=trail:%s lock_in:%s\n"
+            "  max_delta=%s  max_loss_per_day=%s  max_lots=%s\n"
+            "  adjustments_enabled=%s  adj_rules_count=%d\n%s",
+            self.name,
+            identity.get("underlying"), identity.get("exchange"),
+            identity.get("paper_mode"), identity.get("test_mode"),
+            timing.get("entry_window_start"), timing.get("entry_window_end"),
+            time_cfg.get("strategy_exit_time"), schedule.get("active_days"),
+            schedule.get("expiry_mode"), schedule.get("entry_on_expiry_day"),
+            legs_info,
+            sl_cfg.get("amount"), sl_cfg.get("pct"), sl_cfg.get("action"), sl_cfg.get("allow_reentry"),
+            pt_cfg.get("amount"), pt_cfg.get("pct"), pt_cfg.get("action"),
+            trail_cfg.get("trail_amount"), trail_cfg.get("lock_in_at"),
+            risk_cfg.get("max_delta"), risk_cfg.get("max_loss_per_day"), risk_cfg.get("max_lots"),
+            adj_cfg.get("enabled"), len(adj_rules),
+            rules_block,
+        )
+
     def process_tick(self):
         """Called by the service loop each tick."""
         with self._tick_lock:
@@ -1306,11 +1398,26 @@ class PerStrategyExecutor:
         # Check exits first
         exit_action = self.exit_engine.check_exits(now)
         if exit_action and exit_action != "profit_step_adj":
+            exit_reason = self.exit_engine.last_exit_reason or "unspecified"
+            active_legs_at_exit = [l for l in self.state.legs.values() if l.is_active]
+            leg_detail = "; ".join(
+                f"{l.tag}={l.option_type.value if l.option_type else '?'}"
+                f"@{l.strike} exp={l.expiry}"
+                f" pnl={round(l.pnl,2) if hasattr(l,'pnl') else 0}"
+                f" ltp={round(l.ltp,2) if l.ltp else 0}"
+                f" delta={round(l.delta,3) if l.delta else 0}"
+                f" side={l.side.value} lots={l.qty}"
+                for l in active_legs_at_exit
+            )
+            self._last_event_type = "EXIT"
+            self._last_event_reason = exit_reason
             logger.info(
-                "EXIT_TRIGGERED | strategy=%s | action=%s | reason=%s",
+                "EXIT_TRIGGERED | strategy=%s | action=%s | reason=%s | active_legs=%d\n  Legs: %s",
                 self.name,
                 exit_action,
-                self.exit_engine.last_exit_reason or "unspecified",
+                exit_reason,
+                len(active_legs_at_exit),
+                leg_detail,
             )
             self._execute_exit(exit_action, source=exit_action)
             # ✅ BUG FIX(9): Persist state after exit so legs are marked
@@ -1350,11 +1457,30 @@ class PerStrategyExecutor:
             pre_adjustments_today = self.state.adjustments_today
             pre_lifetime_adjustments = self.state.lifetime_adjustments
             pre_last_adjustment_time = self.state.last_adjustment_time
+            # ✅ BUG-PARTIAL-FILL FIX: Do not run adjustments while any entry or
+            # adjustment leg is still PENDING (awaiting broker fill confirmation).
+            # Firing adjustment logic against a partially-filled position causes
+            # 'orphan adjustment' storms (20 NOOPs on Mar 11) and corrupts the
+            # adjustments_today counter.
+            pending_legs = [
+                leg for leg in self.state.legs.values()
+                if leg.order_status == "PENDING" and leg.is_active is False
+                and leg.order_placed_at is not None
+                and (now - leg.order_placed_at).total_seconds() < 60
+            ]
             # ✅ BUG FIX: Do not run adjustments if no legs are active yet.
             # Conditions like 'adj_count_today >= 0' are always true, so without
             # this guard the adjustment engine fires before entry and crashes when
             # dynamic leg selectors (LOWER_DELTA_LEG etc.) resolve to None.
             if not self.state.any_leg_active:
+                actions = []
+            elif pending_legs:
+                logger.info(
+                    "ADJUSTMENT_HOLD | strategy=%s | waiting for %d pending leg(s) to fill: %s",
+                    self.name,
+                    len(pending_legs),
+                    [l.tag for l in pending_legs],
+                )
                 actions = []
             else:
                 actions = self.adjustment_engine.check_and_apply(now)
@@ -1758,12 +1884,25 @@ class PerStrategyExecutor:
         # Log final status of each leg (may already be FILLED via notify_fill)
         filled = sum(1 for l in new_legs if l.order_status == "FILLED")
         pending = sum(1 for l in new_legs if l.order_status == "PENDING")
+        leg_detail = "; ".join(
+            f"{l.tag}={l.option_type.value if l.option_type else '?'}"
+            f"@{l.strike} exp={l.expiry}"
+            f" delta={round(l.delta,3) if l.delta else 0}"
+            f" iv={round(l.iv,2) if l.iv else 0}"
+            f" ltp={round(l.ltp,2) if l.ltp else 0}"
+            f" side={l.side.value} lots={l.qty}"
+            f" status={l.order_status}"
+            for l in new_legs
+        )
+        self._last_event_type = "ENTRY"
+        self._last_event_reason = "entry_conditions_met"
         logger.info(
-            "ENTRY_PLACED | strategy=%s | legs=%s | filled=%s | pending=%s",
+            "ENTRY_PLACED | strategy=%s | legs=%s | filled=%s | pending=%s\n  Legs: %s",
             self.name,
             len(new_legs),
             filled,
             pending,
+            leg_detail,
         )
 
         # Persist state immediately after entry so crash-recovery can find it
@@ -2303,6 +2442,22 @@ class PerStrategyExecutor:
                     self.name,
                 )
                 return True
+
+        # Log the full adjustment order being dispatched
+        adj_rule_name = getattr(self.adjustment_engine, '_last_triggered_rule_name', None) or 'unknown'
+        close_legs = [lp for lp in legs_payload if str(lp.get("direction","")).upper() in ("BUY","SELL") and str(lp.get("direction","")).upper() != str(self.config.get("identity",{}).get("side","SELL")).upper()]
+        adj_detail = "; ".join(
+            f"{lp.get('direction')} {lp.get('tradingsymbol')} qty={lp.get('qty')}"
+            f" delta={lp.get('delta')} iv={lp.get('iv')}"
+            for lp in legs_payload
+        )
+        adj_reason = getattr(self.adjustment_engine, '_last_triggered_reason', 'conditions_met')
+        self._last_event_type = "ADJUSTMENT"
+        self._last_event_reason = adj_rule_name
+        logger.info(
+            "ADJUSTMENT_DISPATCH | strategy=%s | rule=%s | reason=%s | legs=%d\n  Orders: %s",
+            self.name, adj_rule_name, adj_reason, len(legs_payload), adj_detail,
+        )
 
         result = self._submit_alert(execution_type="ADJUSTMENT", legs=legs_payload)
         return not self._is_failure_status((result or {}).get("status"))

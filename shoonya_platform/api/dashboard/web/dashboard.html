@@ -695,6 +695,11 @@
     var MAX_RETRIES = 3;
     var consecutiveErrors = 0;
 
+    // ─── Helpers ───
+    function encodeAttr(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
     // ─── Formatting ───
     function fmt(val) {
         if (val == null || isNaN(val)) return '₹0.00';
@@ -955,8 +960,8 @@
                 var qtyColor = isFlat ? 'var(--muted)' : (side==='LONG'?'var(--success)':'var(--danger)');
                 var actionHtml = isFlat
                     ? '<span style="font-size:11px;color:var(--muted)">CLOSED</span>'
-                    : '<button class="btn-exit" onclick="exitPosition(\'' + sym.replace(/'/g,"\\'") + '\',\'' + prd.replace(/'/g,"\\'") + '\')" title="Exit ' + sym + '">EXIT</button>'
-                      + ' <button class="btn-exit" onclick="placeExitOrder(\'' + sym.replace(/'/g,"\\'") + '\',\'' + exch.replace(/'/g,"\\'") + '\',\'' + prd.replace(/'/g,"\\'") + '\',' + Math.abs(qty) + ',\'' + (qty > 0 ? 'S' : 'B') + '\')" title="Place exit order" style="background:var(--primary)">ORDER</button>';
+                    : '<button class="btn-exit btn-exit-pos" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '" title="Exit ' + encodeAttr(sym) + '">EXIT</button>'
+                      + ' <button class="btn-exit btn-order-pos" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" data-qty="' + Math.abs(qty) + '" data-side="' + (qty > 0 ? 'S' : 'B') + '" title="Place exit order" style="background:var(--primary)">ORDER</button>';
                 return '<tr data-sym="' + sym + '" style="' + rowStyle + '">'
                     + '<td style="font-weight:700">' + (sym || '-') + '</td>'
                     + '<td data-f="ltp">' + fmt(p._ltp || p.lp || p.ltp || 0) + '</td>'
@@ -993,6 +998,14 @@
             });
         }
     }
+
+    // ─── Position Button Delegation ───
+    document.getElementById('positionRows').addEventListener('click', function(e) {
+        var btn = e.target.closest('.btn-exit-pos');
+        if (btn) { exitPosition(btn.dataset.sym, btn.dataset.prd); return; }
+        var obtn = e.target.closest('.btn-order-pos');
+        if (obtn) { placeExitOrder(obtn.dataset.sym, obtn.dataset.exch, obtn.dataset.prd, parseInt(obtn.dataset.qty, 10), obtn.dataset.side); }
+    });
 
     // ─── Position Exit Functions ───
     async function exitPosition(symbol, product) {

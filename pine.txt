@@ -1,0 +1,447 @@
+//@version=5
+indicator("ZigZag indicator+levels", overlay=true, max_lines_count=300)
+
+show_levels = input.bool(true, "Show Important universal Levels", group = '==== On/Off Settings====')
+plot_boxes = input.bool(true, "plot Resistance and Support Boxes", group = '==== On/Off Settings====')
+bool showZigZag = input.bool(true, "Show ZigZag", group = '==== On/Off Settings====')
+plot_ha_smooth = input.bool(true, 'HA Smooth plotting', group = '==== On/Off Settings====')
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙐𝙎𝙀𝙍 𝙄𝙉𝙋𝙐𝙏𝙎
+// ---------------------------------------------------------------------------------------------------------------------{
+int highLowLength = input.int(3, "High / Low Length", minval=1, group = '==== Swing ZigZag====')
+string calculationMode = input.string("Wicks(HL)", "Calculation Mode", ["Wicks(HL)", "Body(OC)"], group = '==== Swing ZigZag====')
+zigzag_color = input.color(color.yellow, "ZigZag Line Color", group = '==== Swing ZigZag====')
+zigzag_w = input.int(1, "ZigZag width" , options = [1,2,3], group = '==== Swing ZigZag====')
+
+auto_levels = input.bool(true, "auto_levels selector", group = "====Important universal Levels====")
+level_count = input.int(5, 'Level density', minval = 1, maxval = 10, group = "====Important universal Levels====")
+distance_pct = input.float(0.5, 'Filter distance from LTP (%)', minval = 0.1, maxval = 100, step = 0.5, group = "====Important universal Levels====")
+
+num_smooth = input.int(2, 'HA Smooth Count', minval = 1, maxval = 4, group = '====HA smooth trend====')
+EMAlength = input.int(65, 'EMA Length', group = '====HA smooth trend====')
+
+int   lookbackPeriod = input.int(20, "Lookback Period", minval=1, group = "=====Resistance and Support Boxes=====")
+int   vol_len        = input.int(2, "Delta Volume Filter Length", tooltip = "Higher input, will filter low volume boxes",
+                                                                                                   group = "=====Resistance and Support Boxes=====")
+float box_withd      = input.float(1, "Adjust Box Width", maxval = 1000, minval = 0, step = 0.1,group = "=====Resistance and Support Boxes=====")
+
+
+// =====================
+// Price Source
+// =====================
+float highSource = calculationMode == "Wicks(HL)" ? high : math.max(open, close)
+float lowSource  = calculationMode == "Wicks(HL)" ? low  : math.min(open, close)
+
+// =====================
+// Swing Detection (REFERENCE LOGIC)
+// =====================
+float highestPrice = ta.highest(highSource, highLowLength * 2 + 1)
+float lowestPrice  = ta.lowest(lowSource,  highLowLength * 2 + 1)
+
+bool isSwingHigh = highestPrice == highSource[highLowLength]
+bool isSwingLow  = lowestPrice  == lowSource[highLowLength]
+
+// =====================
+// State
+// =====================
+var bool  directionUp = na
+var float prevHigh = na
+var float prevLow  = na
+var int   timeHigh = na
+var int   timeLow  = na
+var line  zzLine   = na
+
+// =====================
+// Draw Function (BAR-INDEX BASED — STABLE)
+// =====================
+f_drawLine(_th, _h, _tl, _l) =>
+    showZigZag ? line.new(_th - highLowLength, _h, _tl - highLowLength, _l,
+             xloc = xloc.bar_index, color = zigzag_color, width = zigzag_w) : na
+
+// =====================
+// Initialization
+// =====================
+if na(directionUp)
+    if isSwingHigh
+        prevHigh := highSource[highLowLength]
+        timeHigh := bar_index
+        directionUp := false
+    else if isSwingLow
+        prevLow := lowSource[highLowLength]
+        timeLow := bar_index
+        directionUp := true
+
+// =====================
+// Core Swing Logic (UNCHANGED FROM YOUR REF)
+// =====================
+if not na(directionUp)
+
+    if directionUp
+        if isSwingLow and lowSource[highLowLength] < prevLow
+            prevLow := lowSource[highLowLength]
+            timeLow := bar_index
+            line.delete(zzLine)
+            zzLine := f_drawLine(timeHigh, prevHigh, timeLow, prevLow)
+
+        if isSwingHigh and highSource[highLowLength] > prevLow
+            prevHigh := highSource[highLowLength]
+            timeHigh := bar_index
+            directionUp := false
+            zzLine := f_drawLine(timeHigh, prevHigh, timeLow, prevLow)
+
+    else
+        if isSwingHigh and highSource[highLowLength] > prevHigh
+            prevHigh := highSource[highLowLength]
+            timeHigh := bar_index
+            line.delete(zzLine)
+            zzLine := f_drawLine(timeHigh, prevHigh, timeLow, prevLow)
+
+        if isSwingLow and lowSource[highLowLength] < prevHigh
+            prevLow := lowSource[highLowLength]
+            timeLow := bar_index
+            directionUp := true
+            zzLine := f_drawLine(timeHigh, prevHigh, timeLow, prevLow)
+
+
+//==================================================
+// Function: Smoothing Heikin Ashi
+//==================================================
+smoothing_ha(_open, _high, _low, _close, _levels) =>
+    haC1 = (_open + _high + _low + _close) / 4
+    var float haO1 = na
+    haO1 := na(haO1[1]) ? (_open + _close) / 2 : (haO1[1] + haC1[1]) / 2
+    haH1 = math.max(_high, math.max(haO1, haC1))
+    haL1 = math.min(_low, math.min(haO1, haC1))
+
+    haC2 = (haO1 + haH1 + haL1 + haC1) / 4
+    var float haO2 = na
+    haO2 := na(haO2[1]) ? (haO1 + haC1) / 2 : (haO2[1] + haC2[1]) / 2
+    haH2 = math.max(haH1, math.max(haO2, haC2))
+    haL2 = math.min(haL1, math.min(haO2, haC2))
+
+    haC3 = (haO2 + haH2 + haL2 + haC2) / 4
+    var float haO3 = na
+    haO3 := na(haO3[1]) ? (haO2 + haC2) / 2 : (haO3[1] + haC3[1]) / 2
+    haH3 = math.max(haH2, math.max(haO3, haC3))
+    haL3 = math.min(haL2, math.min(haO3, haC3))
+
+    haC4 = (haO3 + haH3 + haL3 + haC3) / 4
+    var float haO4 = na
+    haO4 := na(haO4[1]) ? (haO3 + haC3) / 2 : (haO4[1] + haC4[1]) / 2
+    haH4 = math.max(haH3, math.max(haO4, haC4))
+    haL4 = math.min(haL3, math.min(haO4, haC4))
+
+    haO = _levels == 1 ? haO1 : _levels == 2 ? haO2 : _levels == 3 ? haO3 : haO4
+    haH = _levels == 1 ? haH1 : _levels == 2 ? haH2 : _levels == 3 ? haH3 : haH4
+    haL = _levels == 1 ? haL1 : _levels == 2 ? haL2 : _levels == 3 ? haL3 : haL4
+    haC = _levels == 1 ? haC1 : _levels == 2 ? haC2 : _levels == 3 ? haC3 : haC4
+
+    sr3 = (_high + _low + _close) / 3
+
+    [haO, haH, haL, haC, sr3]
+
+//==================================================
+// Function: Bull & Bear Power
+//==================================================
+BullBear_power(_ha_close, _sr3, _emaLength) =>
+    EMA1 = ta.ema(_ha_close, _emaLength)
+    EMA2 = ta.ema(EMA1, _emaLength)
+    EMA3 = ta.ema(EMA2, _emaLength)
+    TMA1 = 3 * EMA1 - 3 * EMA2 + EMA3
+
+    EMA4 = ta.ema(TMA1, _emaLength)
+    EMA5 = ta.ema(EMA4, _emaLength)
+    EMA6 = ta.ema(EMA5, _emaLength)
+    TMA2 = 3 * EMA4 - 3 * EMA5 + EMA6
+
+    IPEK = TMA1 - TMA2
+    Reference = TMA1 + IPEK
+
+    EMA7 = ta.ema(_sr3, _emaLength)
+    EMA8 = ta.ema(EMA7, _emaLength)
+    EMA9 = ta.ema(EMA8, _emaLength)
+    TMA3 = 3 * EMA7 - 3 * EMA8 + EMA9
+
+    EMA10 = ta.ema(TMA3, _emaLength)
+    EMA11 = ta.ema(EMA10, _emaLength)
+    EMA12 = ta.ema(EMA11, _emaLength)
+    TMA4 = 3 * EMA10 - 3 * EMA11 + EMA12
+
+    IPEK1 = TMA3 - TMA4
+    Strength = TMA3 + IPEK1
+
+    [Strength, Reference]
+    
+//==================================================
+// MAIN CALCULATIONS
+//==================================================
+// Get OHLC Data
+[baseO, baseH, baseL, baseC] = request.security(syminfo.tickerid, timeframe.period, [open, high, low, close])
+
+// Calculate Smoothed HA and Bull Bear Power
+[open_, high_, low_, close_, sr3_] = smoothing_ha(baseO, baseH, baseL, baseC, num_smooth)
+[Strength, Reference] = BullBear_power(close_, sr3_, EMAlength)
+
+color_candle_x = Strength > Reference ? #00fc26 : color.rgb(255, 0, 0)
+plot(plot_ha_smooth ? Reference : na, color = #787b8675, title = 'Reference', linewidth = 1)
+plot(plot_ha_smooth ? Strength : na, color = color_candle_x, linewidth = 3, title = 'Strength')
+
+// === Inputs ===
+bars_back_extend = 200 //input.int(200, 'Line start (bars back)', minval = 1, maxval = 2000)
+
+// === Fixed scaling for precision ===
+float SCALE = 100000000.0  // 10^8 for 8 decimal precision
+
+// === Base value ===
+x_raw = math.round(math.sqrt(ta.ema(open, 5)))
+x_scaled = math.round(x_raw * SCALE)
+
+// === Step (gap) - ensure it's always positive ===
+// Original: step = math.max(0.001, 1.0 / math.pow(2, level_count - 1))
+// Define x_level based on close price
+x_level = if close > 100000
+    1
+else if close <= 100000 and close > 70000
+    2
+else if close <= 70000 and close > 30000
+    3
+else if close <= 30000 and close > 5000
+    4
+else if close <= 5000 and close > 500
+    5
+else if close <= 500 and close > 1
+    6
+else if close <= 1 and close > 0.1
+    7
+else
+    8
+    
+x_level_count = auto_levels ? x_level : level_count
+// Scaled version maintains the same logic:
+step_scaled = math.max(math.round(0.001 * SCALE), math.round(SCALE / math.pow(2, x_level_count - 1)))
+
+// === Dynamic line storage ===
+var array<line> level_lines = array.new_line()
+
+// Clear old lines at new bar - better approach
+if barstate.isnew
+    while array.size(level_lines) > 0
+        line.delete(array.pop(level_lines))
+
+// Draw levels from x-1 to x+1 using while loop
+if show_levels and barstate.islast
+    float current_scaled = x_scaled - SCALE  // (x - 1.0) scaled
+    int safety_counter = 0
+    int max_iterations = 10000 // safety limit
+
+    // Get current LTP (Last Traded Price) and calculate range
+    float ltp = close[1]
+    float upper_bound = ltp * (1 + distance_pct / 100)
+    float lower_bound = ltp * (1 - distance_pct / 100)
+
+    while current_scaled <= x_scaled + SCALE and safety_counter < max_iterations
+        // Unscale to get actual value
+        float current = current_scaled / SCALE
+        lvl = current * current
+
+        // Only draw if level is within the distance_pct range from LTP
+        if lvl >= lower_bound and lvl <= upper_bound
+            l = line.new(bar_index - bars_back_extend, lvl, bar_index, lvl, xloc = xloc.bar_index, extend = extend.both, color = #edeeeecc, width = 1)
+            array.push(level_lines, l)
+
+        current_scaled := current_scaled + step_scaled
+        safety_counter := safety_counter + 1
+        safety_counter
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙄𝙉𝘿𝙄𝘾𝘼𝙏𝙊𝙍 𝘾𝘼𝙇𝘾𝙐𝙇𝘼𝙏𝙄𝙊𝙉𝙎
+// ---------------------------------------------------------------------------------------------------------------------{
+// Delta Volume Function
+upAndDownVolume() =>
+    posVol = 0.0
+    negVol = 0.0
+    
+    var isBuyVolume = true    
+
+    switch
+        close > open   => isBuyVolume := true
+        close < open   => isBuyVolume := false
+
+    if isBuyVolume
+        posVol += volume
+    else
+        negVol -= volume
+
+    posVol + negVol
+
+
+// Function to identify support and resistance boxes
+calcSupportResistance(src, lookbackPeriod) =>
+    // Volume
+    Vol    = upAndDownVolume()
+    vol_hi = ta.highest(Vol/2.5, vol_len)
+    vol_lo = ta.lowest(Vol/2.5, vol_len)
+
+    var float supportLevel      = na
+    var float supportLevel_1    = na    
+    var float resistanceLevel   = na
+    var float resistanceLevel_1 = na    
+    var box   sup               = na
+    var box   res               = na
+    var color res_color         = na
+    var color sup_color         = na    
+    var float multi             = na
+
+    var bool  brekout_res       = na
+    var bool  brekout_sup       = na
+    var bool  res_holds         = na
+    var bool  sup_holds         = na
+
+    // Find pivot points
+    pivotHigh = ta.pivothigh(src, lookbackPeriod, lookbackPeriod)
+    pivotLow  = ta.pivotlow (src, lookbackPeriod, lookbackPeriod)
+    // Box width
+    atr       = ta.atr(200)
+    withd     = atr * box_withd
+
+    // Find support levels with Positive Volume
+    if (not na(pivotLow)) and Vol > vol_hi and plot_boxes
+
+        supportLevel   := pivotLow
+        supportLevel_1 := supportLevel-withd       
+
+        topLeft         = chart.point.from_index(bar_index-lookbackPeriod, supportLevel)
+        bottomRight     = chart.point.from_index(bar_index, supportLevel_1)
+
+        sup_color      := color.from_gradient(Vol, 0, ta.highest(Vol, 25), color(na), color.new(color.green, 30))
+
+        sup := box.new(
+                       top_left     = topLeft, 
+                       bottom_right = bottomRight, 
+                       border_color = color.green, 
+                       border_width = 1, 
+                       bgcolor      = sup_color, 
+                       text         = "Vol: "+str.tostring(math.round(Vol,2)), 
+                       text_color   = chart.fg_color, 
+                       text_size    = size.small
+                       ) 
+
+
+    // Find resistance levels with Negative Volume
+    if (not na(pivotHigh)) and Vol < vol_lo and plot_boxes
+   
+        resistanceLevel   := pivotHigh
+        resistanceLevel_1 := resistanceLevel+withd
+
+        topLeft            = chart.point.from_index(bar_index-lookbackPeriod, resistanceLevel)
+        bottomRight        = chart.point.from_index(bar_index, resistanceLevel_1)
+
+        res_color         := color.from_gradient(Vol, ta.lowest(Vol, 25), 0, color.new(color.red, 30), color(na))
+
+        res := box.new(
+                       top_left     = topLeft, 
+                       bottom_right = bottomRight, 
+                       border_color = color.red, 
+                       border_width = 1, 
+                       bgcolor      = res_color, 
+                       text         = "Vol: "+str.tostring(math.round(Vol,2)), 
+                       text_color   = chart.fg_color, 
+                       text_size    = size.small
+                       ) 
+
+    // Adaptive Box Len
+    sup.set_right(bar_index+1)
+    res.set_right(bar_index+1)
+
+    // Break of support or resistance conditions
+    brekout_res := ta.crossover(low, resistanceLevel_1)
+    res_holds   := ta.crossunder(high, resistanceLevel)
+
+    sup_holds   := ta.crossover(low, supportLevel)
+    brekout_sup := ta.crossunder(high, supportLevel_1)
+
+    // Change Color of Support to red if it was break, change color of resistance to green if it was break
+    if brekout_sup
+        sup.set_bgcolor(color.new(color.red, 80))
+        sup.set_border_color(color.red)
+        sup.set_border_style(line.style_dashed)
+
+    if sup_holds
+        sup.set_bgcolor(sup_color)
+        sup.set_border_color(color.green)
+        sup.set_border_style(line.style_solid)
+
+    if brekout_res
+        res.set_bgcolor(color.new(color.green, 80))
+        res.set_border_color(color.new(color.green, 0))
+        res.set_border_style(line.style_dashed)
+
+    if res_holds
+        res.set_bgcolor(res_color)
+        res.set_border_color(color.new(color.red, 0))
+        res.set_border_style(line.style_solid)
+
+    [supportLevel, resistanceLevel, brekout_res, res_holds, sup_holds, brekout_sup]
+
+
+// Calculate support and resistance levels and their breakouts
+[supportLevel,
+         resistanceLevel, 
+             brekout_res, 
+                 res_holds, 
+                     sup_holds, 
+                         brekout_sup] = calcSupportResistance(close, lookbackPeriod)
+
+
+// Check if Resistance become Support or Support Become Resistance
+var bool res_is_sup = na
+var bool sup_is_res = na
+
+switch
+    brekout_res => res_is_sup := true
+    res_holds   => res_is_sup := false
+
+switch
+    brekout_sup => sup_is_res := true
+    sup_holds   => sup_is_res := false
+
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙑𝙄𝙎𝙐𝘼𝙇𝙄𝙕𝘼𝙏𝙄𝙊𝙉
+// ---------------------------------------------------------------------------------------------------------------------{
+// Plot Res and Sup breakouts and holds 
+plotchar(plot_boxes ? res_holds : na, "Resistance Holds", "◆", 
+             color = #e92929,   size = size.tiny, location = location.abovebar, offset = -1)
+plotchar(plot_boxes ? sup_holds : na, "Support Holds",    "◆", 
+             color = #20ca26, size = size.tiny, location = location.belowbar, offset = -1)
+
+plotchar(plot_boxes ? brekout_res and res_is_sup[1] : na, "Resistance as Support Holds", "◆", 
+             color = #20ca26, size = size.tiny, location = location.belowbar, offset = -1)
+plotchar(plot_boxes ? brekout_sup and sup_is_res[1] : na, "Support as Resistance Holds", "◆", 
+             color = #e92929,   size = size.tiny, location = location.abovebar, offset = -1)
+
+// Break Out Labels
+if brekout_sup and not sup_is_res[1] and plot_boxes
+    label.new(
+              bar_index[1], supportLevel[1], 
+              text       = "Break Sup", 
+              style      = label.style_label_down, 
+              color      = #7e1e1e, 
+              textcolor  = chart.fg_color, 
+              size       = size.small
+              )
+
+if brekout_res and not res_is_sup[1] and plot_boxes
+    label.new(
+              bar_index[1], resistanceLevel[1], 
+              text       = "Break Res", 
+              style      = label.style_label_up, 
+              color      = #2b6d2d, 
+              textcolor  = chart.fg_color, 
+              size       = size.small
+              )
+
+
+// ◆
+// ---------------------------------------------------------------------------------------------------------------------}

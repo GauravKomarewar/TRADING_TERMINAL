@@ -82,8 +82,8 @@ body.theme-solar{
 .tv-chart-container{flex:1;width:100%}
 
 /* OHLC overlay */
-.tv-ohlc{position:absolute;top:6px;left:8px;z-index:5;pointer-events:none;display:flex;flex-direction:column;gap:1px;font-size:11.5px}
-.tv-ohlc-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.tv-ohlc{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:5;pointer-events:none;display:flex;flex-direction:column;gap:1px;font-size:11.5px;align-items:center}
+.tv-ohlc-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center}
 #overlayOhlcBar{pointer-events:auto}
 .tv-ohlc .sym{font-weight:700;color:var(--text-primary);font-size:13px;margin-right:2px}
 .tv-ohlc .ov-sym{font-weight:600;font-size:11px;margin-right:2px}
@@ -282,7 +282,7 @@ body.theme-solar{
     <button class="tv-draw-btn" data-tool="hray" title="Ray">⟶<span class="tip">Ray (2-click)</span></button>
     <div class="tv-draw-sep"></div>
     <button class="tv-draw-btn" data-tool="fib" title="Fibonacci">☰<span class="tip">Fibonacci (2-click)</span></button>
-    <button class="tv-draw-btn" data-tool="rect" title="Rectangle">▭<span class="tip">Rectangle (2-click)</span></button>
+    <button class="tv-draw-btn" data-tool="rect" title="Box">▭<span class="tip">Box (3-click)</span></button>
     <div class="tv-draw-sep"></div>
     <button class="tv-draw-btn" data-tool="measure" title="Measure">↔<span class="tip">Measure (2-click)</span></button>
     <button class="tv-draw-btn" data-tool="clearAll" style="margin-top:auto" title="Clear All">✕<span class="tip">Clear All</span></button>
@@ -331,7 +331,7 @@ body.theme-solar{
   <button class="tv-draw-btn" data-tool="trendline" title="Trend">╱</button>
   <button class="tv-draw-btn" data-tool="hray" title="Ray">⟶</button>
   <button class="tv-draw-btn" data-tool="fib" title="Fib">☰</button>
-  <button class="tv-draw-btn" data-tool="rect" title="Rect">▭</button>
+  <button class="tv-draw-btn" data-tool="rect" title="Box">▭</button>
   <button class="tv-draw-btn" data-tool="measure" title="Measure">↔</button>
   <button class="tv-draw-btn" data-tool="clearAll" title="Clear">✕</button>
 </div>
@@ -506,6 +506,7 @@ let drawTool='crosshairTool',drawClicks=[],drawState=null;
 let allDrawings=[]; /* [{id,type,series:[],priceLines:[],label},...] — unified drawing registry */
 let drawNextId=1;
 let selectedDrawingId=null;
+let previewSeries=null; /* live preview line while drawing */
 let chartMode='separate'; /* 'separate' or 'combined' */
 
 
@@ -633,6 +634,11 @@ function initChart(){
     if(!param||!param.time||!rawCandles.length){if(rawCandles.length){updateOhlc(rawCandles[rawCandles.length-1]);updateOverlayOhlc(null);}return;}
     const cd=rawCandles.find(x=>x.time===param.time);updateOhlc(cd||rawCandles[rawCandles.length-1]);
     updateOverlayOhlc(param.time);
+    /* Interactive preview while drawing */
+    if(drawClicks.length>0&&param.point&&param.time){
+      const price=mainSeries.coordinateToPrice(param.point.y);
+      if(price!=null&&!isNaN(price))updateDrawPreview(param.time,price);
+    }
   });
   chart.subscribeClick(param=>{
     if(!param||!param.point||!mainSeries)return;
@@ -668,13 +674,13 @@ function createMainSeries(){
   overlays.forEach(o=>{if(o.series){try{chart.removeSeries(o.series);}catch(e){}};o.series=null;});
   const cl=activeClr;
   if(curType==='candlestick'||curType==='heikinashi'){
-    mainSeries=chart.addCandlestickSeries({upColor:cl.up,downColor:cl.dn,borderUpColor:cl.up,borderDownColor:cl.dn,wickUpColor:cl.up,wickDownColor:cl.dn});
+    mainSeries=chart.addCandlestickSeries({upColor:cl.up,downColor:cl.dn,borderUpColor:cl.up,borderDownColor:cl.dn,wickUpColor:cl.up,wickDownColor:cl.dn,title:curSym});
   }else if(curType==='bar'||curType==='hlc'){
-    mainSeries=chart.addBarSeries({upColor:cl.up,downColor:cl.dn});
+    mainSeries=chart.addBarSeries({upColor:cl.up,downColor:cl.dn,title:curSym});
   }else if(curType==='line'){
-    mainSeries=chart.addLineSeries({color:cl.up,lineWidth:2});
+    mainSeries=chart.addLineSeries({color:cl.up,lineWidth:2,title:curSym});
   }else{
-    mainSeries=chart.addAreaSeries({topColor:hexRgba(cl.up,.3),bottomColor:hexRgba(cl.up,.02),lineColor:cl.up,lineWidth:2});
+    mainSeries=chart.addAreaSeries({topColor:hexRgba(cl.up,.3),bottomColor:hexRgba(cl.up,.02),lineColor:cl.up,lineWidth:2,title:curSym});
   }
   if(document.getElementById('chkVol').checked){
     volSeries=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol',lastValueVisible:false,priceLineVisible:false});
@@ -1068,6 +1074,46 @@ function applyIndicators(dataSource){
 /* ─── DRAWING TOOLS ─── */
 function showHint(msg){const h=document.getElementById('drawHint');h.textContent=msg;h.style.display=msg?'block':'none';}
 
+function clearPreview(){
+  if(previewSeries){try{chart.removeSeries(previewSeries);}catch(x){} previewSeries=null;}
+}
+function updateDrawPreview(ts,price){
+  if(!drawClicks.length)return;
+  clearPreview();
+  try{
+    previewSeries=chart.addLineSeries({color:'rgba(255,255,255,0.4)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    const p1=drawClicks[0];
+    if(drawTool==='hray'||drawTool==='trendline'||drawTool==='measure'){
+      /* Preview line from click1 to cursor */
+      const pts=p1.ts<ts?[{time:p1.ts,value:p1.price},{time:ts,value:price}]:[{time:ts,value:price},{time:p1.ts,value:p1.price}];
+      previewSeries.setData(pts);
+    }else if(drawTool==='fib'){
+      /* Preview vertical range */
+      const hi=Math.max(p1.price,price),lo=Math.min(p1.price,price);
+      const midT=Math.min(p1.ts,ts);
+      previewSeries.setData([{time:midT,value:lo},{time:midT+1,value:hi}]);
+    }else if(drawTool==='rect'){
+      if(drawClicks.length===1){
+        /* Preview edge 1 (line from click1 to cursor) */
+        const pts=p1.ts<ts?[{time:p1.ts,value:p1.price},{time:ts,value:price}]:[{time:ts,value:price},{time:p1.ts,value:p1.price}];
+        previewSeries.setData(pts);
+      }else if(drawClicks.length===2){
+        /* Preview full box from edge (click1→click2) offset by cursor price */
+        const p2=drawClicks[1];
+        const offset=price-p1.price;
+        const a=p1,b=p2;
+        const c_={ts:p2.ts,price:p2.price+offset};
+        const d_={ts:p1.ts,price:p1.price+offset};
+        /* Draw preview as 4-point outline: a→b→c→d→a */
+        const all=[a,b,c_,d_,a].map(pt=>({t:pt.ts,v:pt.price}));
+        /* Sort for rendering: just show the offset line */
+        const pts=d_.ts<c_.ts?[{time:d_.ts,value:d_.price},{time:c_.ts,value:c_.price}]:[{time:c_.ts,value:c_.price},{time:d_.ts,value:d_.price}];
+        previewSeries.setData(pts);
+      }
+    }
+  }catch(x){clearPreview();}
+}
+
 function registerDrawing(type,seriesList,plList,label){
   const id=drawNextId++;
   const d={id,type,series:seriesList||[],priceLines:plList||[],label:label||type};
@@ -1098,11 +1144,11 @@ function setDraw(tool){
     drawClicks=[];drawState=null;showHint('');hideDrawDelBtn();
     return;
   }
-  drawTool=tool;drawClicks=[];drawState=null;
+  drawTool=tool;drawClicks=[];drawState=null;clearPreview();
   document.querySelectorAll('.tv-draw-btn').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
   document.querySelectorAll('#mobileDrawBar .tv-draw-btn').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
   const c=document.getElementById('chartContainer');
-  const hints={crosshairTool:'',hline:'Click on chart to place horizontal line',hray:'Click start point for ray',trendline:'Click point 1',fib:'Click high point',rect:'Click corner 1',measure:'Click point 1'};
+  const hints={crosshairTool:'',hline:'Click on chart to place horizontal line',hray:'Click start point for ray',trendline:'Click point 1',fib:'Click high point',rect:'Click edge point 1',measure:'Click point 1'};
   c.style.cursor=(tool==='crosshairTool')?'':'crosshair';
   showHint(hints[tool]||'');
 }
@@ -1150,19 +1196,30 @@ function onChartClick(ts,price,point){
     drawClicks.push({ts,price});
     if(drawClicks.length===1){showHint('Click end point to define ray direction');return;}
     if(drawClicks.length===2){
+      clearPreview();
       const p1=drawClicks[0],p2=drawClicks[1];
-      /* Sort so first is earlier in time; compute direction from first→second, extend far right */
-      let start,end;
-      if(p1.ts<=p2.ts){start=p1;end=p2;}else{start=p2;end=p1;}
-      const dT=end.ts-start.ts||1; /* avoid zero */
-      const dP=end.price-start.price;
-      const slope=dP/dT;
-      /* Extend far to the right: add 500 candle-intervals worth */
+      /* Compute ray: from p1 through p2, extended far to the right.
+         Use only 2 points (start + far end) so the line is perfectly straight. */
+      const dT=p2.ts-p1.ts;
+      const dP=p2.price-p1.price;
+      /* Extend far: 500 candle intervals beyond p2, in the p1→p2 direction */
       const intSec=(curIntv||3)*60;
-      const farTs=end.ts+intSec*500;
-      const farPrice=end.price+slope*(farTs-end.ts);
+      const extLen=intSec*500;
+      let farTs,farPrice;
+      if(dT===0){
+        /* Vertical click — extend rightward horizontally with same slope */
+        farTs=p1.ts+extLen;
+        farPrice=p2.price;
+      }else{
+        const slope=dP/dT;
+        farTs=p2.ts+(dT>0?extLen:-extLen);
+        farPrice=p2.price+slope*(farTs-p2.ts);
+      }
+      /* Build points in time-ascending order */
+      const pts=[{time:p1.ts,value:p1.price},{time:farTs,value:farPrice}];
+      pts.sort((a,b)=>a.time-b.time);
       const s=chart.addLineSeries({color:'#f59e0b',lineWidth:1.5,lineStyle:LightweightCharts.LineStyle.Dotted,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-      s.setData([{time:start.ts,value:start.price},{time:end.ts,value:end.price},{time:farTs,value:farPrice}]);
+      s.setData(pts);
       trendSeries.push(s);
       registerDrawing('hray',[s],[],'Ray');
       drawClicks=[];setDraw('crosshairTool');return;
@@ -1176,6 +1233,7 @@ function onChartClick(ts,price,point){
       const s=chart.addLineSeries({color:'#2962ff',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true,lineStyle:LightweightCharts.LineStyle.Solid});
       const pts=[{time:Math.min(p1.ts,p2.ts),value:p1.ts<p2.ts?p1.price:p2.price},{time:Math.max(p1.ts,p2.ts),value:p1.ts<p2.ts?p2.price:p1.price}];
       s.setData(pts);trendSeries.push(s);
+      clearPreview();
       registerDrawing('trendline',[s],[],'Trend');
       drawClicks=[];setDraw('crosshairTool');return;
     }
@@ -1196,29 +1254,30 @@ function onChartClick(ts,price,point){
         return mainSeries.createPriceLine(opts);
       });
       fibPriceLines.push(group);
+      clearPreview();
       registerDrawing('fib',[],group,'Fibonacci');
       drawClicks=[];setDraw('crosshairTool');return;
     }
   }
   if(drawTool==='rect'){
     drawClicks.push({ts,price});
-    if(drawClicks.length===1){showHint('Click opposite corner');return;}
-    if(drawClicks.length===2){
-      /* Draw tilted/inclined rectangle: the two click points are diagonal corners.
-         Corner A = click1, Corner C = click2 (diagonal).
-         Corner B = (t2, p1), Corner D = (t1, p2) — forming the other two corners.
-         Edges: A→B (top/bottom tilted), B→C, C→D, D→A */
+    if(drawClicks.length===1){showHint('Click edge point 2');return;}
+    if(drawClicks.length===2){showHint('Click to set box width (drag away from edge)');return;}
+    if(drawClicks.length===3){
+      clearPreview();
+      /* 3-click box: click1 & click2 define one edge, click3 defines offset/width.
+         Edge = A→B (click1→click2). The offset = perpendicular distance from edge to click3.
+         C = B + offset, D = A + offset. Box = A→B→C→D. */
       const a={t:drawClicks[0].ts,p:drawClicks[0].price};
-      const c={t:drawClicks[1].ts,p:drawClicks[1].price};
-      const b={t:c.t,p:a.p}; /* same time as C, same price as A */
-      const d={t:a.t,p:c.p}; /* same time as A, same price as C */
-      /* Sort each edge by time for lightweight-charts */
+      const b={t:drawClicks[1].ts,p:drawClicks[1].price};
+      const offset=price-a.p; /* vertical offset from edge to click3 */
+      const c_={t:b.t,p:b.p+offset};
+      const d_={t:a.t,p:a.p+offset};
       function mkEdge(from,to,color,lw){
         const s=chart.addLineSeries({color:color,lineWidth:lw,lineStyle:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
         let pts;
         if(from.t===to.t){
-          /* Vertical edge — use +1 second offset */
-          pts=[{time:Math.min(from.t,to.t),value:from.p},{time:Math.min(from.t,to.t)+1,value:to.p}];
+          pts=[{time:from.t,value:Math.min(from.p,to.p)},{time:from.t+1,value:Math.max(from.p,to.p)}];
         }else if(from.t<to.t){
           pts=[{time:from.t,value:from.p},{time:to.t,value:to.p}];
         }else{
@@ -1227,10 +1286,10 @@ function onChartClick(ts,price,point){
         s.setData(pts);return s;
       }
       const sAB=mkEdge(a,b,'#2962ff',1.5);
-      const sBC=mkEdge(b,c,'#2962ff',1.5);
-      const sCD=mkEdge(c,d,'#2962ff',1.5);
-      const sDA=mkEdge(d,a,'#2962ff',1.5);
-      registerDrawing('rect',[sAB,sBC,sCD,sDA],[],'Rectangle');
+      const sBC=mkEdge(b,c_,'#2962ff',1.5);
+      const sCD=mkEdge(c_,d_,'#2962ff',1.5);
+      const sDA=mkEdge(d_,a,'#2962ff',1.5);
+      registerDrawing('rect',[sAB,sBC,sCD,sDA],[],'Box');
       drawClicks=[];setDraw('crosshairTool');return;
     }
   }
@@ -1246,6 +1305,7 @@ function onChartClick(ts,price,point){
       const s=chart.addLineSeries({color:'#fbbf24',lineWidth:1.5,lineStyle:LightweightCharts.LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true,title:label});
       const pts=[{time:Math.min(p1.ts,p2.ts),value:p1.ts<p2.ts?p1.price:p2.price},{time:Math.max(p1.ts,p2.ts),value:p1.ts<p2.ts?p2.price:p1.price}];
       s.setData(pts);
+      clearPreview();
       registerDrawing('measure',[s],[],'Measure');
       drawClicks=[];setDraw('crosshairTool');return;
     }

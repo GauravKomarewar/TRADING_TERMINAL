@@ -21,6 +21,7 @@
         { id: 'place-order',  label: 'Place Order',   href: '/dashboard/web/place_order.html' },
         { id: 'strategy',     label: 'Strategy',      href: '/dashboard/web/strategy.html' },
         { id: 'strategy-logs',label: 'Strategy Logs', href: '/dashboard/web/strategy_logs.html' },
+        { id: 'charts',       label: 'Charts',        href: '/dashboard/web/charts.html' },
         { id: 'diagnostics',  label: 'Diagnostics',   href: '/dashboard/web/diagnostics.html' },
         { id: 'settings',     label: 'Settings',      href: '/dashboard/web/settings.html' },
     ];

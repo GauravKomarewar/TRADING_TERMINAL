@@ -418,11 +418,11 @@
     <div class="main-grid">
         <!-- Left Column: Tables -->
         <div class="left-col">
-            <!-- Active Positions -->
+            <!-- Positions (Raw Broker) -->
             <div class="dash-card">
                 <div class="card-head">
-                    <h3>Active Positions</h3>
-                    <span class="head-right"><span id="posCount"></span><button class="btn-exit-all" id="btnExitAll" style="display:none" onclick="exitAllPositions()">⛔ Exit All</button></span>
+                    <h3>Positions</h3>
+                    <span class="head-right"><span id="posCount"></span><label style="font-size:11px;cursor:pointer;margin-right:8px;color:var(--muted)"><input type="checkbox" id="chkShowFlat" checked onchange="toggleFlatPositions()" style="margin-right:3px">Show Flat</label><button class="btn-exit-all" id="btnExitAll" style="display:none" onclick="exitAllPositions()">⛔ Exit All</button></span>
                 </div>
                 <div class="table-scroll">
                     <table class="dash-table">
@@ -897,21 +897,31 @@
             '<span class="status-badge ' + brokerClass + '">' + brokerText + '</span>';
     }
 
-    // ─── Positions Table ───
+    // ─── Positions Table (Raw Broker Truth) ───
+    var showFlatPositions = true;
+    var _lastRawPositions = [];
+
+    function toggleFlatPositions() {
+        showFlatPositions = document.getElementById('chkShowFlat').checked;
+        updatePositions(_lastRawPositions);
+    }
+
     function updatePositions(rawPositions) {
-        // Filter: only show positions with non-zero net qty
-        var positions = (rawPositions || []).filter(function(p) {
-            return parseInt(p.netqty || 0) !== 0;
-        });
+        _lastRawPositions = rawPositions || [];
+        var allPositions = _lastRawPositions;
+        var openPositions = allPositions.filter(function(p) { return parseInt(p.netqty || 0) !== 0; });
+        var positions = showFlatPositions ? allPositions : openPositions;
 
         var tbody = document.getElementById('positionRows');
         var countEl = document.getElementById('posCount');
         var exitAllBtn = document.getElementById('btnExitAll');
-        countEl.textContent = positions.length ? positions.length + ' position' + (positions.length > 1 ? 's' : '') : '';
-        exitAllBtn.style.display = positions.length > 0 ? 'inline-block' : 'none';
+        var openLabel = openPositions.length + ' open';
+        var flatLabel = (allPositions.length - openPositions.length) + ' flat';
+        countEl.textContent = allPositions.length ? openLabel + ' · ' + flatLabel : '';
+        exitAllBtn.style.display = openPositions.length > 0 ? 'inline-block' : 'none';
 
         if (!positions.length) {
-            tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No open positions</td></tr>';
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No positions</td></tr>';
             return;
         }
 
@@ -925,8 +935,16 @@
                 var prd = p.prd || p.product || '';
                 var sym = p.tsym || p.symbol || '';
                 var exch = p.exch || p.exchange || '-';
-                var side = parseInt(p.netqty || 0) > 0 ? 'LONG' : 'SHORT';
-                return '<tr data-sym="' + sym + '">'
+                var qty = parseInt(p.netqty || 0);
+                var isFlat = qty === 0;
+                var side = qty > 0 ? 'LONG' : qty < 0 ? 'SHORT' : 'FLAT';
+                var rowStyle = isFlat ? 'opacity:0.5' : '';
+                var qtyColor = isFlat ? 'var(--muted)' : (side==='LONG'?'var(--success)':'var(--danger)');
+                var actionHtml = isFlat
+                    ? '<span style="font-size:11px;color:var(--muted)">CLOSED</span>'
+                    : '<button class="btn-exit" onclick="exitPosition(\'' + sym.replace(/'/g,"\\'") + '\',\'' + prd.replace(/'/g,"\\'") + '\')" title="Exit ' + sym + '">EXIT</button>'
+                      + ' <button class="btn-exit" onclick="placeExitOrder(\'' + sym.replace(/'/g,"\\'") + '\',\'' + exch.replace(/'/g,"\\'") + '\',\'' + prd.replace(/'/g,"\\'") + '\',' + Math.abs(qty) + ',\'' + (qty > 0 ? 'S' : 'B') + '\')" title="Place exit order" style="background:var(--primary)">ORDER</button>';
+                return '<tr data-sym="' + sym + '" style="' + rowStyle + '">'
                     + '<td style="font-weight:700">' + (sym || '-') + '</td>'
                     + '<td data-f="ltp">' + fmt(p.lp || p.ltp || 0) + '</td>'
                     + '<td data-f="net" style="color:' + pnlColor(net) + ';font-weight:700">' + fmt(net) + '</td>'
@@ -934,9 +952,9 @@
                     + '<td data-f="urm" style="color:' + pnlColor(p.urmtom) + '">' + fmt(p.urmtom || 0) + '</td>'
                     + '<td>' + exch + '</td>'
                     + '<td>' + (prd ? '<span class="status-badge safe">' + prd + '</span>' : '-') + '</td>'
-                    + '<td data-f="qty" style="color:' + (side==='LONG'?'var(--success)':'var(--danger)') + ';font-weight:700">' + (p.netqty || 0) + '</td>'
+                    + '<td data-f="qty" style="color:' + qtyColor + ';font-weight:700">' + (p.netqty || 0) + '</td>'
                     + '<td data-f="avg">' + fmt(p.avgprc || p.avg_price || 0) + '</td>'
-                    + '<td><button class="btn-exit" onclick="exitPosition(\'' + sym.replace(/'/g,"\\'") + '\',\'' + prd.replace(/'/g,"\\'") + '\')" title="Exit ' + sym + '">EXIT</button></td>'
+                    + '<td>' + actionHtml + '</td>'
                     + '</tr>';
             }).join('');
         } else {
@@ -998,6 +1016,18 @@
         } catch (e) {
             showError('Exit all failed: ' + e.message);
         }
+    }
+
+    function placeExitOrder(symbol, exchange, product, qty, side) {
+        // Navigate to place_order page with pre-filled exit parameters
+        var params = new URLSearchParams({
+            symbol: symbol,
+            exchange: exchange,
+            product: product,
+            qty: qty,
+            side: side
+        });
+        window.open('/dashboard/web/place_order.html?' + params.toString(), '_blank');
     }
 
     // ─── Pending Orders Table (MERGED: system + broker) ───

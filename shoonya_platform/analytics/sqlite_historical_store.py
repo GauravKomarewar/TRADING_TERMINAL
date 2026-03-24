@@ -473,7 +473,7 @@ class SQLiteHistoricalStore:
         cur = self._exec(
             f"""
             SELECT
-                datetime((CAST(strftime('%%s', ts) AS INTEGER) / {bucket_seconds}) * {bucket_seconds}, 'unixepoch') AS bucket,
+                datetime((CAST(strftime('%s', ts) AS INTEGER) / {bucket_seconds}) * {bucket_seconds}, 'unixepoch') AS bucket,
                 MIN(ltp) AS low,
                 MAX(ltp) AS high,
                 MAX(volume) - MIN(volume) AS volume,
@@ -497,7 +497,7 @@ class SQLiteHistoricalStore:
         all_ticks_cur = self._exec(
             f"""
             SELECT
-                datetime((CAST(strftime('%%s', ts) AS INTEGER) / {bucket_seconds}) * {bucket_seconds}, 'unixepoch') AS bucket,
+                datetime((CAST(strftime('%s', ts) AS INTEGER) / {bucket_seconds}) * {bucket_seconds}, 'unixepoch') AS bucket,
                 ts, ltp
             FROM index_ticks
             WHERE symbol = ?

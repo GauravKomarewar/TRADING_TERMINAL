@@ -66,6 +66,12 @@ const PAGES = [
         icon: '🔍'
     },
     {
+        id: 'charts',
+        label: 'Charts',
+        href: '/dashboard/web/charts.html',
+        icon: '📈'
+    },
+    {
         id: 'settings',
         label: 'Settings',
         href: '/dashboard/web/settings.html',

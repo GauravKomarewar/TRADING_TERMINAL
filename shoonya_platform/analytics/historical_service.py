@@ -110,7 +110,9 @@ class HistoricalAnalyticsService:
     def _run_loop(self) -> None:
         self._seed_last_state()
         next_option_at = 0.0
+        next_option_ticks_at = 0.0
         next_cleanup_at = time.time() + 3600  # first cleanup after 1 hour
+        option_tick_interval = max(5, int(os.getenv("HISTORICAL_OPTION_TICK_SEC", "10") or 10))
         while not self._stop_event.is_set():
             started = time.time()
             try:
@@ -118,6 +120,9 @@ class HistoricalAnalyticsService:
                 if started >= next_option_at:
                     self._collect_option_chain_metrics()
                     next_option_at = started + self.option_sampling_sec
+                if started >= next_option_ticks_at:
+                    self._collect_option_ticks()
+                    next_option_ticks_at = started + option_tick_interval
                 if started >= next_cleanup_at:
                     self._cleanup_old_data()
                     next_cleanup_at = started + 3600
@@ -405,6 +410,103 @@ class HistoricalAnalyticsService:
         except Exception:
             logger.debug("Failed extracting option metrics from %s", db_path, exc_info=True)
             return None
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    # ── Option chain per-strike tick collection ──
+
+    def _collect_option_ticks(self) -> None:
+        """Snapshot per-strike option chain data into option_ticks table."""
+        if self.store is None:
+            return
+        if not _OPTION_DATA_DIR.exists():
+            return
+
+        ts = self._utcnow()
+        rows: List[Dict[str, Any]] = []
+
+        for db_path in _OPTION_DATA_DIR.glob("*.sqlite"):
+            m = _DB_NAME_RE.match(db_path.name)
+            if not m:
+                continue
+            exchange, symbol, expiry = m.groups()
+            strikes = self._extract_strike_ticks(exchange, symbol, expiry, db_path, ts)
+            rows.extend(strikes)
+
+        if rows:
+            try:
+                self.store.insert_option_ticks(rows)
+            except Exception:
+                logger.debug("Failed inserting option ticks", exc_info=True)
+
+    def _extract_strike_ticks(
+        self,
+        exchange: str,
+        symbol: str,
+        expiry: str,
+        db_path: Path,
+        ts: datetime,
+    ) -> List[Dict[str, Any]]:
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path, timeout=2, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+
+            meta_rows = cur.execute("SELECT key, value FROM meta").fetchall()
+            meta = {str(r["key"]): str(r["value"]) for r in meta_rows}
+            snapshot_ts = float(meta.get("snapshot_ts", 0) or 0)
+            if snapshot_ts and (time.time() - snapshot_ts) > 300:
+                return []  # stale snapshot, skip
+
+            atm_strike = float(meta.get("atm_strike", 0) or 0)
+            strike_gap = float(meta.get("strike_gap", 0) or 0)
+
+            # Limit to ATM ± 10 strikes to avoid excessive data
+            atm_range = max(10, int(os.getenv("HISTORICAL_OPTION_TICK_STRIKES", "10") or 10))
+            if atm_strike > 0 and strike_gap > 0:
+                low_bound = atm_strike - atm_range * strike_gap
+                high_bound = atm_strike + atm_range * strike_gap
+                strike_rows = cur.execute(
+                    """
+                    SELECT strike, option_type, ltp, volume, oi, bid, ask, iv
+                    FROM option_chain
+                    WHERE strike >= ? AND strike <= ?
+                    """,
+                    (low_bound, high_bound),
+                ).fetchall()
+            else:
+                strike_rows = cur.execute(
+                    "SELECT strike, option_type, ltp, volume, oi, bid, ask, iv FROM option_chain"
+                ).fetchall()
+
+            rows: List[Dict[str, Any]] = []
+            for r in strike_rows:
+                ltp = r["ltp"]
+                if ltp is None or float(ltp or 0) <= 0:
+                    continue
+                rows.append({
+                    "ts": ts,
+                    "exchange": exchange,
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "strike": float(r["strike"] or 0),
+                    "option_type": str(r["option_type"] or ""),
+                    "ltp": float(ltp or 0),
+                    "volume": float(r["volume"] or 0),
+                    "oi": float(r["oi"] or 0),
+                    "bid": float(r["bid"] or 0) if r["bid"] is not None else None,
+                    "ask": float(r["ask"] or 0) if r["ask"] is not None else None,
+                    "iv": float(r["iv"] or 0) if r["iv"] is not None else None,
+                })
+            return rows
+        except Exception:
+            logger.debug("Failed extracting option ticks from %s", db_path, exc_info=True)
+            return []
         finally:
             if conn is not None:
                 try:

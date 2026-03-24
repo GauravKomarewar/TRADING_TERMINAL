@@ -956,6 +956,7 @@ function removeOverlay(sym){
   if(chartMode==='combined')reapply();
   saveSettings();
 }
+let overlayRowCache=new Map(); /* symbol → DOM element */
 function renderOverlayBar(){
   /* Render overlay OHLC rows in top-left (replaces old right-side tag bar) */
   const bar=document.getElementById('overlayOhlcBar');
@@ -973,13 +974,15 @@ function renderOverlayBar(){
       <span class="ov-rm" data-sym="${esc(o.symbol)}" style="cursor:pointer;color:var(--text-muted);font-size:11px;margin-left:2px" title="Remove overlay">✕</span>
     </div>`;
   }).join('');
-  /* Attach click handlers for overlay remove buttons */
+  /* Rebuild element cache and attach click handlers */
+  overlayRowCache=new Map();
+  bar.querySelectorAll('.tv-ohlc-row').forEach(el=>{const sym=el.dataset.ovSym;if(sym)overlayRowCache.set(sym,el);});
   bar.querySelectorAll('.ov-rm').forEach(b=>b.onclick=function(){removeOverlay(this.dataset.sym);});
 }
 function fmtChg(c){if(!c)return'';const d=c.close-c.open,p=(d/c.open*100);return(d>=0?'+':'')+fmt(d)+' ('+(p>=0?'+':'')+p.toFixed(2)+'%)';}
 function updateOverlayOhlc(time){
   for(const o of overlays){
-    const row=document.querySelector('[data-ov-sym="'+o.symbol.replace(/"/g,'\\"')+'"]');
+    const row=overlayRowCache.get(o.symbol);
     if(!row)continue;
     let cd=null;
     if(time&&o.candles&&o.candles.length){
@@ -1428,10 +1431,17 @@ function updateDrawPreview(ts,price){
       const pts=p1.ts<ts?[{time:p1.ts,value:p1.price},{time:ts,value:price}]:[{time:ts,value:price},{time:p1.ts,value:p1.price}];
       previewSeries.setData(pts);
     }else if(drawTool==='fib'){
-      /* Preview vertical range */
+      /* Preview vertical range — use two candle timestamps so times are valid */
       const hi=Math.max(p1.price,price),lo=Math.min(p1.price,price);
-      const midT=Math.min(p1.ts,ts);
-      previewSeries.setData([{time:midT,value:lo},{time:midT+1,value:hi}]);
+      const t1=Math.min(p1.ts,ts),t2=Math.max(p1.ts,ts);
+      if(t1===t2){
+        /* Same bar — find the next valid timestamp from rawCandles */
+        const idx=rawCandles.findIndex(c=>c.time>=t1);
+        const t2v=idx>=0&&idx+1<rawCandles.length?rawCandles[idx+1].time:t1+curIntv*60;
+        previewSeries.setData([{time:t1,value:lo},{time:t2v,value:hi}]);
+      }else{
+        previewSeries.setData([{time:t1,value:lo},{time:t2,value:hi}]);
+      }
     }else if(drawTool==='rect'){
       if(drawClicks.length===1){
         /* Preview edge 1 (line from click1 to cursor) */

@@ -337,7 +337,7 @@ body.dashboard-shell {
         top: 72px; /* 30px ticker + 42px header */
         left: 0;
         right: 0;
-        bottom: auto;
+        bottom: 0;
         background: var(--panel);
         border-bottom: 1px solid var(--border);
         flex-direction: column;
@@ -346,6 +346,9 @@ body.dashboard-shell {
         gap: 2px;
         z-index: 9989;
         height: auto;
+        max-height: calc(100vh - 72px);
+        max-height: calc(100dvh - 72px);
+        overflow-y: auto;
         box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     }
 

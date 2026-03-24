@@ -466,8 +466,8 @@ class HistoricalAnalyticsService:
             atm_strike = float(meta.get("atm_strike", 0) or 0)
             strike_gap = float(meta.get("strike_gap", 0) or 0)
 
-            # Limit to ATM ± 10 strikes to avoid excessive data
-            atm_range = max(10, int(os.getenv("HISTORICAL_OPTION_TICK_STRIKES", "10") or 10))
+            # Limit to ATM ± N strikes (default 10, min 1, configurable via env)
+            atm_range = max(1, int(os.getenv("HISTORICAL_OPTION_TICK_STRIKES", "10") or 10))
             if atm_strike > 0 and strike_gap > 0:
                 low_bound = atm_strike - atm_range * strike_gap
                 high_bound = atm_strike + atm_range * strike_gap

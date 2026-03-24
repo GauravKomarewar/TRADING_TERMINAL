@@ -574,7 +574,7 @@ const THEMES = {
 let activeClr = {...THEMES.dark.clr};
 let savedVisRange=null,savedOverlaySyms=[];
 function loadSettings(){
-  try{const s=localStorage.getItem(STORE_KEY);if(s){const d=JSON.parse(s);activeClr={...THEMES.dark.clr,...d.clr};curTheme=d.theme||'dark';if(d.intv)curIntv=d.intv;if(d.type)curType=d.type;if(d.range)curRange=d.range;if(d.overlaySyms)savedOverlaySyms=d.overlaySyms;if(d.visRange)savedVisRange=d.visRange;if(d.sym)curSym=d.sym;if(d.optionMeta)optionMeta=d.optionMeta;if(d.chartMode)chartMode=d.chartMode;if(d.activeIndicators){activeIndicators=d.activeIndicators;indNextId=Math.max(1,...activeIndicators.map(i=>{const m=i.uid.match(/_(\d+)$/);return m?parseInt(m[1],10)+1:1;}))||1;}if(d.pine){setTimeout(()=>{const p=d.pine;['chkZigZag','chkHASmooth','chkLevels','chkSRBoxes'].forEach(k=>{const el=document.getElementById(k);if(el&&p[k]!==undefined)el.checked=p[k];});},0);}}}catch(e){}
+  try{const s=localStorage.getItem(STORE_KEY);if(s){const d=JSON.parse(s);activeClr={...THEMES.dark.clr,...d.clr};curTheme=d.theme||'dark';if(d.intv)curIntv=d.intv;if(d.type)curType=d.type;if(d.range)curRange=d.range;if(d.overlaySyms)savedOverlaySyms=d.overlaySyms;if(d.visRange)savedVisRange=d.visRange;if(d.sym)curSym=d.sym;if(d.optionMeta)optionMeta=d.optionMeta;if(d.chartMode)chartMode=d.chartMode;if(d.activeIndicators){activeIndicators=d.activeIndicators;indNextId=Math.max(1,...activeIndicators.map(i=>{const m=i.uid.match(/_(\d+)$/);return m?parseInt(m[1],10)+1:1;}))||1;}if(d.pine){const p=d.pine;['chkZigZag','chkHASmooth','chkLevels','chkSRBoxes'].forEach(k=>{const el=document.getElementById(k);if(el&&p[k]!==undefined)el.checked=p[k];});}}}catch(e){}
 }
 function saveSettings(){
   try{const pine={};['chkZigZag','chkHASmooth','chkLevels','chkSRBoxes'].forEach(k=>{const el=document.getElementById(k);if(el)pine[k]=el.checked;});const state={clr:activeClr,theme:curTheme,sym:curSym,intv:curIntv,type:curType,range:curRange,activeIndicators,overlaySyms:overlays.map(o=>o.symbol),optionMeta,chartMode,pine};try{if(chart)state.visRange=chart.timeScale().getVisibleRange();}catch(e){}localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(e){}
@@ -1037,6 +1037,7 @@ function calcHeikinAshi(candles){
 
 /* ─── PINE INDICATOR STATE ─── */
 let pineIndSeries=[];
+let pineIndPriceLines=[];
 
 /* ─── ZIGZAG CALCULATION ─── */
 function calcZigZag(data,highLowLength,mode){
@@ -1288,10 +1289,11 @@ function calcSupportResistance(data,lookbackPeriod,volLen,boxWidth){
 function applyPineIndicators(dataSource){
   // Remove old pine series
   for(const s of pineIndSeries){try{chart.removeSeries(s);}catch(e){}}
-  if(pineIndSeries._priceLines){for(const pl of pineIndSeries._priceLines){try{mainSeries.removePriceLine(pl);}catch(e){}};}
+  for(const pl of pineIndPriceLines){try{mainSeries.removePriceLine(pl);}catch(e){}}
   // Clear markers
   try{mainSeries.setMarkers([]);}catch(e){}
   pineIndSeries=[];
+  pineIndPriceLines=[];
   const data=dataSource||rawCandles;
   if(!data.length||!chart)return;
 
@@ -1323,9 +1325,7 @@ function applyPineIndicators(dataSource){
     for(const lvl of levels){
       try{
         const pl=mainSeries.createPriceLine({price:lvl,color:'#edeeeecc',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Solid,axisLabelVisible:true,title:''});
-        // Store for cleanup — we'll track price line objects in a sub-array
-        if(!pineIndSeries._priceLines)pineIndSeries._priceLines=[];
-        pineIndSeries._priceLines.push(pl);
+        pineIndPriceLines.push(pl);
       }catch(e){}
     }
   }
@@ -2052,8 +2052,6 @@ async function init(){
   // Restore overlay symbols
   for(const sym of savedOverlaySyms){await addOverlay(sym);}
   startRefresh();
-  // Expose for inline onclick
-  window.openIndSettings=openIndSettings;
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 

@@ -202,9 +202,11 @@ body.theme-solar{
 
 /* Mobile */
 @media(max-width:768px){
-  body{padding-top:0!important;overflow:hidden!important;height:100vh!important;height:100dvh!important}
-  main{height:100vh!important;height:100dvh!important;margin:0;padding:0}
+  body{padding-top:0!important;overflow:hidden!important;height:100vh!important;height:100dvh!important;height:100svh!important}
+  main{height:100vh!important;height:100dvh!important;height:100svh!important;margin:0;padding:0 0 40px 0}
   #app-header{display:none!important}
+  .global-ticker{display:none!important}
+  .nav-overlay{display:none!important}
   .tv-toolbar{height:36px;gap:1px;padding:0 2px;flex-shrink:0}
   .tv-btn{font-size:11px;height:26px;padding:0 5px}
   .tv-sym-btn{font-size:12px}
@@ -1810,7 +1812,7 @@ function renderIndList(filter){
     for(const inst of activeIndicators){
       const lbl=indInstanceLabel(inst);
       if(q&&!lbl.toLowerCase().includes(q)&&!(inst.type).includes(q))continue;
-      html+=`<div class="m-item active" data-uid="${esc(inst.uid)}"><span class="swatch" style="background:${inst.cfg.color||'#888'}"></span><span class="name">${esc(lbl)}</span><button class="ind-gear" data-gear-uid="${esc(inst.uid)}" title="Settings" onclick="event.stopPropagation();openIndSettings('${esc(inst.uid)}')">⚙️</button><button class="ind-gear" data-remove-uid="${esc(inst.uid)}" title="Remove" onclick="event.stopPropagation();removeIndicatorInstance('${esc(inst.uid)}')" style="color:#ef5350">✕</button></div>`;
+      html+=`<div class="m-item active" data-uid="${esc(inst.uid)}"><span class="swatch" style="background:${inst.cfg.color||'#888'}"></span><span class="name">${esc(lbl)}</span><button class="ind-gear" data-gear-uid="${esc(inst.uid)}" title="Settings">⚙️</button><button class="ind-gear" data-remove-uid="${esc(inst.uid)}" title="Remove" style="color:#ef5350">✕</button></div>`;
     }
     html+='<div style="border-bottom:1px solid var(--border);margin:6px 0"></div>';
   }
@@ -1942,10 +1944,14 @@ document.getElementById('ctList').onclick=e=>{const it=e.target.closest('.m-item
 document.getElementById('btnIndicators').onclick=()=>{renderIndList('');openModal('indModal');setTimeout(()=>document.getElementById('indInput').focus(),50);};
 document.getElementById('indInput').oninput=function(){renderIndList(this.value);};
 document.getElementById('indList').onclick=e=>{
+  const removeBtn=e.target.closest('[data-remove-uid]');
+  if(removeBtn){e.stopPropagation();removeIndicatorInstance(removeBtn.dataset.removeUid);return;}
+  const gearBtn=e.target.closest('[data-gear-uid]');
+  if(gearBtn){e.stopPropagation();openIndSettings(gearBtn.dataset.gearUid);return;}
   const addBtn=e.target.closest('[data-add-type]');
   if(addBtn){addIndicatorInstance(addBtn.dataset.addType);return;}
   const uidItem=e.target.closest('.m-item[data-uid]');
-  if(uidItem&&!e.target.dataset.gearUid&&!e.target.dataset.removeUid){openIndSettings(uidItem.dataset.uid);}
+  if(uidItem){openIndSettings(uidItem.dataset.uid);}
 };
 
 document.getElementById('indSetApply').onclick=applyIndSettings;

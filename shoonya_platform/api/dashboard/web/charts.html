@@ -12,160 +12,247 @@
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         *{box-sizing:border-box;margin:0;padding:0}
-        body{padding:92px 12px 20px;line-height:1.5;overflow-x:hidden}
-        main{max-width:1920px;margin:0 auto}
-        h1{color:var(--primary);margin-bottom:16px;font-size:22px;font-weight:700;display:flex;align-items:center;gap:10px}
+        body{padding:60px 0 0;line-height:1.5;overflow:hidden;height:100vh}
+        main{display:flex;flex-direction:column;height:calc(100vh - 60px);background:#131722}
 
-        /* ── Controls bar ── */
-        .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px}
-        .controls select,.controls input{padding:7px 10px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px}
-        .controls select:focus,.controls input:focus{outline:none;border-color:var(--primary)}
-        .controls label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-right:4px}
-        .interval-pills{display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden}
-        .interval-pill{padding:6px 12px;background:var(--panel-2);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;border:none;border-right:1px solid var(--border);transition:all .15s}
-        .interval-pill:last-child{border-right:none}
-        .interval-pill:hover{color:var(--text)}
-        .interval-pill.active{background:var(--primary);color:#fff}
-        .indicator-btn{padding:5px 10px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
-        .indicator-btn:hover{border-color:var(--primary)}
-        .indicator-btn.active{background:rgba(59,130,246,.15);color:var(--primary);border-color:var(--primary)}
+        /* ── Top Toolbar (TradingView style) ── */
+        .tv-toolbar{display:flex;align-items:center;gap:0;background:#1e222d;border-bottom:1px solid #2a2e39;height:38px;padding:0 8px;flex-shrink:0;overflow-x:auto}
+        .tv-toolbar .tv-sep{width:1px;height:24px;background:#2a2e39;margin:0 6px;flex-shrink:0}
+        .tv-toolbar .tv-group{display:flex;align-items:center;gap:2px;flex-shrink:0}
+        .tv-btn{display:flex;align-items:center;justify-content:center;height:28px;padding:0 8px;background:transparent;color:#787b86;border:none;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer;transition:all .12s;white-space:nowrap;font-family:inherit}
+        .tv-btn:hover{background:#2a2e39;color:#d1d4dc}
+        .tv-btn.active{color:#2962ff;background:rgba(41,98,255,.1)}
+        .tv-btn svg{width:16px;height:16px;fill:currentColor}
+        .tv-btn-icon{width:28px;padding:0}
 
-        /* ── Chart container ── */
-        .chart-wrap{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
-        .chart-main{width:100%;height:520px}
-        .chart-volume{width:100%;height:100px}
-        .chart-status{position:absolute;top:10px;left:14px;z-index:5;pointer-events:none}
-        .chart-status .cs-symbol{font-size:18px;font-weight:700;color:var(--text)}
-        .chart-status .cs-price{font-size:14px;font-weight:600;margin-left:10px}
-        .chart-status .cs-change{font-size:13px;font-weight:600;margin-left:8px}
-        .chart-status .cs-interval{font-size:11px;color:var(--muted);margin-left:10px}
-        .up{color:var(--success,#22c55e)}
-        .down{color:var(--danger,#ef4444)}
-        .chart-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);color:var(--muted);font-size:14px;z-index:10}
+        /* Symbol button */
+        .tv-symbol-btn{font-size:14px;font-weight:700;color:#d1d4dc;padding:0 10px;gap:6px}
+        .tv-symbol-btn:hover{color:#fff}
+        .tv-symbol-btn .tv-sym-exch{font-size:10px;font-weight:400;color:#787b86;margin-left:4px}
 
-        /* ── Symbol list panel ── */
-        .symbol-panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
-        .symbol-panel .sp-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
-        .sp-search{width:100%;padding:7px 10px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;margin-bottom:10px}
-        .sp-search:focus{outline:none;border-color:var(--primary)}
-        .sp-list{max-height:380px;overflow-y:auto}
-        .sp-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;font-size:13px}
-        .sp-item:hover{background:rgba(59,130,246,.06)}
-        .sp-item.active{background:rgba(59,130,246,.12);font-weight:600}
-        .sp-item .sp-sym{flex:1;font-weight:600;color:var(--text)}
-        .sp-item .sp-name{font-size:11px;color:var(--muted);flex:2}
-        .sp-item .sp-exch{font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;background:rgba(59,130,246,.1);color:var(--primary)}
-        .sp-item .sp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-        .sp-item .sp-dot.live{background:var(--success,#22c55e);box-shadow:0 0 4px rgba(34,197,94,.4)}
-        .sp-item .sp-dot.off{background:var(--border)}
-        .sp-empty{text-align:center;padding:20px;color:var(--muted);font-size:13px}
+        /* Interval pills */
+        .tv-interval{font-size:12px;min-width:28px;text-align:center}
 
-        /* ── Indicator panel ── */
-        .ind-panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:10px}
-        .ind-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
-        .ind-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);background:var(--panel-2);border:1px solid var(--border);transition:all .15s;user-select:none}
-        .ind-toggle:hover{border-color:var(--primary)}
-        .ind-toggle.active{border-color:var(--primary);background:rgba(59,130,246,.1);color:var(--primary)}
-        .ind-toggle .ind-check{width:14px;height:14px;border:2px solid var(--border);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;transition:all .15s}
-        .ind-toggle.active .ind-check{background:var(--primary);border-color:var(--primary);color:#fff}
+        /* Chart type dropdown */
+        .tv-chart-type{position:relative}
+        .tv-chart-type .tv-dropdown{position:absolute;top:32px;left:0;background:#1e222d;border:1px solid #2a2e39;border-radius:6px;padding:4px 0;z-index:100;min-width:160px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+        .tv-chart-type:hover .tv-dropdown{display:block}
+        .tv-drop-item{display:flex;align-items:center;gap:8px;padding:6px 12px;color:#d1d4dc;font-size:12px;cursor:pointer;transition:background .1s}
+        .tv-drop-item:hover{background:#2a2e39}
+        .tv-drop-item.active{color:#2962ff}
 
-        /* ── Layout grid ── */
-        .page-grid{display:grid;grid-template-columns:240px 1fr;gap:12px}
-        @media(max-width:900px){
-            .page-grid{grid-template-columns:1fr}
-            .chart-main{height:400px}
-            body{padding:72px 8px 16px}
-            .controls{flex-direction:column;align-items:stretch}
+        /* Indicators dropdown */
+        .tv-ind-wrap{position:relative}
+        .tv-ind-panel{position:absolute;top:32px;left:0;background:#1e222d;border:1px solid #2a2e39;border-radius:6px;padding:8px;z-index:100;min-width:220px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+        .tv-ind-wrap.open .tv-ind-panel{display:block}
+        .tv-ind-item{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:12px;color:#d1d4dc;transition:background .1s}
+        .tv-ind-item:hover{background:#2a2e39}
+        .tv-ind-item.active{color:#2962ff}
+        .tv-ind-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+        .tv-ind-check{width:14px;height:14px;border:1.5px solid #363a45;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
+        .tv-ind-item.active .tv-ind-check{background:#2962ff;border-color:#2962ff;color:#fff}
+
+        /* Symbol search modal */
+        .tv-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:flex-start;justify-content:center;padding-top:80px}
+        .tv-modal-overlay.open{display:flex}
+        .tv-modal-dialog{background:#1e222d;border:1px solid #2a2e39;border-radius:8px;width:420px;max-height:500px;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+        .tv-modal-header{padding:12px 16px;border-bottom:1px solid #2a2e39}
+        .tv-modal-header input{width:100%;padding:8px 12px;background:#131722;border:1px solid #363a45;color:#d1d4dc;border-radius:6px;font-size:14px;outline:none}
+        .tv-modal-header input:focus{border-color:#2962ff}
+        .tv-sym-list{overflow-y:auto;flex:1;padding:4px 0}
+        .tv-sym-item{display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:pointer;transition:background .1s;color:#d1d4dc;font-size:13px}
+        .tv-sym-item:hover{background:#2a2e39}
+        .tv-sym-item.active{background:rgba(41,98,255,.1);color:#2962ff}
+        .tv-sym-item .sym-name{font-weight:600;flex:1}
+        .tv-sym-item .sym-desc{font-size:11px;color:#787b86;flex:2}
+        .tv-sym-item .sym-exch{font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;background:rgba(41,98,255,.1);color:#2962ff}
+        .tv-sym-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+        .tv-sym-dot.live{background:#26a69a}
+        .tv-sym-dot.off{background:#363a45}
+
+        /* ── Chart Area ── */
+        .tv-chart-area{flex:1;position:relative;overflow:hidden}
+        .tv-chart-container{width:100%;height:100%}
+
+        /* OHLC overlay */
+        .tv-ohlc{position:absolute;top:8px;left:12px;z-index:5;pointer-events:none;display:flex;align-items:center;gap:6px;font-size:12px;font-family:'Trebuchet MS',sans-serif}
+        .tv-ohlc .ohlc-sym{font-weight:700;color:#d1d4dc;font-size:15px;margin-right:4px}
+        .tv-ohlc .ohlc-interval{color:#787b86;font-size:11px;margin-right:8px}
+        .tv-ohlc .ohlc-label{color:#787b86;margin-right:2px}
+        .tv-ohlc .ohlc-val{margin-right:6px}
+        .tv-ohlc .ohlc-vol{color:#787b86}
+        .tv-ohlc .up{color:#26a69a}
+        .tv-ohlc .down{color:#ef5350}
+
+        /* Chart control buttons */
+        .tv-chart-controls{position:absolute;bottom:36px;right:8px;z-index:5;display:flex;flex-direction:column;gap:2px}
+        .tv-cc-btn{width:28px;height:28px;background:#1e222d;border:1px solid #2a2e39;border-radius:4px;color:#787b86;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;transition:all .12s}
+        .tv-cc-btn:hover{background:#2a2e39;color:#d1d4dc}
+        .tv-cc-btn.active{color:#2962ff;border-color:#2962ff}
+        .tv-cc-btn svg{width:14px;height:14px;fill:currentColor}
+
+        /* Range bar */
+        .tv-range-bar{display:flex;align-items:center;gap:0;background:#1e222d;border-top:1px solid #2a2e39;height:28px;padding:0 8px;flex-shrink:0}
+        .tv-range-btn{height:22px;padding:0 8px;background:transparent;color:#787b86;border:none;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;transition:all .12s}
+        .tv-range-btn:hover{color:#d1d4dc}
+        .tv-range-btn.active{color:#2962ff;background:rgba(41,98,255,.1)}
+        .tv-range-bar .tv-sep{width:1px;height:16px;background:#2a2e39;margin:0 4px}
+        .tv-range-bar .tv-status{margin-left:auto;font-size:11px;color:#787b86}
+
+        /* Loading overlay */
+        .tv-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(19,23,34,.8);color:#787b86;font-size:13px;z-index:10;pointer-events:none}
+
+        /* Settings modal content */
+        .tv-settings-body{padding:16px;display:flex;flex-direction:column;gap:12px}
+        .tv-settings-row{display:flex;align-items:center;justify-content:space-between;color:#d1d4dc;font-size:13px}
+        .tv-settings-row input[type=checkbox]{width:16px;height:16px;accent-color:#2962ff}
+        .tv-settings-row select{padding:4px 8px;background:#131722;border:1px solid #363a45;color:#d1d4dc;border-radius:4px;font-size:12px}
+
+        @media(max-width:768px){
+            body{padding-top:48px}
+            main{height:calc(100vh - 48px)}
+            .tv-toolbar{height:34px;padding:0 4px}
+            .tv-btn{font-size:11px;height:24px;padding:0 5px}
+            .tv-modal-dialog{width:95%;margin:0 10px}
         }
-
-        /* ── Toast ── */
-        .toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;color:#fff;opacity:0;transform:translateY(12px);transition:all .3s;z-index:9999;pointer-events:none}
-        .toast.show{opacity:1;transform:translateY(0)}
-        .toast.success{background:#059669}
-        .toast.error{background:#dc2626}
     </style>
 </head>
 <body data-page="charts">
 <div id="app-header"></div>
 <main>
-    <h1>📈 Advanced Charts</h1>
+    <!-- Top Toolbar -->
+    <div class="tv-toolbar">
+        <!-- Symbol -->
+        <button class="tv-btn tv-symbol-btn" id="btnSymbol" title="Search symbol">
+            <span id="toolbarSymbol">NIFTY</span>
+            <span class="tv-sym-exch" id="toolbarExch"></span>
+            <svg viewBox="0 0 16 16" style="width:10px;height:10px;margin-left:2px"><path d="M4 6l4 4 4-4z"/></svg>
+        </button>
+        <div class="tv-sep"></div>
 
-    <div class="page-grid">
-        <!-- LEFT: Symbol watchlist -->
-        <div>
-            <div class="symbol-panel">
-                <div class="sp-title">📋 Symbols</div>
-                <input class="sp-search" id="spSearch" type="text" placeholder="Search symbol..." autocomplete="off" spellcheck="false">
-                <div class="sp-list" id="spList">
-                    <div class="sp-empty">Loading symbols…</div>
-                </div>
-            </div>
-            <div class="ind-panel">
-                <div class="sp-title">📐 Indicators</div>
-                <div class="ind-grid" id="indGrid"></div>
+        <!-- Intervals -->
+        <div class="tv-group" id="intervalGroup">
+            <button class="tv-btn tv-interval" data-val="1">1m</button>
+            <button class="tv-btn tv-interval active" data-val="3">3m</button>
+            <button class="tv-btn tv-interval" data-val="5">5m</button>
+            <button class="tv-btn tv-interval" data-val="15">15m</button>
+            <button class="tv-btn tv-interval" data-val="30">30m</button>
+            <button class="tv-btn tv-interval" data-val="60">1H</button>
+        </div>
+        <div class="tv-sep"></div>
+
+        <!-- Chart Type -->
+        <div class="tv-chart-type">
+            <button class="tv-btn" id="btnChartType" title="Chart type">
+                <svg viewBox="0 0 28 28"><path d="M17 11v6h3v-6h-3zm-7-4v10h3V7h-3zm-7 6v4h3v-4H3z"/></svg>
+                <svg viewBox="0 0 16 16" style="width:8px;height:8px;margin-left:3px"><path d="M4 6l4 4 4-4z"/></svg>
+            </button>
+            <div class="tv-dropdown" id="chartTypeMenu">
+                <div class="tv-drop-item active" data-type="candlestick">&#x1F5C2; Candlestick</div>
+                <div class="tv-drop-item" data-type="line">&#x1F4C8; Line</div>
+                <div class="tv-drop-item" data-type="area">&#x1F4CA; Area</div>
             </div>
         </div>
+        <div class="tv-sep"></div>
 
-        <!-- RIGHT: Chart -->
-        <div>
-            <div class="controls" id="chartControls">
-                <label>Interval</label>
-                <div class="interval-pills" id="intervalPills">
-                    <button class="interval-pill" data-val="1">1m</button>
-                    <button class="interval-pill active" data-val="3">3m</button>
-                    <button class="interval-pill" data-val="5">5m</button>
-                    <button class="interval-pill" data-val="15">15m</button>
-                    <button class="interval-pill" data-val="30">30m</button>
-                    <button class="interval-pill" data-val="60">1H</button>
-                </div>
-                <label style="margin-left:12px">Chart</label>
-                <select id="chartType">
-                    <option value="candlestick">Candlestick</option>
-                    <option value="line">Line</option>
-                    <option value="area">Area</option>
-                </select>
-                <label style="margin-left:12px">Range</label>
-                <select id="dateRange">
-                    <option value="today">Today</option>
-                    <option value="2d">2 Days</option>
-                    <option value="7d" selected>7 Days</option>
-                    <option value="30d">30 Days</option>
-                </select>
-                <div style="flex:1"></div>
-                <span id="dataStatus" style="font-size:11px;color:var(--muted)"></span>
-            </div>
-
-            <div class="chart-wrap">
-                <div class="chart-status" id="chartStatus">
-                    <span class="cs-symbol" id="csSymbol">—</span>
-                    <span class="cs-price" id="csPrice"></span>
-                    <span class="cs-change" id="csChange"></span>
-                    <span class="cs-interval" id="csInterval"></span>
-                </div>
-                <div class="chart-main" id="chartMain"></div>
-                <div class="chart-loading" id="chartLoading" style="display:none">Loading chart data…</div>
-            </div>
+        <!-- Indicators -->
+        <div class="tv-ind-wrap" id="indWrap">
+            <button class="tv-btn" id="btnIndicators" title="Indicators">
+                <svg viewBox="0 0 28 28" style="width:18px;height:18px;fill:currentColor"><path d="M3.5 20.5l6-6 4 4L22 10m-5.5 0H22v5.5"/></svg>
+                <span style="margin-left:4px">Indicators</span>
+            </button>
+            <div class="tv-ind-panel" id="indPanel"></div>
         </div>
+        <div class="tv-sep"></div>
+
+        <!-- Log scale -->
+        <button class="tv-btn" id="btnLogScale" title="Toggle logarithmic scale">Log</button>
+        <div class="tv-sep"></div>
+
+        <!-- Settings (right-aligned) -->
+        <button class="tv-btn" id="btnSettings" title="Chart settings" style="margin-left:auto">
+            <svg viewBox="0 0 28 28" style="width:18px;height:18px;fill:currentColor"><path d="M14 18a4 4 0 110-8 4 4 0 010 8zm0-2a2 2 0 100-4 2 2 0 000 4zm7.8-1.3l1.7.3-.4 2-1.7-.3a7 7 0 01-1 1.7l1 1.4-1.6 1.2-1-1.4a7 7 0 01-2 .5v1.7h-2v-1.7a7 7 0 01-2-.5l-1 1.4-1.6-1.2 1-1.4a7 7 0 01-1-1.7l-1.7.3-.4-2 1.7-.3a7 7 0 010-2l-1.7-.3.4-2 1.7.3a7 7 0 011-1.7l-1-1.4L7.4 6l1 1.4a7 7 0 012-.5V5.2h2v1.7a7 7 0 012 .5l1-1.4 1.6 1.2-1 1.4a7 7 0 011 1.7l1.7-.3.4 2-1.7.3a7 7 0 010 2z"/></svg>
+        </button>
+    </div>
+
+    <!-- Chart Area -->
+    <div class="tv-chart-area">
+        <!-- OHLC Overlay -->
+        <div class="tv-ohlc" id="ohlcOverlay">
+            <span class="ohlc-sym" id="ohlcSym">NIFTY</span>
+            <span class="ohlc-interval" id="ohlcInterval">3m</span>
+            <span class="ohlc-label">O</span><span class="ohlc-val" id="ohlcO">—</span>
+            <span class="ohlc-label">H</span><span class="ohlc-val" id="ohlcH">—</span>
+            <span class="ohlc-label">L</span><span class="ohlc-val" id="ohlcL">—</span>
+            <span class="ohlc-label">C</span><span class="ohlc-val" id="ohlcC">—</span>
+            <span class="ohlc-vol" id="ohlcVol"></span>
+        </div>
+
+        <!-- Chart Controls -->
+        <div class="tv-chart-controls">
+            <button class="tv-cc-btn" id="btnZoomIn" title="Zoom in">+</button>
+            <button class="tv-cc-btn" id="btnZoomOut" title="Zoom out">&minus;</button>
+            <button class="tv-cc-btn" id="btnFitAll" title="Reset / Fit all data">
+                <svg viewBox="0 0 16 16"><path d="M2 2v5h2V4h3V2H2zm9 0v2h3v3h2V2h-5zM4 11H2v5h5v-2H4v-3zm12 0h-2v3h-3v2h5v-5z"/></svg>
+            </button>
+        </div>
+
+        <div class="tv-chart-container" id="chartContainer"></div>
+        <div class="tv-loading" id="chartLoading" style="display:none">Loading chart data…</div>
+    </div>
+
+    <!-- Bottom Range Bar -->
+    <div class="tv-range-bar">
+        <button class="tv-range-btn" data-range="today">Today</button>
+        <button class="tv-range-btn" data-range="2d">2D</button>
+        <button class="tv-range-btn active" data-range="7d">7D</button>
+        <button class="tv-range-btn" data-range="30d">1M</button>
+        <div class="tv-sep"></div>
+        <span class="tv-status" id="dataStatus"></span>
     </div>
 </main>
 
-<div class="toast" id="toast"></div>
+<!-- Symbol Search Modal -->
+<div class="tv-modal-overlay" id="symModal">
+    <div class="tv-modal-dialog">
+        <div class="tv-modal-header">
+            <input type="text" id="symSearchInput" placeholder="Search symbol…" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="tv-sym-list" id="symList"></div>
+    </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="tv-modal-overlay" id="settingsModal">
+    <div class="tv-modal-dialog" style="width:340px;max-height:400px">
+        <div class="tv-modal-header" style="border-bottom:1px solid #2a2e39">
+            <div style="font-size:14px;font-weight:600;color:#d1d4dc;padding:2px 0">Chart Settings</div>
+        </div>
+        <div class="tv-settings-body">
+            <label class="tv-settings-row">Session breaks<input type="checkbox" id="chkSessionBreaks" checked></label>
+            <label class="tv-settings-row">Auto-refresh (10s)<input type="checkbox" id="chkAutoRefresh" checked></label>
+            <label class="tv-settings-row">Volume<input type="checkbox" id="chkVolume" checked></label>
+            <label class="tv-settings-row">Crosshair
+                <select id="selCrosshair">
+                    <option value="normal">Normal</option>
+                    <option value="magnet">Magnet</option>
+                </select>
+            </label>
+            <div style="text-align:right;margin-top:8px">
+                <button class="tv-btn" id="btnCloseSettings" style="background:#2962ff;color:#fff;padding:6px 16px;border-radius:4px">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 (function(){
 'use strict';
 
 const API = '/dashboard';
+const IST_OFFSET = 19800; // UTC+5:30 in seconds
 
 /* ── Helpers ── */
-const toastEl = document.getElementById('toast');
-function toast(msg, type) {
-    toastEl.textContent = msg;
-    toastEl.className = 'toast ' + type + ' show';
-    clearTimeout(toastEl._t);
-    toastEl._t = setTimeout(() => toastEl.classList.remove('show'), 3000);
-}
-
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 async function fetchJSON(url, opts) {
@@ -175,10 +262,28 @@ async function fetchJSON(url, opts) {
     return r.json();
 }
 
+function fmt(n, decimals) {
+    n = +n;
+    if (isNaN(n)) return '—';
+    const d = decimals != null ? decimals : 2;
+    return n.toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function fmtVol(v) {
+    v = +v;
+    if (isNaN(v) || v === 0) return '';
+    if (v >= 10000000) return (v / 10000000).toFixed(2) + 'Cr';
+    if (v >= 100000) return (v / 100000).toFixed(2) + 'L';
+    if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
+    return v.toString();
+}
+
 /* ── State ── */
 let currentSymbol = 'NIFTY';
 let currentInterval = 3;
 let currentChartType = 'candlestick';
+let currentRange = '7d';
+let logScale = false;
 let allSymbols = [];
 let chart = null;
 let mainSeries = null;
@@ -195,124 +300,139 @@ const INDICATORS = [
     { id: 'sma200', label: 'SMA 200', color: '#ec4899', period: 200, type: 'sma' },
     { id: 'ema9', label: 'EMA 9', color: '#06b6d4', period: 9, type: 'ema' },
     { id: 'ema21', label: 'EMA 21', color: '#14b8a6', period: 21, type: 'ema' },
-    { id: 'bb', label: 'Bollinger', color: '#6366f1', period: 20, type: 'bb' },
+    { id: 'bb', label: 'Bollinger Bands', color: '#6366f1', period: 20, type: 'bb' },
     { id: 'vwap', label: 'VWAP', color: '#f97316', type: 'vwap' },
 ];
 
 /* ══════════════ CHART INIT ══════════════ */
 
-function getThemeColors() {
-    const s = getComputedStyle(document.documentElement);
-    const bg = s.getPropertyValue('--panel').trim() || '#0f172a';
-    const text = s.getPropertyValue('--text').trim() || '#e2e8f0';
-    const border = s.getPropertyValue('--border').trim() || '#1e293b';
-    const grid = s.getPropertyValue('--border').trim() || '#1e293b';
-    return { bg, text, border, grid };
-}
-
 function initChart() {
-    const container = document.getElementById('chartMain');
+    const container = document.getElementById('chartContainer');
     container.innerHTML = '';
-    const tc = getThemeColors();
 
     chart = LightweightCharts.createChart(container, {
         width: container.clientWidth,
         height: container.clientHeight,
         layout: {
-            background: { type: 'solid', color: tc.bg },
-            textColor: tc.text,
+            background: { type: 'solid', color: '#131722' },
+            textColor: '#787b86',
             fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
-            fontSize: 12,
+            fontSize: 11,
         },
         grid: {
-            vertLines: { color: tc.grid, style: LightweightCharts.LineStyle.Dotted },
-            horzLines: { color: tc.grid, style: LightweightCharts.LineStyle.Dotted },
+            vertLines: { color: '#1e222d' },
+            horzLines: { color: '#1e222d' },
         },
         crosshair: {
             mode: LightweightCharts.CrosshairMode.Normal,
-            vertLine: { labelBackgroundColor: '#3b82f6' },
-            horzLine: { labelBackgroundColor: '#3b82f6' },
+            vertLine: { color: '#363a45', labelBackgroundColor: '#2962ff', width: 1, style: LightweightCharts.LineStyle.Dashed },
+            horzLine: { color: '#363a45', labelBackgroundColor: '#2962ff', width: 1, style: LightweightCharts.LineStyle.Dashed },
         },
         rightPriceScale: {
-            borderColor: tc.border,
-            scaleMargins: { top: 0.1, bottom: 0.25 },
+            borderColor: '#2a2e39',
+            scaleMargins: { top: 0.08, bottom: 0.2 },
+            mode: 0,
         },
         timeScale: {
-            borderColor: tc.border,
+            borderColor: '#2a2e39',
             timeVisible: true,
             secondsVisible: false,
             barSpacing: 8,
+            rightOffset: 5,
         },
         handleScroll: { mouseWheel: true, pressedMouseMove: true },
-        handleScale: { mouseWheel: true, pinch: true },
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     });
 
-    // Observe resize
     const ro = new ResizeObserver(() => {
         if (chart) chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
     });
     ro.observe(container);
 
+    // Crosshair move — update OHLC overlay
+    chart.subscribeCrosshairMove(param => {
+        if (!param || !param.time || !rawCandles.length) {
+            updateOhlcOverlay(rawCandles[rawCandles.length - 1]);
+            return;
+        }
+        const candle = rawCandles.find(c => c.time === param.time);
+        updateOhlcOverlay(candle || rawCandles[rawCandles.length - 1]);
+    });
+
     createMainSeries();
 }
 
+function updateOhlcOverlay(c) {
+    if (!c) return;
+    const isUp = c.close >= c.open;
+    const cls = isUp ? 'up' : 'down';
+    ['ohlcO','ohlcH','ohlcL','ohlcC'].forEach(id => { document.getElementById(id).className = 'ohlc-val ' + cls; });
+    document.getElementById('ohlcO').textContent = fmt(c.open);
+    document.getElementById('ohlcH').textContent = fmt(c.high);
+    document.getElementById('ohlcL').textContent = fmt(c.low);
+    document.getElementById('ohlcC').textContent = fmt(c.close);
+    document.getElementById('ohlcVol').textContent = c.volume ? 'Vol ' + fmtVol(c.volume) : '';
+}
+
 function createMainSeries() {
-    // Clear old series
     if (mainSeries) { try { chart.removeSeries(mainSeries); } catch(e){} }
     if (volumeSeries) { try { chart.removeSeries(volumeSeries); } catch(e){} }
     Object.values(indicatorSeries).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
     indicatorSeries = {};
 
-    const tc = getThemeColors();
-
     if (currentChartType === 'candlestick') {
         mainSeries = chart.addCandlestickSeries({
-            upColor: '#22c55e',
-            downColor: '#ef4444',
-            borderUpColor: '#22c55e',
-            borderDownColor: '#ef4444',
-            wickUpColor: '#22c55e',
-            wickDownColor: '#ef4444',
+            upColor: '#26a69a', downColor: '#ef5350',
+            borderUpColor: '#26a69a', borderDownColor: '#ef5350',
+            wickUpColor: '#26a69a', wickDownColor: '#ef5350',
         });
     } else if (currentChartType === 'line') {
-        mainSeries = chart.addLineSeries({
-            color: '#3b82f6',
-            lineWidth: 2,
-        });
+        mainSeries = chart.addLineSeries({ color: '#2962ff', lineWidth: 2 });
     } else {
         mainSeries = chart.addAreaSeries({
-            topColor: 'rgba(59,130,246,0.3)',
-            bottomColor: 'rgba(59,130,246,0.02)',
-            lineColor: '#3b82f6',
-            lineWidth: 2,
+            topColor: 'rgba(41,98,255,0.3)', bottomColor: 'rgba(41,98,255,0.02)',
+            lineColor: '#2962ff', lineWidth: 2,
         });
     }
 
-    // Volume as histogram overlay
-    volumeSeries = chart.addHistogramSeries({
-        priceFormat: { type: 'volume' },
-        priceScaleId: 'volume',
-    });
-    chart.priceScale('volume').applyOptions({
-        scaleMargins: { top: 0.85, bottom: 0 },
-    });
+    // Volume histogram
+    if (document.getElementById('chkVolume').checked) {
+        volumeSeries = chart.addHistogramSeries({
+            priceFormat: { type: 'volume' },
+            priceScaleId: 'volume',
+        });
+        chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+    } else {
+        volumeSeries = null;
+    }
+}
+
+/* ══════════════ TIMESTAMP HANDLING ══════════════ */
+// Server returns UTC datetime strings (e.g. "2026-03-24 03:15:00").
+// We offset by IST (+5:30) so the chart x-axis shows Indian Standard Time.
+
+function parseTimestamp(ts) {
+    if (!ts) return 0;
+    if (typeof ts === 'number') return ts + IST_OFFSET;
+    let s = String(ts).trim();
+    // Force UTC parse: append Z if no timezone indicator present
+    if (!s.includes('Z') && !s.includes('+') && !/\d{2}:\d{2}:\d{2}\.\d+[-]/.test(s)) {
+        s = s.replace(' ', 'T') + 'Z';
+    }
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return 0;
+    return Math.floor(d.getTime() / 1000) + IST_OFFSET;
 }
 
 /* ══════════════ DATA LOADING ══════════════ */
 
 function getDateRange() {
     const now = new Date();
-    const sel = document.getElementById('dateRange').value;
     let from;
-    if (sel === 'today') {
-        from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    } else if (sel === '2d') {
-        from = new Date(now.getTime() - 2 * 86400000);
-    } else if (sel === '7d') {
-        from = new Date(now.getTime() - 7 * 86400000);
-    } else {
-        from = new Date(now.getTime() - 30 * 86400000);
-    }
+    if (currentRange === 'today') from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    else if (currentRange === '2d') from = new Date(now.getTime() - 2 * 86400000);
+    else if (currentRange === '7d') from = new Date(now.getTime() - 7 * 86400000);
+    else from = new Date(now.getTime() - 30 * 86400000);
     return { from_ts: from.toISOString(), to_ts: now.toISOString() };
 }
 
@@ -347,70 +467,106 @@ async function loadChartData() {
         rawCandles = [];
         const seen = new Set();
         for (const c of candles) {
-            if (!seen.has(c.time)) {
-                seen.add(c.time);
-                rawCandles.push(c);
-            }
+            if (!seen.has(c.time)) { seen.add(c.time); rawCandles.push(c); }
         }
 
         if (!rawCandles.length) {
             document.getElementById('dataStatus').textContent = 'No data available';
             mainSeries.setData([]);
-            volumeSeries.setData([]);
+            if (volumeSeries) volumeSeries.setData([]);
             return;
         }
 
+        // Set data
         if (currentChartType === 'candlestick') {
             mainSeries.setData(rawCandles);
         } else {
             mainSeries.setData(rawCandles.map(c => ({ time: c.time, value: c.close })));
         }
 
-        volumeSeries.setData(rawCandles.map(c => ({
-            time: c.time,
-            value: c.volume,
-            color: c.close >= c.open ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)',
-        })));
+        if (volumeSeries) {
+            volumeSeries.setData(rawCandles.map(c => ({
+                time: c.time, value: c.volume,
+                color: c.close >= c.open ? 'rgba(38,166,154,0.35)' : 'rgba(239,83,80,0.35)',
+            })));
+        }
 
-        // Update header
+        // OHLC overlay
         const last = rawCandles[rawCandles.length - 1];
-        const first = rawCandles[0];
-        document.getElementById('csSymbol').textContent = currentSymbol;
-        document.getElementById('csPrice').textContent = last.close.toFixed(2);
-        const chg = last.close - first.open;
-        const chgPct = first.open ? ((chg / first.open) * 100).toFixed(2) : '0.00';
-        const csChange = document.getElementById('csChange');
-        csChange.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + ' (' + chgPct + '%)';
-        csChange.className = 'cs-change ' + (chg >= 0 ? 'up' : 'down');
-        document.getElementById('csInterval').textContent = currentInterval + 'min';
-        document.getElementById('dataStatus').textContent = rawCandles.length + ' candles';
+        document.getElementById('ohlcSym').textContent = currentSymbol;
+        document.getElementById('ohlcInterval').textContent = formatIntervalLabel(currentInterval);
+        updateOhlcOverlay(last);
 
-        // Re-apply indicators
+        // Toolbar & status
+        document.getElementById('toolbarSymbol').textContent = currentSymbol;
+        document.getElementById('dataStatus').textContent = rawCandles.length + ' candles \u00b7 IST';
+
+        // Session breaks & indicators
+        applySessionBreaks();
         applyAllIndicators();
 
         chart.timeScale().fitContent();
 
     } catch(e) {
-        var msg = e.message || 'Unknown error';
+        const msg = e.message || '';
         if (msg.includes('503') || msg.includes('not available') || msg.includes('not initialised')) {
-            document.getElementById('dataStatus').textContent = 'Historical service not enabled — enable in Settings → Market Data';
-            toast('Historical data service not enabled. Enable tick storage in Settings → Market Data to use charts.', 'error');
+            document.getElementById('dataStatus').textContent = 'Historical service not enabled';
         } else {
-            toast('Chart error: ' + msg, 'error');
-            document.getElementById('dataStatus').textContent = 'Error loading data';
+            document.getElementById('dataStatus').textContent = 'Error: ' + msg;
         }
     } finally {
         loading.style.display = 'none';
     }
 }
 
-function parseTimestamp(ts) {
-    if (!ts) return 0;
-    // ISO string or epoch
-    if (typeof ts === 'number') return ts;
-    const d = new Date(ts);
-    if (isNaN(d.getTime())) return 0;
-    return Math.floor(d.getTime() / 1000);
+function formatIntervalLabel(mins) {
+    if (mins >= 60) return (mins / 60) + 'H';
+    return mins + 'm';
+}
+
+/* ══════════════ SESSION BREAKS ══════════════ */
+// Indian markets: 9:15 IST open, 15:30 IST close.
+// We place markers at day boundaries so session gaps are visible.
+
+function applySessionBreaks() {
+    // Clear previous markers
+    if (mainSeries.setMarkers) mainSeries.setMarkers([]);
+    if (!document.getElementById('chkSessionBreaks').checked || rawCandles.length < 2) return;
+
+    const markers = [];
+    let prevDay = -1;
+    for (let i = 0; i < rawCandles.length; i++) {
+        const c = rawCandles[i];
+        // c.time is IST-adjusted UTC epoch
+        const d = new Date(c.time * 1000);
+        const currentDay = d.getUTCDate();
+
+        if (prevDay !== -1 && currentDay !== prevDay) {
+            // Mark session open (first candle of new day)
+            markers.push({
+                time: c.time,
+                position: 'belowBar',
+                color: '#2962ff',
+                shape: 'arrowUp',
+                text: 'Open',
+            });
+            // Mark session close (last candle of previous day)
+            if (i > 0) {
+                markers.push({
+                    time: rawCandles[i - 1].time,
+                    position: 'aboveBar',
+                    color: '#787b86',
+                    shape: 'arrowDown',
+                    text: 'Close',
+                });
+            }
+        }
+        prevDay = currentDay;
+    }
+
+    if (markers.length) {
+        mainSeries.setMarkers(markers.sort((a, b) => a.time - b.time));
+    }
 }
 
 /* ══════════════ INDICATORS ══════════════ */
@@ -461,7 +617,7 @@ function calcVWAP(data) {
     let lastDay = null;
     for (const c of data) {
         const d = new Date(c.time * 1000);
-        const day = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+        const day = d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
         if (day !== lastDay) { cumTPV = 0; cumVol = 0; lastDay = day; }
         const tp = (c.high + c.low + c.close) / 3;
         const vol = c.volume || 1;
@@ -473,51 +629,31 @@ function calcVWAP(data) {
 }
 
 function applyAllIndicators() {
-    // Remove old indicator series
-    Object.values(indicatorSeries).forEach(s => {
-        try { chart.removeSeries(s); } catch(e){}
-    });
+    Object.values(indicatorSeries).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
     indicatorSeries = {};
-
     if (!rawCandles.length) return;
 
     for (const ind of INDICATORS) {
         if (!activeIndicators.has(ind.id)) continue;
+        const opts = { color: ind.color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
 
         if (ind.type === 'sma') {
             const pts = calcSMA(rawCandles, ind.period);
-            if (pts.length) {
-                const s = chart.addLineSeries({ color: ind.color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-                s.setData(pts);
-                indicatorSeries[ind.id] = s;
-            }
+            if (pts.length) { const s = chart.addLineSeries(opts); s.setData(pts); indicatorSeries[ind.id] = s; }
         } else if (ind.type === 'ema') {
             const pts = calcEMA(rawCandles, ind.period);
-            if (pts.length) {
-                const s = chart.addLineSeries({ color: ind.color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
-                s.setData(pts);
-                indicatorSeries[ind.id] = s;
-            }
+            if (pts.length) { const s = chart.addLineSeries(opts); s.setData(pts); indicatorSeries[ind.id] = s; }
         } else if (ind.type === 'bb') {
             const bb = calcBollingerBands(rawCandles, ind.period);
             if (bb.upper.length) {
-                const sU = chart.addLineSeries({ color: ind.color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
-                sU.setData(bb.upper);
-                indicatorSeries[ind.id + '_upper'] = sU;
-                const sM = chart.addLineSeries({ color: ind.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-                sM.setData(bb.mid);
-                indicatorSeries[ind.id + '_mid'] = sM;
-                const sL = chart.addLineSeries({ color: ind.color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
-                sL.setData(bb.lower);
-                indicatorSeries[ind.id + '_lower'] = sL;
+                const dashOpts = { ...opts, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed };
+                const sU = chart.addLineSeries(dashOpts); sU.setData(bb.upper); indicatorSeries[ind.id+'_upper'] = sU;
+                const sM = chart.addLineSeries({ ...opts, lineWidth: 1 }); sM.setData(bb.mid); indicatorSeries[ind.id+'_mid'] = sM;
+                const sL = chart.addLineSeries(dashOpts); sL.setData(bb.lower); indicatorSeries[ind.id+'_lower'] = sL;
             }
         } else if (ind.type === 'vwap') {
             const pts = calcVWAP(rawCandles);
-            if (pts.length) {
-                const s = chart.addLineSeries({ color: ind.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
-                s.setData(pts);
-                indicatorSeries[ind.id] = s;
-            }
+            if (pts.length) { const s = chart.addLineSeries({ ...opts, lineWidth: 2 }); s.setData(pts); indicatorSeries[ind.id] = s; }
         }
     }
 }
@@ -527,14 +663,9 @@ function applyAllIndicators() {
 async function loadSymbols() {
     try {
         const data = await fetchJSON(API + '/settings/market-data/available');
-        if (data && data.indices && data.indices.length) {
-            allSymbols = data.indices;
-            renderSymbolList();
-            return;
-        }
-    } catch(e) { /* fall through to next source */ }
+        if (data && data.indices && data.indices.length) { allSymbols = data.indices; return; }
+    } catch(e) {}
 
-    // Fallback 1: broker positions as symbol source
     try {
         const data = await fetchJSON(API + '/home/status');
         if (data && data.broker && Array.isArray(data.broker.positions)) {
@@ -544,117 +675,195 @@ async function loadSymbols() {
                 if (sym && parseInt(p.netqty || 0) !== 0) posSyms.add(sym);
             }
             if (posSyms.size) {
-                allSymbols = Array.from(posSyms).map(sym => ({
-                    symbol: sym, name: sym, exchange: '', subscribed: true, configured: true
-                }));
-                renderSymbolList();
+                allSymbols = Array.from(posSyms).map(sym => ({ symbol: sym, name: sym, exchange: '', subscribed: true, configured: true }));
                 if (allSymbols.length) currentSymbol = allSymbols[0].symbol;
                 return;
             }
         }
-    } catch(e2) { /* fall through */ }
+    } catch(e) {}
 
-    // Fallback 2: default market indices
     allSymbols = ['NIFTY','BANKNIFTY','SENSEX','FINNIFTY','INDIAVIX','GOLDPETAL','CRUDEOILM','SILVERMIC','NATGASMINI']
         .map(sym => ({ symbol: sym, name: sym, exchange: '', subscribed: false, configured: false }));
-    renderSymbolList();
 }
 
 function renderSymbolList(filter) {
-    const list = document.getElementById('spList');
+    const list = document.getElementById('symList');
     let items = allSymbols;
     if (filter) {
         const q = filter.toLowerCase();
         items = items.filter(i => i.symbol.toLowerCase().includes(q) || (i.name || '').toLowerCase().includes(q));
     }
-    if (!items.length) {
-        list.innerHTML = '<div class="sp-empty">No symbols found</div>';
-        return;
-    }
-
+    if (!items.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:#787b86;font-size:13px">No symbols found</div>'; return; }
     list.innerHTML = items.map(idx => {
         const active = idx.symbol === currentSymbol ? ' active' : '';
-        const dotCls = idx.subscribed || idx.configured ? 'sp-dot live' : 'sp-dot off';
-        return '<div class="sp-item' + active + '" data-symbol="' + esc(idx.symbol) + '">' +
+        const dotCls = idx.subscribed || idx.configured ? 'tv-sym-dot live' : 'tv-sym-dot off';
+        return '<div class="tv-sym-item' + active + '" data-symbol="' + esc(idx.symbol) + '">' +
             '<div class="' + dotCls + '"></div>' +
-            '<span class="sp-sym">' + esc(idx.symbol) + '</span>' +
-            '<span class="sp-name">' + esc(idx.name || '') + '</span>' +
-            '<span class="sp-exch">' + esc(idx.exchange) + '</span>' +
-            '</div>';
+            '<span class="sym-name">' + esc(idx.symbol) + '</span>' +
+            '<span class="sym-desc">' + esc(idx.name || '') + '</span>' +
+            (idx.exchange ? '<span class="sym-exch">' + esc(idx.exchange) + '</span>' : '') + '</div>';
     }).join('');
 }
 
-document.getElementById('spSearch').addEventListener('input', function() {
-    renderSymbolList(this.value);
-});
+/* ══════════════ INDICATOR PANEL ══════════════ */
 
-document.getElementById('spList').addEventListener('click', function(e) {
-    const item = e.target.closest('.sp-item');
+function renderIndicators() {
+    document.getElementById('indPanel').innerHTML = INDICATORS.map(ind => {
+        const active = activeIndicators.has(ind.id) ? ' active' : '';
+        return '<div class="tv-ind-item' + active + '" data-ind="' + ind.id + '">' +
+            '<div class="tv-ind-check">' + (activeIndicators.has(ind.id) ? '\u2713' : '') + '</div>' +
+            '<div class="tv-ind-dot" style="background:' + ind.color + '"></div>' +
+            '<span>' + esc(ind.label) + '</span></div>';
+    }).join('');
+}
+
+/* ══════════════ EVENT HANDLERS ══════════════ */
+
+// Symbol search modal
+document.getElementById('btnSymbol').addEventListener('click', () => {
+    document.getElementById('symModal').classList.add('open');
+    renderSymbolList();
+    setTimeout(() => document.getElementById('symSearchInput').focus(), 50);
+});
+document.getElementById('symModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+document.getElementById('symSearchInput').addEventListener('input', function() { renderSymbolList(this.value); });
+document.getElementById('symList').addEventListener('click', e => {
+    const item = e.target.closest('.tv-sym-item');
     if (!item) return;
     const symbol = item.dataset.symbol;
-    if (!symbol || symbol === currentSymbol) return;
+    if (!symbol) return;
     currentSymbol = symbol;
-    renderSymbolList(document.getElementById('spSearch').value);
+    document.getElementById('symModal').classList.remove('open');
+    document.getElementById('symSearchInput').value = '';
     loadChartData();
 });
 
-/* ══════════════ INDICATOR TOGGLES ══════════════ */
+// Intervals
+document.getElementById('intervalGroup').addEventListener('click', e => {
+    const btn = e.target.closest('.tv-interval');
+    if (!btn) return;
+    document.querySelectorAll('.tv-interval').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentInterval = parseInt(btn.dataset.val, 10);
+    loadChartData();
+});
 
-function renderIndicators() {
-    const grid = document.getElementById('indGrid');
-    grid.innerHTML = INDICATORS.map(ind => {
-        const active = activeIndicators.has(ind.id) ? ' active' : '';
-        return '<div class="ind-toggle' + active + '" data-ind="' + ind.id + '">' +
-            '<div class="ind-check">' + (activeIndicators.has(ind.id) ? '✓' : '') + '</div>' +
-            '<span style="color:' + ind.color + '">' + esc(ind.label) + '</span>' +
-            '</div>';
-    }).join('');
-}
-
-document.getElementById('indGrid').addEventListener('click', function(e) {
-    const toggle = e.target.closest('.ind-toggle');
-    if (!toggle) return;
-    const id = toggle.dataset.ind;
-    if (activeIndicators.has(id)) {
-        activeIndicators.delete(id);
-    } else {
-        activeIndicators.add(id);
+// Chart type menu
+document.getElementById('chartTypeMenu').addEventListener('click', e => {
+    const item = e.target.closest('.tv-drop-item');
+    if (!item) return;
+    const type = item.dataset.type;
+    if (!type) return;
+    currentChartType = type;
+    document.querySelectorAll('#chartTypeMenu .tv-drop-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    createMainSeries();
+    if (rawCandles.length) {
+        if (currentChartType === 'candlestick') mainSeries.setData(rawCandles);
+        else mainSeries.setData(rawCandles.map(c => ({ time: c.time, value: c.close })));
+        if (volumeSeries) volumeSeries.setData(rawCandles.map(c => ({
+            time: c.time, value: c.volume,
+            color: c.close >= c.open ? 'rgba(38,166,154,0.35)' : 'rgba(239,83,80,0.35)',
+        })));
+        applyAllIndicators();
+        applySessionBreaks();
+        chart.timeScale().fitContent();
     }
+});
+
+// Indicators
+document.getElementById('btnIndicators').addEventListener('click', () => {
+    document.getElementById('indWrap').classList.toggle('open');
+});
+document.getElementById('indPanel').addEventListener('click', e => {
+    const item = e.target.closest('.tv-ind-item');
+    if (!item) return;
+    const id = item.dataset.ind;
+    if (activeIndicators.has(id)) activeIndicators.delete(id); else activeIndicators.add(id);
     renderIndicators();
     applyAllIndicators();
 });
+document.addEventListener('click', e => {
+    if (!e.target.closest('#indWrap')) document.getElementById('indWrap').classList.remove('open');
+});
 
-/* ══════════════ CONTROLS ══════════════ */
+// Log scale
+document.getElementById('btnLogScale').addEventListener('click', function() {
+    logScale = !logScale;
+    this.classList.toggle('active', logScale);
+    chart.applyOptions({ rightPriceScale: { mode: logScale ? 1 : 0 } });
+});
 
-document.getElementById('intervalPills').addEventListener('click', function(e) {
-    const pill = e.target.closest('.interval-pill');
-    if (!pill) return;
-    document.querySelectorAll('.interval-pill').forEach(p => p.classList.remove('active'));
-    pill.classList.add('active');
-    currentInterval = parseInt(pill.dataset.val, 10);
+// Zoom controls
+document.getElementById('btnZoomIn').addEventListener('click', () => {
+    const ts = chart.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    if (range) {
+        const mid = (range.from + range.to) / 2;
+        const span = (range.to - range.from) / 4;
+        ts.setVisibleLogicalRange({ from: mid - span, to: mid + span });
+    }
+});
+document.getElementById('btnZoomOut').addEventListener('click', () => {
+    const ts = chart.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    if (range) {
+        const mid = (range.from + range.to) / 2;
+        const span = (range.to - range.from);
+        ts.setVisibleLogicalRange({ from: mid - span, to: mid + span });
+    }
+});
+document.getElementById('btnFitAll').addEventListener('click', () => { chart.timeScale().fitContent(); });
+
+// Range bar
+document.querySelector('.tv-range-bar').addEventListener('click', e => {
+    const btn = e.target.closest('.tv-range-btn');
+    if (!btn) return;
+    document.querySelectorAll('.tv-range-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentRange = btn.dataset.range;
     loadChartData();
 });
 
-document.getElementById('chartType').addEventListener('change', function() {
-    currentChartType = this.value;
-    createMainSeries();
-    loadChartData();
+// Settings modal
+document.getElementById('btnSettings').addEventListener('click', () => { document.getElementById('settingsModal').classList.add('open'); });
+document.getElementById('settingsModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+document.getElementById('btnCloseSettings').addEventListener('click', () => { document.getElementById('settingsModal').classList.remove('open'); });
+document.getElementById('chkSessionBreaks').addEventListener('change', () => applySessionBreaks());
+document.getElementById('chkVolume').addEventListener('change', () => { createMainSeries(); loadChartData(); });
+document.getElementById('selCrosshair').addEventListener('change', function() {
+    chart.applyOptions({ crosshair: { mode: this.value === 'magnet' ? LightweightCharts.CrosshairMode.Magnet : LightweightCharts.CrosshairMode.Normal } });
 });
 
-document.getElementById('dateRange').addEventListener('change', function() {
-    loadChartData();
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === 'Escape') {
+        document.getElementById('symModal').classList.remove('open');
+        document.getElementById('settingsModal').classList.remove('open');
+        document.getElementById('indWrap').classList.remove('open');
+    }
+    if (e.key === 'r' || e.key === 'R') chart.timeScale().fitContent();
+    if (e.key === 'l' || e.key === 'L') document.getElementById('btnLogScale').click();
 });
 
-/* ── Auto-refresh every 10s during market hours ── */
+// URL hash symbol
+if (location.hash && location.hash.length > 1) {
+    currentSymbol = decodeURIComponent(location.hash.slice(1)).toUpperCase();
+}
+
+/* ── Auto-refresh ── */
 function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
     autoRefreshTimer = setInterval(() => {
-        const now = new Date();
-        const h = now.getHours();
-        // Only refresh during likely market hours (IST 9-16 → UTC 3:30-10:30)
-        if (h >= 3 && h <= 16) {
-            loadChartData();
-        }
+        if (!document.getElementById('chkAutoRefresh').checked) return;
+        const h = new Date().getUTCHours();
+        // Indian market hours: 9:15-15:30 IST = 3:45-10:00 UTC
+        if (h >= 3 && h <= 10) loadChartData();
     }, 10000);
 }
 
@@ -665,24 +874,18 @@ async function init() {
     renderIndicators();
     await loadSymbols();
 
-    // If a symbol was in URL hash, use it
-    if (location.hash && location.hash.length > 1) {
-        const hashSym = location.hash.slice(1).toUpperCase();
-        if (allSymbols.some(s => s.symbol === hashSym)) {
-            currentSymbol = hashSym;
-            renderSymbolList();
-        }
+    if (allSymbols.some(s => s.symbol === currentSymbol)) {
+        document.getElementById('toolbarSymbol').textContent = currentSymbol;
+    } else if (allSymbols.length) {
+        currentSymbol = allSymbols[0].symbol;
     }
 
     await loadChartData();
     startAutoRefresh();
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
 
 })();
 </script>

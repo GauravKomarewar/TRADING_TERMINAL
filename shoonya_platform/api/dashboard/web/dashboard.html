@@ -421,8 +421,8 @@
             <!-- Positions (Raw Broker) -->
             <div class="dash-card">
                 <div class="card-head">
-                    <h3>Positions</h3>
-                    <span class="head-right"><span id="posCount"></span><label style="font-size:11px;cursor:pointer;margin-right:8px;color:var(--muted)"><input type="checkbox" id="chkShowFlat" checked onchange="toggleFlatPositions()" style="margin-right:3px">Show Flat</label><button class="btn-exit-all" id="btnExitAll" style="display:none" onclick="exitAllPositions()">⛔ Exit All</button></span>
+                    <h3>Positions <span id="posCount" style="font-size:12px;font-weight:400;color:var(--muted);margin-left:6px"></span></h3>
+                    <span class="head-right" style="display:flex;align-items:center;gap:10px"><label style="font-size:11px;cursor:pointer;color:var(--muted);display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="chkShowFlat" checked onchange="toggleFlatPositions()">Show Flat</label><button class="btn-exit-all" id="btnExitAll" style="display:none" onclick="exitAllPositions()">⛔ Exit All</button></span>
                 </div>
                 <div class="table-scroll">
                     <table class="dash-table">
@@ -909,15 +909,28 @@
     function updatePositions(rawPositions) {
         _lastRawPositions = rawPositions || [];
         var allPositions = _lastRawPositions;
+
+        // Consolidate LTP: same underlying symbol should show same (latest non-zero) LTP
+        var ltpMap = {};
+        allPositions.forEach(function(p) {
+            var sym = p.tsym || p.symbol || '';
+            var lp = parseFloat(p.lp || p.ltp || 0);
+            if (lp > 0 && (!ltpMap[sym] || lp > ltpMap[sym])) ltpMap[sym] = lp;
+        });
+        allPositions.forEach(function(p) {
+            var sym = p.tsym || p.symbol || '';
+            if (ltpMap[sym]) p._ltp = ltpMap[sym];
+        });
+
         var openPositions = allPositions.filter(function(p) { return parseInt(p.netqty || 0) !== 0; });
         var positions = showFlatPositions ? allPositions : openPositions;
 
         var tbody = document.getElementById('positionRows');
         var countEl = document.getElementById('posCount');
         var exitAllBtn = document.getElementById('btnExitAll');
-        var openLabel = openPositions.length + ' open';
-        var flatLabel = (allPositions.length - openPositions.length) + ' flat';
-        countEl.textContent = allPositions.length ? openLabel + ' · ' + flatLabel : '';
+        var openCount = openPositions.length;
+        var flatCount = allPositions.length - openPositions.length;
+        countEl.textContent = allPositions.length ? '(' + openCount + ' open, ' + flatCount + ' flat)' : '';
         exitAllBtn.style.display = openPositions.length > 0 ? 'inline-block' : 'none';
 
         if (!positions.length) {
@@ -946,7 +959,7 @@
                       + ' <button class="btn-exit" onclick="placeExitOrder(\'' + sym.replace(/'/g,"\\'") + '\',\'' + exch.replace(/'/g,"\\'") + '\',\'' + prd.replace(/'/g,"\\'") + '\',' + Math.abs(qty) + ',\'' + (qty > 0 ? 'S' : 'B') + '\')" title="Place exit order" style="background:var(--primary)">ORDER</button>';
                 return '<tr data-sym="' + sym + '" style="' + rowStyle + '">'
                     + '<td style="font-weight:700">' + (sym || '-') + '</td>'
-                    + '<td data-f="ltp">' + fmt(p.lp || p.ltp || 0) + '</td>'
+                    + '<td data-f="ltp">' + fmt(p._ltp || p.lp || p.ltp || 0) + '</td>'
                     + '<td data-f="net" style="color:' + pnlColor(net) + ';font-weight:700">' + fmt(net) + '</td>'
                     + '<td data-f="rpnl" style="color:' + pnlColor(p.rpnl) + '">' + fmt(p.rpnl || 0) + '</td>'
                     + '<td data-f="urm" style="color:' + pnlColor(p.urmtom) + '">' + fmt(p.urmtom || 0) + '</td>'
@@ -970,7 +983,7 @@
                     if (cell.textContent !== f) { cell.textContent = f; flashEl(cell); }
                     if (colored) cell.style.color = pnlColor(val);
                 };
-                updateCell('[data-f="ltp"]', p.lp || p.ltp || 0, false);
+                updateCell('[data-f="ltp"]', p._ltp || p.lp || p.ltp || 0, false);
                 updateCell('[data-f="net"]', net, true);
                 updateCell('[data-f="rpnl"]', p.rpnl || 0, true);
                 updateCell('[data-f="urm"]', p.urmtom || 0, true);

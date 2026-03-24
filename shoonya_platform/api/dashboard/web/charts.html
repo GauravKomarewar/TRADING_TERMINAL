@@ -191,22 +191,41 @@ body.theme-solar{
 .ind-settings-row input:focus{border-color:var(--accent)}
 .ind-settings-row input[type=color]{width:36px;height:26px;padding:1px 2px}
 
+/* Mobile drawing bar (horizontal bottom strip) */
+.tv-draw-mobile{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;background:var(--toolbar-bg);border-top:1px solid var(--border);height:40px;align-items:center;gap:2px;padding:0 4px;overflow-x:auto}
+.tv-draw-mobile::-webkit-scrollbar{height:0}
+.tv-draw-mobile .tv-draw-btn{width:32px;height:32px;font-size:16px;flex-shrink:0}
+
+/* Chart mode toggle */
+.tv-chart-mode{display:inline-flex;align-items:center;gap:2px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;padding:1px;margin-left:4px}
+.tv-chart-mode button{height:24px;padding:0 8px;border:none;background:transparent;color:var(--text-muted);border-radius:4px;font-size:10.5px;font-weight:600;cursor:pointer;transition:all .12s;white-space:nowrap}
+.tv-chart-mode button.active{background:var(--accent);color:#fff}
+
 /* Mobile */
 @media(max-width:768px){
-  body{padding-top:48px}main{height:calc(100vh - 48px)}
-  .tv-toolbar{height:36px;gap:1px;padding:0 2px}
-  .tv-btn{font-size:11px;height:26px;padding:0 6px}
+  body{padding-top:0!important;overflow:hidden!important;height:100vh!important;height:100dvh!important}
+  main{height:100vh!important;height:100dvh!important;margin:0;padding:0}
+  #app-header{display:none!important}
+  .tv-toolbar{height:36px;gap:1px;padding:0 2px;flex-shrink:0}
+  .tv-btn{font-size:11px;height:26px;padding:0 5px}
   .tv-sym-btn{font-size:12px}
-  .tv-draw-bar{display:none}
+  .tv-draw-bar{display:none!important}
+  .tv-draw-mobile{display:flex}
+  .tv-body{flex:1;min-height:0}
+  .tv-chart-wrap{flex:1;min-height:0}
+  .tv-chart-container{flex:1;min-height:0}
   .tv-ohlc{font-size:10px;gap:2px}
-  .tv-modal{padding-top:84px}
+  .tv-range{height:24px;flex-shrink:0}
+  .tv-range button{font-size:10px;padding:0 6px;height:18px}
+  .tv-modal{padding-top:60px}
   .m-box{width:95vw!important;max-width:none!important;max-height:76vh}
-  .tv-zoom{bottom:32px;left:50%;transform:translateX(-50%)}
+  .tv-zoom{bottom:52px;left:50%;transform:translateX(-50%)}
   .theme-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:420px){
   .tv-btn span.hide-xs{display:none}
   .tv-ohlc .sym{font-size:11px}
+  .tv-chart-mode{display:none}
 }
 </style>
 </head>
@@ -221,6 +240,10 @@ body.theme-solar{
     <svg class="arrow" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4z"/></svg>
   </button>
   <button class="tv-add-sym" id="btnAddOverlay" title="Add overlay / compare symbol">+</button>
+  <div class="tv-chart-mode" id="chartModeToggle">
+    <button class="active" data-mode="separate" title="Separate charts for overlays">Sep</button>
+    <button data-mode="combined" title="Combined premium chart">Cmb</button>
+  </div>
   <div class="tv-sep"></div>
   <button class="tv-btn" id="btnInterval" title="Timeframe">
     <svg class="stroke-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -258,7 +281,7 @@ body.theme-solar{
     <div class="tv-draw-sep"></div>
     <button class="tv-draw-btn" data-tool="hline" title="H-Line">━<span class="tip">H-Line (1-click)</span></button>
     <button class="tv-draw-btn" data-tool="trendline" title="Trend Line">╱<span class="tip">Trend Line (2-click)</span></button>
-    <button class="tv-draw-btn" data-tool="hray" title="Ray">⟶<span class="tip">Ray (1-click)</span></button>
+    <button class="tv-draw-btn" data-tool="hray" title="Ray">⟶<span class="tip">Ray (2-click)</span></button>
     <div class="tv-draw-sep"></div>
     <button class="tv-draw-btn" data-tool="fib" title="Fibonacci">☰<span class="tip">Fibonacci (2-click)</span></button>
     <button class="tv-draw-btn" data-tool="rect" title="Rectangle">▭<span class="tip">Rectangle (2-click)</span></button>
@@ -299,6 +322,18 @@ body.theme-solar{
   <button data-range="90d">3M</button>
   <div class="tv-sep"></div>
   <span class="status" id="dataStatus"></span>
+</div>
+<!-- Mobile drawing bar -->
+<div class="tv-draw-mobile" id="mobileDrawBar">
+  <button class="tv-draw-btn active" data-tool="pointer" title="Pointer">🖱️</button>
+  <button class="tv-draw-btn" data-tool="crosshairTool" title="Crosshair">✛</button>
+  <button class="tv-draw-btn" data-tool="hline" title="H-Line">━</button>
+  <button class="tv-draw-btn" data-tool="trendline" title="Trend">╱</button>
+  <button class="tv-draw-btn" data-tool="hray" title="Ray">⟶</button>
+  <button class="tv-draw-btn" data-tool="fib" title="Fib">☰</button>
+  <button class="tv-draw-btn" data-tool="rect" title="Rect">▭</button>
+  <button class="tv-draw-btn" data-tool="measure" title="Measure">↔</button>
+  <button class="tv-draw-btn" data-tool="clearAll" title="Clear">✕</button>
 </div>
 </main>
 
@@ -468,6 +503,9 @@ let autoTimer=null,priceLines=[],trendSeries=[],fibPriceLines=[],rectPriceLines=
 let overlays=[];
 let sessionBreakPrimitive=null;
 let drawTool='pointer',drawClicks=[],drawState=null;
+let chartMode='separate'; /* 'separate' or 'combined' */
+let rectDrawings=[]; /* [{topSeries,botSeries},...] for visual rectangles */
+let measureDrawings=[]; /* [{series},...] for measure lines */
 
 /* ─── Dynamic indicator system: add any indicator N times with custom settings ─── */
 const IND_CATALOG = [
@@ -498,12 +536,13 @@ const INTERVALS=[
 ];
 const CHART_TYPES=[
   {type:'candlestick',label:'Candlestick',emoji:'🕯️'},
+  {type:'heikinashi',label:'Heikin Ashi',emoji:'🔶'},
   {type:'bar',label:'Bars (OHLC)',emoji:'📊'},
   {type:'line',label:'Line',emoji:'📈'},
   {type:'area',label:'Area',emoji:'🏔️'},
   {type:'hlc',label:'HLC Bars',emoji:'📉'},
 ];
-const CT_LABELS={candlestick:'Candles',bar:'Bars',line:'Line',area:'Area',hlc:'HLC'};
+const CT_LABELS={candlestick:'Candles',heikinashi:'HA',bar:'Bars',line:'Line',area:'Area',hlc:'HLC'};
 
 /* ─── Themes ─── */
 const THEMES = {
@@ -523,10 +562,10 @@ const THEMES = {
 let activeClr = {...THEMES.dark.clr};
 let savedVisRange=null,savedOverlaySyms=[];
 function loadSettings(){
-  try{const s=localStorage.getItem(STORE_KEY);if(s){const d=JSON.parse(s);activeClr={...THEMES.dark.clr,...d.clr};curTheme=d.theme||'dark';if(d.intv)curIntv=d.intv;if(d.type)curType=d.type;if(d.range)curRange=d.range;if(d.overlaySyms)savedOverlaySyms=d.overlaySyms;if(d.visRange)savedVisRange=d.visRange;if(d.sym)curSym=d.sym;if(d.optionMeta)optionMeta=d.optionMeta;if(d.activeIndicators){activeIndicators=d.activeIndicators;indNextId=Math.max(1,...activeIndicators.map(i=>{const m=i.uid.match(/_(\d+)$/);return m?parseInt(m[1],10)+1:1;}))||1;}}}catch(e){}
+  try{const s=localStorage.getItem(STORE_KEY);if(s){const d=JSON.parse(s);activeClr={...THEMES.dark.clr,...d.clr};curTheme=d.theme||'dark';if(d.intv)curIntv=d.intv;if(d.type)curType=d.type;if(d.range)curRange=d.range;if(d.overlaySyms)savedOverlaySyms=d.overlaySyms;if(d.visRange)savedVisRange=d.visRange;if(d.sym)curSym=d.sym;if(d.optionMeta)optionMeta=d.optionMeta;if(d.chartMode)chartMode=d.chartMode;if(d.activeIndicators){activeIndicators=d.activeIndicators;indNextId=Math.max(1,...activeIndicators.map(i=>{const m=i.uid.match(/_(\d+)$/);return m?parseInt(m[1],10)+1:1;}))||1;}}}catch(e){}
 }
 function saveSettings(){
-  try{const state={clr:activeClr,theme:curTheme,sym:curSym,intv:curIntv,type:curType,range:curRange,activeIndicators,overlaySyms:overlays.map(o=>o.symbol),optionMeta};try{if(chart)state.visRange=chart.timeScale().getVisibleRange();}catch(e){}localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(e){}
+  try{const state={clr:activeClr,theme:curTheme,sym:curSym,intv:curIntv,type:curType,range:curRange,activeIndicators,overlaySyms:overlays.map(o=>o.symbol),optionMeta,chartMode};try{if(chart)state.visRange=chart.timeScale().getVisibleRange();}catch(e){}localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(e){}
 }
 
 /* ─── Session break primitive ─── */
@@ -625,7 +664,7 @@ function createMainSeries(){
   indSeries={};
   overlays.forEach(o=>{if(o.series){try{chart.removeSeries(o.series);}catch(e){}};o.series=null;});
   const cl=activeClr;
-  if(curType==='candlestick'){
+  if(curType==='candlestick'||curType==='heikinashi'){
     mainSeries=chart.addCandlestickSeries({upColor:cl.up,downColor:cl.dn,borderUpColor:cl.up,borderDownColor:cl.dn,wickUpColor:cl.up,wickDownColor:cl.dn});
   }else if(curType==='bar'||curType==='hlc'){
     mainSeries=chart.addBarSeries({upColor:cl.up,downColor:cl.dn});
@@ -638,11 +677,29 @@ function createMainSeries(){
     volSeries=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol',lastValueVisible:false,priceLineVisible:false});
     chart.priceScale('vol').applyOptions({scaleMargins:{top:0.84,bottom:0}});
   }else{volSeries=null;}
-  // Restore overlay series
-  if(overlays.length)try{chart.applyOptions({leftPriceScale:{visible:true,borderColor:cl.grid,autoScale:true,scaleMargins:{top:0.05,bottom:0.15}}});}catch(e){}
+  // Restore overlay series — match current chart type
+  if(overlays.length&&chartMode==='separate')try{chart.applyOptions({leftPriceScale:{visible:true,borderColor:cl.grid,autoScale:true,scaleMargins:{top:0.05,bottom:0.15}}});}catch(e){}
   overlays.forEach(o=>{
-    o.series=chart.addLineSeries({color:o.color,lineWidth:2,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:true,priceScaleId:'left',title:o.symbol});
-    if(o.candles&&o.candles.length)o.series.setData(o.candles.map(c=>({time:c.time,value:c.close})));
+    if(chartMode==='combined')return; // combined mode doesn't show separate overlay series
+    const ovType=curType==='heikinashi'?'candlestick':curType;
+    if(ovType==='candlestick'){
+      o.series=chart.addCandlestickSeries({upColor:hexRgba(o.color,.8),downColor:hexRgba(o.color,.4),borderUpColor:o.color,borderDownColor:hexRgba(o.color,.5),wickUpColor:o.color,wickDownColor:hexRgba(o.color,.5),priceScaleId:'left',title:o.symbol});
+    }else if(ovType==='bar'||ovType==='hlc'){
+      o.series=chart.addBarSeries({upColor:o.color,downColor:hexRgba(o.color,.5),priceScaleId:'left',title:o.symbol});
+    }else if(ovType==='area'){
+      o.series=chart.addAreaSeries({topColor:hexRgba(o.color,.2),bottomColor:hexRgba(o.color,.02),lineColor:o.color,lineWidth:2,priceScaleId:'left',title:o.symbol,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:true});
+    }else{
+      o.series=chart.addLineSeries({color:o.color,lineWidth:2,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:true,priceScaleId:'left',title:o.symbol});
+    }
+    if(o.candles&&o.candles.length){
+      const isOhlc=ovType==='candlestick'||ovType==='bar'||ovType==='hlc';
+      if(isOhlc){
+        const haData=curType==='heikinashi'?calcHeikinAshi(o.candles):o.candles;
+        o.series.setData(haData);
+      }else{
+        o.series.setData(o.candles.map(c=>({time:c.time,value:c.close})));
+      }
+    }
   });
 }
 
@@ -722,8 +779,8 @@ function aggregateTicks(ticks,intervalMin){
 async function loadData(opts){
   const{silent=false,keepZoom=false}=opts||{};
   if(!silent)document.getElementById('chartLoading').style.display='flex';
-  let prevRange=null;
-  if(keepZoom&&chart){try{prevRange=chart.timeScale().getVisibleRange();}catch(e){}}
+  let prevLogRange=null,prevTimeRange=null;
+  if(keepZoom&&chart){try{prevLogRange=chart.timeScale().getVisibleLogicalRange();prevTimeRange=chart.timeScale().getVisibleRange();}catch(e){}}
   try{
     const rng=dateRange();
     const meta=optionMeta[curSym];
@@ -761,7 +818,7 @@ async function loadData(opts){
     document.getElementById('tbSymEmoji').textContent=symEmoji(curSym);
     const exch=meta?meta.exchange:(isMCX(curSym)?'MCX':'NSE');
     document.getElementById('dataStatus').textContent=rawCandles.length+' bars · '+exch+(isOption?' OPT':'')+' · IST';
-    if(!keepZoom)chart.timeScale().fitContent();else if(prevRange){try{chart.timeScale().setVisibleRange(prevRange);}catch(e){}}
+    if(!keepZoom)chart.timeScale().fitContent();else if(prevLogRange){try{chart.timeScale().setVisibleLogicalRange(prevLogRange);}catch(e){if(prevTimeRange)try{chart.timeScale().setVisibleRange(prevTimeRange);}catch(e2){}}}
     saveSettings();
   }catch(e){
     const m=e.message||'';
@@ -771,13 +828,20 @@ async function loadData(opts){
 
 function reapply(){
   if(!rawCandles.length||!mainSeries)return;
-  const ohlc=curType==='candlestick'||curType==='bar'||curType==='hlc';
-  if(ohlc)mainSeries.setData(rawCandles);
-  else mainSeries.setData(rawCandles.map(c=>({time:c.time,value:c.close})));
+  const isOhlc=curType==='candlestick'||curType==='bar'||curType==='hlc'||curType==='heikinashi';
+  // Determine source data based on chart mode
+  let sourceCandles=rawCandles;
+  if(chartMode==='combined'&&overlays.length)sourceCandles=calcCombinedCandles();
+  // Apply Heikin Ashi transformation if needed
+  let displayCandles=sourceCandles;
+  if(curType==='heikinashi')displayCandles=calcHeikinAshi(sourceCandles);
+  if(isOhlc)mainSeries.setData(displayCandles);
+  else mainSeries.setData(displayCandles.map(c=>({time:c.time,value:c.close})));
   if(volSeries){
-    volSeries.setData(rawCandles.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?hexRgba(activeClr.up,.35):hexRgba(activeClr.dn,.35)})));
+    volSeries.setData(displayCandles.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?hexRgba(activeClr.up,.35):hexRgba(activeClr.dn,.35)})));
   }
-  applyIndicators();
+  // Apply indicators on the source candles (combined or raw, before HA transform)
+  applyIndicators(sourceCandles);
   applySessionBreaks();
   // Restore price lines
   priceLines=priceLines.map(e=>{
@@ -830,21 +894,47 @@ async function loadOverlayData(sym){
 }
 async function addOverlay(sym){
   if(overlays.some(o=>o.symbol===sym))return;
-  if(!overlays.length)try{chart.applyOptions({leftPriceScale:{visible:true,borderColor:activeClr.grid,autoScale:true,scaleMargins:{top:0.05,bottom:0.15}}});}catch(e){}
+  if(!overlays.length&&chartMode==='separate')try{chart.applyOptions({leftPriceScale:{visible:true,borderColor:activeClr.grid,autoScale:true,scaleMargins:{top:0.05,bottom:0.15}}});}catch(e){}
   const color=OVERLAY_COLORS[overlays.length%OVERLAY_COLORS.length];
-  const series=chart.addLineSeries({color,lineWidth:2,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:true,priceScaleId:'left',title:sym});
+  let series=null;
+  if(chartMode==='separate'){
+    const ovType=curType==='heikinashi'?'candlestick':curType;
+    if(ovType==='candlestick'){
+      series=chart.addCandlestickSeries({upColor:hexRgba(color,.8),downColor:hexRgba(color,.4),borderUpColor:color,borderDownColor:hexRgba(color,.5),wickUpColor:color,wickDownColor:hexRgba(color,.5),priceScaleId:'left',title:sym});
+    }else if(ovType==='bar'||ovType==='hlc'){
+      series=chart.addBarSeries({upColor:color,downColor:hexRgba(color,.5),priceScaleId:'left',title:sym});
+    }else if(ovType==='area'){
+      series=chart.addAreaSeries({topColor:hexRgba(color,.2),bottomColor:hexRgba(color,.02),lineColor:color,lineWidth:2,priceScaleId:'left',title:sym,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:true});
+    }else{
+      series=chart.addLineSeries({color,lineWidth:2,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:true,priceScaleId:'left',title:sym});
+    }
+  }
   const ov={symbol:sym,color,series,candles:[]};
   overlays.push(ov);renderOverlayBar();
   const candles=await loadOverlayData(sym);
   ov.candles=candles;
-  if(candles.length)series.setData(candles.map(c=>({time:c.time,value:c.close})));
+  if(chartMode==='separate'&&series&&candles.length){
+    const ovType=curType==='heikinashi'?'candlestick':curType;
+    const isOhlc=ovType==='candlestick'||ovType==='bar'||ovType==='hlc';
+    if(isOhlc){
+      const haData=curType==='heikinashi'?calcHeikinAshi(candles):candles;
+      series.setData(haData);
+    }else{
+      series.setData(candles.map(c=>({time:c.time,value:c.close})));
+    }
+  }
+  if(chartMode==='combined'){
+    // Rebuild chart data with combined values
+    reapply();chart.timeScale().fitContent();
+  }
   saveSettings();
 }
 function removeOverlay(sym){
   const idx=overlays.findIndex(o=>o.symbol===sym);if(idx<0)return;
-  try{chart.removeSeries(overlays[idx].series);}catch(e){}
+  if(overlays[idx].series)try{chart.removeSeries(overlays[idx].series);}catch(e){}
   overlays.splice(idx,1);renderOverlayBar();
   if(!overlays.length)try{chart.applyOptions({leftPriceScale:{visible:false}});}catch(e){}
+  if(chartMode==='combined')reapply();
   saveSettings();
 }
 function renderOverlayBar(){
@@ -872,29 +962,66 @@ function calcADX(data,p){if(data.length<p*2)return[];const dmP=[],dmM=[],tr=[];f
 
 function addLineSeries(opts){return chart.addLineSeries({...opts,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});}
 
-function applyIndicators(){
+/* ─── HEIKIN ASHI CALCULATION ─── */
+function calcHeikinAshi(candles){
+  if(!candles.length)return[];
+  const ha=[];
+  for(let i=0;i<candles.length;i++){
+    const c=candles[i];
+    const haClose=(c.open+c.high+c.low+c.close)/4;
+    const haOpen=i===0?(c.open+c.close)/2:(ha[i-1].open+ha[i-1].close)/2;
+    const haHigh=Math.max(c.high,haOpen,haClose);
+    const haLow=Math.min(c.low,haOpen,haClose);
+    ha.push({time:c.time,open:haOpen,high:haHigh,low:haLow,close:haClose,volume:c.volume||0});
+  }
+  return ha;
+}
+
+/* ─── COMBINED PREMIUM CHART ─── */
+function calcCombinedCandles(){
+  if(!rawCandles.length||!overlays.length)return rawCandles;
+  // Build time-aligned maps
+  const timeMap={};
+  for(const c of rawCandles)timeMap[c.time]={open:c.open,high:c.high,low:c.low,close:c.close,volume:c.volume||0};
+  for(const ov of overlays){
+    if(!ov.candles)continue;
+    for(const c of ov.candles){
+      if(!timeMap[c.time])timeMap[c.time]={open:0,high:0,low:0,close:0,volume:0};
+      timeMap[c.time].open+=c.open;
+      timeMap[c.time].high+=c.high;
+      timeMap[c.time].low+=c.low;
+      timeMap[c.time].close+=c.close;
+      timeMap[c.time].volume+=(c.volume||0);
+    }
+  }
+  // Only add main candle values (they're already the base)
+  return Object.entries(timeMap).map(([t,v])=>({time:+t,...v})).sort((a,b)=>a.time-b.time);
+}
+
+function applyIndicators(dataSource){
   Object.values(indSeries).forEach(v=>{if(Array.isArray(v))v.forEach(s=>{try{chart.removeSeries(s);}catch(e){}});else try{chart.removeSeries(v);}catch(e){}});
   indSeries={};
-  if(!rawCandles.length)return;
+  const candleData=dataSource||rawCandles;
+  if(!candleData.length)return;
   for(const inst of activeIndicators){
     const cfg=inst.cfg;
     const lo={color:cfg.color,lineWidth:cfg.lineWidth||1.5};
     try{
-      if(inst.type==='sma'){const pts=calcSMA(rawCandles,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='ema'){const pts=calcEMA(rawCandles,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='wma'){const pts=calcWMA(rawCandles,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='dema'){const pts=calcDEMA(rawCandles,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='bb'){const b=calcBB(rawCandles,cfg.period,cfg.stdDev||2);if(b.upper.length){const ds={lineStyle:LightweightCharts.LineStyle.Dashed,color:cfg.color,lineWidth:1};const sU=addLineSeries(ds);sU.setData(b.upper);const sM=addLineSeries({color:cfg.color,lineWidth:1.5});sM.setData(b.mid);const sL=addLineSeries(ds);sL.setData(b.lower);indSeries[inst.uid]=[sU,sM,sL];}}
-      else if(inst.type==='kc'){const b=calcKeltner(rawCandles,cfg.period,cfg.mult||2);if(b.upper.length){const ds={lineStyle:LightweightCharts.LineStyle.Dashed,color:cfg.color,lineWidth:1};const sU=addLineSeries(ds);sU.setData(b.upper);const sM=addLineSeries({color:cfg.color,lineWidth:1.5});sM.setData(b.mid);const sL=addLineSeries(ds);sL.setData(b.lower);indSeries[inst.uid]=[sU,sM,sL];}}
-      else if(inst.type==='dc'){const b=calcDonchian(rawCandles,cfg.period);if(b.upper.length){const ds={lineStyle:LightweightCharts.LineStyle.Dashed,color:cfg.color,lineWidth:1};const sU=addLineSeries(ds);sU.setData(b.upper);const sM=addLineSeries({color:cfg.color,lineWidth:1});sM.setData(b.mid);const sL=addLineSeries(ds);sL.setData(b.lower);indSeries[inst.uid]=[sU,sM,sL];}}
-      else if(inst.type==='vwap'){const pts=calcVWAP(rawCandles);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:cfg.lineWidth||2});s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='psar'){const pts=calcPSAR(rawCandles,cfg.step||0.02,cfg.max||0.2);if(pts.length){const s=chart.addLineSeries({color:cfg.color,lineWidth:0,pointMarkersVisible:true,pointMarkersRadius:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='pivots'){const p=calcPivots(rawCandles);if(p.pivot.length){const sP=addLineSeries({color:cfg.color,lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sP.setData(p.pivot);const sR=addLineSeries({color:activeClr.dn,lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sR.setData(p.r1);const sR2=addLineSeries({color:hexRgba(activeClr.dn,.6),lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sR2.setData(p.r2);const sS=addLineSeries({color:activeClr.up,lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sS.setData(p.s1);const sS2=addLineSeries({color:hexRgba(activeClr.up,.6),lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sS2.setData(p.s2);indSeries[inst.uid]=[sP,sR,sR2,sS,sS2];}}
-      else if(inst.type==='supertrend'){const st=calcSupertrend(rawCandles,cfg.period,cfg.mult);if(st.up.length){const sU=addLineSeries({color:cfg.upColor||activeClr.up,lineWidth:cfg.lineWidth||2});sU.setData(st.up);const sD=addLineSeries({color:cfg.dnColor||activeClr.dn,lineWidth:cfg.lineWidth||2});sD.setData(st.dn);indSeries[inst.uid]=[sU,sD];}}
-      else if(inst.type==='rsi'){const pts=calcRSI(rawCandles,cfg.period||14);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='atr'){const pts=calcATR(rawCandles,cfg.period||14);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='cci'){const pts=calcCCI(rawCandles,cfg.period||20);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
-      else if(inst.type==='adx'){const pts=calcADX(rawCandles,cfg.period||14);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
+      if(inst.type==='sma'){const pts=calcSMA(candleData,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='ema'){const pts=calcEMA(candleData,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='wma'){const pts=calcWMA(candleData,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='dema'){const pts=calcDEMA(candleData,cfg.period);if(pts.length){const s=addLineSeries(lo);s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='bb'){const b=calcBB(candleData,cfg.period,cfg.stdDev||2);if(b.upper.length){const ds={lineStyle:LightweightCharts.LineStyle.Dashed,color:cfg.color,lineWidth:1};const sU=addLineSeries(ds);sU.setData(b.upper);const sM=addLineSeries({color:cfg.color,lineWidth:1.5});sM.setData(b.mid);const sL=addLineSeries(ds);sL.setData(b.lower);indSeries[inst.uid]=[sU,sM,sL];}}
+      else if(inst.type==='kc'){const b=calcKeltner(candleData,cfg.period,cfg.mult||2);if(b.upper.length){const ds={lineStyle:LightweightCharts.LineStyle.Dashed,color:cfg.color,lineWidth:1};const sU=addLineSeries(ds);sU.setData(b.upper);const sM=addLineSeries({color:cfg.color,lineWidth:1.5});sM.setData(b.mid);const sL=addLineSeries(ds);sL.setData(b.lower);indSeries[inst.uid]=[sU,sM,sL];}}
+      else if(inst.type==='dc'){const b=calcDonchian(candleData,cfg.period);if(b.upper.length){const ds={lineStyle:LightweightCharts.LineStyle.Dashed,color:cfg.color,lineWidth:1};const sU=addLineSeries(ds);sU.setData(b.upper);const sM=addLineSeries({color:cfg.color,lineWidth:1});sM.setData(b.mid);const sL=addLineSeries(ds);sL.setData(b.lower);indSeries[inst.uid]=[sU,sM,sL];}}
+      else if(inst.type==='vwap'){const pts=calcVWAP(candleData);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:cfg.lineWidth||2});s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='psar'){const pts=calcPSAR(candleData,cfg.step||0.02,cfg.max||0.2);if(pts.length){const s=chart.addLineSeries({color:cfg.color,lineWidth:0,pointMarkersVisible:true,pointMarkersRadius:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='pivots'){const p=calcPivots(candleData);if(p.pivot.length){const sP=addLineSeries({color:cfg.color,lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sP.setData(p.pivot);const sR=addLineSeries({color:activeClr.dn,lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sR.setData(p.r1);const sR2=addLineSeries({color:hexRgba(activeClr.dn,.6),lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sR2.setData(p.r2);const sS=addLineSeries({color:activeClr.up,lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sS.setData(p.s1);const sS2=addLineSeries({color:hexRgba(activeClr.up,.6),lineStyle:LightweightCharts.LineStyle.Dotted,lineWidth:1});sS2.setData(p.s2);indSeries[inst.uid]=[sP,sR,sR2,sS,sS2];}}
+      else if(inst.type==='supertrend'){const st=calcSupertrend(candleData,cfg.period,cfg.mult);if(st.up.length){const sU=addLineSeries({color:cfg.upColor||activeClr.up,lineWidth:cfg.lineWidth||2});sU.setData(st.up);const sD=addLineSeries({color:cfg.dnColor||activeClr.dn,lineWidth:cfg.lineWidth||2});sD.setData(st.dn);indSeries[inst.uid]=[sU,sD];}}
+      else if(inst.type==='rsi'){const pts=calcRSI(candleData,cfg.period||14);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='atr'){const pts=calcATR(candleData,cfg.period||14);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='cci'){const pts=calcCCI(candleData,cfg.period||20);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
+      else if(inst.type==='adx'){const pts=calcADX(candleData,cfg.period||14);if(pts.length){const s=addLineSeries({color:cfg.color,lineWidth:1.5});s.setData(pts);indSeries[inst.uid]=s;}}
     }catch(err){console.error('Indicator error',inst.uid,err);}
   }
 }
@@ -907,13 +1034,16 @@ function setDraw(tool){
     trendSeries.forEach(s=>{try{chart.removeSeries(s);}catch(x){}});trendSeries=[];
     fibPriceLines.forEach(g=>g.forEach(pl=>{try{mainSeries.removePriceLine(pl);}catch(x){}}));fibPriceLines=[];
     rectPriceLines.forEach(g=>g.forEach(pl=>{try{mainSeries.removePriceLine(pl);}catch(x){}}));rectPriceLines=[];
+    rectDrawings.forEach(d=>{try{chart.removeSeries(d.topSeries);}catch(x){}try{chart.removeSeries(d.botSeries);}catch(x){}try{chart.removeSeries(d.leftSeries);}catch(x){}try{chart.removeSeries(d.rightSeries);}catch(x){}});rectDrawings=[];
+    measureDrawings.forEach(d=>{try{chart.removeSeries(d.series);}catch(x){}});measureDrawings=[];
     drawClicks=[];drawState=null;showHint('');
     return;
   }
   drawTool=tool;drawClicks=[];drawState=null;
   document.querySelectorAll('.tv-draw-btn').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
+  document.querySelectorAll('#mobileDrawBar .tv-draw-btn').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));
   const c=document.getElementById('chartContainer');
-  const hints={pointer:'',crosshairTool:'',hline:'Click on chart to place horizontal line',hray:'Click to place ray',trendline:'Click point 1',fib:'Click high point',rect:'Click corner 1',measure:'Click point 1'};
+  const hints={pointer:'',crosshairTool:'',hline:'Click on chart to place horizontal line',hray:'Click start point for ray',trendline:'Click point 1',fib:'Click high point',rect:'Click corner 1',measure:'Click point 1'};
   c.style.cursor=tool==='pointer'?'':'crosshair';
   showHint(hints[tool]||'');
 }
@@ -925,8 +1055,21 @@ function onChartClick(ts,price,point){
     const pl=mainSeries.createPriceLine(opts);priceLines.push({priceLine:pl,opts});setDraw('pointer');return;
   }
   if(drawTool==='hray'){
-    const opts={price,color:'#f59e0b',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:true,title:'→'+fmt(price)};
-    const pl=mainSeries.createPriceLine(opts);priceLines.push({priceLine:pl,opts});setDraw('pointer');return;
+    drawClicks.push({ts,price});
+    if(drawClicks.length===1){showHint('Click end point to define ray direction');return;}
+    if(drawClicks.length===2){
+      const p1=drawClicks[0],p2=drawClicks[1];
+      // Extend the ray far to the right from p1 through p2
+      const dT=p2.ts-p1.ts,dP=p2.price-p1.price;
+      const extendFactor=50; // extend 50x the distance
+      const endTs=p1.ts+dT*extendFactor;
+      const endPrice=p1.price+dP*extendFactor;
+      const s=chart.addLineSeries({color:'#f59e0b',lineWidth:1.5,lineStyle:LightweightCharts.LineStyle.Dotted,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      const pts=[{time:p1.ts,value:p1.price},{time:p2.ts,value:p2.price}];
+      // Add extended point only if timestamps are increasing
+      if(endTs>p2.ts)pts.push({time:endTs,value:endPrice});
+      s.setData(pts);trendSeries.push(s);drawClicks=[];setDraw('pointer');return;
+    }
   }
   if(drawTool==='trendline'){
     drawClicks.push({ts,price});
@@ -962,21 +1105,41 @@ function onChartClick(ts,price,point){
     if(drawClicks.length===2){
       const hi=Math.max(drawClicks[0].price,drawClicks[1].price);
       const lo=Math.min(drawClicks[0].price,drawClicks[1].price);
-      const col='rgba(41,98,255,0.2)';
-      const topLine=mainSeries.createPriceLine({price:hi,color:'#2962ff',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Solid,axisLabelVisible:false,title:''});
-      const botLine=mainSeries.createPriceLine({price:lo,color:'#2962ff',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Solid,axisLabelVisible:false,title:''});
-      const midLine=mainSeries.createPriceLine({price:(hi+lo)/2,color:'rgba(41,98,255,0.4)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:`↕ ${fmt(hi-lo)}`});
-      rectPriceLines.push([topLine,botLine,midLine]);drawClicks=[];setDraw('pointer');return;
+      const t1=Math.min(drawClicks[0].ts,drawClicks[1].ts);
+      const t2=Math.max(drawClicks[0].ts,drawClicks[1].ts);
+      // Draw top and bottom edges as line series bounded to the rectangle's time range
+      const topS=chart.addLineSeries({color:'#2962ff',lineWidth:1.5,lineStyle:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      topS.setData([{time:t1,value:hi},{time:t2,value:hi}]);
+      const botS=chart.addLineSeries({color:'#2962ff',lineWidth:1.5,lineStyle:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      botS.setData([{time:t1,value:lo},{time:t2,value:lo}]);
+      // Also draw left and right edges using line series with close timestamps
+      const leftS=chart.addLineSeries({color:'rgba(41,98,255,0.6)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      leftS.setData([{time:t1,value:lo},{time:t1+1,value:hi}]);
+      const rightS=chart.addLineSeries({color:'rgba(41,98,255,0.6)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      rightS.setData([{time:t2-1,value:lo},{time:t2,value:hi}]);
+      // Add mid-line with measurement label
+      const midLine=mainSeries.createPriceLine({price:(hi+lo)/2,color:'rgba(41,98,255,0.3)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:`↕ ${fmt(hi-lo)}`});
+      rectPriceLines.push([midLine]);
+      rectDrawings.push({topSeries:topS,botSeries:botS,leftSeries:leftS,rightSeries:rightS});
+      drawClicks=[];setDraw('pointer');return;
     }
   }
   if(drawTool==='measure'){
     drawClicks.push({ts,price});
     if(drawClicks.length===1){showHint('Click end point');return;}
     if(drawClicks.length===2){
-      const p1=drawClicks[0].price,p2=drawClicks[1].price;
-      const diff=p2-p1,pct=(diff/p1*100);
-      const opts={price:p2,color:'#fbbf24',lineWidth:1.5,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:`${diff>=0?'+':''}${fmt(diff)} (${pct.toFixed(2)}%)`};
-      const pl=mainSeries.createPriceLine(opts);priceLines.push({priceLine:pl,opts});drawClicks=[];setDraw('pointer');return;
+      const p1=drawClicks[0],p2=drawClicks[1];
+      const diff=p2.price-p1.price,pct=(diff/p1.price*100);
+      // Calculate bar count between points
+      const t1=Math.min(p1.ts,p2.ts),t2=Math.max(p1.ts,p2.ts);
+      const bars=rawCandles.filter(c=>c.time>=t1&&c.time<=t2).length;
+      const label=`${diff>=0?'+':''}${fmt(diff)} (${pct>=0?'+':''}${pct.toFixed(2)}%) · ${bars} bars`;
+      // Draw angled line between the two points
+      const s=chart.addLineSeries({color:'#fbbf24',lineWidth:1.5,lineStyle:LightweightCharts.LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true,title:label});
+      const pts=[{time:Math.min(p1.ts,p2.ts),value:p1.ts<p2.ts?p1.price:p2.price},{time:Math.max(p1.ts,p2.ts),value:p1.ts<p2.ts?p2.price:p1.price}];
+      s.setData(pts);
+      measureDrawings.push({series:s});
+      drawClicks=[];setDraw('pointer');return;
     }
   }
 }
@@ -1308,6 +1471,22 @@ document.querySelector('.tv-range').onclick=e=>{const b=e.target.closest('button
 
 /* ─── DRAWING BAR ─── */
 document.querySelector('.tv-draw-bar').onclick=e=>{const b=e.target.closest('.tv-draw-btn');if(!b)return;setDraw(b.dataset.tool);};
+document.getElementById('mobileDrawBar').onclick=e=>{const b=e.target.closest('.tv-draw-btn');if(!b)return;setDraw(b.dataset.tool);};
+
+/* ─── CHART MODE TOGGLE (combined/separate) ─── */
+document.getElementById('chartModeToggle').onclick=e=>{
+  const b=e.target.closest('button[data-mode]');if(!b)return;
+  chartMode=b.dataset.mode;
+  document.querySelectorAll('#chartModeToggle button').forEach(x=>x.classList.toggle('active',x.dataset.mode===chartMode));
+  createMainSeries();reapply();
+  if(chartMode==='combined'&&overlays.length){
+    // Hide left price scale in combined mode — everything on right axis
+    try{chart.applyOptions({leftPriceScale:{visible:false}});}catch(e){}
+  }else if(chartMode==='separate'&&overlays.length){
+    try{chart.applyOptions({leftPriceScale:{visible:true,borderColor:activeClr.grid,autoScale:true,scaleMargins:{top:0.05,bottom:0.15}}});}catch(e){}
+  }
+  chart.timeScale().fitContent();saveSettings();
+};
 
 /* ─── KEYBOARD ─── */
 document.addEventListener('keydown',e=>{
@@ -1337,6 +1516,7 @@ async function init(){
   document.getElementById('lblInterval').textContent=fmtIntv(curIntv);
   document.getElementById('lblChartType').textContent=CT_LABELS[curType]||'Candles';
   document.querySelectorAll('.tv-range button').forEach(b=>b.classList.toggle('active',b.dataset.range===curRange));
+  document.querySelectorAll('#chartModeToggle button').forEach(b=>b.classList.toggle('active',b.dataset.mode===chartMode));
   initChart();
   await loadSymbols();
   if(allSymbols.length&&!allSymbols.some(s=>s.symbol===curSym)){const first=allSymbols[0];if(first)curSym=first.symbol;}

@@ -168,6 +168,7 @@ class UniversalOrderCommand:
         return cls.new(
             source=source,
             user=user,
+            intent=get("intent"),
 
             exchange=req_flex("exchange", exchange_val),
             symbol=req_flex("symbol", symbol_val),

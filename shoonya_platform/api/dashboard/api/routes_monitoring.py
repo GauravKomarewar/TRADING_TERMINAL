@@ -246,7 +246,7 @@ def get_live_positions_overview(
                 latest_by_symbol[symbol] = (ts, strategy_name, order)
 
         classified: list[dict[str, Any]] = []
-        seen_symbol_owner: set[tuple[str, str]] = set()
+        seen_symbol_owner: set[tuple[str, str, str]] = set()
         for pos in positions:
             netqty = int(pos.get("netqty", 0) or 0)
             if netqty == 0:
@@ -255,6 +255,7 @@ def get_live_positions_overview(
             symbol = str(pos.get("tsym", "") or "").strip()
             if not symbol:
                 continue
+            product = str(pos.get("prd", "") or "").strip()
 
             mapped_strategy = ""
             order_detail = None
@@ -282,6 +283,7 @@ def get_live_positions_overview(
             item = {
                 "symbol": symbol,
                 "exchange": pos.get("exch"),
+                "product": product,
                 "qty": qty,
                 "side": side,
                 "netqty": netqty,
@@ -300,7 +302,7 @@ def get_live_positions_overview(
                 "updated_at": pos.get("upl_time") or "",
             }
             classified.append(item)
-            seen_symbol_owner.add((symbol, owner_type))
+            seen_symbol_owner.add((symbol, owner_type, product))
 
         # Add virtual executor-state positions.
         svc = getattr(bot, "strategy_executor_service", None)
@@ -339,7 +341,8 @@ def get_live_positions_overview(
                             qty = lots_qty
                         if not symbol or lots_qty <= 0:
                             continue
-                        key = (symbol, owner_type)
+                        leg_product = str(getattr(leg, "product", "") or "").strip()
+                        key = (symbol, owner_type, leg_product)
                         if key in seen_symbol_owner:
                             continue
                         seen_symbol_owner.add(key)
@@ -355,6 +358,7 @@ def get_live_positions_overview(
                         classified.append({
                             "symbol": symbol,
                             "exchange": (cfg.get("identity", {}) or {}).get("exchange", ""),
+                            "product": leg_product,
                             "qty": qty,
                             "side": side_s,
                             "netqty": int(qty if side_s == "BUY" else -qty),
@@ -769,3 +773,126 @@ def delete_completed_history(
     except Exception as e:
         logger.error(f"Error deleting completed history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ======================================================================
+# HISTORICAL TICK DATA / OHLC QUERIES
+# ======================================================================
+
+def _get_historical_store(ctx: dict):
+    """Extract the historical analytics store from the bot."""
+    bot = ctx.get("bot")
+    svc = getattr(bot, "historical_analytics_service", None) if bot else None
+    if svc is None or not getattr(svc, "enabled", False):
+        raise HTTPException(status_code=503, detail="Historical analytics service not available")
+    store = getattr(svc, "store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Historical data store not initialised")
+    return store
+
+
+@sub_router.get("/historical/index-ohlc")
+def get_index_ohlc(
+    symbol: str = Query(..., description="Index symbol (e.g. NIFTY, BANKNIFTY)"),
+    interval: int = Query(1, description="Candle interval in minutes (1, 3, 5, 15, 60)"),
+    from_ts: Optional[str] = Query(None, description="ISO start timestamp"),
+    to_ts: Optional[str] = Query(None, description="ISO end timestamp"),
+    limit: int = Query(5000, description="Max candles to return"),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Return OHLC candles aggregated from stored index tick data."""
+    store = _get_historical_store(ctx)
+    interval = max(1, min(interval, 1440))
+
+    from_dt = datetime.fromisoformat(from_ts) if from_ts else None
+    to_dt = datetime.fromisoformat(to_ts) if to_ts else None
+
+    fetch = getattr(store, "fetch_index_ohlc", None)
+    if not callable(fetch):
+        raise HTTPException(status_code=501, detail="OHLC aggregation not supported by current store")
+
+    candles = fetch(
+        symbol=symbol.strip().upper(),
+        from_ts=from_dt,
+        to_ts=to_dt,
+        interval_minutes=interval,
+        limit=min(limit, 50000),
+    )
+    return {"symbol": symbol.upper(), "interval_minutes": interval, "candles": candles}
+
+
+@sub_router.get("/historical/index-ticks")
+def get_index_ticks(
+    symbols: str = Query(..., description="Comma-separated symbols (e.g. NIFTY,BANKNIFTY)"),
+    from_ts: Optional[str] = Query(None, description="ISO start timestamp"),
+    to_ts: Optional[str] = Query(None, description="ISO end timestamp"),
+    limit: int = Query(20000, description="Max rows to return"),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Return raw index tick data from historical store."""
+    store = _get_historical_store(ctx)
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not sym_list:
+        raise HTTPException(status_code=400, detail="At least one symbol required")
+
+    from_dt = datetime.fromisoformat(from_ts) if from_ts else None
+    to_dt = datetime.fromisoformat(to_ts) if to_ts else None
+
+    ticks = store.fetch_index_ticks(
+        symbols=sym_list,
+        from_ts=from_dt,
+        to_ts=to_dt,
+        limit=min(limit, 50000),
+    )
+    return {"symbols": sym_list, "count": len(ticks), "ticks": ticks}
+
+
+@sub_router.get("/historical/option-ticks")
+def get_option_ticks(
+    symbol: str = Query(..., description="Underlying symbol (e.g. NIFTY)"),
+    expiry: str = Query(..., description="Expiry (e.g. 10-Mar-2026)"),
+    strike: float = Query(..., description="Strike price"),
+    option_type: str = Query(..., description="CE or PE"),
+    from_ts: Optional[str] = Query(None, description="ISO start timestamp"),
+    to_ts: Optional[str] = Query(None, description="ISO end timestamp"),
+    limit: int = Query(10000, description="Max rows"),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Return per-strike option tick data from historical store."""
+    store = _get_historical_store(ctx)
+    fetch = getattr(store, "fetch_option_ticks", None)
+    if not callable(fetch):
+        raise HTTPException(status_code=501, detail="Option tick query not supported by current store")
+
+    from_dt = datetime.fromisoformat(from_ts) if from_ts else None
+    to_dt = datetime.fromisoformat(to_ts) if to_ts else None
+
+    ticks = fetch(
+        symbol=symbol.strip().upper(),
+        expiry=expiry.strip(),
+        strike=strike,
+        option_type=option_type.strip().upper(),
+        from_ts=from_dt,
+        to_ts=to_dt,
+        limit=min(limit, 50000),
+    )
+    return {"symbol": symbol.upper(), "expiry": expiry, "strike": strike, "option_type": option_type.upper(), "count": len(ticks), "ticks": ticks}
+
+
+@sub_router.get("/historical/available-symbols")
+def get_historical_symbols(ctx=Depends(require_dashboard_auth)):
+    """Return the list of symbols that have historical tick data."""
+    store = _get_historical_store(ctx)
+    try:
+        cur = store._exec("SELECT DISTINCT symbol FROM index_ticks ORDER BY symbol")
+        index_symbols = [r[0] for r in cur.fetchall()]
+    except Exception:
+        index_symbols = []
+
+    try:
+        cur = store._exec("SELECT DISTINCT symbol, expiry FROM option_ticks ORDER BY symbol, expiry")
+        option_symbols = [{"symbol": r[0], "expiry": r[1]} for r in cur.fetchall()]
+    except Exception:
+        option_symbols = []
+
+    return {"index_symbols": index_symbols, "option_symbols": option_symbols}

@@ -573,3 +573,75 @@ def cancel_all_broker_orders(
         payload={"reason": "DASHBOARD_CANCEL_ALL"},
     )
     return {"accepted": True, "intent_id": intent_id}
+
+
+# ==================================================
+# POSITION EXIT — Individual + Bulk
+# ==================================================
+
+@sub_router.post("/positions/exit")
+def exit_position(
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Exit a single broker position by symbol.
+    Payload: { "symbol": "GOLDPETAL30APR26", "exchange": "MCX", "product": "ALL" }
+    """
+    bot = ctx.get("bot")
+    if not bot:
+        raise HTTPException(status_code=503, detail="Bot not available")
+
+    symbol = (payload.get("symbol") or "").strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Missing required field: symbol")
+
+    product_scope = (payload.get("product") or "ALL").upper()
+    if product_scope not in ("MIS", "NRML", "ALL"):
+        product_scope = "ALL"
+
+    try:
+        bot.command_service.position_exit_service.exit_positions(
+            scope="SYMBOLS",
+            symbols=[symbol],
+            product_scope=product_scope,
+            reason="DASHBOARD_POSITION_EXIT",
+            source="DASHBOARD",
+        )
+    except Exception as e:
+        logger.exception("Position exit failed for %s", symbol)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"accepted": True, "symbol": symbol}
+
+
+@sub_router.post("/positions/exit-all")
+def exit_all_positions(
+    payload: dict = Body(default={}),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Exit ALL open broker positions (except CNC).
+    Payload: { "product": "ALL" }   (optional — MIS, NRML, or ALL)
+    """
+    bot = ctx.get("bot")
+    if not bot:
+        raise HTTPException(status_code=503, detail="Bot not available")
+
+    product_scope = (payload.get("product") or "ALL").upper()
+    if product_scope not in ("MIS", "NRML", "ALL"):
+        product_scope = "ALL"
+
+    try:
+        bot.command_service.position_exit_service.exit_positions(
+            scope="ALL",
+            symbols=None,
+            product_scope=product_scope,
+            reason="DASHBOARD_EXIT_ALL",
+            source="DASHBOARD",
+        )
+    except Exception as e:
+        logger.exception("Exit all positions failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"accepted": True, "scope": "ALL", "product": product_scope}

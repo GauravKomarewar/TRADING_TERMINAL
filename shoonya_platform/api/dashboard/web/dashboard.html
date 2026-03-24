@@ -156,6 +156,13 @@
         .side-buy { color: var(--success); font-weight: 700; }
         .side-sell { color: var(--danger); font-weight: 700; }
 
+        /* ── Exit buttons ── */
+        .btn-exit{padding:3px 10px;border:1px solid var(--danger);background:transparent;color:var(--danger);border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+        .btn-exit:hover{background:var(--danger);color:#fff}
+        .btn-exit-all{padding:4px 12px;border:1px solid var(--danger);background:transparent;color:var(--danger);border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;margin-left:8px}
+        .btn-exit-all:hover{background:var(--danger);color:#fff}
+        .btn-exit:disabled,.btn-exit-all:disabled{opacity:.4;cursor:not-allowed}
+
         /* ── Source badge ── */
         .src-system { color: var(--primary); font-weight: 600; font-size: 10px; }
         .src-broker { color: var(--warning); font-weight: 600; font-size: 10px; }
@@ -415,7 +422,7 @@
             <div class="dash-card">
                 <div class="card-head">
                     <h3>Active Positions</h3>
-                    <span class="head-right" id="posCount"></span>
+                    <span class="head-right"><span id="posCount"></span><button class="btn-exit-all" id="btnExitAll" style="display:none" onclick="exitAllPositions()">⛔ Exit All</button></span>
                 </div>
                 <div class="table-scroll">
                     <table class="dash-table">
@@ -430,10 +437,11 @@
                                 <th>Product</th>
                                 <th>Qty</th>
                                 <th>Avg Price</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody id="positionRows">
-                            <tr class="empty-row"><td colspan="9">No open positions</td></tr>
+                            <tr class="empty-row"><td colspan="10">No open positions</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -726,6 +734,21 @@
         setTimeout(function() { el.classList.remove('show'); }, 5000);
     }
 
+    function showSuccess(msg) {
+        var el = document.getElementById('errorBanner');
+        el.textContent = '✓ ' + msg;
+        el.style.background = 'rgba(34,197,94,0.15)';
+        el.style.borderColor = 'var(--success)';
+        el.style.color = 'var(--success)';
+        el.classList.add('show');
+        setTimeout(function() {
+            el.classList.remove('show');
+            el.style.background = '';
+            el.style.borderColor = '';
+            el.style.color = '';
+        }, 4000);
+    }
+
     // ─── Flash animation helper ───
     function flashEl(el) {
         if (!el) return;
@@ -875,13 +898,20 @@
     }
 
     // ─── Positions Table ───
-    function updatePositions(positions) {
+    function updatePositions(rawPositions) {
+        // Filter: only show positions with non-zero net qty
+        var positions = (rawPositions || []).filter(function(p) {
+            return parseInt(p.netqty || 0) !== 0;
+        });
+
         var tbody = document.getElementById('positionRows');
         var countEl = document.getElementById('posCount');
+        var exitAllBtn = document.getElementById('btnExitAll');
         countEl.textContent = positions.length ? positions.length + ' position' + (positions.length > 1 ? 's' : '') : '';
+        exitAllBtn.style.display = positions.length > 0 ? 'inline-block' : 'none';
 
         if (!positions.length) {
-            tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No open positions</td></tr>';
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No open positions</td></tr>';
             return;
         }
 
@@ -893,16 +923,20 @@
             tbody.innerHTML = positions.map(function(p) {
                 var net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
                 var prd = p.prd || p.product || '';
-                return '<tr data-sym="' + (p.tsym || p.symbol || '') + '">'
-                    + '<td style="font-weight:700">' + (p.tsym || p.symbol || '-') + '</td>'
+                var sym = p.tsym || p.symbol || '';
+                var exch = p.exch || p.exchange || '-';
+                var side = parseInt(p.netqty || 0) > 0 ? 'LONG' : 'SHORT';
+                return '<tr data-sym="' + sym + '">'
+                    + '<td style="font-weight:700">' + (sym || '-') + '</td>'
                     + '<td data-f="ltp">' + fmt(p.lp || p.ltp || 0) + '</td>'
                     + '<td data-f="net" style="color:' + pnlColor(net) + ';font-weight:700">' + fmt(net) + '</td>'
                     + '<td data-f="rpnl" style="color:' + pnlColor(p.rpnl) + '">' + fmt(p.rpnl || 0) + '</td>'
                     + '<td data-f="urm" style="color:' + pnlColor(p.urmtom) + '">' + fmt(p.urmtom || 0) + '</td>'
-                    + '<td>' + (p.exch || p.exchange || '-') + '</td>'
+                    + '<td>' + exch + '</td>'
                     + '<td>' + (prd ? '<span class="status-badge safe">' + prd + '</span>' : '-') + '</td>'
-                    + '<td data-f="qty">' + (p.netqty || 0) + '</td>'
+                    + '<td data-f="qty" style="color:' + (side==='LONG'?'var(--success)':'var(--danger)') + ';font-weight:700">' + (p.netqty || 0) + '</td>'
                     + '<td data-f="avg">' + fmt(p.avgprc || p.avg_price || 0) + '</td>'
+                    + '<td><button class="btn-exit" onclick="exitPosition(\'' + sym.replace(/'/g,"\\'") + '\',\'' + prd.replace(/'/g,"\\'") + '\')" title="Exit ' + sym + '">EXIT</button></td>'
                     + '</tr>';
             }).join('');
         } else {
@@ -926,6 +960,43 @@
                 if (qtyCell) { var q = String(p.netqty || 0); if (qtyCell.textContent !== q) { qtyCell.textContent = q; flashEl(qtyCell); } }
                 updateCell('[data-f="avg"]', p.avgprc || p.avg_price || 0, false);
             });
+        }
+    }
+
+    // ─── Position Exit Functions ───
+    async function exitPosition(symbol, product) {
+        if (!confirm('Exit position: ' + symbol + ' (' + (product || 'ALL') + ')?')) return;
+        try {
+            var res = await fetch('/dashboard/positions/exit', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: symbol, product: product || 'ALL' })
+            });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Exit failed');
+            showSuccess('Exit initiated for ' + symbol);
+            setTimeout(function() { updateDashboard(false); }, 1500);
+        } catch (e) {
+            showError('Exit failed: ' + e.message);
+        }
+    }
+
+    async function exitAllPositions() {
+        if (!confirm('EXIT ALL open positions? This cannot be undone.')) return;
+        try {
+            var res = await fetch('/dashboard/positions/exit-all', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ product: 'ALL' })
+            });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Exit all failed');
+            showSuccess('Exit ALL positions initiated');
+            setTimeout(function() { updateDashboard(false); }, 2000);
+        } catch (e) {
+            showError('Exit all failed: ' + e.message);
         }
     }
 

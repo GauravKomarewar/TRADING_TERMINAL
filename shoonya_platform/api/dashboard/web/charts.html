@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Charts – Shoonya OMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/dashboard/web/styles/common.css">
+    <link rel="stylesheet" href="/dashboard/web/shared/layout.css">
+    <script src="/dashboard/web/shared/pages-config.js" defer></script>
+    <script src="/dashboard/web/shared/layout.js" defer></script>
+    <!-- TradingView Lightweight Charts v4 (open-source, Apache-2.0) -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{padding:92px 12px 20px;line-height:1.5;overflow-x:hidden}
+        main{max-width:1920px;margin:0 auto}
+        h1{color:var(--primary);margin-bottom:16px;font-size:22px;font-weight:700;display:flex;align-items:center;gap:10px}
+
+        /* ── Controls bar ── */
+        .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px}
+        .controls select,.controls input{padding:7px 10px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px}
+        .controls select:focus,.controls input:focus{outline:none;border-color:var(--primary)}
+        .controls label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;letter-spacing:.3px;margin-right:4px}
+        .interval-pills{display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+        .interval-pill{padding:6px 12px;background:var(--panel-2);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;border:none;border-right:1px solid var(--border);transition:all .15s}
+        .interval-pill:last-child{border-right:none}
+        .interval-pill:hover{color:var(--text)}
+        .interval-pill.active{background:var(--primary);color:#fff}
+        .indicator-btn{padding:5px 10px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
+        .indicator-btn:hover{border-color:var(--primary)}
+        .indicator-btn.active{background:rgba(59,130,246,.15);color:var(--primary);border-color:var(--primary)}
+
+        /* ── Chart container ── */
+        .chart-wrap{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
+        .chart-main{width:100%;height:520px}
+        .chart-volume{width:100%;height:100px}
+        .chart-status{position:absolute;top:10px;left:14px;z-index:5;pointer-events:none}
+        .chart-status .cs-symbol{font-size:18px;font-weight:700;color:var(--text)}
+        .chart-status .cs-price{font-size:14px;font-weight:600;margin-left:10px}
+        .chart-status .cs-change{font-size:13px;font-weight:600;margin-left:8px}
+        .chart-status .cs-interval{font-size:11px;color:var(--muted);margin-left:10px}
+        .up{color:var(--success,#22c55e)}
+        .down{color:var(--danger,#ef4444)}
+        .chart-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);color:var(--muted);font-size:14px;z-index:10}
+
+        /* ── Symbol list panel ── */
+        .symbol-panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
+        .symbol-panel .sp-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+        .sp-search{width:100%;padding:7px 10px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;margin-bottom:10px}
+        .sp-search:focus{outline:none;border-color:var(--primary)}
+        .sp-list{max-height:380px;overflow-y:auto}
+        .sp-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;font-size:13px}
+        .sp-item:hover{background:rgba(59,130,246,.06)}
+        .sp-item.active{background:rgba(59,130,246,.12);font-weight:600}
+        .sp-item .sp-sym{flex:1;font-weight:600;color:var(--text)}
+        .sp-item .sp-name{font-size:11px;color:var(--muted);flex:2}
+        .sp-item .sp-exch{font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;background:rgba(59,130,246,.1);color:var(--primary)}
+        .sp-item .sp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        .sp-item .sp-dot.live{background:var(--success,#22c55e);box-shadow:0 0 4px rgba(34,197,94,.4)}
+        .sp-item .sp-dot.off{background:var(--border)}
+        .sp-empty{text-align:center;padding:20px;color:var(--muted);font-size:13px}
+
+        /* ── Indicator panel ── */
+        .ind-panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:10px}
+        .ind-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
+        .ind-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);background:var(--panel-2);border:1px solid var(--border);transition:all .15s;user-select:none}
+        .ind-toggle:hover{border-color:var(--primary)}
+        .ind-toggle.active{border-color:var(--primary);background:rgba(59,130,246,.1);color:var(--primary)}
+        .ind-toggle .ind-check{width:14px;height:14px;border:2px solid var(--border);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;transition:all .15s}
+        .ind-toggle.active .ind-check{background:var(--primary);border-color:var(--primary);color:#fff}
+
+        /* ── Layout grid ── */
+        .page-grid{display:grid;grid-template-columns:240px 1fr;gap:12px}
+        @media(max-width:900px){
+            .page-grid{grid-template-columns:1fr}
+            .chart-main{height:400px}
+            body{padding:72px 8px 16px}
+            .controls{flex-direction:column;align-items:stretch}
+        }
+
+        /* ── Toast ── */
+        .toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;color:#fff;opacity:0;transform:translateY(12px);transition:all .3s;z-index:9999;pointer-events:none}
+        .toast.show{opacity:1;transform:translateY(0)}
+        .toast.success{background:#059669}
+        .toast.error{background:#dc2626}
+    </style>
+</head>
+<body data-page="charts">
+<div id="app-header"></div>
+<main>
+    <h1>📈 Advanced Charts</h1>
+
+    <div class="page-grid">
+        <!-- LEFT: Symbol watchlist -->
+        <div>
+            <div class="symbol-panel">
+                <div class="sp-title">📋 Symbols</div>
+                <input class="sp-search" id="spSearch" type="text" placeholder="Search symbol..." autocomplete="off" spellcheck="false">
+                <div class="sp-list" id="spList">
+                    <div class="sp-empty">Loading symbols…</div>
+                </div>
+            </div>
+            <div class="ind-panel">
+                <div class="sp-title">📐 Indicators</div>
+                <div class="ind-grid" id="indGrid"></div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Chart -->
+        <div>
+            <div class="controls" id="chartControls">
+                <label>Interval</label>
+                <div class="interval-pills" id="intervalPills">
+                    <button class="interval-pill" data-val="1">1m</button>
+                    <button class="interval-pill active" data-val="3">3m</button>
+                    <button class="interval-pill" data-val="5">5m</button>
+                    <button class="interval-pill" data-val="15">15m</button>
+                    <button class="interval-pill" data-val="30">30m</button>
+                    <button class="interval-pill" data-val="60">1H</button>
+                </div>
+                <label style="margin-left:12px">Chart</label>
+                <select id="chartType">
+                    <option value="candlestick">Candlestick</option>
+                    <option value="line">Line</option>
+                    <option value="area">Area</option>
+                </select>
+                <label style="margin-left:12px">Range</label>
+                <select id="dateRange">
+                    <option value="today">Today</option>
+                    <option value="2d">2 Days</option>
+                    <option value="7d" selected>7 Days</option>
+                    <option value="30d">30 Days</option>
+                </select>
+                <div style="flex:1"></div>
+                <span id="dataStatus" style="font-size:11px;color:var(--muted)"></span>
+            </div>
+
+            <div class="chart-wrap">
+                <div class="chart-status" id="chartStatus">
+                    <span class="cs-symbol" id="csSymbol">—</span>
+                    <span class="cs-price" id="csPrice"></span>
+                    <span class="cs-change" id="csChange"></span>
+                    <span class="cs-interval" id="csInterval"></span>
+                </div>
+                <div class="chart-main" id="chartMain"></div>
+                <div class="chart-loading" id="chartLoading" style="display:none">Loading chart data…</div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+const API = '/dashboard';
+
+/* ── Helpers ── */
+const toastEl = document.getElementById('toast');
+function toast(msg, type) {
+    toastEl.textContent = msg;
+    toastEl.className = 'toast ' + type + ' show';
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(() => toastEl.classList.remove('show'), 3000);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function fetchJSON(url, opts) {
+    const r = await fetch(url, { credentials:'include', ...opts });
+    if (r.status === 401 || r.status === 403) { window.location.href = '/'; return null; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.statusText); }
+    return r.json();
+}
+
+/* ── State ── */
+let currentSymbol = 'NIFTY';
+let currentInterval = 3;
+let currentChartType = 'candlestick';
+let allSymbols = [];
+let chart = null;
+let mainSeries = null;
+let volumeSeries = null;
+let indicatorSeries = {};
+let activeIndicators = new Set();
+let rawCandles = [];
+let autoRefreshTimer = null;
+
+/* ── Indicator definitions ── */
+const INDICATORS = [
+    { id: 'sma20', label: 'SMA 20', color: '#f59e0b', period: 20, type: 'sma' },
+    { id: 'sma50', label: 'SMA 50', color: '#8b5cf6', period: 50, type: 'sma' },
+    { id: 'sma200', label: 'SMA 200', color: '#ec4899', period: 200, type: 'sma' },
+    { id: 'ema9', label: 'EMA 9', color: '#06b6d4', period: 9, type: 'ema' },
+    { id: 'ema21', label: 'EMA 21', color: '#14b8a6', period: 21, type: 'ema' },
+    { id: 'bb', label: 'Bollinger', color: '#6366f1', period: 20, type: 'bb' },
+    { id: 'vwap', label: 'VWAP', color: '#f97316', type: 'vwap' },
+];
+
+/* ══════════════ CHART INIT ══════════════ */
+
+function getThemeColors() {
+    const s = getComputedStyle(document.documentElement);
+    const bg = s.getPropertyValue('--panel').trim() || '#0f172a';
+    const text = s.getPropertyValue('--text').trim() || '#e2e8f0';
+    const border = s.getPropertyValue('--border').trim() || '#1e293b';
+    const grid = s.getPropertyValue('--border').trim() || '#1e293b';
+    return { bg, text, border, grid };
+}
+
+function initChart() {
+    const container = document.getElementById('chartMain');
+    container.innerHTML = '';
+    const tc = getThemeColors();
+
+    chart = LightweightCharts.createChart(container, {
+        width: container.clientWidth,
+        height: container.clientHeight,
+        layout: {
+            background: { type: 'solid', color: tc.bg },
+            textColor: tc.text,
+            fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
+            fontSize: 12,
+        },
+        grid: {
+            vertLines: { color: tc.grid, style: LightweightCharts.LineStyle.Dotted },
+            horzLines: { color: tc.grid, style: LightweightCharts.LineStyle.Dotted },
+        },
+        crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal,
+            vertLine: { labelBackgroundColor: '#3b82f6' },
+            horzLine: { labelBackgroundColor: '#3b82f6' },
+        },
+        rightPriceScale: {
+            borderColor: tc.border,
+            scaleMargins: { top: 0.1, bottom: 0.25 },
+        },
+        timeScale: {
+            borderColor: tc.border,
+            timeVisible: true,
+            secondsVisible: false,
+            barSpacing: 8,
+        },
+        handleScroll: { mouseWheel: true, pressedMouseMove: true },
+        handleScale: { mouseWheel: true, pinch: true },
+    });
+
+    // Observe resize
+    const ro = new ResizeObserver(() => {
+        if (chart) chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+    });
+    ro.observe(container);
+
+    createMainSeries();
+}
+
+function createMainSeries() {
+    // Clear old series
+    if (mainSeries) { try { chart.removeSeries(mainSeries); } catch(e){} }
+    if (volumeSeries) { try { chart.removeSeries(volumeSeries); } catch(e){} }
+    Object.values(indicatorSeries).forEach(s => { try { chart.removeSeries(s); } catch(e){} });
+    indicatorSeries = {};
+
+    const tc = getThemeColors();
+
+    if (currentChartType === 'candlestick') {
+        mainSeries = chart.addCandlestickSeries({
+            upColor: '#22c55e',
+            downColor: '#ef4444',
+            borderUpColor: '#22c55e',
+            borderDownColor: '#ef4444',
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
+        });
+    } else if (currentChartType === 'line') {
+        mainSeries = chart.addLineSeries({
+            color: '#3b82f6',
+            lineWidth: 2,
+        });
+    } else {
+        mainSeries = chart.addAreaSeries({
+            topColor: 'rgba(59,130,246,0.3)',
+            bottomColor: 'rgba(59,130,246,0.02)',
+            lineColor: '#3b82f6',
+            lineWidth: 2,
+        });
+    }
+
+    // Volume as histogram overlay
+    volumeSeries = chart.addHistogramSeries({
+        priceFormat: { type: 'volume' },
+        priceScaleId: 'volume',
+    });
+    chart.priceScale('volume').applyOptions({
+        scaleMargins: { top: 0.85, bottom: 0 },
+    });
+}
+
+/* ══════════════ DATA LOADING ══════════════ */
+
+function getDateRange() {
+    const now = new Date();
+    const sel = document.getElementById('dateRange').value;
+    let from;
+    if (sel === 'today') {
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else if (sel === '2d') {
+        from = new Date(now.getTime() - 2 * 86400000);
+    } else if (sel === '7d') {
+        from = new Date(now.getTime() - 7 * 86400000);
+    } else {
+        from = new Date(now.getTime() - 30 * 86400000);
+    }
+    return { from_ts: from.toISOString(), to_ts: now.toISOString() };
+}
+
+async function loadChartData() {
+    const loading = document.getElementById('chartLoading');
+    loading.style.display = 'flex';
+
+    try {
+        const range = getDateRange();
+        const url = API + '/historical/index-ohlc?symbol=' + encodeURIComponent(currentSymbol) +
+            '&interval=' + currentInterval +
+            '&from_ts=' + encodeURIComponent(range.from_ts) +
+            '&to_ts=' + encodeURIComponent(range.to_ts) +
+            '&limit=50000';
+
+        const data = await fetchJSON(url);
+        if (!data) return;
+
+        const candles = (data.candles || []).map(c => {
+            const t = parseTimestamp(c.bucket || c.ts);
+            return {
+                time: t,
+                open: c.open != null ? +c.open : +c.close,
+                high: +c.high,
+                low: +c.low,
+                close: c.close != null ? +c.close : +c.high,
+                volume: +(c.volume || 0),
+            };
+        }).filter(c => c.time && c.high > 0).sort((a, b) => a.time - b.time);
+
+        // Deduplicate by time
+        rawCandles = [];
+        const seen = new Set();
+        for (const c of candles) {
+            if (!seen.has(c.time)) {
+                seen.add(c.time);
+                rawCandles.push(c);
+            }
+        }
+
+        if (!rawCandles.length) {
+            document.getElementById('dataStatus').textContent = 'No data available';
+            mainSeries.setData([]);
+            volumeSeries.setData([]);
+            return;
+        }
+
+        if (currentChartType === 'candlestick') {
+            mainSeries.setData(rawCandles);
+        } else {
+            mainSeries.setData(rawCandles.map(c => ({ time: c.time, value: c.close })));
+        }
+
+        volumeSeries.setData(rawCandles.map(c => ({
+            time: c.time,
+            value: c.volume,
+            color: c.close >= c.open ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)',
+        })));
+
+        // Update header
+        const last = rawCandles[rawCandles.length - 1];
+        const first = rawCandles[0];
+        document.getElementById('csSymbol').textContent = currentSymbol;
+        document.getElementById('csPrice').textContent = last.close.toFixed(2);
+        const chg = last.close - first.open;
+        const chgPct = first.open ? ((chg / first.open) * 100).toFixed(2) : '0.00';
+        const csChange = document.getElementById('csChange');
+        csChange.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + ' (' + chgPct + '%)';
+        csChange.className = 'cs-change ' + (chg >= 0 ? 'up' : 'down');
+        document.getElementById('csInterval').textContent = currentInterval + 'min';
+        document.getElementById('dataStatus').textContent = rawCandles.length + ' candles';
+
+        // Re-apply indicators
+        applyAllIndicators();
+
+        chart.timeScale().fitContent();
+
+    } catch(e) {
+        var msg = e.message || 'Unknown error';
+        if (msg.includes('503') || msg.includes('not available') || msg.includes('not initialised')) {
+            document.getElementById('dataStatus').textContent = 'Historical service not enabled — enable in Settings → Market Data';
+            toast('Historical data service not enabled. Enable tick storage in Settings → Market Data to use charts.', 'error');
+        } else {
+            toast('Chart error: ' + msg, 'error');
+            document.getElementById('dataStatus').textContent = 'Error loading data';
+        }
+    } finally {
+        loading.style.display = 'none';
+    }
+}
+
+function parseTimestamp(ts) {
+    if (!ts) return 0;
+    // ISO string or epoch
+    if (typeof ts === 'number') return ts;
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return 0;
+    return Math.floor(d.getTime() / 1000);
+}
+
+/* ══════════════ INDICATORS ══════════════ */
+
+function calcSMA(data, period) {
+    const result = [];
+    for (let i = period - 1; i < data.length; i++) {
+        let sum = 0;
+        for (let j = i - period + 1; j <= i; j++) sum += data[j].close;
+        result.push({ time: data[i].time, value: sum / period });
+    }
+    return result;
+}
+
+function calcEMA(data, period) {
+    if (data.length < period) return [];
+    const k = 2 / (period + 1);
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += data[i].close;
+    let ema = sum / period;
+    const result = [{ time: data[period - 1].time, value: ema }];
+    for (let i = period; i < data.length; i++) {
+        ema = data[i].close * k + ema * (1 - k);
+        result.push({ time: data[i].time, value: ema });
+    }
+    return result;
+}
+
+function calcBollingerBands(data, period) {
+    const upper = [], lower = [], mid = [];
+    for (let i = period - 1; i < data.length; i++) {
+        let sum = 0;
+        for (let j = i - period + 1; j <= i; j++) sum += data[j].close;
+        const avg = sum / period;
+        let sqSum = 0;
+        for (let j = i - period + 1; j <= i; j++) sqSum += (data[j].close - avg) ** 2;
+        const std = Math.sqrt(sqSum / period);
+        mid.push({ time: data[i].time, value: avg });
+        upper.push({ time: data[i].time, value: avg + 2 * std });
+        lower.push({ time: data[i].time, value: avg - 2 * std });
+    }
+    return { upper, mid, lower };
+}
+
+function calcVWAP(data) {
+    let cumTPV = 0, cumVol = 0;
+    const result = [];
+    let lastDay = null;
+    for (const c of data) {
+        const d = new Date(c.time * 1000);
+        const day = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+        if (day !== lastDay) { cumTPV = 0; cumVol = 0; lastDay = day; }
+        const tp = (c.high + c.low + c.close) / 3;
+        const vol = c.volume || 1;
+        cumTPV += tp * vol;
+        cumVol += vol;
+        result.push({ time: c.time, value: cumVol > 0 ? cumTPV / cumVol : tp });
+    }
+    return result;
+}
+
+function applyAllIndicators() {
+    // Remove old indicator series
+    Object.values(indicatorSeries).forEach(s => {
+        try { chart.removeSeries(s); } catch(e){}
+    });
+    indicatorSeries = {};
+
+    if (!rawCandles.length) return;
+
+    for (const ind of INDICATORS) {
+        if (!activeIndicators.has(ind.id)) continue;
+
+        if (ind.type === 'sma') {
+            const pts = calcSMA(rawCandles, ind.period);
+            if (pts.length) {
+                const s = chart.addLineSeries({ color: ind.color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+                s.setData(pts);
+                indicatorSeries[ind.id] = s;
+            }
+        } else if (ind.type === 'ema') {
+            const pts = calcEMA(rawCandles, ind.period);
+            if (pts.length) {
+                const s = chart.addLineSeries({ color: ind.color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+                s.setData(pts);
+                indicatorSeries[ind.id] = s;
+            }
+        } else if (ind.type === 'bb') {
+            const bb = calcBollingerBands(rawCandles, ind.period);
+            if (bb.upper.length) {
+                const sU = chart.addLineSeries({ color: ind.color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
+                sU.setData(bb.upper);
+                indicatorSeries[ind.id + '_upper'] = sU;
+                const sM = chart.addLineSeries({ color: ind.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+                sM.setData(bb.mid);
+                indicatorSeries[ind.id + '_mid'] = sM;
+                const sL = chart.addLineSeries({ color: ind.color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
+                sL.setData(bb.lower);
+                indicatorSeries[ind.id + '_lower'] = sL;
+            }
+        } else if (ind.type === 'vwap') {
+            const pts = calcVWAP(rawCandles);
+            if (pts.length) {
+                const s = chart.addLineSeries({ color: ind.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+                s.setData(pts);
+                indicatorSeries[ind.id] = s;
+            }
+        }
+    }
+}
+
+/* ══════════════ SYMBOL LIST ══════════════ */
+
+async function loadSymbols() {
+    try {
+        const data = await fetchJSON(API + '/settings/market-data/available');
+        if (data && data.indices && data.indices.length) {
+            allSymbols = data.indices;
+            renderSymbolList();
+            return;
+        }
+    } catch(e) { /* fall through to next source */ }
+
+    // Fallback 1: broker positions as symbol source
+    try {
+        const data = await fetchJSON(API + '/home/status');
+        if (data && data.broker && Array.isArray(data.broker.positions)) {
+            const posSyms = new Set();
+            for (const p of data.broker.positions) {
+                const sym = p.tsym || p.symbol;
+                if (sym && parseInt(p.netqty || 0) !== 0) posSyms.add(sym);
+            }
+            if (posSyms.size) {
+                allSymbols = Array.from(posSyms).map(sym => ({
+                    symbol: sym, name: sym, exchange: '', subscribed: true, configured: true
+                }));
+                renderSymbolList();
+                if (allSymbols.length) currentSymbol = allSymbols[0].symbol;
+                return;
+            }
+        }
+    } catch(e2) { /* fall through */ }
+
+    // Fallback 2: default market indices
+    allSymbols = ['NIFTY','BANKNIFTY','SENSEX','FINNIFTY','INDIAVIX','GOLDPETAL','CRUDEOILM','SILVERMIC','NATGASMINI']
+        .map(sym => ({ symbol: sym, name: sym, exchange: '', subscribed: false, configured: false }));
+    renderSymbolList();
+}
+
+function renderSymbolList(filter) {
+    const list = document.getElementById('spList');
+    let items = allSymbols;
+    if (filter) {
+        const q = filter.toLowerCase();
+        items = items.filter(i => i.symbol.toLowerCase().includes(q) || (i.name || '').toLowerCase().includes(q));
+    }
+    if (!items.length) {
+        list.innerHTML = '<div class="sp-empty">No symbols found</div>';
+        return;
+    }
+
+    list.innerHTML = items.map(idx => {
+        const active = idx.symbol === currentSymbol ? ' active' : '';
+        const dotCls = idx.subscribed || idx.configured ? 'sp-dot live' : 'sp-dot off';
+        return '<div class="sp-item' + active + '" data-symbol="' + esc(idx.symbol) + '">' +
+            '<div class="' + dotCls + '"></div>' +
+            '<span class="sp-sym">' + esc(idx.symbol) + '</span>' +
+            '<span class="sp-name">' + esc(idx.name || '') + '</span>' +
+            '<span class="sp-exch">' + esc(idx.exchange) + '</span>' +
+            '</div>';
+    }).join('');
+}
+
+document.getElementById('spSearch').addEventListener('input', function() {
+    renderSymbolList(this.value);
+});
+
+document.getElementById('spList').addEventListener('click', function(e) {
+    const item = e.target.closest('.sp-item');
+    if (!item) return;
+    const symbol = item.dataset.symbol;
+    if (!symbol || symbol === currentSymbol) return;
+    currentSymbol = symbol;
+    renderSymbolList(document.getElementById('spSearch').value);
+    loadChartData();
+});
+
+/* ══════════════ INDICATOR TOGGLES ══════════════ */
+
+function renderIndicators() {
+    const grid = document.getElementById('indGrid');
+    grid.innerHTML = INDICATORS.map(ind => {
+        const active = activeIndicators.has(ind.id) ? ' active' : '';
+        return '<div class="ind-toggle' + active + '" data-ind="' + ind.id + '">' +
+            '<div class="ind-check">' + (activeIndicators.has(ind.id) ? '✓' : '') + '</div>' +
+            '<span style="color:' + ind.color + '">' + esc(ind.label) + '</span>' +
+            '</div>';
+    }).join('');
+}
+
+document.getElementById('indGrid').addEventListener('click', function(e) {
+    const toggle = e.target.closest('.ind-toggle');
+    if (!toggle) return;
+    const id = toggle.dataset.ind;
+    if (activeIndicators.has(id)) {
+        activeIndicators.delete(id);
+    } else {
+        activeIndicators.add(id);
+    }
+    renderIndicators();
+    applyAllIndicators();
+});
+
+/* ══════════════ CONTROLS ══════════════ */
+
+document.getElementById('intervalPills').addEventListener('click', function(e) {
+    const pill = e.target.closest('.interval-pill');
+    if (!pill) return;
+    document.querySelectorAll('.interval-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    currentInterval = parseInt(pill.dataset.val, 10);
+    loadChartData();
+});
+
+document.getElementById('chartType').addEventListener('change', function() {
+    currentChartType = this.value;
+    createMainSeries();
+    loadChartData();
+});
+
+document.getElementById('dateRange').addEventListener('change', function() {
+    loadChartData();
+});
+
+/* ── Auto-refresh every 10s during market hours ── */
+function startAutoRefresh() {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+    autoRefreshTimer = setInterval(() => {
+        const now = new Date();
+        const h = now.getHours();
+        // Only refresh during likely market hours (IST 9-16 → UTC 3:30-10:30)
+        if (h >= 3 && h <= 16) {
+            loadChartData();
+        }
+    }, 10000);
+}
+
+/* ══════════════ INIT ══════════════ */
+
+async function init() {
+    initChart();
+    renderIndicators();
+    await loadSymbols();
+
+    // If a symbol was in URL hash, use it
+    if (location.hash && location.hash.length > 1) {
+        const hashSym = location.hash.slice(1).toUpperCase();
+        if (allSymbols.some(s => s.symbol === hashSym)) {
+            currentSymbol = hashSym;
+            renderSymbolList();
+        }
+    }
+
+    await loadChartData();
+    startAutoRefresh();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
+
+})();
+</script>
+</body>
+</html>

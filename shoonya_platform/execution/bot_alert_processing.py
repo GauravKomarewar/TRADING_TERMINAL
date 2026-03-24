@@ -362,8 +362,7 @@ class AlertProcessingMixin:
                         continue
 
                     if hasattr(leg, "to_dict"):
-                        cmd = leg
-                        cmd.quantity = approved_qty
+                        cmd = replace(leg, quantity=approved_qty, intent="EXIT")
                     else:
                         cmd = UniversalOrderCommand.from_order_params(
                             order_params={
@@ -375,11 +374,11 @@ class AlertProcessingMixin:
                                 "order_type": getattr(leg, "order_type", "MARKET"),
                                 "price": getattr(leg, "price", None),
                                 "strategy_name": strategy_name,
+                                "intent": "EXIT",
                             },
                             source=source_mode,
                             user=self.client_id,
                         )
-                        cmd.intent = "EXIT"
 
                     self.command_service.register(cmd)
                     exit_success_count += 1
@@ -421,8 +420,7 @@ class AlertProcessingMixin:
                         continue
 
                     if hasattr(leg, "to_dict"):
-                        cmd = leg
-                        cmd.quantity = approved_qty
+                        cmd = replace(leg, quantity=approved_qty)
                     else:
                         cmd = UniversalOrderCommand.from_order_params(
                             order_params={
@@ -552,8 +550,7 @@ class AlertProcessingMixin:
             direction = leg_data.direction.upper()
 
             # BUILD CANONICAL INTENT
-            cmd = UniversalOrderCommand.from_order_params(
-                order_params={
+            order_params = {
                     "exchange": exchange,
                     "symbol": leg_data.tradingsymbol,
                     "side": direction,
@@ -562,7 +559,20 @@ class AlertProcessingMixin:
                     "order_type": leg_data.order_type,
                     "price": leg_data.price,
                     "strategy_name": strategy_name,
-                },
+            }
+
+            # Carry risk management params from leg (dashboard EXIT orders)
+            if getattr(leg_data, 'target', None) is not None:
+                order_params["target"] = leg_data.target
+            if getattr(leg_data, 'stop_loss', None) is not None:
+                order_params["stop_loss"] = leg_data.stop_loss
+            if getattr(leg_data, 'trailing_type', None):
+                order_params["trailing_type"] = leg_data.trailing_type
+            if getattr(leg_data, 'trailing_value', None) is not None:
+                order_params["trailing_value"] = leg_data.trailing_value
+
+            cmd = UniversalOrderCommand.from_order_params(
+                order_params=order_params,
                 source="STRATEGY",
                 user=self.client_id,
             )

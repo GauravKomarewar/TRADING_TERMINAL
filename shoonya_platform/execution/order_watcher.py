@@ -6,7 +6,7 @@ OrderWatcherEngine
 PRODUCTION-GRADE EXECUTION ENGINE
 Aligned with ScriptMaster v2.0 (PRODUCTION FROZEN)
 
-🎯 DESIRED FLOW - OrderWatcher implements STEP 6: BROKER POLLING
+🎯 DESIRED FLOW - OrderWatcher implements STEP 6: BROKER POLLING + EXIT DISPATCH
 =====================================
 Step 1: REGISTER TO DB with status=CREATED           [Done by CommandService]
 Step 2: SYSTEM BLOCKERS CHECK (Risk/Guard/Dup)       [Done by execute_command]
@@ -18,6 +18,14 @@ Step 6: ORDERWATCH POLLS BROKER ("EXECUTED TRUTH")  [⭐ THIS MODULE]
    - If COMPLETE → status=EXECUTED
    - If REJECTED/CANCELLED/EXPIRED → status=FAILED
    - Clear execution guard on failure
+Step 7: DISPATCH CREATED EXIT ORDERS TO BROKER       [⭐ THIS MODULE]
+   - Poll DB for CREATED EXIT orders
+   - Simple market EXITs → dispatch via execute_command()
+   - Managed EXITs (with SL/trailing) → monitor and trail
+Step 8: MONITOR MANAGED EXITS                        [⭐ THIS MODULE]
+   - Track SL/target/trailing for managed exit orders
+   - Trail SL upward as price moves in favour
+   - Trigger MARKET exit when SL or target hit
 
 Invariants:
 - Broker is the ONLY source of EXECUTED truth
@@ -30,10 +38,13 @@ Invariants:
 import time
 import logging
 import threading
-from typing import Dict, Optional
+from datetime import datetime
+from typing import Dict, Optional, List
 
 from shoonya_platform.logging.logger_config import get_component_logger
 from shoonya_platform.persistence.repository import OrderRepository
+from shoonya_platform.persistence.order_record import OrderRecord
+from shoonya_platform.execution.intent import UniversalOrderCommand
 
 logger = get_component_logger('order_watcher')
 
@@ -55,6 +66,11 @@ class OrderWatcherEngine(threading.Thread):
         self.repo = OrderRepository(bot.client_id)
         self._last_failure_log = {}
         self._failure_log_ttl_sec = 60.0
+
+        # Managed EXIT state: command_id → { current_sl, entry_price, highest_price }
+        self._managed_exits: Dict[str, dict] = {}
+        self._dispatch_lock = threading.Lock()
+        self._dispatched_exits: set = set()  # Prevent re-dispatch within same session
 
     def _should_log_failure(self, broker_id: str, status: str) -> bool:
         now = time.time()
@@ -79,12 +95,19 @@ class OrderWatcherEngine(threading.Thread):
 
     def run(self):
         logger.info(
-            "🧠 OrderWatcherEngine STEP 6: BROKER POLLING (ScriptMaster v2.0 compliant)"
+            "🧠 OrderWatcherEngine STEP 6+7+8: BROKER POLLING + EXIT DISPATCH + MANAGED EXITS"
         )
 
         while self._running:
-            self.bot._ensure_login()
-            self._reconcile_broker_orders()  # STEP 6: Poll broker & update to EXECUTED/FAILED
+            try:
+                self.bot._ensure_login()
+                self._reconcile_broker_orders()    # STEP 6: Poll broker & update to EXECUTED/FAILED
+                self._dispatch_pending_exits()     # STEP 7: Dispatch CREATED EXIT orders
+                self._monitor_managed_exits()      # STEP 8: Trail SL, check target/SL levels
+            except RuntimeError:
+                raise
+            except Exception:
+                logger.exception("OrderWatcher loop error")
             time.sleep(self.poll_interval)
 
     # ==================================================
@@ -195,17 +218,307 @@ class OrderWatcherEngine(threading.Thread):
                     executed_symbol=record.symbol,
                 )
 
+    # ==================================================
+    # STEP 7: DISPATCH CREATED EXIT ORDERS
+    # ==================================================
+
+    def _dispatch_pending_exits(self):
+        """
+        Poll DB for CREATED EXIT orders and dispatch them.
+
+        - Simple MARKET EXITs (no SL/target/trailing): execute immediately via execute_command()
+        - Managed EXITs (with SL/target/trailing): register as managed and monitor
+        """
+        with self._dispatch_lock:
+            try:
+                open_orders = self.repo.get_open_orders()
+            except Exception as e:
+                logger.warning("OrderWatcher: get_open_orders failed: %s", e)
+                return
+
+            for record in open_orders:
+                if record.status != "CREATED":
+                    continue
+                if (record.execution_type or "").upper() != "EXIT":
+                    continue
+
+                has_sl = record.stop_loss is not None and record.stop_loss > 0
+                has_target = record.target is not None and record.target > 0
+                has_trailing = (
+                    record.trailing_type is not None
+                    and record.trailing_type != "NONE"
+                    and record.trailing_value is not None
+                    and record.trailing_value > 0
+                )
+
+                if has_sl or has_target or has_trailing:
+                    if record.command_id not in self._managed_exits:
+                        self._register_managed_exit(record)
+                else:
+                    if record.command_id not in self._dispatched_exits:
+                        self._dispatched_exits.add(record.command_id)
+                        self._dispatch_simple_exit(record)
+
+    def _dispatch_simple_exit(self, record: OrderRecord):
+        """Dispatch a simple MARKET EXIT order to broker via execute_command()."""
+        try:
+            # Mark as dispatching to prevent re-dispatch on next cycle
+            try:
+                self.repo.update_tag(record.command_id, "DISPATCHING")
+            except Exception:
+                pass
+
+            cmd = UniversalOrderCommand.from_record(
+                record,
+                order_type=record.order_type or "MARKET",
+                price=record.price or 0.0,
+                source="ORDER_WATCHER",
+            )
+
+            logger.info(
+                "STEP_7_DISPATCH_EXIT | cmd_id=%s | %s %s %s qty=%s",
+                record.command_id,
+                record.exchange,
+                record.symbol,
+                record.side,
+                record.quantity,
+            )
+
+            result = self.bot.execute_command(command=cmd)
+
+            if not result or not result.success:
+                err = getattr(result, "error_message", "unknown") if result else "no result"
+                logger.error(
+                    "STEP_7_EXIT_FAILED | cmd_id=%s | symbol=%s | error=%s",
+                    record.command_id,
+                    record.symbol,
+                    err,
+                )
+        except Exception:
+            logger.exception(
+                "STEP_7_EXIT_EXCEPTION | cmd_id=%s | symbol=%s",
+                record.command_id,
+                record.symbol,
+            )
+
+    def _register_managed_exit(self, record: OrderRecord):
+        """Register an EXIT order for managed monitoring (SL/target/trailing)."""
+        try:
+            self.repo.update_tag(record.command_id, "MANAGED_EXIT")
+        except Exception:
+            pass
+
+        self._managed_exits[record.command_id] = {
+            "record": record,
+            "stop_loss": record.stop_loss,
+            "target": record.target,
+            "trailing_type": record.trailing_type,
+            "trailing_value": record.trailing_value,
+            "highest_price": None,
+            "lowest_price": None,
+            "registered_at": time.time(),
+        }
+
+        logger.warning(
+            "MANAGED_EXIT_REGISTERED | cmd_id=%s | %s | side=%s | qty=%s | SL=%s | target=%s | trail=%s/%s",
+            record.command_id,
+            record.symbol,
+            record.side,
+            record.quantity,
+            record.stop_loss,
+            record.target,
+            record.trailing_type,
+            record.trailing_value,
+        )
+
+    # ==================================================
+    # STEP 8: MONITOR MANAGED EXITS (SL / TARGET / TRAIL)
+    # ==================================================
+
+    def _monitor_managed_exits(self):
+        """
+        For each managed exit order, check current LTP against SL/target levels.
+        Trail the SL as price moves in the position's favour.
+        Trigger MARKET exit when conditions are met.
+        """
+        if not self._managed_exits:
+            return
+
+        try:
+            positions = self.bot.api.get_positions() or []
+        except Exception as e:
+            logger.warning("OrderWatcher: positions fetch for managed exits failed: %s", e)
+            return
+
+        pos_map: Dict[str, dict] = {}
+        for p in positions:
+            sym = p.get("tsym")
+            if sym:
+                pos_map[sym] = p
+
+        to_remove: List[str] = []
+
+        for cmd_id, state in list(self._managed_exits.items()):
+            record = state["record"]
+            symbol = record.symbol
+
+            # Verify order still CREATED
+            try:
+                current_record = self.repo.get_by_id(cmd_id)
+                if not current_record or current_record.status not in ("CREATED",):
+                    to_remove.append(cmd_id)
+                    continue
+            except Exception:
+                pass
+
+            pos = pos_map.get(symbol)
+            net_qty = int(pos.get("netqty", 0)) if pos else 0
+
+            if net_qty == 0:
+                logger.info(
+                    "MANAGED_EXIT_POSITION_FLAT | cmd_id=%s | %s",
+                    cmd_id, symbol,
+                )
+                try:
+                    self.repo.update_status(cmd_id, "FAILED")
+                    self.repo.update_tag(cmd_id, "POSITION_ALREADY_FLAT")
+                except Exception:
+                    pass
+                to_remove.append(cmd_id)
+                continue
+
+            ltp = float(pos.get("ltp", 0) or 0)
+            if ltp <= 0:
+                continue
+
+            is_long = net_qty > 0
+            sl = state.get("stop_loss")
+            target = state.get("target")
+            trailing_type = state.get("trailing_type")
+            trailing_value = state.get("trailing_value")
+
+            trigger_exit = False
+            trigger_reason = ""
+
+            # ── TRAILING SL LOGIC ──
+            if trailing_type and trailing_value and trailing_value > 0:
+                if is_long:
+                    if state["highest_price"] is None or ltp > state["highest_price"]:
+                        state["highest_price"] = ltp
+                    if trailing_type == "POINTS":
+                        new_sl = state["highest_price"] - trailing_value
+                    elif trailing_type == "PERCENT":
+                        new_sl = state["highest_price"] * (1 - trailing_value / 100)
+                    else:
+                        new_sl = state["highest_price"] - trailing_value
+                    if sl is None or new_sl > sl:
+                        state["stop_loss"] = new_sl
+                        sl = new_sl
+                else:
+                    if state["lowest_price"] is None or ltp < state["lowest_price"]:
+                        state["lowest_price"] = ltp
+                    if trailing_type == "POINTS":
+                        new_sl = state["lowest_price"] + trailing_value
+                    elif trailing_type == "PERCENT":
+                        new_sl = state["lowest_price"] * (1 + trailing_value / 100)
+                    else:
+                        new_sl = state["lowest_price"] + trailing_value
+                    if sl is None or new_sl < sl:
+                        state["stop_loss"] = new_sl
+                        sl = new_sl
+
+            # ── CHECK SL HIT ──
+            if sl is not None:
+                if is_long and ltp <= sl:
+                    trigger_exit = True
+                    trigger_reason = f"SL_HIT ltp={ltp} <= sl={sl}"
+                elif not is_long and ltp >= sl:
+                    trigger_exit = True
+                    trigger_reason = f"SL_HIT ltp={ltp} >= sl={sl}"
+
+            # ── CHECK TARGET HIT ──
+            if target is not None and not trigger_exit:
+                if is_long and ltp >= target:
+                    trigger_exit = True
+                    trigger_reason = f"TARGET_HIT ltp={ltp} >= target={target}"
+                elif not is_long and ltp <= target:
+                    trigger_exit = True
+                    trigger_reason = f"TARGET_HIT ltp={ltp} <= target={target}"
+
+            if trigger_exit:
+                logger.warning(
+                    "MANAGED_EXIT_TRIGGERED | cmd_id=%s | %s | %s | net_qty=%d",
+                    cmd_id, symbol, trigger_reason, net_qty,
+                )
+                self._execute_managed_exit(record, abs(net_qty))
+                to_remove.append(cmd_id)
+
+        for cmd_id in to_remove:
+            self._managed_exits.pop(cmd_id, None)
+
+    def _execute_managed_exit(self, record: OrderRecord, broker_qty: int):
+        """Execute a managed exit by placing a MARKET order."""
+        try:
+            self.repo.update_status(record.command_id, "FAILED")
+            self.repo.update_tag(record.command_id, "MANAGED_EXIT_TRIGGERED")
+
+            from uuid import uuid4
+            exit_cmd_id = f"EXIT_MANAGED_{record.symbol}_{int(time.time() * 1000)}_{uuid4().hex[:8]}"
+
+            exit_record = OrderRecord(
+                command_id=exit_cmd_id,
+                broker_order_id=None,
+                execution_type="EXIT",
+                source=record.source,
+                user=record.user,
+                strategy_name=record.strategy_name,
+                exchange=record.exchange,
+                symbol=record.symbol,
+                side=record.side,
+                quantity=broker_qty,
+                product=record.product,
+                order_type="MARKET",
+                price=0.0,
+                stop_loss=None,
+                target=None,
+                trailing_type=None,
+                trailing_value=None,
+                status="CREATED",
+                created_at=datetime.utcnow().isoformat(),
+                updated_at=datetime.utcnow().isoformat(),
+                tag="MANAGED_EXIT_MARKET",
+            )
+            self.repo.create(exit_record)
+
+            cmd = UniversalOrderCommand.from_record(
+                exit_record,
+                order_type="MARKET",
+                price=0.0,
+                source="ORDER_WATCHER",
+            )
+
+            result = self.bot.execute_command(command=cmd)
+            if result and result.success:
+                logger.info(
+                    "MANAGED_EXIT_DISPATCHED | cmd_id=%s | %s %s qty=%d",
+                    exit_cmd_id, record.symbol, record.side, broker_qty,
+                )
+            else:
+                err = getattr(result, "error_message", "unknown") if result else "no result"
+                logger.error(
+                    "MANAGED_EXIT_DISPATCH_FAILED | cmd_id=%s | %s | error=%s",
+                    exit_cmd_id, record.symbol, err,
+                )
+        except Exception:
+            logger.exception(
+                "MANAGED_EXIT_EXCEPTION | cmd_id=%s | %s",
+                record.command_id, record.symbol,
+            )
+
     # --------------------------------------------------
     # ExecutionGuard reconciliation (BROKER-DRIVEN ONLY)
     # --------------------------------------------------
     def _reconcile_execution_guard(self, strategy_name: str, executed_symbol: str) -> None:
-        """
-        Reconcile ExecutionGuard AFTER broker EXECUTED confirmation.
-
-        This is the ONLY legal place where:
-        - Guard reconciliation occurs
-        - Strategy cleanup is allowed
-        """
         try:
             symbols = self._get_strategy_symbols(strategy_name)
             if executed_symbol:

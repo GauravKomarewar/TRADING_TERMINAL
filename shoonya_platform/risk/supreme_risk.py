@@ -673,18 +673,21 @@ class SupremeRiskManager:
         if self.warning_sent or self.daily_loss_hit:
             return
         
-        threshold_value = abs(self.dynamic_max_loss) * self.WARNING_THRESHOLD_PCT
+        # How far PnL is from the breach level (positive = safe)
+        margin = self.daily_pnl - self.dynamic_max_loss
+        # Warning distance: fire when margin falls within (1-threshold)
+        # of the original base max loss range.
+        warning_distance = abs(self.BASE_MAX_LOSS) * (1.0 - self.WARNING_THRESHOLD_PCT)
         
-        # ✅ FIX: Only trigger on losses, not profits
-        if self.daily_pnl <= -threshold_value:
+        if margin <= warning_distance:
             self.warning_sent = True
             
-            distance_to_exit = abs(self.daily_pnl - self.dynamic_max_loss)
+            distance_to_exit = self.daily_pnl - self.dynamic_max_loss
             
             logger.warning(
-                "⚠️ RISK WARNING | pnl=%.2f | threshold=%.2f | distance_to_exit=%.2f",
+                "⚠️ RISK WARNING | pnl=%.2f | max_loss=%.2f | distance_to_exit=%.2f",
                 self.daily_pnl,
-                threshold_value,
+                self.dynamic_max_loss,
                 distance_to_exit,
             )
             

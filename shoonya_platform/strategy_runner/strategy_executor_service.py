@@ -511,6 +511,14 @@ class StrategyExecutorService:
                 self.state_mgr.clear_monitor_snapshot(name)
             except Exception as e:
                 logger.debug("Could not clear persisted monitor snapshot for %s: %s", name, e)
+            # Clear execution guard positions so stale entries don't cause
+            # cross-strategy conflicts on the next run of this strategy.
+            try:
+                guard = getattr(self.bot, "execution_guard", None)
+                if guard is not None:
+                    guard.force_close_strategy(name)
+            except Exception as e:
+                logger.warning("Could not clear execution guard for %s: %s", name, e)
             logger.info(f"Strategy unregistered: {name}")
 
     # ------------------------------------------------------------------
@@ -682,11 +690,37 @@ class StrategyExecutorService:
         """Start the background processing thread."""
         if self._running:
             return
+        # Expire stale CREATED orders from previous days to prevent
+        # historical symbols from mixing with today's positions.
+        self._expire_stale_orders()
         self._running = True
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         logger.info("StrategyExecutorService started")
+
+    def _expire_stale_orders(self):
+        """Mark stale strategy-generated CREATED orders from previous days as EXPIRED.
+
+        Only affects orders with source='STRATEGY' so that system/positional
+        orders created by other subsystems are left untouched.
+        """
+        try:
+            from shoonya_platform.persistence.database import get_connection
+            today = datetime.now().strftime("%Y-%m-%d")
+            conn = get_connection()
+            cursor = conn.execute(
+                "UPDATE orders SET status = 'EXPIRED', updated_at = ? "
+                "WHERE status = 'CREATED' AND created_at < ? "
+                "AND source = 'STRATEGY'",
+                (datetime.now().isoformat(), today),
+            )
+            count = cursor.rowcount
+            conn.commit()
+            if count > 0:
+                logger.warning("Expired %d stale CREATED strategy orders from previous days", count)
+        except Exception as e:
+            logger.debug("Could not expire stale orders: %s", e)
 
     def stop(self):
         """Stop the background thread."""
@@ -1380,6 +1414,19 @@ class PerStrategyExecutor:
             self.state.peak_pnl = 0.0
             self.state.current_profit_step = -1
             self.state.cumulative_daily_pnl = 0.0
+            # Purge stale inactive legs from previous days to prevent
+            # historical run data mixing with today's positions.
+            stale_keys = [
+                k for k, leg in self.state.legs.items()
+                if not leg.is_active
+            ]
+            if stale_keys:
+                for k in stale_keys:
+                    del self.state.legs[k]
+                logger.info(
+                    "Purged %d stale inactive legs from previous runs for %s",
+                    len(stale_keys), self.name,
+                )
             self._last_date = now.date()
             logger.info(f"Daily counters reset for {self.name}")
 
@@ -2047,6 +2094,33 @@ class PerStrategyExecutor:
             action = "exit_all"
 
         if action.startswith("exit_all"):
+            # Reconcile with broker truth before placing exit orders.
+            # This prevents placing fresh BUY orders when positions have
+            # already been closed from the broker terminal.
+            try:
+                guard = getattr(self.bot, "execution_guard", None)
+                broker_view = getattr(self.bot, "broker_view", None)
+                if guard and broker_view and not self._resolve_test_mode():
+                    if guard.has_strategy(self.name):
+                        guard.reconcile_with_broker(self.name, broker_view)
+                        # After reconciliation, if strategy has no positions left
+                        # in the guard, positions were closed externally — skip exit.
+                        if not guard.has_strategy(self.name):
+                            logger.warning(
+                                "EXIT_SKIPPED | strategy=%s | reason=positions_already_closed_at_broker",
+                                self.name,
+                            )
+                            pnl_snapshot = self.state.combined_pnl
+                            for leg in self.state.legs.values():
+                                leg.is_active = False
+                            self.state.cumulative_daily_pnl += pnl_snapshot
+                            self.state.entered_today = True
+                            self.cycle_completed = True
+                            logger.info(f"Exit completed (broker-closed) for {self.name}")
+                            return
+            except Exception as e:
+                logger.warning("Pre-exit reconciliation failed for %s: %s", self.name, e)
+
             # In paper mode, route through process_alert(EXIT) so mock runs
             # exercise the same alert pipeline (including test_mode handling).
             if self._resolve_test_mode():
@@ -2068,9 +2142,16 @@ class PerStrategyExecutor:
                         logger.error(f"Exit rejected for {self.name}: {result}")
                         return
             else:
+                # Pass today's active leg symbols to avoid using stale order
+                # records from previous days in position_exit_service.
+                active_symbols = [
+                    leg.symbol for leg in self.state.legs.values()
+                    if leg.is_active and int(getattr(leg, "qty", 0) or 0) > 0
+                ]
                 self.bot.request_exit(
                     scope="strategy",
                     strategy_name=self.name,
+                    symbols=active_symbols or None,
                     product_type="ALL",
                     reason=source,
                     source="STRATEGY_EXECUTOR"

@@ -2,10 +2,10 @@
   "schema_version": "4.0",
   "name": "nifty_vix_mean_reversion",
   "id": "NIFTY_VIX_MEAN_REV",
-  "description": "Enters ONLY when India VIX spikes above 18 (fear/event-driven). Sells wider strikes (0.20 delta) and profits from the inevitable VIX mean-reversion (IV crush). This is the strategy specifically designed for the Iran/war/gap-down scenario — it WAITS for the spike, then sells into it. Uses a 2-day holding strategy with Thursday/Friday focus.",
+  "description": "Enters ONLY when India VIX spikes above 18 (fear/event-driven). Sells wider strikes (0.20 delta) and profits from the inevitable VIX mean-reversion (IV crush). This is the strategy specifically designed for the Iran/war/gap-down scenario \u2014 it WAITS for the spike, then sells into it. Uses a 2-day holding strategy with Thursday/Friday focus.",
   "type": "neutral",
   "enabled": true,
-  "status": "IDLE",
+  "status": "COMPLETED",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -83,7 +83,7 @@
     "enabled": true,
     "rules": [
       {
-        "name": "VIX crushed — take profit early (IV crush captured)",
+        "name": "VIX crushed \u2014 take profit early (IV crush captured)",
         "priority": 1,
         "max_per_day": 1,
         "max_total": null,
@@ -112,7 +112,7 @@
         "else_action": null
       },
       {
-        "name": "PANIC — extreme VIX spike, market in freefall",
+        "name": "PANIC \u2014 extreme VIX spike, market in freefall",
         "priority": 2,
         "max_per_day": 5,
         "max_total": null,
@@ -247,7 +247,13 @@
   },
   "schedule": {
     "frequency": "daily",
-    "active_days": ["mon", "tue", "wed", "thu", "fri"],
+    "active_days": [
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri"
+    ],
     "entry_time": "09:20",
     "entry_window_end": "12:00",
     "exit_time": "15:25",
@@ -261,8 +267,9 @@
   "meta": {
     "schema_version": "4.0",
     "created_at": "2026-03-19T00:00:00.000Z",
-    "notes": "VIX mean reversion strategy — COUNTERINTUITIVE but powerful. Logic: (1) ONLY enters when VIX>=18 (fear spike). On these days, IV is inflated — you're selling expensive premium. (2) Uses wider 0.20 delta strikes because the underlying is already far from ATM. (3) Primary profit driver is IV crush, not theta — if VIX reverts from 20 back to 15, you make money even if spot barely moves. (4) Auto-exits when VIX < 15 AND 40% of premium decayed — IV crush trade complete. (5) Hard exit at VIX>=28 — if fear escalates further, cut losses. (6) Breakeven buffer tightened to 30pts — less room to breathe but forces discipline. This strategy COMPLEMENTS the DNSS_IMPROVED — run them together: DNSS handles normal days, VIX_MEAN_REV activates on event days."
+    "notes": "VIX mean reversion strategy \u2014 COUNTERINTUITIVE but powerful. Logic: (1) ONLY enters when VIX>=18 (fear spike). On these days, IV is inflated \u2014 you're selling expensive premium. (2) Uses wider 0.20 delta strikes because the underlying is already far from ATM. (3) Primary profit driver is IV crush, not theta \u2014 if VIX reverts from 20 back to 15, you make money even if spot barely moves. (4) Auto-exits when VIX < 15 AND 40% of premium decayed \u2014 IV crush trade complete. (5) Hard exit at VIX>=28 \u2014 if fear escalates further, cut losses. (6) Breakeven buffer tightened to 30pts \u2014 less room to breathe but forces discipline. This strategy COMPLEMENTS the DNSS_IMPROVED \u2014 run them together: DNSS handles normal days, VIX_MEAN_REV activates on event days."
   },
   "paper_mode": true,
-  "test_mode": true
+  "test_mode": true,
+  "status_updated_at": "2026-03-20T08:57:53.052397"
 }

@@ -5,7 +5,7 @@
   "description": "Improved DNSS with VIX spike defense, panic adj rule, breakeven guard, and trailing SL. Handles sudden directional moves and VIX spikes (war/event scenarios).",
   "type": "neutral",
   "enabled": true,
-  "status": "IDLE",
+  "status": "COMPLETED",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -76,7 +76,7 @@
     "enabled": true,
     "rules": [
       {
-        "name": "PANIC — Deep ITM rescue",
+        "name": "PANIC \u2014 Deep ITM rescue",
         "priority": 1,
         "max_per_day": 10,
         "max_total": null,
@@ -112,7 +112,7 @@
         "else_action": null
       },
       {
-        "name": "VIX spike defense — widen both legs",
+        "name": "VIX spike defense \u2014 widen both legs",
         "priority": 2,
         "max_per_day": 3,
         "max_total": null,
@@ -308,7 +308,13 @@
   },
   "schedule": {
     "frequency": "daily",
-    "active_days": ["mon", "tue", "wed", "thu", "fri"],
+    "active_days": [
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri"
+    ],
     "entry_time": "09:18",
     "entry_window_end": "14:00",
     "exit_time": "15:28",
@@ -322,8 +328,9 @@
   "meta": {
     "schema_version": "4.0",
     "created_at": "2026-03-19T00:00:00.000Z",
-    "notes": "Key improvements: (1) Global VIX<20 entry gate — no new position in panic markets. (2) Priority-1 panic rule: 30s cooldown, fires when any leg delta >=0.65 before the standard adj gets a chance. (3) VIX spike defense rule: widens both legs to 0.15 delta when VIX>=20, 5min cooldown prevents churn. (4) Standard adj now has cooldown raised to 90s and explicitly excludes VIX>=20 environment. (5) Trailing SL: locks ₹2000, trails ₹1000 steps every ₹1000 gain — no more giving back all premium. (6) Breakeven buffer: exit if spot within 50pts of breakeven. (7) Hard VIX=25 exit condition — handles war/event spike scenarios."
+    "notes": "Key improvements: (1) Global VIX<20 entry gate \u2014 no new position in panic markets. (2) Priority-1 panic rule: 30s cooldown, fires when any leg delta >=0.65 before the standard adj gets a chance. (3) VIX spike defense rule: widens both legs to 0.15 delta when VIX>=20, 5min cooldown prevents churn. (4) Standard adj now has cooldown raised to 90s and explicitly excludes VIX>=20 environment. (5) Trailing SL: locks \u20b92000, trails \u20b91000 steps every \u20b91000 gain \u2014 no more giving back all premium. (6) Breakeven buffer: exit if spot within 50pts of breakeven. (7) Hard VIX=25 exit condition \u2014 handles war/event spike scenarios."
   },
   "paper_mode": true,
-  "test_mode": true
+  "test_mode": true,
+  "status_updated_at": "2026-03-20T08:52:25.584320"
 }

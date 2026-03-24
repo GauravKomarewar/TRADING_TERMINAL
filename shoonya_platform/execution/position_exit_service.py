@@ -82,7 +82,11 @@ class PositionExitService:
 
         # 🔥 NEW: If strategy-scoped, find symbols created by that strategy
         if strategy_name:
-            symbols = self._get_strategy_symbols(strategy_name)
+            # If caller provided explicit symbols (e.g. from executor's active
+            # legs), prefer those over querying the order repository which may
+            # return stale symbols from previous days.
+            if not symbols:
+                symbols = self._get_strategy_symbols(strategy_name)
             if not symbols:
                 logger.info("EXIT: no positions for strategy: %s", strategy_name)
                 return
@@ -164,17 +168,34 @@ class PositionExitService:
         Query OrderRepository to find all symbols created by this strategy.
         
         Returns list of unique symbols that this strategy has open orders for.
+        Filters to only today's orders to prevent historical run data from
+        mixing with current positions (e.g. old NIFTY24MAR26 symbols persisting
+        alongside today's NIFTY30MAR26 symbols).
         """
         try:
             # Use repository API that already scopes open orders by strategy.
             strategy_orders = self.repo.get_open_orders_by_strategy(strategy_name) or []
 
+            # Filter to only today's orders to avoid returning stale symbols
+            # from previous days whose EXIT orders were never executed.
+            today_str = datetime.utcnow().strftime("%Y-%m-%d")
+            today_orders = [
+                o for o in strategy_orders
+                if o.created_at and str(o.created_at)[:10] == today_str
+            ]
+
+            # If no today-only orders found, fall back to all open orders
+            # (safety net for edge cases where timestamps may differ).
+            orders_to_use = today_orders if today_orders else strategy_orders
+
             # Extract unique symbols from active orders.
-            symbols = list(set(o.symbol for o in strategy_orders))
+            symbols = list(set(o.symbol for o in orders_to_use))
             logger.info(
-                "STRATEGY_SYMBOLS | strategy=%s | symbols=%s",
+                "STRATEGY_SYMBOLS | strategy=%s | symbols=%s (today=%d/total=%d)",
                 strategy_name,
                 symbols,
+                len(today_orders),
+                len(strategy_orders),
             )
             
             return symbols

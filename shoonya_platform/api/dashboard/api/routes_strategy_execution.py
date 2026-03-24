@@ -264,15 +264,49 @@ def stop_strategy_and_exit(
         # --- 1. Synchronously close all broker positions for this strategy ---
         exit_performed = False
         exit_error = None
+
+        # Collect symbols from the executor's active legs (today's truth)
+        # instead of relying solely on the order repository which may
+        # contain stale EXIT orders from previous days.
+        active_symbols = []
+        executor = service._executors.get(strategy_key)
+        if executor and hasattr(executor, "state"):
+            active_symbols = [
+                leg.symbol for leg in executor.state.legs.values()
+                if leg.is_active and int(getattr(leg, "qty", 0) or 0) > 0
+            ]
+
+        # Reconcile execution guard with broker BEFORE placing exit orders
+        # to prevent placing fresh BUY orders when positions were already
+        # closed from the broker terminal.
         try:
-            bot.request_exit(
-                scope="STRATEGY",
-                strategy_name=strategy_key,
-                symbols=None,
-                product_type="ALL",
-                reason="KILL_SWITCH_DASHBOARD",
-                source="KILL_SWITCH",
-            )
+            guard = getattr(bot, "execution_guard", None)
+            broker_view = getattr(bot, "broker_view", None)
+            if guard and broker_view and guard.has_strategy(strategy_key):
+                guard.reconcile_with_broker(strategy_key, broker_view)
+        except Exception as re:
+            logger.warning("Kill-switch pre-exit reconciliation failed for %s: %s", strategy_key, re)
+
+        try:
+            if active_symbols:
+                # Use today's active symbols from executor state
+                bot.request_exit(
+                    scope="STRATEGY",
+                    strategy_name=strategy_key,
+                    symbols=active_symbols,
+                    product_type="ALL",
+                    reason="KILL_SWITCH_DASHBOARD",
+                    source="KILL_SWITCH",
+                )
+            else:
+                bot.request_exit(
+                    scope="STRATEGY",
+                    strategy_name=strategy_key,
+                    symbols=None,
+                    product_type="ALL",
+                    reason="KILL_SWITCH_DASHBOARD",
+                    source="KILL_SWITCH",
+                )
             exit_performed = True
             logger.warning("Kill-switch exit submitted for strategy: %s", strategy_key)
         except Exception as ee:

@@ -425,6 +425,13 @@ body.theme-solar{
       <label class="s-row">Filter trading hours<input type="checkbox" id="chkFilter" checked></label>
     </div>
     <div class="s-section">
+      <div class="s-title">Pine Indicators</div>
+      <label class="s-row">ZigZag<input type="checkbox" id="chkZigZag"></label>
+      <label class="s-row">HA Smooth Trend<input type="checkbox" id="chkHASmooth"></label>
+      <label class="s-row">Universal Levels<input type="checkbox" id="chkLevels"></label>
+      <label class="s-row">S/R Boxes<input type="checkbox" id="chkSRBoxes"></label>
+    </div>
+    <div class="s-section">
       <div class="s-title">Interaction</div>
       <label class="s-row">Crosshair mode<select id="selCross"><option value="normal">Normal</option><option value="magnet">Magnet</option></select></label>
       <label class="s-row">Price scale<select id="selScale"><option value="0">Normal</option><option value="1">Logarithmic</option><option value="2">Percentage</option><option value="3">Indexed to 100</option></select></label>
@@ -565,10 +572,10 @@ const THEMES = {
 let activeClr = {...THEMES.dark.clr};
 let savedVisRange=null,savedOverlaySyms=[];
 function loadSettings(){
-  try{const s=localStorage.getItem(STORE_KEY);if(s){const d=JSON.parse(s);activeClr={...THEMES.dark.clr,...d.clr};curTheme=d.theme||'dark';if(d.intv)curIntv=d.intv;if(d.type)curType=d.type;if(d.range)curRange=d.range;if(d.overlaySyms)savedOverlaySyms=d.overlaySyms;if(d.visRange)savedVisRange=d.visRange;if(d.sym)curSym=d.sym;if(d.optionMeta)optionMeta=d.optionMeta;if(d.chartMode)chartMode=d.chartMode;if(d.activeIndicators){activeIndicators=d.activeIndicators;indNextId=Math.max(1,...activeIndicators.map(i=>{const m=i.uid.match(/_(\d+)$/);return m?parseInt(m[1],10)+1:1;}))||1;}}}catch(e){}
+  try{const s=localStorage.getItem(STORE_KEY);if(s){const d=JSON.parse(s);activeClr={...THEMES.dark.clr,...d.clr};curTheme=d.theme||'dark';if(d.intv)curIntv=d.intv;if(d.type)curType=d.type;if(d.range)curRange=d.range;if(d.overlaySyms)savedOverlaySyms=d.overlaySyms;if(d.visRange)savedVisRange=d.visRange;if(d.sym)curSym=d.sym;if(d.optionMeta)optionMeta=d.optionMeta;if(d.chartMode)chartMode=d.chartMode;if(d.activeIndicators){activeIndicators=d.activeIndicators;indNextId=Math.max(1,...activeIndicators.map(i=>{const m=i.uid.match(/_(\d+)$/);return m?parseInt(m[1],10)+1:1;}))||1;}if(d.pine){setTimeout(()=>{const p=d.pine;['chkZigZag','chkHASmooth','chkLevels','chkSRBoxes'].forEach(k=>{const el=document.getElementById(k);if(el&&p[k]!==undefined)el.checked=p[k];});},0);}}}catch(e){}
 }
 function saveSettings(){
-  try{const state={clr:activeClr,theme:curTheme,sym:curSym,intv:curIntv,type:curType,range:curRange,activeIndicators,overlaySyms:overlays.map(o=>o.symbol),optionMeta,chartMode};try{if(chart)state.visRange=chart.timeScale().getVisibleRange();}catch(e){}localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(e){}
+  try{const pine={};['chkZigZag','chkHASmooth','chkLevels','chkSRBoxes'].forEach(k=>{const el=document.getElementById(k);if(el)pine[k]=el.checked;});const state={clr:activeClr,theme:curTheme,sym:curSym,intv:curIntv,type:curType,range:curRange,activeIndicators,overlaySyms:overlays.map(o=>o.symbol),optionMeta,chartMode,pine};try{if(chart)state.visRange=chart.timeScale().getVisibleRange();}catch(e){}localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(e){}
 }
 
 /* ─── Session break primitive ─── */
@@ -851,6 +858,7 @@ function reapply(){
   }
   // Apply indicators on the source candles (combined or raw, before HA transform)
   applyIndicators(sourceCandles);
+  applyPineIndicators(sourceCandles);
   applySessionBreaks();
   // Restore price lines
   priceLines=priceLines.map(e=>{
@@ -1020,6 +1028,336 @@ function calcHeikinAshi(candles){
     ha.push({time:c.time,open:haOpen,high:haHigh,low:haLow,close:haClose,volume:c.volume||0});
   }
   return ha;
+}
+
+/* ─── PINE INDICATOR STATE ─── */
+let pineIndSeries=[];
+
+/* ─── ZIGZAG CALCULATION ─── */
+function calcZigZag(data,highLowLength,mode){
+  if(data.length<highLowLength*2+1)return[];
+  const n=data.length,hll=highLowLength,win=hll*2+1;
+  const getHigh=i=>mode==='Body(OC)'?Math.max(data[i].open,data[i].close):data[i].high;
+  const getLow=i=>mode==='Body(OC)'?Math.min(data[i].open,data[i].close):data[i].low;
+  const pivots=[];
+  let dirUp=null,prevHigh=NaN,prevLow=NaN,tHigh=0,tLow=0;
+  for(let i=hll;i<n-hll;i++){
+    let highest=-Infinity,lowest=Infinity;
+    for(let j=i-hll;j<=i+hll;j++){highest=Math.max(highest,getHigh(j));lowest=Math.min(lowest,getLow(j));}
+    const isSwHigh=highest===getHigh(i);
+    const isSwLow=lowest===getLow(i);
+    if(dirUp===null){
+      if(isSwHigh){prevHigh=getHigh(i);tHigh=i;dirUp=false;}
+      else if(isSwLow){prevLow=getLow(i);tLow=i;dirUp=true;}
+      continue;
+    }
+    if(dirUp){
+      if(isSwLow&&getLow(i)<prevLow){prevLow=getLow(i);tLow=i;if(pivots.length)pivots.pop();}
+      if(isSwHigh&&getHigh(i)>prevLow){
+        pivots.push({time:data[tLow].time,value:prevLow});
+        prevHigh=getHigh(i);tHigh=i;dirUp=false;
+      }
+    }else{
+      if(isSwHigh&&getHigh(i)>prevHigh){prevHigh=getHigh(i);tHigh=i;if(pivots.length)pivots.pop();}
+      if(isSwLow&&getLow(i)<prevHigh){
+        pivots.push({time:data[tHigh].time,value:prevHigh});
+        prevLow=getLow(i);tLow=i;dirUp=true;
+      }
+    }
+  }
+  // Add final pivot
+  if(dirUp!==null){
+    if(dirUp)pivots.push({time:data[tLow].time,value:prevLow});
+    else pivots.push({time:data[tHigh].time,value:prevHigh});
+  }
+  return pivots;
+}
+
+/* ─── HA SMOOTH + BULL/BEAR POWER ─── */
+function calcEMAArray(arr,period){
+  if(!arr.length)return[];
+  const k=2/(period+1),r=[arr[0]];
+  for(let i=1;i<arr.length;i++)r.push(arr[i]*k+r[i-1]*(1-k));
+  return r;
+}
+function calcHASmooth(data,numSmooth){
+  if(data.length<2)return{strength:[],reference:[]};
+  // Level 1
+  const haO1=[],haH1=[],haL1=[],haC1=[];
+  for(let i=0;i<data.length;i++){
+    const c=data[i];
+    const hc=(c.open+c.high+c.low+c.close)/4;
+    const ho=i===0?(c.open+c.close)/2:(haO1[i-1]+haC1[i-1])/2;
+    haC1.push(hc);haO1.push(ho);
+    haH1.push(Math.max(c.high,ho,hc));haL1.push(Math.min(c.low,ho,hc));
+  }
+  // Level 2
+  const haO2=[],haH2=[],haL2=[],haC2=[];
+  for(let i=0;i<data.length;i++){
+    const hc=(haO1[i]+haH1[i]+haL1[i]+haC1[i])/4;
+    const ho=i===0?(haO1[0]+haC1[0])/2:(haO2[i-1]+haC2[i-1])/2;
+    haC2.push(hc);haO2.push(ho);
+    haH2.push(Math.max(haH1[i],ho,hc));haL2.push(Math.min(haL1[i],ho,hc));
+  }
+  // Level 3
+  const haO3=[],haH3=[],haL3=[],haC3=[];
+  for(let i=0;i<data.length;i++){
+    const hc=(haO2[i]+haH2[i]+haL2[i]+haC2[i])/4;
+    const ho=i===0?(haO2[0]+haC2[0])/2:(haO3[i-1]+haC3[i-1])/2;
+    haC3.push(hc);haO3.push(ho);
+    haH3.push(Math.max(haH2[i],ho,hc));haL3.push(Math.min(haL2[i],ho,hc));
+  }
+  // Level 4
+  const haO4=[],haH4=[],haL4=[],haC4=[];
+  for(let i=0;i<data.length;i++){
+    const hc=(haO3[i]+haH3[i]+haL3[i]+haC3[i])/4;
+    const ho=i===0?(haO3[0]+haC3[0])/2:(haO4[i-1]+haC4[i-1])/2;
+    haC4.push(hc);haO4.push(ho);
+    haH4.push(Math.max(haH3[i],ho,hc));haL4.push(Math.min(haL3[i],ho,hc));
+  }
+  // Select level
+  const haClose=numSmooth===1?haC1:numSmooth===2?haC2:numSmooth===3?haC3:haC4;
+  // sr3 = (high+low+close)/3 from original data
+  const sr3=data.map(c=>(c.high+c.low+c.close)/3);
+  // Bull/Bear Power (EMAlength=65)
+  const emaLen=65;
+  const ema1=calcEMAArray(haClose,emaLen);
+  const ema2=calcEMAArray(ema1,emaLen);
+  const ema3=calcEMAArray(ema2,emaLen);
+  const tma1=ema1.map((v,i)=>3*v-3*ema2[i]+ema3[i]);
+  const ema4=calcEMAArray(tma1,emaLen);
+  const ema5=calcEMAArray(ema4,emaLen);
+  const ema6=calcEMAArray(ema5,emaLen);
+  const tma2=ema4.map((v,i)=>3*v-3*ema5[i]+ema6[i]);
+  const reference=tma1.map((v,i)=>v+(v-tma2[i]));
+  const ema7=calcEMAArray(sr3,emaLen);
+  const ema8=calcEMAArray(ema7,emaLen);
+  const ema9=calcEMAArray(ema8,emaLen);
+  const tma3=ema7.map((v,i)=>3*v-3*ema8[i]+ema9[i]);
+  const ema10=calcEMAArray(tma3,emaLen);
+  const ema11=calcEMAArray(ema10,emaLen);
+  const ema12=calcEMAArray(ema11,emaLen);
+  const tma4=ema10.map((v,i)=>3*v-3*ema11[i]+ema12[i]);
+  const strength=tma3.map((v,i)=>v+(v-tma4[i]));
+  // Build output with per-bar color for strength
+  const strengthPts=[],refPts=[];
+  for(let i=0;i<data.length;i++){
+    const t=data[i].time;
+    strengthPts.push({time:t,value:strength[i],color:strength[i]>reference[i]?'#00fc26':'#ff0000'});
+    refPts.push({time:t,value:reference[i]});
+  }
+  return{strength:strengthPts,reference:refPts};
+}
+
+/* ─── UNIVERSAL LEVELS ─── */
+function calcUniversalLevels(data,autoLevels,levelCount,distancePct){
+  if(!data.length)return[];
+  // EMA(open,5)
+  const opens=data.map(c=>c.open);
+  const emaO=calcEMAArray(opens,5);
+  const lastEma=emaO[emaO.length-1];
+  const lastClose=data[data.length-1].close;
+  const xRaw=Math.round(Math.sqrt(lastEma));
+  const SCALE=100000000;
+  const xScaled=Math.round(xRaw*SCALE);
+  // Auto level count
+  let lc=levelCount;
+  if(autoLevels){
+    if(lastClose>100000)lc=1;
+    else if(lastClose>70000)lc=2;
+    else if(lastClose>30000)lc=3;
+    else if(lastClose>5000)lc=4;
+    else if(lastClose>500)lc=5;
+    else if(lastClose>1)lc=6;
+    else if(lastClose>0.1)lc=7;
+    else lc=8;
+  }
+  const stepScaled=Math.max(Math.round(0.001*SCALE),Math.round(SCALE/Math.pow(2,lc-1)));
+  const ltp=lastClose;
+  const upperBound=ltp*(1+distancePct/100);
+  const lowerBound=ltp*(1-distancePct/100);
+  const levels=[];
+  let cur=xScaled-SCALE;
+  let safety=0;
+  while(cur<=xScaled+SCALE&&safety<10000){
+    const val=cur/SCALE;
+    const lvl=val*val;
+    if(lvl>=lowerBound&&lvl<=upperBound)levels.push(lvl);
+    cur+=stepScaled;safety++;
+  }
+  return levels;
+}
+
+/* ─── SUPPORT / RESISTANCE BOXES ─── */
+function calcSupportResistance(data,lookbackPeriod,volLen,boxWidth){
+  if(data.length<lookbackPeriod*2+1)return{supports:[],resistances:[],markers:[]};
+  const n=data.length,lb=lookbackPeriod;
+  // Delta volume
+  const vol=[];
+  let isBuy=true;
+  for(let i=0;i<n;i++){
+    if(data[i].close>data[i].open)isBuy=true;
+    else if(data[i].close<data[i].open)isBuy=false;
+    vol.push(isBuy?(data[i].volume||0):-(data[i].volume||0));
+  }
+  // Running highest/lowest of vol/2.5 over volLen
+  const volScaled=vol.map(v=>v/2.5);
+  const volHi=[],volLo=[];
+  for(let i=0;i<n;i++){
+    let hi=-Infinity,lo=Infinity;
+    for(let j=Math.max(0,i-volLen+1);j<=i;j++){hi=Math.max(hi,volScaled[j]);lo=Math.min(lo,volScaled[j]);}
+    volHi.push(hi);volLo.push(lo);
+  }
+  // ATR(200) for box width
+  let atrVal=0;
+  if(n>200){
+    const trs=[];
+    for(let i=1;i<n;i++){
+      trs.push(Math.max(data[i].high-data[i].low,Math.abs(data[i].high-data[i-1].close),Math.abs(data[i].low-data[i-1].close)));
+    }
+    atrVal=trs.slice(-200).reduce((a,b)=>a+b,0)/200;
+  }else if(n>1){
+    const trs=[];
+    for(let i=1;i<n;i++)trs.push(Math.max(data[i].high-data[i].low,Math.abs(data[i].high-data[i-1].close),Math.abs(data[i].low-data[i-1].close)));
+    atrVal=trs.reduce((a,b)=>a+b,0)/trs.length;
+  }
+  const withd=atrVal*boxWidth;
+  // Find pivots and build boxes
+  const supports=[],resistances=[],markers=[];
+  let supLevel=NaN,supLevel1=NaN,resLevel=NaN,resLevel1=NaN;
+  let brekoutRes=false,brekoutSup=false,resHolds=false,supHolds=false;
+  let resIsSup=false,supIsRes=false;
+  for(let i=lb;i<n-lb;i++){
+    // Pivot high: data[i] is highest high in [i-lb..i+lb]
+    let isPivHigh=true,isPivLow=true;
+    for(let j=i-lb;j<=i+lb;j++){
+      if(j!==i&&data[j].high>=data[i].high)isPivHigh=false;
+      if(j!==i&&data[j].low<=data[i].low)isPivLow=false;
+    }
+    const barIdx=i+lb; // the bar where pivot is confirmed (offset by lb)
+    if(barIdx>=n)continue;
+    const curVol=vol[barIdx];
+    // Support: pivot low + positive volume
+    if(isPivLow&&curVol>volHi[barIdx]){
+      supLevel=data[i].low;
+      supLevel1=supLevel-withd;
+      supports.push({timeStart:data[i].time,timeEnd:data[barIdx].time,top:supLevel,bottom:supLevel1,broken:false});
+    }
+    // Resistance: pivot high + negative volume
+    if(isPivHigh&&curVol<volLo[barIdx]){
+      resLevel=data[i].high;
+      resLevel1=resLevel+withd;
+      resistances.push({timeStart:data[i].time,timeEnd:data[barIdx].time,top:resLevel1,bottom:resLevel,broken:false});
+    }
+  }
+  // Extend boxes to current bar and detect breakouts
+  const lastTime=data[n-1].time;
+  for(const box of supports){
+    box.timeEnd=lastTime;
+    // Check breakout: price went below support bottom
+    for(let i=0;i<n;i++){
+      if(data[i].time>box.timeStart&&data[i].high<box.bottom){box.broken=true;break;}
+    }
+  }
+  for(const box of resistances){
+    box.timeEnd=lastTime;
+    for(let i=0;i<n;i++){
+      if(data[i].time>box.timeStart&&data[i].low>box.top){box.broken=true;break;}
+    }
+  }
+  // Markers for breakouts
+  if(!isNaN(supLevel)&&!isNaN(resLevel)){
+    for(let i=1;i<n;i++){
+      const prevBrekRes=i>1&&data[i-1].low>resLevel1;
+      const curResHolds=i>0&&data[i].high<resLevel;
+      const curSupHolds=i>0&&data[i].low>supLevel;
+      const curBrekSup=i>0&&data[i].high<supLevel1;
+      if(curResHolds)markers.push({time:data[i].time,position:'aboveBar',color:'#e92929',shape:'circle',text:'◆'});
+      if(curSupHolds)markers.push({time:data[i].time,position:'belowBar',color:'#20ca26',shape:'circle',text:'◆'});
+    }
+  }
+  return{supports,resistances,markers};
+}
+
+/* ─── APPLY PINE INDICATORS ─── */
+function applyPineIndicators(dataSource){
+  // Remove old pine series
+  for(const s of pineIndSeries){try{chart.removeSeries(s);}catch(e){}}
+  if(pineIndSeries._priceLines){for(const pl of pineIndSeries._priceLines){try{mainSeries.removePriceLine(pl);}catch(e){}};}
+  // Clear markers
+  try{mainSeries.setMarkers([]);}catch(e){}
+  pineIndSeries=[];
+  const data=dataSource||rawCandles;
+  if(!data.length||!chart)return;
+
+  // 1. ZigZag
+  if(document.getElementById('chkZigZag')&&document.getElementById('chkZigZag').checked){
+    const pts=calcZigZag(data,3,'Wicks(HL)');
+    if(pts.length>1){
+      const s=addLineSeries({color:'#ffff00',lineWidth:1});
+      s.setData(pts);pineIndSeries.push(s);
+    }
+  }
+
+  // 2. HA Smooth Trend
+  if(document.getElementById('chkHASmooth')&&document.getElementById('chkHASmooth').checked){
+    const ha=calcHASmooth(data,2);
+    if(ha.strength.length){
+      // Strength line (thick, colored per bar)
+      const sStr=chart.addLineSeries({lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'Strength'});
+      sStr.setData(ha.strength);pineIndSeries.push(sStr);
+      // Reference line (thin gray)
+      const sRef=addLineSeries({color:'rgba(120,123,134,0.46)',lineWidth:1,title:'Reference'});
+      sRef.setData(ha.reference);pineIndSeries.push(sRef);
+    }
+  }
+
+  // 3. Universal Levels
+  if(document.getElementById('chkLevels')&&document.getElementById('chkLevels').checked){
+    const levels=calcUniversalLevels(data,true,5,0.5);
+    for(const lvl of levels){
+      try{
+        const pl=mainSeries.createPriceLine({price:lvl,color:'#edeeeecc',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Solid,axisLabelVisible:true,title:''});
+        // Store for cleanup — we'll track price line objects in a sub-array
+        if(!pineIndSeries._priceLines)pineIndSeries._priceLines=[];
+        pineIndSeries._priceLines.push(pl);
+      }catch(e){}
+    }
+  }
+
+  // 4. S/R Boxes (rendered as area bands)
+  if(document.getElementById('chkSRBoxes')&&document.getElementById('chkSRBoxes').checked){
+    const sr=calcSupportResistance(data,20,2,1);
+    // Draw support boxes as filled bands
+    for(const box of sr.supports){
+      const pts=data.filter(c=>c.time>=box.timeStart&&c.time<=box.timeEnd).map(c=>({time:c.time}));
+      if(pts.length<2)continue;
+      const topPts=pts.map(p=>({time:p.time,value:box.top}));
+      const botPts=pts.map(p=>({time:p.time,value:box.bottom}));
+      const borderColor=box.broken?'#ff0000':'#22c55e';
+      const fillColor=box.broken?'rgba(255,0,0,0.12)':'rgba(34,197,94,0.15)';
+      const sTop=chart.addLineSeries({color:borderColor,lineWidth:1,lineStyle:box.broken?LightweightCharts.LineStyle.Dashed:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      sTop.setData(topPts);pineIndSeries.push(sTop);
+      const sBot=chart.addLineSeries({color:borderColor,lineWidth:1,lineStyle:box.broken?LightweightCharts.LineStyle.Dashed:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      sBot.setData(botPts);pineIndSeries.push(sBot);
+    }
+    for(const box of sr.resistances){
+      const pts=data.filter(c=>c.time>=box.timeStart&&c.time<=box.timeEnd).map(c=>({time:c.time}));
+      if(pts.length<2)continue;
+      const topPts=pts.map(p=>({time:p.time,value:box.top}));
+      const botPts=pts.map(p=>({time:p.time,value:box.bottom}));
+      const borderColor=box.broken?'#22c55e':'#ef4444';
+      const fillColor=box.broken?'rgba(34,197,94,0.12)':'rgba(239,68,68,0.15)';
+      const sTop=chart.addLineSeries({color:borderColor,lineWidth:1,lineStyle:box.broken?LightweightCharts.LineStyle.Dashed:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      sTop.setData(topPts);pineIndSeries.push(sTop);
+      const sBot=chart.addLineSeries({color:borderColor,lineWidth:1,lineStyle:box.broken?LightweightCharts.LineStyle.Dashed:LightweightCharts.LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      sBot.setData(botPts);pineIndSeries.push(sBot);
+    }
+    // Add markers for S/R holds
+    if(sr.markers.length){
+      try{mainSeries.setMarkers(sr.markers.sort((a,b)=>a.time-b.time));}catch(e){}
+    }
+  }
 }
 
 /* ─── COMBINED PREMIUM CHART ─── */
@@ -1625,6 +1963,7 @@ document.getElementById('btnApplySet').onclick=()=>{
 };
 document.getElementById('chkBreaks').onchange=applySessionBreaks;
 document.getElementById('chkVol').onchange=()=>{createMainSeries();reapply();};
+['chkZigZag','chkHASmooth','chkLevels','chkSRBoxes'].forEach(k=>{document.getElementById(k).onchange=()=>{reapply();saveSettings();};});
 document.getElementById('selCross').onchange=function(){if(chart)chart.applyOptions({crosshair:{mode:this.value==='magnet'?LightweightCharts.CrosshairMode.Magnet:LightweightCharts.CrosshairMode.Normal}});};
 
 document.getElementById('btnAddOverlay').onclick=()=>{document.getElementById('ovInput').value='';renderOverlayList('');openModal('overlayModal');setTimeout(()=>document.getElementById('ovInput').focus(),50);};

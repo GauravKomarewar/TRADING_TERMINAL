@@ -33,7 +33,11 @@ USAGE:
     # Returns: {'ltp': 25912.5, 'pc': 0.5, 'v': 12345, ...}
 """
 
+import json
 import logging
+import os
+import tempfile
+from pathlib import Path
 from typing import Dict, Optional, Any, Set, Tuple, List, Union
 from shoonya_platform.market_data.feeds.live_feed import (
     subscribe_livedata,
@@ -42,6 +46,13 @@ from shoonya_platform.market_data.feeds.live_feed import (
 )
 import threading
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# PERSISTENT CONFIG FILE
+# =============================================================================
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_CONFIG_DIR = _PROJECT_ROOT / "shoonya_platform" / "persistence" / "data"
+_CONFIG_FILE = _CONFIG_DIR / "market_data_config.json"
 
 # =============================================================================
 # INDEX TOKEN REGISTRY
@@ -85,8 +96,8 @@ MCX_FUTURES_SEARCH = {
 }
 
 # ── Ticker ribbon config (consumed by dashboard frontend) ──
-STICKY_SYMBOLS = ["INDIAVIX", "NIFTY"]
-TICKER_SYMBOLS = [
+_DEFAULT_STICKY_SYMBOLS = ["INDIAVIX", "NIFTY"]
+_DEFAULT_TICKER_SYMBOLS = [
     "INDIAVIX", "NIFTY",               # sticky
     "SENSEX", "BANKNIFTY",              # rotating
     "GOLDPETAL", "SILVERMIC",           # rotating
@@ -94,8 +105,8 @@ TICKER_SYMBOLS = [
     "FINNIFTY",                          # rotating
 ]
 
-# All indices the system should subscribe to at startup
-MAJOR_INDICES = [
+# All indices the system should subscribe to at startup (default)
+_DEFAULT_MAJOR_INDICES = [
     "NIFTY",
     "BANKNIFTY",
     "SENSEX",
@@ -106,6 +117,50 @@ MAJOR_INDICES = [
     "NATGASMINI",
     "CRUDEOILM",
 ]
+
+
+# =============================================================================
+# CONFIG PERSISTENCE
+# =============================================================================
+
+def _load_config() -> Dict[str, Any]:
+    """Load user market data config from JSON file."""
+    try:
+        if _CONFIG_FILE.exists():
+            with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        logger.debug("Could not load market data config; using defaults")
+    return {}
+
+
+def _save_config(cfg: Dict[str, Any]) -> None:
+    """Persist market data config to JSON file atomically."""
+    try:
+        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=str(_CONFIG_DIR), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, str(_CONFIG_FILE))
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    except Exception:
+        logger.exception("Failed to save market data config")
+
+
+_user_config = _load_config()
+
+# Mutable module-level lists — loaded from config or defaults
+STICKY_SYMBOLS: List[str] = _user_config.get("sticky_symbols", _DEFAULT_STICKY_SYMBOLS)[:]
+TICKER_SYMBOLS: List[str] = _user_config.get("ticker_symbols", _DEFAULT_TICKER_SYMBOLS)[:]
+MAJOR_INDICES: List[str] = _user_config.get("subscribed_indices", _DEFAULT_MAJOR_INDICES)[:]
 
 # Internal state
 _subscribed_indices: Set[str] = set()
@@ -220,7 +275,8 @@ def subscribe_index_tokens(
     
     # Default to major indices if not specified
     if indices is None:
-        indices = MAJOR_INDICES
+        with _subscription_lock:
+            indices = MAJOR_INDICES[:]
     
     # Validate and collect tokens
     tokens_to_subscribe = []
@@ -514,6 +570,96 @@ def reset_subscriptions():
     with _subscription_lock:
         _subscribed_indices.clear()
     logger.info("Index subscriptions reset")
+
+
+# =============================================================================
+# RUNTIME SUBSCRIBE / UNSUBSCRIBE (CALLED FROM SETTINGS API)
+# =============================================================================
+
+def subscribe_symbol(api_client: Any, symbol: str) -> bool:
+    """
+    Subscribe to a single index symbol at runtime and persist the selection.
+
+    Args:
+        api_client: ShoonyaClient instance (must be logged in)
+        symbol: Index symbol (e.g., 'BANKEX')
+
+    Returns:
+        True if subscription succeeded
+    """
+    symbol = symbol.upper()
+    if symbol not in INDEX_TOKENS_REGISTRY:
+        logger.warning("Symbol %s not in registry", symbol)
+        return False
+
+    exchange, token = INDEX_TOKENS_REGISTRY[symbol]
+    if not token:
+        logger.warning("Token not resolved for %s", symbol)
+        return False
+
+    # Subscribe via live_feed
+    try:
+        success = subscribe_livedata(api_client, [token], exchange=exchange)
+        if not success:
+            logger.warning("live_feed subscribe failed for %s", symbol)
+            return False
+    except Exception:
+        logger.exception("Failed to subscribe %s", symbol)
+        return False
+
+    with _subscription_lock:
+        _subscribed_indices.add(symbol)
+
+        # Persist
+        if symbol not in MAJOR_INDICES:
+            MAJOR_INDICES.append(symbol)
+    _persist_current_config()
+    logger.info("Subscribed to %s at runtime", symbol)
+    return True
+
+
+def unsubscribe_symbol(symbol: str) -> bool:
+    """
+    Mark a symbol as unsubscribed and persist.
+    NOTE: Shoonya WebSocket API does not support per-token unsubscribe easily,
+    so we just remove from our tracking. The feed will still receive data but
+    it won't appear in get_subscribed_indices() or get_index_prices().
+    """
+    symbol = symbol.upper()
+    with _subscription_lock:
+        _subscribed_indices.discard(symbol)
+        try:
+            MAJOR_INDICES.remove(symbol)
+        except ValueError:
+            pass
+    _persist_current_config()
+    logger.info("Unsubscribed from %s", symbol)
+    return True
+
+
+def update_ticker_config(
+    ticker_symbols: Optional[List[str]] = None,
+    sticky_symbols: Optional[List[str]] = None,
+) -> None:
+    """Update ticker ribbon config and persist."""
+    global TICKER_SYMBOLS, STICKY_SYMBOLS
+    with _subscription_lock:
+        if ticker_symbols is not None:
+            TICKER_SYMBOLS[:] = [s.upper() for s in ticker_symbols]
+        if sticky_symbols is not None:
+            STICKY_SYMBOLS[:] = [s.upper() for s in sticky_symbols]
+    _persist_current_config()
+
+
+def _persist_current_config() -> None:
+    """Save current runtime state to config file."""
+    with _subscription_lock:
+        cfg = {
+            "subscribed_indices": MAJOR_INDICES[:],
+            "ticker_symbols": TICKER_SYMBOLS[:],
+            "sticky_symbols": STICKY_SYMBOLS[:],
+        }
+    _save_config(cfg)
 
 
 def get_all_available_indices() -> Dict[str, str]:

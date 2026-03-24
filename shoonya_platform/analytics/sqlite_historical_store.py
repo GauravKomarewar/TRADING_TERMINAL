@@ -144,6 +144,24 @@ class SQLiteHistoricalStore:
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_ocm_ese_ts ON option_chain_metrics(exchange, symbol, expiry, ts)",
+            """
+            CREATE TABLE IF NOT EXISTS option_ticks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                exchange TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                expiry TEXT NOT NULL,
+                strike REAL NOT NULL,
+                option_type TEXT NOT NULL,
+                ltp REAL,
+                volume REAL,
+                oi REAL,
+                bid REAL,
+                ask REAL,
+                iv REAL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_ot_sym_ts ON option_ticks(symbol, expiry, strike, option_type, ts)",
         ]
         for sql in ddl:
             self._exec(sql)
@@ -263,6 +281,31 @@ class SQLiteHistoricalStore:
                 r.get("oi_buildup_pe"),
                 r.get("snapshot_age"),
                 int(bool(r.get("is_stale", False))),
+            )
+            for r in rows
+        ]
+        self._exec_many(sql, payload)
+
+    def insert_option_ticks(self, rows: List[Dict[str, Any]]) -> None:
+        sql = """
+        INSERT INTO option_ticks(ts, exchange, symbol, expiry, strike, option_type,
+                                 ltp, volume, oi, bid, ask, iv)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """
+        payload = [
+            (
+                self._ts_str(r.get("ts")),
+                r.get("exchange"),
+                r.get("symbol"),
+                r.get("expiry"),
+                r.get("strike"),
+                r.get("option_type"),
+                r.get("ltp"),
+                r.get("volume"),
+                r.get("oi"),
+                r.get("bid"),
+                r.get("ask"),
+                r.get("iv"),
             )
             for r in rows
         ]
@@ -407,10 +450,110 @@ class SQLiteHistoricalStore:
         )
         return self._rows_to_dict(cur)
 
+    _ALLOWED_INTERVALS = {1, 2, 3, 5, 10, 15, 30, 60, 120, 240, 360, 720, 1440}
+
+    def fetch_index_ohlc(
+        self,
+        symbol: str,
+        from_ts: Optional[datetime],
+        to_ts: Optional[datetime],
+        interval_minutes: int = 1,
+        limit: int = 5000,
+    ) -> List[Dict[str, Any]]:
+        """Aggregate index_ticks into OHLC candles for SQLite."""
+        interval_minutes = int(interval_minutes)
+        if interval_minutes not in self._ALLOWED_INTERVALS:
+            raise ValueError(
+                f"interval_minutes must be one of {sorted(self._ALLOWED_INTERVALS)}, got {interval_minutes}"
+            )
+        from_iso = from_ts.isoformat() if from_ts else None
+        to_iso = to_ts.isoformat() if to_ts else None
+        # Use epoch-based bucketing — works correctly for any interval including multi-hour
+        bucket_seconds = interval_minutes * 60
+        cur = self._exec(
+            f"""
+            SELECT
+                datetime((CAST(strftime('%%s', ts) AS INTEGER) / {bucket_seconds}) * {bucket_seconds}, 'unixepoch') AS bucket,
+                MIN(ltp) AS low,
+                MAX(ltp) AS high,
+                MAX(volume) - MIN(volume) AS volume,
+                MAX(oi) AS oi,
+                MIN(ts) AS first_ts,
+                MAX(ts) AS last_ts
+            FROM index_ticks
+            WHERE symbol = ?
+              AND (? IS NULL OR ts >= ?)
+              AND (? IS NULL OR ts <= ?)
+            GROUP BY bucket
+            ORDER BY bucket ASC
+            LIMIT ?
+            """,
+            (symbol, from_iso, from_iso, to_iso, to_iso, max(1, min(limit, 50000))),
+        )
+        rows = self._rows_to_dict(cur)
+        if not rows:
+            return rows
+        # Fetch all relevant ticks once to compute open/close per bucket (avoids N+1)
+        all_ticks_cur = self._exec(
+            f"""
+            SELECT
+                datetime((CAST(strftime('%%s', ts) AS INTEGER) / {bucket_seconds}) * {bucket_seconds}, 'unixepoch') AS bucket,
+                ts, ltp
+            FROM index_ticks
+            WHERE symbol = ?
+              AND (? IS NULL OR ts >= ?)
+              AND (? IS NULL OR ts <= ?)
+            ORDER BY ts ASC
+            """,
+            (symbol, from_iso, from_iso, to_iso, to_iso),
+        )
+        # Build first/last ltp per bucket
+        first_ltp: dict[str, float] = {}
+        last_ltp: dict[str, float] = {}
+        for tick_row in all_ticks_cur:
+            b = tick_row[0]
+            ltp = tick_row[2]
+            if b not in first_ltp:
+                first_ltp[b] = ltp
+            last_ltp[b] = ltp
+        for row in rows:
+            b = row.get("bucket")
+            row["open"] = first_ltp.get(b, row.get("low"))
+            row["close"] = last_ltp.get(b, row.get("high"))
+            row.pop("first_ts", None)
+            row.pop("last_ts", None)
+        return rows
+
+    def fetch_option_ticks(
+        self,
+        symbol: str,
+        expiry: str,
+        strike: float,
+        option_type: str,
+        from_ts: Optional[datetime],
+        to_ts: Optional[datetime],
+        limit: int = 10000,
+    ) -> List[Dict[str, Any]]:
+        from_iso = from_ts.isoformat() if from_ts else None
+        to_iso = to_ts.isoformat() if to_ts else None
+        cur = self._exec(
+            """
+            SELECT ts, exchange, symbol, expiry, strike, option_type, ltp, volume, oi, bid, ask, iv
+            FROM option_ticks
+            WHERE symbol = ? AND expiry = ? AND strike = ? AND option_type = ?
+              AND (? IS NULL OR ts >= ?)
+              AND (? IS NULL OR ts <= ?)
+            ORDER BY ts ASC
+            LIMIT ?
+            """,
+            (symbol, expiry, strike, option_type, from_iso, from_iso, to_iso, to_iso, max(1, min(limit, 50000))),
+        )
+        return self._rows_to_dict(cur)
+
     def cleanup_old_data(self, days: int = 7) -> None:
         """Remove data older than N days to prevent SQLite bloat."""
         from datetime import timedelta, timezone
 
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        for table in ("strategy_samples", "strategy_events", "index_ticks", "option_chain_metrics"):
+        for table in ("strategy_samples", "strategy_events", "index_ticks", "option_chain_metrics", "option_ticks"):
             self._exec(f"DELETE FROM {table} WHERE ts < ?", (cutoff,))  # noqa: S608

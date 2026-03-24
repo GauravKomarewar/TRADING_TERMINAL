@@ -97,12 +97,32 @@ class LegData:
     order_type: str = 'MKT'    # MKT or LMT
     price: float = 0.0
     product_type: str = 'M'    # M, C, I
+
+    # Risk management (optional — carried from dashboard EXIT orders)
+    target: Optional[float] = None
+    stop_loss: Optional[float] = None
+    trailing_type: Optional[str] = None        # POINTS / PERCENT / ABSOLUTE
+    trailing_value: Optional[float] = None
+    trailing_activation_price: Optional[float] = None
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'LegData':
         """Create leg data from dictionary"""
         # Normalize keys to lowercase
         normalized = {k.lower(): v for k, v in data.items()}
+
+        # Parse optional risk params
+        def _float_or_none(key):
+            v = normalized.get(key)
+            if v is None:
+                return None
+            s = str(v).strip()
+            if not s:
+                return None
+            try:
+                return float(s)
+            except (ValueError, TypeError):
+                return None
         
         return cls(
             tradingsymbol=normalized['tradingsymbol'],
@@ -110,7 +130,12 @@ class LegData:
             qty=int(normalized['qty']),
             order_type=normalized.get('order_type', 'MKT').upper(),
             price=float(normalized.get('price', 0.0)),
-            product_type=normalized.get('product_type', 'M')
+            product_type=normalized.get('product_type', 'M'),
+            target=_float_or_none('target'),
+            stop_loss=_float_or_none('stop_loss'),
+            trailing_type=normalized.get('trailing_type'),
+            trailing_value=_float_or_none('trailing_value'),
+            trailing_activation_price=_float_or_none('trailing_activation_price'),
         )
     
     def to_order_params(self, exchange: str) -> OrderParams:

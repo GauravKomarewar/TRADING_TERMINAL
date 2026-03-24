@@ -161,6 +161,24 @@ class PostgresHistoricalStore:
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_option_chain_metrics_ese_ts ON option_chain_metrics(exchange, symbol, expiry, ts)",
+            """
+            CREATE TABLE IF NOT EXISTS option_ticks (
+                id BIGSERIAL PRIMARY KEY,
+                ts TIMESTAMPTZ NOT NULL,
+                exchange TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                expiry TEXT NOT NULL,
+                strike DOUBLE PRECISION NOT NULL,
+                option_type TEXT NOT NULL,
+                ltp DOUBLE PRECISION,
+                volume DOUBLE PRECISION,
+                oi DOUBLE PRECISION,
+                bid DOUBLE PRECISION,
+                ask DOUBLE PRECISION,
+                iv DOUBLE PRECISION
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_option_ticks_sym_ts ON option_ticks(symbol, expiry, strike, option_type, ts)",
         ]
         for sql in ddl:
             self._exec(sql)
@@ -275,6 +293,86 @@ class PostgresHistoricalStore:
             for r in rows
         ]
         self._exec_many(sql, payload)
+
+    def insert_option_ticks(self, rows: List[Dict[str, Any]]) -> None:
+        sql = """
+        INSERT INTO option_ticks(ts, exchange, symbol, expiry, strike, option_type,
+                                 ltp, volume, oi, bid, ask, iv)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        payload = [
+            (
+                r.get("ts"),
+                r.get("exchange"),
+                r.get("symbol"),
+                r.get("expiry"),
+                r.get("strike"),
+                r.get("option_type"),
+                r.get("ltp"),
+                r.get("volume"),
+                r.get("oi"),
+                r.get("bid"),
+                r.get("ask"),
+                r.get("iv"),
+            )
+            for r in rows
+        ]
+        self._exec_many(sql, payload)
+
+    def fetch_index_ohlc(
+        self,
+        symbol: str,
+        from_ts: Optional[datetime],
+        to_ts: Optional[datetime],
+        interval_minutes: int = 1,
+        limit: int = 5000,
+    ) -> List[Dict[str, Any]]:
+        """Aggregate index_ticks into OHLC candles of `interval_minutes` width."""
+        cur = self._exec(
+            """
+            SELECT
+                to_timestamp(floor(EXTRACT(EPOCH FROM ts) / (%s * 60)) * (%s * 60)) AS bucket,
+                (array_agg(ltp ORDER BY ts ASC))[1]  AS open,
+                MAX(ltp) AS high,
+                MIN(ltp) AS low,
+                (array_agg(ltp ORDER BY ts DESC))[1] AS close,
+                MAX(volume) - MIN(volume)             AS volume,
+                MAX(oi)                               AS oi
+            FROM index_ticks
+            WHERE symbol = %s
+              AND (%s IS NULL OR ts >= %s)
+              AND (%s IS NULL OR ts <= %s)
+            GROUP BY bucket
+            ORDER BY bucket ASC
+            LIMIT %s
+            """,
+            (interval_minutes, interval_minutes, symbol, from_ts, from_ts, to_ts, to_ts, max(1, min(limit, 50000))),
+        )
+        return self._rows_to_dict(cur)
+
+    def fetch_option_ticks(
+        self,
+        symbol: str,
+        expiry: str,
+        strike: float,
+        option_type: str,
+        from_ts: Optional[datetime],
+        to_ts: Optional[datetime],
+        limit: int = 10000,
+    ) -> List[Dict[str, Any]]:
+        cur = self._exec(
+            """
+            SELECT ts, exchange, symbol, expiry, strike, option_type, ltp, volume, oi, bid, ask, iv
+            FROM option_ticks
+            WHERE symbol = %s AND expiry = %s AND strike = %s AND option_type = %s
+              AND (%s IS NULL OR ts >= %s)
+              AND (%s IS NULL OR ts <= %s)
+            ORDER BY ts ASC
+            LIMIT %s
+            """,
+            (symbol, expiry, strike, option_type, from_ts, from_ts, to_ts, to_ts, max(1, min(limit, 50000))),
+        )
+        return self._rows_to_dict(cur)
 
     @staticmethod
     def _rows_to_dict(cur) -> List[Dict[str, Any]]:

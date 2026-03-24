@@ -217,3 +217,150 @@ def get_fyers_pipeline_status(ctx: dict = Depends(require_dashboard_auth)):
     if svc is None:
         return {"enabled": False, "message": "FyersChainService not initialized"}
     return {"enabled": True, **svc.get_stats()}
+
+
+# ======================================================================
+# MARKET DATA SUBSCRIPTIONS (INDEX TOKENS)
+# ======================================================================
+
+@sub_router.get("/settings/market-data/available")
+def get_available_market_data(ctx: dict = Depends(require_dashboard_auth)):
+    """Return all index tokens from registry with metadata and subscription status."""
+    from shoonya_platform.market_data.feeds import index_tokens_subscriber
+
+    all_indices = index_tokens_subscriber.get_all_available_indices()
+    subscribed = set(index_tokens_subscriber.get_subscribed_indices())
+    configured = set(index_tokens_subscriber.MAJOR_INDICES)
+
+    items = []
+    for symbol, friendly_name in all_indices.items():
+        meta = index_tokens_subscriber.get_index_metadata(symbol) or {}
+        items.append({
+            "symbol": symbol,
+            "name": friendly_name,
+            "exchange": meta.get("exchange", ""),
+            "token": meta.get("token"),
+            "subscribed": symbol in subscribed,
+            "configured": symbol in configured,
+        })
+
+    return {
+        "indices": items,
+        "ticker_symbols": index_tokens_subscriber.TICKER_SYMBOLS[:],
+        "sticky_symbols": index_tokens_subscriber.STICKY_SYMBOLS[:],
+    }
+
+
+@sub_router.get("/settings/market-data/subscribed")
+def get_subscribed_market_data(ctx: dict = Depends(require_dashboard_auth)):
+    """Return currently subscribed indices and ticker config."""
+    from shoonya_platform.market_data.feeds import index_tokens_subscriber
+
+    return {
+        "subscribed": index_tokens_subscriber.get_subscribed_indices(),
+        "configured": index_tokens_subscriber.MAJOR_INDICES[:],
+        "ticker_symbols": index_tokens_subscriber.TICKER_SYMBOLS[:],
+        "sticky_symbols": index_tokens_subscriber.STICKY_SYMBOLS[:],
+    }
+
+
+@sub_router.post("/settings/market-data/subscribe")
+def subscribe_market_data(
+    payload: Dict[str, Any] = Body(...),
+    ctx: dict = Depends(require_dashboard_auth),
+):
+    """
+    Subscribe to an index symbol.
+
+    Body: {"symbol": "BANKEX"}
+    """
+    from shoonya_platform.market_data.feeds import index_tokens_subscriber
+
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+
+    if symbol not in index_tokens_subscriber.INDEX_TOKENS_REGISTRY:
+        raise HTTPException(status_code=400, detail=f"Unknown symbol: {symbol}")
+
+    bot = ctx.get("bot")
+    api_client = getattr(bot, "api_proxy", None) or getattr(bot, "api", None) if bot else None
+    if api_client is None:
+        raise HTTPException(status_code=503, detail="API client unavailable")
+
+    ok = index_tokens_subscriber.subscribe_symbol(api_client, symbol)
+    if not ok:
+        raise HTTPException(status_code=500, detail=f"Failed to subscribe to {symbol}")
+
+    return {"status": "ok", "symbol": symbol}
+
+
+@sub_router.post("/settings/market-data/unsubscribe")
+def unsubscribe_market_data(
+    payload: Dict[str, Any] = Body(...),
+    ctx: dict = Depends(require_dashboard_auth),
+):
+    """
+    Unsubscribe from an index symbol.
+
+    Body: {"symbol": "BANKEX"}
+    """
+    from shoonya_platform.market_data.feeds import index_tokens_subscriber
+
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+
+    if symbol not in index_tokens_subscriber.INDEX_TOKENS_REGISTRY:
+        raise HTTPException(status_code=400, detail=f"Unknown symbol: {symbol}")
+
+    index_tokens_subscriber.unsubscribe_symbol(symbol)
+    return {"status": "ok", "symbol": symbol}
+
+
+@sub_router.post("/settings/market-data/ticker-config")
+def update_ticker_config(
+    payload: Dict[str, Any] = Body(...),
+    ctx: dict = Depends(require_dashboard_auth),
+):
+    """
+    Update ticker ribbon configuration.
+
+    Body: {"ticker_symbols": ["NIFTY","BANKNIFTY",...], "sticky_symbols": ["INDIAVIX","NIFTY"]}
+    """
+    from shoonya_platform.market_data.feeds import index_tokens_subscriber
+
+    ticker = payload.get("ticker_symbols")
+    sticky = payload.get("sticky_symbols")
+
+    if ticker is not None and not isinstance(ticker, list):
+        raise HTTPException(status_code=400, detail="ticker_symbols must be a list")
+    if sticky is not None and not isinstance(sticky, list):
+        raise HTTPException(status_code=400, detail="sticky_symbols must be a list")
+
+    import re
+    _SYMBOL_RE = re.compile(r"^[A-Z0-9_]{1,30}$")
+
+    def _sanitize_symbol_list(items: list, param_name: str) -> list:
+        sanitized = []
+        for item in items:
+            if not isinstance(item, str):
+                raise HTTPException(status_code=400, detail=f"{param_name} must contain only strings")
+            s = item.strip().upper()
+            if not s:
+                raise HTTPException(status_code=400, detail=f"{param_name} contains empty symbol")
+            if not _SYMBOL_RE.match(s):
+                raise HTTPException(status_code=400, detail=f"{param_name} contains invalid symbol: {s}")
+            sanitized.append(s)
+        return sanitized
+
+    if ticker is not None:
+        ticker = _sanitize_symbol_list(ticker, "ticker_symbols")
+    if sticky is not None:
+        sticky = _sanitize_symbol_list(sticky, "sticky_symbols")
+
+    index_tokens_subscriber.update_ticker_config(
+        ticker_symbols=ticker,
+        sticky_symbols=sticky,
+    )
+    return {"status": "ok"}

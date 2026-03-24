@@ -85,7 +85,21 @@
             .theme-grid{grid-template-columns:repeat(3,1fr);gap:8px}
             .theme-card{padding:10px 8px}
             .theme-swatch-lg{width:36px;height:36px}
+            #mdGrid{grid-template-columns:repeat(2,1fr)}
         }
+
+        /* ── Market data cards ── */
+        .md-card{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel-2);border:2px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;user-select:none}
+        .md-card:hover{border-color:var(--primary);transform:translateY(-1px)}
+        .md-card.active{border-color:var(--success);background:rgba(16,185,129,.06)}
+        .md-card .md-toggle{width:36px;height:20px;border-radius:10px;background:var(--border);position:relative;flex-shrink:0;transition:background .2s}
+        .md-card.active .md-toggle{background:var(--success)}
+        .md-card .md-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s}
+        .md-card.active .md-toggle::after{transform:translateX(16px)}
+        .md-card .md-info{flex:1;min-width:0}
+        .md-card .md-sym{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .md-card .md-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .md-card .md-exch{font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;background:rgba(59,130,246,.1);color:var(--primary)}
     </style>
 </head>
 <body data-page="settings">
@@ -167,6 +181,43 @@
         <div class="section-title">❤️ Supervisor Health</div>
         <div class="health-grid" id="healthGrid">
             <div class="empty-msg">Loading…</div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ MARKET DATA SUBSCRIPTIONS ═══════════════ -->
+    <div class="section">
+        <div class="section-title">📊 Market Data Subscriptions</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:16px">
+            Select which index tokens to subscribe for live prices, ticker ribbon, and historical tick storage.
+        </p>
+
+        <!-- Exchange filter tabs -->
+        <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)">
+            <button class="md-tab-btn active" data-exchange="all" style="padding:8px 16px;background:none;border:none;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--primary);transition:all .15s">All</button>
+            <button class="md-tab-btn" data-exchange="NSE" style="padding:8px 16px;background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s">NSE</button>
+            <button class="md-tab-btn" data-exchange="BSE" style="padding:8px 16px;background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s">BSE</button>
+            <button class="md-tab-btn" data-exchange="MCX" style="padding:8px 16px;background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s">MCX</button>
+        </div>
+
+        <!-- Index cards grid -->
+        <div id="mdGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px">
+            <div class="empty-msg">Loading…</div>
+        </div>
+
+        <!-- Ticker ribbon config -->
+        <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">Ticker Ribbon</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+                <div class="field" style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px">
+                    <label style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;letter-spacing:.3px">Sticky Symbols (always visible)</label>
+                    <input id="mdSticky" type="text" placeholder="e.g. INDIAVIX,NIFTY" style="padding:8px 12px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;text-transform:uppercase">
+                </div>
+                <div class="field" style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px">
+                    <label style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;letter-spacing:.3px">Ticker Rotation Order</label>
+                    <input id="mdTicker" type="text" placeholder="e.g. INDIAVIX,NIFTY,SENSEX,BANKNIFTY" style="padding:8px 12px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;text-transform:uppercase">
+                </div>
+                <button class="btn btn-primary" id="btnSaveTicker">Save Ticker</button>
+            </div>
         </div>
     </div>
 </main>
@@ -499,11 +550,117 @@ async function refreshHealth() {
     }
 }
 
+/* ══════════════ Market Data Subscriptions ══════════════ */
+const mdGrid    = document.getElementById('mdGrid');
+const mdSticky  = document.getElementById('mdSticky');
+const mdTicker  = document.getElementById('mdTicker');
+let mdIndices   = [];
+let mdFilter    = 'all';
+
+document.querySelectorAll('.md-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.md-tab-btn').forEach(b => {
+            b.classList.remove('active');
+            b.style.color = 'var(--muted)';
+            b.style.borderBottomColor = 'transparent';
+        });
+        btn.classList.add('active');
+        btn.style.color = 'var(--text)';
+        btn.style.borderBottomColor = 'var(--primary)';
+        mdFilter = btn.dataset.exchange;
+        renderMdGrid();
+    });
+});
+
+async function loadMarketData() {
+    try {
+        const data = await fetchJSON(API + '/settings/market-data/available');
+        if (!data) return;
+        mdIndices = data.indices || [];
+        mdSticky.value = (data.sticky_symbols || []).join(', ');
+        mdTicker.value = (data.ticker_symbols || []).join(', ');
+        renderMdGrid();
+    } catch(e) {
+        console.error('Failed to load market data', e);
+        mdGrid.innerHTML = '<div class="empty-msg">Failed to load market data</div>';
+    }
+}
+
+function renderMdGrid() {
+    const filtered = mdFilter === 'all' ? mdIndices : mdIndices.filter(i => i.exchange === mdFilter);
+    if (!filtered.length) {
+        mdGrid.innerHTML = '<div class="empty-msg">No indices in this category</div>';
+        return;
+    }
+    mdGrid.innerHTML = filtered.map(idx => {
+        const cls = idx.configured ? 'md-card active' : 'md-card';
+        return '<div class="' + cls + '" data-symbol="' + esc(idx.symbol) + '">' +
+            '<div class="md-toggle"></div>' +
+            '<div class="md-info">' +
+                '<div class="md-sym">' + esc(idx.symbol) + '</div>' +
+                '<div class="md-name">' + esc(idx.name) + '</div>' +
+            '</div>' +
+            '<span class="md-exch">' + esc(idx.exchange) + '</span>' +
+            '</div>';
+    }).join('');
+}
+
+mdGrid.addEventListener('click', async function(e) {
+    const card = e.target.closest('.md-card');
+    if (!card) return;
+    const symbol = card.dataset.symbol;
+    if (!symbol) return;
+    const isActive = card.classList.contains('active');
+    const endpoint = isActive ? '/settings/market-data/unsubscribe' : '/settings/market-data/subscribe';
+    card.style.opacity = '0.5';
+    card.style.pointerEvents = 'none';
+    try {
+        await fetchJSON(API + endpoint, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ symbol }),
+        });
+        // Update local state
+        const idx = mdIndices.find(i => i.symbol === symbol);
+        if (idx) { idx.configured = !isActive; idx.subscribed = !isActive; }
+        card.classList.toggle('active', !isActive);
+        toast((isActive ? 'Unsubscribed: ' : 'Subscribed: ') + symbol, 'success');
+    } catch(err) {
+        toast('Failed: ' + err.message, 'error');
+    } finally {
+        card.style.opacity = '';
+        card.style.pointerEvents = '';
+    }
+});
+
+document.getElementById('btnSaveTicker').addEventListener('click', async () => {
+    const btn = document.getElementById('btnSaveTicker');
+    const stickyVal = mdSticky.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    const tickerVal = mdTicker.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = 'Saving...';
+    try {
+        await fetchJSON(API + '/settings/market-data/ticker-config', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ sticky_symbols: stickyVal, ticker_symbols: tickerVal }),
+        });
+        toast('Ticker ribbon updated', 'success');
+    } catch(err) {
+        toast('Failed: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+    }
+});
+
 /* ── Init ── */
 async function init() {
     await loadAvailable();
     await refreshChains();
     await refreshHealth();
+    await loadMarketData();
     // Auto-refresh every 15s
     setInterval(refreshChains, 15000);
     setInterval(refreshHealth, 15000);

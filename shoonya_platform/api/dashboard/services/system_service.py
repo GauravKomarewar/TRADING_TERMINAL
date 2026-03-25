@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -83,7 +84,21 @@ class SystemTruthService:
             return None
         try:
             with open(path) as f:
-                return json.load(f)
+                data = json.load(f)
+            # If the saved date is stale (not today), reset daily fields
+            # so dashboard shows correct base_max_loss on a fresh day
+            saved_date = data.get("date", "")
+            if saved_date != str(date.today()):
+                base = data.get("base_max_loss", data.get("dynamic_max_loss", -2500))
+                data["dynamic_max_loss"] = base
+                data["daily_pnl"] = 0.0
+                data["daily_loss_hit"] = False
+                data["highest_profit"] = 0.0
+                data["warning_sent"] = False
+                data["force_exit_in_progress"] = False
+                data["human_violation_detected"] = False
+                data["date"] = str(date.today())
+            return data
         except (json.JSONDecodeError, OSError):
             return None
 

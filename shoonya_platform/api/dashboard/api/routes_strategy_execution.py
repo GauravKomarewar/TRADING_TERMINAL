@@ -283,7 +283,18 @@ def stop_strategy_and_exit(
             guard = getattr(bot, "execution_guard", None)
             broker_view = getattr(bot, "broker_view", None)
             if guard and broker_view and guard.has_strategy(strategy_key):
-                guard.reconcile_with_broker(strategy_key, broker_view)
+                raw_positions = broker_view.get_positions(force_refresh=True) or []
+                broker_map = {}
+                for p in raw_positions:
+                    sym = p.get("tsym")
+                    net = int(p.get("netqty", 0) or 0)
+                    if sym and net != 0:
+                        broker_map.setdefault(sym, {"BUY": 0, "SELL": 0})
+                        if net > 0:
+                            broker_map[sym]["BUY"] = net
+                        else:
+                            broker_map[sym]["SELL"] = abs(net)
+                guard.reconcile_with_broker(strategy_key, broker_map)
         except Exception as re:
             logger.warning("Kill-switch pre-exit reconciliation failed for %s: %s", strategy_key, re)
 

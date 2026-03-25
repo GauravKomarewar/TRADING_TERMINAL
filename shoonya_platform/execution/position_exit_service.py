@@ -92,7 +92,11 @@ class PositionExitService:
                 return
             scope = "SYMBOLS"  # Override to filter by our symbols
 
-        positions = self.client.get_positions()
+        try:
+            positions = self.client.get_positions()
+        except Exception as e:
+            logger.critical("EXIT: get_positions() failed — cannot proceed: %s", e)
+            raise RuntimeError(f"BROKER_UNAVAILABLE_CANNOT_EXIT: {e}") from e
         if not positions:
             logger.warning("EXIT: no broker positions (confirmed flat)")
             return

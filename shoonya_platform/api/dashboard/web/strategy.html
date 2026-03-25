@@ -1505,7 +1505,7 @@ function collapseBySymbol(rows){
   const items = Array.isArray(rows) ? rows : [];
   const m = new Map();
   for(const p of items){
-    const k = String(p.symbol||'').trim()||'UNKNOWN';
+    const k = (String(p.symbol||'').trim()||'UNKNOWN') + '|' + (String(p.product||'').trim());
     if(!m.has(k)){ m.set(k,{...p,symbol:k}); continue; }
     const x = m.get(k);
     ['qty','realized_pnl','unrealized_pnl','total_pnl','delta','gamma','theta','vega'].forEach(f=>x[f]=Number(x[f]||0)+Number(p[f]||0));

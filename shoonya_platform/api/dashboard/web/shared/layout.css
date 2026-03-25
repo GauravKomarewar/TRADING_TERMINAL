@@ -337,6 +337,7 @@ body.dashboard-shell {
         top: 72px; /* 30px ticker + 42px header */
         left: 0;
         right: 0;
+        height: auto; /* override desktop 48px height */
         background: var(--panel);
         flex-direction: column;
         align-items: stretch;

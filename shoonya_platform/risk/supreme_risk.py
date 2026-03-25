@@ -48,6 +48,17 @@ class SupremeRiskManager:
     # INIT
     # --------------------------------------------------
 
+    # Combined market window covering NSE (09:15-15:30) and MCX (09:00-23:30).
+    # Used to guard against stale broker PnL outside all trading sessions.
+    _ANY_MARKET_OPEN = datetime.strptime("09:00", "%H:%M").time()
+    _ANY_MARKET_CLOSE = datetime.strptime("23:30", "%H:%M").time()
+
+    @classmethod
+    def _is_any_market_active(cls) -> bool:
+        """True if ANY exchange (NSE/MCX) could be in session."""
+        now = datetime.now().time()
+        return cls._ANY_MARKET_OPEN <= now <= cls._ANY_MARKET_CLOSE
+
     def __init__(self, bot):
         self.bot = bot
         self._lock = threading.RLock()
@@ -141,6 +152,8 @@ class SupremeRiskManager:
                 self.highest_profit = data.get("highest_profit", 0.0)
                 self.daily_loss_hit = data.get("daily_loss_hit", False)
                 self.human_violation_detected = data.get("human_violation_detected", False)
+                self.warning_sent = data.get("warning_sent", False)
+                self.force_exit_in_progress = data.get("force_exit_in_progress", False)
 
                 # Restore failed_days and cooldown_until (crash-safe)
                 saved_failed_days = data.get("failed_days", [])
@@ -157,11 +170,13 @@ class SupremeRiskManager:
                         pass
 
                 logger.info(
-                    "RMS: State loaded | date=%s | max_loss=%.2f | profit=%.2f | loss_hit=%s",
+                    "RMS: State loaded | date=%s | max_loss=%.2f | profit=%.2f | loss_hit=%s | warning=%s | force_exit=%s",
                     self.current_day,
                     self.dynamic_max_loss,
                     self.highest_profit,
                     self.daily_loss_hit,
+                    self.warning_sent,
+                    self.force_exit_in_progress,
                 )
             else:
                 logger.info(
@@ -361,6 +376,17 @@ class SupremeRiskManager:
     def heartbeat(self):
         with self._lock:
             try:
+                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                # DAY CHANGE CHECK (must run BEFORE PnL update)
+                # Without this, stale broker rpnl from yesterday
+                # gets treated as today's profit, corrupting
+                # trailing max loss (e.g. -2500 → -1000).
+                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                today = date.today()
+                if today != self.current_day:
+                    logger.info("RMS: New day detected in heartbeat | old=%s | new=%s", self.current_day, today)
+                    self._reset_daily_state(today)
+
                 # Get fresh positions and update PnL in one call
                 positions = self._update_pnl()
                 
@@ -449,8 +475,13 @@ class SupremeRiskManager:
                     logger.debug("RMS: No positions in broker snapshot")
 
                 # ALWAYS run these regardless of positions
-                self._update_trailing_max_loss()
-                self._check_warning_threshold()
+                # Guard: Only update trailing max loss during market hours.
+                # Before market open, broker returns yesterday's stale rpnl
+                # which would corrupt the trailing stop (e.g. -2500 → -1000).
+                # Uses combined NSE+MCX window (09:00-23:30).
+                if self._is_any_market_active():
+                    self._update_trailing_max_loss()
+                    self._check_warning_threshold()
                 self.track_pnl_ohlc()
                 self._save_state()  # Keep dashboard risk widget up-to-date
                 self._send_periodic_status()
@@ -617,6 +648,18 @@ class SupremeRiskManager:
                 continue
         
         total = total_rpnl + total_urmtom
+
+        # Guard: Before market opens, broker returns yesterday's stale rpnl.
+        # If all positions are flat (live=0) and total is non-zero, this is
+        # leftover data.  Don't let it corrupt day-start PnL.
+        # Uses combined NSE+MCX window (09:00-23:30).
+        if not self._is_any_market_active() and live_position_count == 0 and total != 0.0:
+            logger.debug(
+                "RMS: Ignoring stale pre-market PnL | broker_total=%.2f | keeping daily_pnl=%.2f",
+                total, self.daily_pnl,
+            )
+            return positions
+
         pnl_change = total - self.daily_pnl if self.last_known_pnl is not None else 0.0
         
         logger.info(

@@ -39,9 +39,10 @@ sub_router = APIRouter()
 
 
 def _safe_call(fn, fallback, name: str):
-    """Call *fn*(); on failure log a warning and return *fallback*."""
+    """Call *fn*(); on failure or None return, use *fallback*."""
     try:
-        return fn()
+        result = fn()
+        return result if result is not None else fallback
     except Exception as exc:
         logger.warning("dashboard_snapshot: %s failed: %s", name, exc)
         return fallback

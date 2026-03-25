@@ -202,11 +202,11 @@ body.theme-solar{
 
 /* Mobile */
 @media(max-width:768px){
-  body{padding-top:0!important;overflow:hidden!important;height:100vh!important;height:100dvh!important;height:100svh!important}
-  main{height:100vh!important;height:100dvh!important;height:100svh!important;margin:0;padding:0 0 40px 0}
-  #app-header{display:none!important}
+  body{padding-top:42px!important;overflow:hidden!important;height:100vh!important;height:100dvh!important;height:100svh!important}
+  main{height:calc(100vh - 42px)!important;height:calc(100dvh - 42px)!important;height:calc(100svh - 42px)!important;margin:0;padding:0 0 40px 0}
+  .app-header{top:0!important}  /* ticker hidden on charts — header anchors to top */
+  .app-nav{top:42px!important;max-height:calc(100dvh - 42px)!important}  /* dropdown starts right below header */
   .global-ticker{display:none!important}
-  .nav-overlay{display:none!important}
   .tv-toolbar{height:36px;gap:1px;padding:0 2px;flex-shrink:0}
   .tv-btn{font-size:11px;height:26px;padding:0 5px}
   .tv-sym-btn{font-size:12px}
@@ -308,7 +308,7 @@ body.theme-solar{
     <div class="draw-hint" id="drawHint"></div>
     <div class="tv-zoom">
       <button id="btnZoomOut" title="Zoom out">−</button>
-      <button id="btnReset" title="Fit all">⊡</button>
+      <button id="btnReset" title="Fit all"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
       <button id="btnZoomIn" title="Zoom in">+</button>
     </div>
     <div class="tv-chart-container" id="chartContainer"></div>
@@ -1418,13 +1418,19 @@ function applyIndicators(dataSource){
 function showHint(msg){const h=document.getElementById('drawHint');h.textContent=msg;h.style.display=msg?'block':'none';}
 
 function clearPreview(){
-  if(previewSeries){try{chart.removeSeries(previewSeries);}catch(x){} previewSeries=null;}
+  if(previewSeries){
+    try{previewSeries.setData([]);}catch(x){}
+    /* Remove from chart entirely when drawing finishes (not just clearing data) */
+    if(!drawClicks.length){try{chart.removeSeries(previewSeries);}catch(x){} previewSeries=null;}
+  }
 }
 function updateDrawPreview(ts,price){
   if(!drawClicks.length)return;
-  clearPreview();
+  /* Reuse existing preview series to avoid recreating on every move (prevents unresponsiveness) */
+  if(!previewSeries){
+    try{previewSeries=chart.addLineSeries({color:'rgba(255,255,255,0.4)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});}catch(x){return;}
+  }
   try{
-    previewSeries=chart.addLineSeries({color:'rgba(255,255,255,0.4)',lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
     const p1=drawClicks[0];
     if(drawTool==='hray'||drawTool==='trendline'||drawTool==='measure'){
       /* Preview line from click1 to cursor */
@@ -1501,6 +1507,9 @@ function setDraw(tool){
   const hints={crosshairTool:'',hline:'Click on chart to place horizontal line',hray:'Click start point for ray',trendline:'Click point 1',fib:'Click high point',rect:'Click edge point 1',measure:'Click point 1'};
   c.style.cursor=(tool==='crosshairTool')?'':'crosshair';
   showHint(hints[tool]||'');
+  /* Disable chart scroll/pan while a drawing tool is active so touch taps register as clicks */
+  const isDrawing=(tool!=='crosshairTool');
+  if(chart){chart.applyOptions({handleScroll:{mouseWheel:true,pressedMouseMove:!isDrawing,horzTouchDrag:!isDrawing,vertTouchDrag:!isDrawing},handleScale:{mouseWheel:true,pinch:!isDrawing,axisPressedMouseMove:!isDrawing,axisDoubleClickReset:!isDrawing}});}
 }
 
 function onChartClick(ts,price,point){

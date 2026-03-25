@@ -1300,7 +1300,8 @@
         if (els.dist && pnl != null && maxLoss != null) {
             var distance = pnl - maxLoss;
             els.dist.textContent = fmt(distance);
-            els.dist.style.color = distance <= 2 ? 'var(--danger)' : distance <= 5 ? 'var(--warning)' : 'var(--text-secondary)';
+            var warnDist = Math.abs(maxLoss) * 0.3;
+            els.dist.style.color = distance <= 0 ? 'var(--danger)' : distance <= warnDist ? 'var(--warning)' : 'var(--text-secondary)';
         } else if (els.dist) {
             els.dist.textContent = '--';
         }

@@ -23,8 +23,20 @@ function loginRoute() {
   return appRoute('/login')
 }
 
+let loginRedirectInProgress = false
+
 function redirectToLogin() {
-  window.location.href = loginRoute()
+  const target = loginRoute()
+  const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
+  const targetPath = new URL(target, window.location.origin).pathname.replace(/\/+$/, '') || '/'
+
+  // Prevent reload loops when unauthorized checks happen on the login route.
+  if (currentPath === targetPath || loginRedirectInProgress) {
+    return
+  }
+
+  loginRedirectInProgress = true
+  window.location.replace(target)
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {

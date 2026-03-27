@@ -92,6 +92,8 @@ class OrderRepository:
                 trailing_type,
                 trailing_value,
                 trail_when,
+                managed_anchor_ltp,
+                managed_base_stop_loss,
 
                 broker_order_id,
                 execution_type,
@@ -124,6 +126,8 @@ class OrderRepository:
                 record.trailing_type,
                 record.trailing_value,
                 record.trail_when,
+                record.managed_anchor_ltp,
+                record.managed_base_stop_loss,
 
                 record.broker_order_id,
                 record.execution_type,

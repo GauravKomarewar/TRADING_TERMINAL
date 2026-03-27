@@ -93,6 +93,8 @@ def get_connection():
                     target REAL,
                     trailing_type TEXT,
                     trailing_value REAL,
+                    managed_anchor_ltp REAL,
+                    managed_base_stop_loss REAL,
 
                     broker_order_id TEXT,
                     execution_type TEXT,
@@ -106,12 +108,16 @@ def get_connection():
             )
             conn.commit()
 
-            # Add trail_when column if missing (migration)
+            # Add missing columns (migrations)
             try:
                 existing_cols = {row[1] for row in conn.execute("PRAGMA table_info('orders')").fetchall()}
                 if 'trail_when' not in existing_cols:
                     conn.execute("ALTER TABLE orders ADD COLUMN trail_when REAL")
-                    conn.commit()
+                if 'managed_anchor_ltp' not in existing_cols:
+                    conn.execute("ALTER TABLE orders ADD COLUMN managed_anchor_ltp REAL")
+                if 'managed_base_stop_loss' not in existing_cols:
+                    conn.execute("ALTER TABLE orders ADD COLUMN managed_base_stop_loss REAL")
+                conn.commit()
             except sqlite3.OperationalError:
                 # Column already exists or table locked — non-fatal
                 try:
@@ -199,6 +205,8 @@ def get_connection():
                             trailing_type TEXT,
                             trailing_value REAL,
                             trail_when REAL,
+                            managed_anchor_ltp REAL,
+                            managed_base_stop_loss REAL,
 
                             broker_order_id TEXT,
                             execution_type TEXT,
@@ -217,13 +225,13 @@ def get_connection():
                                 id, client_id, command_id, source, user, strategy_name,
                                 exchange, symbol, side, quantity, product,
                                 order_type, price, stop_loss, target, trailing_type,
-                                trailing_value, trail_when, broker_order_id, execution_type,
+                                trailing_value, trail_when, managed_anchor_ltp, managed_base_stop_loss, broker_order_id, execution_type,
                                 status, created_at, updated_at, tag
                             )
                             SELECT id, client_id, command_id, source, user, strategy_name,
                                    exchange, symbol, side, quantity, product,
                                    order_type, price, stop_loss, target, trailing_type,
-                                   trailing_value, trail_when, broker_order_id, execution_type,
+                                   trailing_value, trail_when, NULL, NULL, broker_order_id, execution_type,
                                    status, created_at, updated_at, tag
                             FROM orders_old
                             """
@@ -235,13 +243,13 @@ def get_connection():
                                 id, client_id, command_id, source, user, strategy_name,
                                 exchange, symbol, side, quantity, product,
                                 order_type, price, stop_loss, target, trailing_type,
-                                trailing_value, broker_order_id, execution_type,
+                                          trailing_value, managed_anchor_ltp, managed_base_stop_loss, broker_order_id, execution_type,
                                 status, created_at, updated_at, tag
                             )
                             SELECT id, client_id, command_id, source, user, strategy_name,
                                    exchange, symbol, side, quantity, product,
                                    order_type, price, stop_loss, target, trailing_type,
-                                   trailing_value, broker_order_id, execution_type,
+                                              trailing_value, NULL, NULL, broker_order_id, execution_type,
                                    status, created_at, updated_at, tag
                             FROM orders_old
                             """

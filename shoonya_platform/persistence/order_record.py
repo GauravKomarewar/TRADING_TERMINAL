@@ -51,3 +51,5 @@ class OrderRecord:
 
     # ---- Extended Risk (optional, added later) ----
     trail_when: Optional[float] = None
+    managed_anchor_ltp: Optional[float] = None
+    managed_base_stop_loss: Optional[float] = None

@@ -1055,7 +1055,7 @@
         thead.querySelectorAll('.pm-th').forEach(function(th) { th.remove(); });
         if (posManagerMode) {
             var actionTh = thead.lastElementChild;
-            ['SL', 'Target', 'Trail', 'Trail@', 'Base SL', 'Start LTP', 'Act@', '', ''].forEach(function(label) {
+            ['SL', 'Target', 'Trail', 'Trail@', 'Start LTP', 'Act@', '', ''].forEach(function(label) {
                 var th = document.createElement('th');
                 th.className = 'pm-th';
                 th.textContent = label;
@@ -1076,16 +1076,15 @@
         var exitSide = qty > 0 ? 'SELL' : 'BUY';
 
         if (isFlat) {
-            return '<td colspan="9" style="text-align:center;color:var(--muted);font-size:11px">—</td>';
+            return '<td colspan="8" style="text-align:center;color:var(--muted);font-size:11px">—</td>';
         }
 
         var slVal = isManaged && me.stop_loss != null ? me.stop_loss : '';
         var tgtVal = isManaged && me.target != null ? me.target : '';
         var trailVal = isManaged && me.trailing_value != null ? me.trailing_value : '';
         var twVal = isManaged && me.trail_when != null ? me.trail_when : '';
-        var baseSlVal = isManaged && me.base_stop_loss != null ? me.base_stop_loss : '';
         var startLtpVal = isManaged && me.initial_ltp != null ? me.initial_ltp : '';
-        var actVal = isManaged && me.activation_price != null ? me.activation_price : '';
+        var actVal = isManaged && me.next_trail_price != null ? me.next_trail_price : '';
 
         var statusHtml = isManaged
             ? '<span class="pm-status-pill active">ACTIVE</span>'
@@ -1099,9 +1098,8 @@
              + '<td class="pm-live-cell"><input type="number" step="any" data-field="target" data-live="' + tgtVal + '" value="' + tgtVal + '" placeholder="—"></td>'
              + '<td class="pm-live-cell"><input type="number" step="any" data-field="trailing_value" data-live="' + trailVal + '" value="' + trailVal + '" placeholder="—"></td>'
              + '<td class="pm-live-cell"><input type="number" step="any" data-field="trail_when" data-live="' + twVal + '" value="' + twVal + '" placeholder="—"></td>'
-               + '<td class="pm-meta-cell" data-pm="base-stop">' + (baseSlVal !== '' ? fmt(baseSlVal) : '—') + '</td>'
                + '<td class="pm-meta-cell" data-pm="initial-ltp">' + (startLtpVal !== '' ? fmt(startLtpVal) : '—') + '</td>'
-               + '<td class="pm-meta-cell" data-pm="activation-price">' + (actVal !== '' ? fmt(actVal) : '—') + '</td>'
+                             + '<td class="pm-meta-cell" data-pm="next-trail-price">' + (actVal !== '' ? fmt(actVal) : '—') + '</td>'
              + '<td>' + statusHtml + '</td>'
              + '<td style="white-space:nowrap">' + btns + '</td>';
     }
@@ -1176,9 +1174,8 @@
                 }
             };
 
-            setMeta('base-stop', isManaged ? me.base_stop_loss : null);
             setMeta('initial-ltp', isManaged ? me.initial_ltp : null);
-            setMeta('activation-price', isManaged ? me.activation_price : null);
+            setMeta('next-trail-price', isManaged ? me.next_trail_price : null);
 
             if (!isManaged) return;
 
@@ -1251,7 +1248,7 @@
         countEl.textContent = countText;
         exitAllBtn.style.display = openPositions.length > 0 ? 'inline-block' : 'none';
 
-        var colSpan = posManagerMode ? 19 : 10;
+        var colSpan = posManagerMode ? 18 : 10;
 
         if (!positions.length) {
             tbody.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">No positions</td></tr>';
@@ -1279,8 +1276,7 @@
                 var qtyColor = isFlat ? 'var(--muted)' : (side==='LONG'?'var(--success)':'var(--danger)');
                 var actionHtml = isFlat
                     ? '<span style="font-size:11px;color:var(--muted)">CLOSED</span>'
-                    : '<button class="btn-exit btn-exit-pos" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '" title="Exit ' + encodeAttr(sym) + '">EXIT</button>'
-                      + ' <button class="btn-exit btn-order-pos" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" data-qty="' + Math.abs(qty) + '" data-side="' + (qty > 0 ? 'S' : 'B') + '" title="Place exit order" style="background:var(--primary)">ORDER</button>';
+                                        : '<button class="btn-exit btn-exit-pos" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '" title="Exit ' + encodeAttr(sym) + '">EXIT</button>';
                 var key = sym + '|' + prd;
                 var pmCells = posManagerMode ? _pmCellsHtml(p) : '';
 

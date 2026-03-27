@@ -315,31 +315,34 @@ class OrderWatcherEngine(threading.Thread):
         except Exception:
             pass
 
-        initial_ltp = None
-        try:
-            positions = self.bot.api.get_positions() or []
-            for pos in positions:
-                if pos.get("tsym") != record.symbol:
-                    continue
-                pos_product = pos.get("prd") or pos.get("product")
-                if record.product and pos_product and pos_product != record.product:
-                    continue
-                live_price = pos.get("ltp", pos.get("lp", 0))
-                if live_price is not None:
-                    initial_ltp = float(live_price or 0) or None
-                break
-        except Exception:
-            logger.warning(
-                "MANAGED_EXIT_REGISTER_LTP_LOOKUP_FAILED | cmd_id=%s | %s",
-                record.command_id,
-                record.symbol,
-                exc_info=True,
-            )
+        initial_ltp = record.managed_anchor_ltp
+        if initial_ltp is None:
+            try:
+                positions = self.bot.api.get_positions() or []
+                for pos in positions:
+                    if pos.get("tsym") != record.symbol:
+                        continue
+                    pos_product = pos.get("prd") or pos.get("product")
+                    if record.product and pos_product and pos_product != record.product:
+                        continue
+                    live_price = pos.get("ltp", pos.get("lp", 0))
+                    if live_price is not None:
+                        initial_ltp = float(live_price or 0) or None
+                    break
+            except Exception:
+                logger.warning(
+                    "MANAGED_EXIT_REGISTER_LTP_LOOKUP_FAILED | cmd_id=%s | %s",
+                    record.command_id,
+                    record.symbol,
+                    exc_info=True,
+                )
+
+        base_stop_loss = record.managed_base_stop_loss if record.managed_base_stop_loss is not None else record.stop_loss
 
         self._managed_exits[record.command_id] = {
             "record": record,
             "stop_loss": record.stop_loss,
-            "base_stop_loss": record.stop_loss,
+            "base_stop_loss": base_stop_loss,
             "target": record.target,
             "trailing_type": record.trailing_type,
             "trailing_value": record.trailing_value,
@@ -351,6 +354,19 @@ class OrderWatcherEngine(threading.Thread):
             "lowest_price": None,
             "registered_at": time.time(),
         }
+
+        if initial_ltp is not None or base_stop_loss is not None:
+            try:
+                self._update_order_risk_fields(record.command_id, {
+                    "managed_anchor_ltp": initial_ltp,
+                    "managed_base_stop_loss": base_stop_loss,
+                })
+            except Exception:
+                logger.exception(
+                    "MANAGED_EXIT_STATE_PERSIST_FAILED | cmd_id=%s | %s",
+                    record.command_id,
+                    record.symbol,
+                )
 
         logger.warning(
             "MANAGED_EXIT_REGISTERED | cmd_id=%s | %s | side=%s | qty=%s | SL=%s | target=%s | trail=%s/%s | trail_when=%s | initial_ltp=%s",
@@ -512,6 +528,14 @@ class OrderWatcherEngine(threading.Thread):
                                             ltp,
                                             steps,
                                         )
+                                        try:
+                                            self._update_order_risk_fields(record.command_id, {
+                                                "stop_loss": new_sl,
+                                                "managed_anchor_ltp": initial_ltp,
+                                                "managed_base_stop_loss": base_sl,
+                                            })
+                                        except Exception:
+                                            logger.exception("Failed to persist trailed stop loss for %s", symbol)
                                 else:
                                     new_sl = float(base_sl) - (steps * step_move)
                                     if sl is None or new_sl < sl:
@@ -528,6 +552,14 @@ class OrderWatcherEngine(threading.Thread):
                                             ltp,
                                             steps,
                                         )
+                                        try:
+                                            self._update_order_risk_fields(record.command_id, {
+                                                "stop_loss": new_sl,
+                                                "managed_anchor_ltp": initial_ltp,
+                                                "managed_base_stop_loss": base_sl,
+                                            })
+                                        except Exception:
+                                            logger.exception("Failed to persist trailed stop loss for %s", symbol)
                     else:
                         # Keep legacy behaviour for non-POINTS modes.
                         if is_long:
@@ -828,6 +860,38 @@ class OrderWatcherEngine(threading.Thread):
         with self._managed_exits_lock:
             for cmd_id, state in list(self._managed_exits.items()):
                 record = state["record"]
+                next_trail_price = None
+                initial_ltp = state.get("initial_ltp")
+                trail_when = state.get("trail_when")
+                trailing_value = state.get("trailing_value")
+                trailing_type = state.get("trailing_type")
+                stop_loss = state.get("stop_loss")
+                base_stop_loss = state.get("base_stop_loss")
+
+                if (
+                    trailing_type == "POINTS"
+                    and initial_ltp is not None
+                    and trailing_value is not None
+                    and trail_when is not None
+                ):
+                    try:
+                        step_trigger = float(trail_when)
+                        step_move = float(trailing_value)
+                        anchor = float(initial_ltp)
+                        if step_trigger > 0 and step_move > 0:
+                            steps_done = 0
+                            if stop_loss is not None and base_stop_loss is not None:
+                                if record.side == "SELL":
+                                    sl_delta = float(stop_loss) - float(base_stop_loss)
+                                else:
+                                    sl_delta = float(base_stop_loss) - float(stop_loss)
+                                if sl_delta > 0:
+                                    steps_done = int(sl_delta // step_move)
+                            direction = 1.0 if record.side == "SELL" else -1.0
+                            next_trail_price = anchor + (direction * ((steps_done + 1) * step_trigger))
+                    except Exception:
+                        next_trail_price = None
+
                 result.append({
                     "command_id": cmd_id,
                     "symbol": record.symbol,
@@ -844,6 +908,7 @@ class OrderWatcherEngine(threading.Thread):
                     "trail_when": state.get("trail_when"),
                     "initial_ltp": state.get("initial_ltp"),
                     "activation_price": state.get("activation_price"),
+                    "next_trail_price": next_trail_price,
                     "trailing_activated": state.get("trailing_activated", False),
                     "highest_price": state.get("highest_price"),
                     "lowest_price": state.get("lowest_price"),
@@ -882,7 +947,10 @@ class OrderWatcherEngine(threading.Thread):
 
                     # Also update the DB record for persistence across restarts
                     try:
-                        self._update_order_risk_fields(record.command_id, updates)
+                        db_updates = dict(updates)
+                        db_updates["managed_anchor_ltp"] = state.get("initial_ltp")
+                        db_updates["managed_base_stop_loss"] = state.get("base_stop_loss")
+                        self._update_order_risk_fields(record.command_id, db_updates)
                     except Exception:
                         logger.exception("Failed to update DB risk fields for %s", symbol)
 
@@ -926,6 +994,10 @@ class OrderWatcherEngine(threading.Thread):
             sets = []
             params = []
             for field in ("stop_loss", "target", "trailing_type", "trailing_value", "trail_when"):
+                if field in updates:
+                    sets.append(f"{field} = ?")
+                    params.append(updates[field])
+            for field in ("managed_anchor_ltp", "managed_base_stop_loss"):
                 if field in updates:
                     sets.append(f"{field} = ?")
                     params.append(updates[field])

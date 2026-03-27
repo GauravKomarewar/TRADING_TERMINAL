@@ -511,8 +511,16 @@ class AlertProcessingMixin:
         try:
             positions = self.broker_view.get_positions()
         except Exception as pos_err:
-            logger.warning("has_live_entry_block: positions fetch failed, blocking entry: %s", pos_err)
-            return True
+            logger.warning("has_live_entry_block: positions fetch failed, checking OMS fallback: %s", pos_err)
+            try:
+                local_positions = self.order_repo.get_open_positions_by_strategy(strategy_name)
+                for p in local_positions:
+                    if p.get("symbol") == symbol and int(p.get("qty", 0)) != 0:
+                        return True
+                return False
+            except Exception as e:
+                logger.warning("has_live_entry_block: OMS fallback failed, blocking entry: %s", e)
+                return True
 
         for p in positions:
             if p.get("tsym") == symbol and int(p.get("netqty", 0)) != 0:

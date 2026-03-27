@@ -377,6 +377,7 @@ class StrategyExecutorService:
         self._monitor_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self._completed_monitor_history: List[Dict[str, Any]] = []
         self._max_completed_monitor_history = 100
+        self._timed_out_strategies: Dict[str, int] = {}  # name -> consecutive timeout count
         try:
             self._completed_monitor_history = self.state_mgr.get_completed_monitor_history(
                 limit=self._max_completed_monitor_history
@@ -730,30 +731,64 @@ class StrategyExecutorService:
             self._thread.join(timeout=5)
         logger.info("StrategyExecutorService stopped")
 
+    # Seconds to wait for a single strategy tick before declaring it timed-out
+    PROCESS_TICK_TIMEOUT = 60
+
     def _run_loop(self):
-        """Main loop: iterate over all strategies and process each."""
-        while self._running and not self._stop_event.is_set():
-            with self._lock:
-                names = list(self._executors.keys())
-            completed_names: List[str] = []
-            for name in names:
-                executor = self._executors.get(name)
-                if executor:
+        """Main loop: iterate over all strategies and process each concurrently."""
+        import concurrent.futures
+        
+        # Use a thread pool with a reasonable max workers
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as thread_pool:
+            while self._running and not self._stop_event.is_set():
+                with self._lock:
+                    names = list(self._executors.keys())
+                
+                completed_names: List[str] = []
+                
+                def _process_one(name: str):
+                    with self._lock:
+                        executor = self._executors.get(name)
+                    if executor:
+                        try:
+                            executor.process_tick()
+                            with executor._tick_lock:
+                                if getattr(executor, "cycle_completed", False) and not executor.state.any_leg_active:
+                                    return name
+                        except Exception as e:
+                            logger.exception(f"Error processing strategy {name}: {e}")
+                    return None
+                
+                futures = {thread_pool.submit(_process_one, name): name for name in names}
+                for future in concurrent.futures.as_completed(futures):
+                    if self._stop_event.is_set():
+                        break
+                    strategy_name = futures[future]
                     try:
-                        executor.process_tick()
-                        if getattr(executor, "cycle_completed", False) and not executor.state.any_leg_active:
-                            completed_names.append(name)
+                        res = future.result(timeout=self.PROCESS_TICK_TIMEOUT)
+                    except concurrent.futures.TimeoutError:
+                        logger.warning("Strategy '%s' timed out after %s seconds during process_tick",
+                                       strategy_name, self.PROCESS_TICK_TIMEOUT)
+                        # cancel() only prevents queued tasks; it cannot interrupt a running thread.
+                        self._timed_out_strategies[strategy_name] = self._timed_out_strategies.get(strategy_name, 0) + 1
+                        continue
                     except Exception as e:
-                        logger.exception(f"Error processing strategy {name}: {e}")
-            for name in completed_names:
-                try:
-                    self._archive_completed_strategy(name)
-                    self._mark_config_status(name, "COMPLETED")
-                    self.unregister_strategy(name)
-                    logger.info(f"Strategy cycle completed and auto-stopped: {name}")
-                except Exception as e:
-                    logger.error(f"Failed to auto-stop completed strategy {name}: {e}")
-            time.sleep(2)  # same as old service
+                        logger.exception("Unexpected error collecting result for strategy '%s': %s",
+                                         strategy_name, e)
+                        continue
+                    if res:
+                        completed_names.append(res)
+                        
+                for name in completed_names:
+                    try:
+                        self._archive_completed_strategy(name)
+                        self._mark_config_status(name, "COMPLETED")
+                        self.unregister_strategy(name)
+                        logger.info(f"Strategy cycle completed and auto-stopped: {name}")
+                    except Exception as e:
+                        logger.error(f"Failed to auto-stop completed strategy {name}: {e}")
+                        
+                time.sleep(2)  # same as old service
 
     def acquire_mode_change_lock(self, strategy_name: str) -> threading.Lock:
         with self._mode_change_dict_lock:

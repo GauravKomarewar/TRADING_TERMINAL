@@ -163,6 +163,105 @@
         .btn-exit-all:hover{background:var(--danger);color:#fff}
         .btn-exit:disabled,.btn-exit-all:disabled{opacity:.4;cursor:not-allowed}
 
+        /* ── Position Manager — Clean Inline Mode ── */
+        .pm-mode th.pm-hide, .pm-mode td.pm-hide { display: none; }
+        .pm-live-cell {
+            position: relative;
+            min-width: 68px;
+        }
+        .pm-live-cell input {
+            width: 72px;
+            padding: 4px 6px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 600;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            box-sizing: border-box;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+            cursor: default;
+        }
+        .pm-live-cell input:hover {
+            border-color: var(--border);
+            background: var(--panel-2);
+            cursor: text;
+        }
+        .pm-live-cell input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: var(--panel);
+            box-shadow: 0 0 0 2px rgba(99,102,241,0.18);
+            cursor: text;
+        }
+        .pm-live-cell input.editing {
+            border-color: var(--warning);
+            background: rgba(234,179,8,0.06);
+        }
+        .pm-live-cell input.pm-flash {
+            animation: pm-val-flash 0.45s ease;
+        }
+        @keyframes pm-val-flash {
+            0% { color: var(--primary); }
+            100% { color: var(--text); }
+        }
+        .pm-live-cell input::placeholder {
+            color: var(--muted);
+            font-weight: 400;
+            opacity: 0.6;
+        }
+        .pm-th { white-space: nowrap; font-size: 11px; }
+        .pm-status-pill {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 10px;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+        .pm-status-pill.active {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        .pm-status-pill.off {
+            background: var(--panel-3);
+            color: var(--muted);
+        }
+        .pm-btn-inline {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid;
+            transition: all 0.15s;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        .pm-btn-inline.save {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+            opacity: 0.35;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        .pm-btn-inline.save.dirty {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .pm-btn-inline.save.dirty:hover { opacity: 0.85; }
+        .pm-btn-inline.save:disabled { opacity: 0.4; cursor: not-allowed; }
+        .pm-btn-inline.remove {
+            background: transparent;
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+        .pm-btn-inline.remove:hover { background: var(--danger); color: #fff; }
+
         /* ── Source badge ── */
         .src-system { color: var(--primary); font-weight: 600; font-size: 10px; }
         .src-broker { color: var(--warning); font-weight: 600; font-size: 10px; }
@@ -422,21 +521,21 @@
             <div class="dash-card">
                 <div class="card-head">
                     <h3>Positions <span id="posCount" style="font-size:12px;font-weight:400;color:var(--muted);margin-left:6px"></span></h3>
-                    <span class="head-right" style="display:flex;align-items:center;gap:10px"><button id="btnShowActive" onclick="toggleActiveOnly()" style="font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--muted);white-space:nowrap">Show Active Only</button><button class="btn-exit-all" id="btnExitAll" style="display:none" onclick="exitAllPositions()">⛔ Exit All</button></span>
+                    <span class="head-right" style="display:flex;align-items:center;gap:10px"><button id="btnShowActive" onclick="toggleActiveOnly()" style="font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--muted);white-space:nowrap">Show Active Only</button><button id="btnPosManager" onclick="togglePositionManager()" style="font-size:11px;padding:4px 12px;border:1px solid var(--primary);border-radius:5px;cursor:pointer;background:transparent;color:var(--primary);white-space:nowrap;font-weight:700;letter-spacing:0.3px;transition:all .2s">⚙ Position Manager</button><button class="btn-exit-all" id="btnExitAll" style="display:none" onclick="exitAllPositions()">⛔ Exit All</button></span>
                 </div>
-                <div class="table-scroll">
-                    <table class="dash-table">
+                <div class="table-scroll" id="posTableWrap">
+                    <table class="dash-table" id="posTable">
                         <thead>
                             <tr>
                                 <th>Symbol</th>
                                 <th>LTP</th>
-                                <th>Net P&amp;L</th>
-                                <th>Realized</th>
-                                <th>Unrealized</th>
-                                <th>Exch</th>
-                                <th>Product</th>
+                                <th class="pm-hide">Net P&amp;L</th>
+                                <th class="pm-hide">Realized</th>
+                                <th class="pm-hide">Unrealized</th>
+                                <th class="pm-hide">Exch</th>
+                                <th class="pm-hide">Product</th>
                                 <th>Qty</th>
-                                <th>Avg Price</th>
+                                <th class="pm-hide">Avg Price</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -795,6 +894,10 @@
             var system = data.system || {};
 
             updateKPI(broker, system);
+            // Build managed exits map
+            var mexits = data.managed_exits || [];
+            _managedExitsMap = {};
+            mexits.forEach(function(m) { _managedExitsMap[m.symbol + '|' + (m.product || '')] = m; });
             updatePositions(broker.positions || []);
             updatePendingOrders(system.open_orders || [], broker.orders || []);
             updateRecentOrders(system.orders || []);
@@ -905,6 +1008,8 @@
     // ─── Positions Table (Raw Broker Truth) ───
     var showActiveOnly = false;
     var _lastRawPositions = [];
+    var posManagerMode = false;
+    var _managedExitsMap = {};  // symbol → managed exit state
 
     function toggleActiveOnly() {
         showActiveOnly = !showActiveOnly;
@@ -921,11 +1026,177 @@
         updatePositions(_lastRawPositions);
     }
 
+    function togglePositionManager() {
+        posManagerMode = !posManagerMode;
+        var btn = document.getElementById('btnPosManager');
+        var table = document.getElementById('posTable');
+        if (posManagerMode) {
+            btn.style.background = 'var(--primary)';
+            btn.style.color = '#fff';
+            btn.style.borderColor = 'var(--primary)';
+            table.classList.add('pm-mode');
+        } else {
+            btn.style.background = 'transparent';
+            btn.style.color = 'var(--primary)';
+            btn.style.borderColor = 'var(--primary)';
+            table.classList.remove('pm-mode');
+        }
+        _updatePosTableHeaders();
+        _pmForceRebuild = true;
+        updatePositions(_lastRawPositions);
+    }
+
+    var _pmForceRebuild = false;
+    // Track which inputs user is actively editing (field → key)
+    var _pmFocusedField = null; // { key, field }
+
+    function _updatePosTableHeaders() {
+        var thead = document.querySelector('#posTable thead tr');
+        thead.querySelectorAll('.pm-th').forEach(function(th) { th.remove(); });
+        if (posManagerMode) {
+            var actionTh = thead.lastElementChild;
+            ['SL', 'Target', 'Trail', 'Trail@', '', ''].forEach(function(label) {
+                var th = document.createElement('th');
+                th.className = 'pm-th';
+                th.textContent = label;
+                thead.insertBefore(th, actionTh);
+            });
+        }
+    }
+
+    function _pmCellsHtml(p) {
+        var sym = p.tsym || p.symbol || '';
+        var prd = p.prd || p.product || '';
+        var exch = p.exch || p.exchange || '-';
+        var qty = parseInt(p.netqty || 0);
+        var isFlat = qty === 0;
+        var key = sym + '|' + prd;
+        var me = _managedExitsMap[key];
+        var isManaged = !!me;
+        var exitSide = qty > 0 ? 'SELL' : 'BUY';
+
+        if (isFlat) {
+            return '<td colspan="6" style="text-align:center;color:var(--muted);font-size:11px">—</td>';
+        }
+
+        var slVal = isManaged && me.stop_loss != null ? me.stop_loss : '';
+        var tgtVal = isManaged && me.target != null ? me.target : '';
+        var trailVal = isManaged && me.trailing_value != null ? me.trailing_value : '';
+        var twVal = isManaged && me.trail_when != null ? me.trail_when : '';
+
+        var statusHtml = isManaged
+            ? '<span class="pm-status-pill active">ACTIVE</span>'
+            : '<span class="pm-status-pill off">OFF</span>';
+
+        var btns = '<button class="pm-btn-inline save" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" data-qty="' + Math.abs(qty) + '" data-side="' + exitSide + '">Save</button>';
+        if (isManaged) btns += ' <button class="pm-btn-inline remove" data-sym="' + encodeAttr(sym) + '">✕</button>';
+
+        return '<td class="pm-live-cell"><input type="number" step="any" data-field="stop_loss" data-live="' + slVal + '" value="' + slVal + '" placeholder="—"></td>'
+             + '<td class="pm-live-cell"><input type="number" step="any" data-field="target" data-live="' + tgtVal + '" value="' + tgtVal + '" placeholder="—"></td>'
+             + '<td class="pm-live-cell"><input type="number" step="any" data-field="trailing_value" data-live="' + trailVal + '" value="' + trailVal + '" placeholder="—"></td>'
+             + '<td class="pm-live-cell"><input type="number" step="any" data-field="trail_when" data-live="' + twVal + '" value="' + twVal + '" placeholder="—"></td>'
+             + '<td>' + statusHtml + '</td>'
+             + '<td style="white-space:nowrap">' + btns + '</td>';
+    }
+
+    function _pmSaveEditing(tbody) {
+        var saved = {};
+        tbody.querySelectorAll('tr[data-key]').forEach(function(row) {
+            var k = row.dataset.key;
+            var edits = {};
+            var hasDirty = false;
+            row.querySelectorAll('.pm-live-cell input.editing').forEach(function(inp) {
+                edits[inp.dataset.field] = inp.value;
+                hasDirty = true;
+            });
+            if (hasDirty) saved[k] = edits;
+        });
+        return saved;
+    }
+
+    function _pmRestoreEditing(tbody, saved) {
+        tbody.querySelectorAll('tr[data-key]').forEach(function(row) {
+            var k = row.dataset.key;
+            var edits = saved[k];
+            if (!edits) return;
+            row.querySelectorAll('.pm-live-cell input').forEach(function(inp) {
+                var f = inp.dataset.field;
+                if (edits[f] !== undefined) {
+                    inp.value = edits[f];
+                    inp.classList.add('editing');
+                    _pmUpdateDirtyState(row);
+                }
+            });
+        });
+    }
+
+    function _pmUpdateDirtyState(row) {
+        var saveBtn = row.querySelector('.pm-btn-inline.save');
+        if (!saveBtn) return;
+        var hasDirty = row.querySelector('.pm-live-cell input.editing');
+        if (hasDirty) {
+            saveBtn.classList.add('dirty');
+        } else {
+            saveBtn.classList.remove('dirty');
+        }
+    }
+
+    function _pmLiveUpdate(tbody) {
+        tbody.querySelectorAll('tr[data-key]').forEach(function(row) {
+            var k = row.dataset.key;
+            var me = _managedExitsMap[k];
+            var isManaged = !!me;
+
+            // Update status pill
+            var pill = row.querySelector('.pm-status-pill');
+            if (pill) {
+                pill.className = 'pm-status-pill ' + (isManaged ? 'active' : 'off');
+                pill.textContent = isManaged ? 'ACTIVE' : 'OFF';
+            }
+
+            if (!isManaged) return;
+
+            // Live-update input values — skip if user is editing that field
+            row.querySelectorAll('.pm-live-cell input').forEach(function(inp) {
+                if (inp.classList.contains('editing')) return; // user override, don't touch
+                var field = inp.dataset.field;
+                var liveVal = me[field];
+                if (liveVal == null) return;
+                var liveStr = String(liveVal);
+                var oldLive = inp.dataset.live || '';
+                inp.dataset.live = liveStr;
+                if (inp.value !== liveStr && document.activeElement !== inp) {
+                    inp.value = liveStr;
+                    // Flash animation on value change
+                    if (oldLive !== liveStr) {
+                        inp.classList.remove('pm-flash');
+                        void inp.offsetWidth; // reflow to re-trigger
+                        inp.classList.add('pm-flash');
+                    }
+                }
+            });
+
+            // Ensure remove button exists for managed rows
+            if (!row.querySelector('.pm-btn-inline.remove')) {
+                var saveBtn = row.querySelector('.pm-btn-inline.save');
+                if (saveBtn && saveBtn.parentNode) {
+                    var sym = row.dataset.sym;
+                    var rmBtn = document.createElement('button');
+                    rmBtn.className = 'pm-btn-inline remove';
+                    rmBtn.dataset.sym = sym;
+                    rmBtn.textContent = '✕';
+                    saveBtn.parentNode.appendChild(document.createTextNode(' '));
+                    saveBtn.parentNode.appendChild(rmBtn);
+                }
+            }
+        });
+    }
+
     function updatePositions(rawPositions) {
         _lastRawPositions = rawPositions || [];
         var allPositions = _lastRawPositions;
 
-        // Consolidate LTP: same underlying symbol should show same (latest non-zero) LTP
+        // Consolidate LTP
         var ltpMap = {};
         allPositions.forEach(function(p) {
             var sym = p.tsym || p.symbol || '';
@@ -945,21 +1216,29 @@
         var exitAllBtn = document.getElementById('btnExitAll');
         var openCount = openPositions.length;
         var flatCount = allPositions.length - openPositions.length;
-        countEl.textContent = allPositions.length ? '(' + openCount + ' open, ' + flatCount + ' flat)' : '';
+        var managedCount = Object.keys(_managedExitsMap).length;
+        var countText = allPositions.length ? '(' + openCount + ' open, ' + flatCount + ' flat' : '';
+        if (managedCount > 0) countText += ', ' + managedCount + ' managed';
+        if (countText) countText += ')';
+        countEl.textContent = countText;
         exitAllBtn.style.display = openPositions.length > 0 ? 'inline-block' : 'none';
 
+        var colSpan = posManagerMode ? 12 : 10;
+
         if (!positions.length) {
-            tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No positions</td></tr>';
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">No positions</td></tr>';
             return;
         }
 
-        // Use symbol+product as unique row key to handle same instrument with different product types
         var rowKey = function(p) { return (p.tsym || p.symbol || '') + '|' + (p.prd || p.product || ''); };
         var curKeys = Array.from(tbody.querySelectorAll('tr[data-key]')).map(function(r) { return r.dataset.key; });
         var newKeys = positions.map(function(p) { return rowKey(p); });
-        var rebuild = curKeys.length !== newKeys.length || !newKeys.every(function(k, i) { return k === curKeys[i]; });
+        var rebuild = _pmForceRebuild || curKeys.length !== newKeys.length || !newKeys.every(function(k, i) { return k === curKeys[i]; });
+        _pmForceRebuild = false;
 
         if (rebuild) {
+            var savedEdits = posManagerMode ? _pmSaveEditing(tbody) : {};
+
             tbody.innerHTML = positions.map(function(p) {
                 var net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
                 var prd = p.prd || p.product || '';
@@ -975,25 +1254,32 @@
                     : '<button class="btn-exit btn-exit-pos" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '" title="Exit ' + encodeAttr(sym) + '">EXIT</button>'
                       + ' <button class="btn-exit btn-order-pos" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" data-qty="' + Math.abs(qty) + '" data-side="' + (qty > 0 ? 'S' : 'B') + '" title="Place exit order" style="background:var(--primary)">ORDER</button>';
                 var key = sym + '|' + prd;
-                return '<tr data-key="' + key + '" data-sym="' + sym + '" style="' + rowStyle + '">'
+                var pmCells = posManagerMode ? _pmCellsHtml(p) : '';
+
+                return '<tr data-key="' + key + '" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" style="' + rowStyle + '">'
                     + '<td style="font-weight:700">' + (sym || '-') + '</td>'
                     + '<td data-f="ltp">' + fmt(p._ltp || p.lp || p.ltp || 0) + '</td>'
-                    + '<td data-f="net" style="color:' + pnlColor(net) + ';font-weight:700">' + fmt(net) + '</td>'
-                    + '<td data-f="rpnl" style="color:' + pnlColor(p.rpnl) + '">' + fmt(p.rpnl || 0) + '</td>'
-                    + '<td data-f="urm" style="color:' + pnlColor(p.urmtom) + '">' + fmt(p.urmtom || 0) + '</td>'
-                    + '<td>' + exch + '</td>'
-                    + '<td>' + (prd ? '<span class="status-badge safe">' + prd + '</span>' : '-') + '</td>'
+                    + '<td class="pm-hide" data-f="net" style="color:' + pnlColor(net) + ';font-weight:700">' + fmt(net) + '</td>'
+                    + '<td class="pm-hide" data-f="rpnl" style="color:' + pnlColor(p.rpnl) + '">' + fmt(p.rpnl || 0) + '</td>'
+                    + '<td class="pm-hide" data-f="urm" style="color:' + pnlColor(p.urmtom) + '">' + fmt(p.urmtom || 0) + '</td>'
+                    + '<td class="pm-hide">' + exch + '</td>'
+                    + '<td class="pm-hide">' + (prd ? '<span class="status-badge safe">' + prd + '</span>' : '-') + '</td>'
                     + '<td data-f="qty" style="color:' + qtyColor + ';font-weight:700">' + (p.netqty || 0) + '</td>'
-                    + '<td data-f="avg">' + fmt(p.avgprc || p.avg_price || 0) + '</td>'
+                    + '<td class="pm-hide" data-f="avg">' + fmt(p.avgprc || p.avg_price || 0) + '</td>'
+                    + pmCells
                     + '<td>' + actionHtml + '</td>'
                     + '</tr>';
             }).join('');
+
+            if (posManagerMode && Object.keys(savedEdits).length > 0) {
+                _pmRestoreEditing(tbody, savedEdits);
+            }
         } else {
             positions.forEach(function(p) {
                 var sym = p.tsym || p.symbol || '';
                 var prd = p.prd || p.product || '';
                 var key = sym + '|' + prd;
-                var row = tbody.querySelector('tr[data-key="' + key + '"]');
+                var row = tbody.querySelector('tr[data-key="' + CSS.escape(key) + '"]');
                 if (!row) return;
                 var net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
                 var updateCell = function(sel, val, colored) {
@@ -1011,6 +1297,130 @@
                 if (qtyCell) { var q = String(p.netqty || 0); if (qtyCell.textContent !== q) { qtyCell.textContent = q; flashEl(qtyCell); } }
                 updateCell('[data-f="avg"]', p.avgprc || p.avg_price || 0, false);
             });
+            if (posManagerMode) { _pmLiveUpdate(tbody); }
+        }
+    }
+
+    // ─── PM: Focus/Blur — mark editing, live-resume on blur ───
+    document.getElementById('positionRows').addEventListener('focusin', function(e) {
+        var inp = e.target.closest('.pm-live-cell input');
+        if (!inp) return;
+        var row = inp.closest('tr[data-key]');
+        if (row) _pmFocusedField = { key: row.dataset.key, field: inp.dataset.field };
+    });
+    document.getElementById('positionRows').addEventListener('focusout', function(e) {
+        var inp = e.target.closest('.pm-live-cell input');
+        if (!inp) return;
+        _pmFocusedField = null;
+        // If user blanked it or returned to live value, remove editing state
+        var liveVal = inp.dataset.live || '';
+        if (inp.value === liveVal || inp.value.trim() === '') {
+            inp.classList.remove('editing');
+            if (liveVal) inp.value = liveVal;
+        }
+        var row = inp.closest('tr[data-key]');
+        if (row) _pmUpdateDirtyState(row);
+    });
+    document.getElementById('positionRows').addEventListener('input', function(e) {
+        var inp = e.target.closest('.pm-live-cell input');
+        if (!inp) return;
+        var liveVal = inp.dataset.live || '';
+        if (inp.value !== liveVal && inp.value.trim() !== '') {
+            inp.classList.add('editing');
+        } else {
+            inp.classList.remove('editing');
+        }
+        var row = inp.closest('tr[data-key]');
+        if (row) _pmUpdateDirtyState(row);
+    });
+
+    // ─── PM Save / Remove ───
+    async function pmSaveRow(btn) {
+        if (!btn) return;
+        var row = btn.closest('tr[data-key]');
+        if (!row) return;
+        var sym = btn.dataset.sym;
+        var exch = btn.dataset.exch;
+        var prd = btn.dataset.prd;
+        var qty = parseInt(btn.dataset.qty || 0, 10);
+        var side = btn.dataset.side;
+        var key = row.dataset.key;
+
+        // Collect edited values
+        var fields = {};
+        row.querySelectorAll('.pm-live-cell input').forEach(function(inp) {
+            var v = inp.value.trim();
+            if (v !== '') fields[inp.dataset.field] = parseFloat(v);
+        });
+        var sl = isFinite(fields.stop_loss) ? fields.stop_loss : null;
+        var tgt = isFinite(fields.target) ? fields.target : null;
+        var trail = isFinite(fields.trailing_value) ? fields.trailing_value : null;
+        var tw = isFinite(fields.trail_when) ? fields.trail_when : null;
+
+        if (!sl && !tgt && !trail) {
+            showError('Set at least one of SL, Target, or Trail');
+            return;
+        }
+
+        var isManaged = !!_managedExitsMap[key];
+        var url = isManaged ? '/dashboard/positions/managed-exit/update' : '/dashboard/positions/managed-exit/enable';
+
+        var body = { symbol: sym };
+        if (sl != null) body.stop_loss = sl;
+        if (tgt != null) body.target = tgt;
+        if (trail != null) { body.trailing_value = trail; body.trailing_type = 'POINTS'; }
+        if (tw != null) body.trail_when = tw;
+        if (!isManaged) {
+            body.exchange = exch;
+            body.side = side;
+            body.quantity = qty;
+            body.product = prd;
+        }
+
+        btn.disabled = true; btn.textContent = '...';
+        try {
+            var res = await fetch(url, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Failed');
+            showSuccess((isManaged ? 'Updated' : 'Enabled') + ' manager for ' + sym);
+            // Clear editing state on all inputs in this row
+            row.querySelectorAll('.pm-live-cell input.editing').forEach(function(inp) {
+                inp.classList.remove('editing');
+                inp.dataset.live = inp.value;
+            });
+            _pmUpdateDirtyState(row);
+            setTimeout(function() { updateDashboard(false); }, 500);
+        } catch (err) {
+            showError('Manager save failed: ' + err.message);
+        } finally {
+            btn.disabled = false; btn.textContent = 'Save';
+        }
+    }
+
+    async function pmDisableRow(btn) {
+        if (!btn) return;
+        var sym = btn.dataset.sym;
+        btn.disabled = true; btn.textContent = '…';
+        try {
+            var res = await fetch('/dashboard/positions/managed-exit/disable', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: sym }),
+            });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Failed');
+            showSuccess('Manager disabled for ' + sym);
+            setTimeout(function() { updateDashboard(false); }, 500);
+        } catch (err) {
+            showError('Disable failed: ' + err.message);
+        } finally {
+            btn.disabled = false; btn.textContent = '✕';
         }
     }
 
@@ -1019,7 +1429,11 @@
         var btn = e.target.closest('.btn-exit-pos');
         if (btn) { exitPosition(btn.dataset.sym, btn.dataset.prd); return; }
         var obtn = e.target.closest('.btn-order-pos');
-        if (obtn) { placeExitOrder(obtn.dataset.sym, obtn.dataset.exch, obtn.dataset.prd, parseInt(obtn.dataset.qty, 10), obtn.dataset.side); }
+        if (obtn) { placeExitOrder(obtn.dataset.sym, obtn.dataset.exch, obtn.dataset.prd, parseInt(obtn.dataset.qty, 10), obtn.dataset.side); return; }
+        var saveBtn = e.target.closest('.pm-btn-inline.save');
+        if (saveBtn) { pmSaveRow(saveBtn); return; }
+        var removeBtn = e.target.closest('.pm-btn-inline.remove');
+        if (removeBtn) { pmDisableRow(removeBtn); return; }
     });
 
     // ─── Position Exit Functions ───

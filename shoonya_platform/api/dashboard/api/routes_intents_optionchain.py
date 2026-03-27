@@ -85,12 +85,24 @@ def submit_strategy_entry(
 def dashboard_snapshot(
     broker=Depends(get_broker),
     system=Depends(get_system),
+    ctx=Depends(require_dashboard_auth),
 ):
     try:
         limits = broker.get_limits()
     except (RuntimeError, Exception) as e:
         logger.warning(f"Failed to get broker limits: {e}, returning empty limits")
         limits = {}
+
+    # Managed exit state for position manager view
+    managed_exits = []
+    bot = ctx.get("bot") if ctx else None
+    if bot:
+        watcher = getattr(bot, "order_watcher", None)
+        if watcher:
+            try:
+                managed_exits = watcher.get_managed_exits_snapshot()
+            except Exception as exc:
+                logger.warning("dashboard_snapshot: managed_exits_snapshot failed: %s", exc, exc_info=True)
 
     return {
         "broker": {
@@ -110,6 +122,7 @@ def dashboard_snapshot(
             "telegram_messages": _safe_call(lambda: system.get_telegram_messages(200), [], "system.get_telegram_messages"),
             "telegram_stats": _safe_call(lambda: system.get_telegram_alert_stats(500), {}, "system.get_telegram_alert_stats"),
         },
+        "managed_exits": managed_exits,
     }
 
 

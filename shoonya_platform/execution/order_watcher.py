@@ -69,6 +69,7 @@ class OrderWatcherEngine(threading.Thread):
 
         # Managed EXIT state: command_id → { current_sl, entry_price, highest_price }
         self._managed_exits: Dict[str, dict] = {}
+        self._managed_exits_lock = threading.Lock()
         self._dispatch_lock = threading.Lock()
         self._dispatched_exits: set = set()  # Prevent re-dispatch within same session
 
@@ -252,15 +253,17 @@ class OrderWatcherEngine(threading.Thread):
                 )
 
                 if has_sl or has_target or has_trailing:
-                    if record.command_id not in self._managed_exits:
-                        self._register_managed_exit(record)
+                    with self._managed_exits_lock:
+                        if record.command_id not in self._managed_exits:
+                            self._register_managed_exit(record)
                 else:
                     if record.command_id not in self._dispatched_exits:
-                        self._dispatched_exits.add(record.command_id)
-                        self._dispatch_simple_exit(record)
+                        success = self._dispatch_simple_exit(record)
+                        if success:
+                            self._dispatched_exits.add(record.command_id)
 
-    def _dispatch_simple_exit(self, record: OrderRecord):
-        """Dispatch a simple MARKET EXIT order to broker via execute_command()."""
+    def _dispatch_simple_exit(self, record: OrderRecord) -> bool:
+        """Dispatch a simple MARKET EXIT order to broker via execute_command(). Returns True on success."""
         try:
             # Mark as dispatching to prevent re-dispatch on next cycle
             try:
@@ -286,20 +289,24 @@ class OrderWatcherEngine(threading.Thread):
 
             result = self.bot.execute_command(command=cmd)
 
-            if not result or not result.success:
-                err = getattr(result, "error_message", "unknown") if result else "no result"
-                logger.error(
-                    "STEP_7_EXIT_FAILED | cmd_id=%s | symbol=%s | error=%s",
-                    record.command_id,
-                    record.symbol,
-                    err,
-                )
+            if result and result.success:
+                return True
+
+            err = getattr(result, "error_message", "unknown") if result else "no result"
+            logger.error(
+                "STEP_7_EXIT_FAILED | cmd_id=%s | symbol=%s | error=%s",
+                record.command_id,
+                record.symbol,
+                err,
+            )
+            return False
         except Exception:
             logger.exception(
                 "STEP_7_EXIT_EXCEPTION | cmd_id=%s | symbol=%s",
                 record.command_id,
                 record.symbol,
             )
+            return False
 
     def _register_managed_exit(self, record: OrderRecord):
         """Register an EXIT order for managed monitoring (SL/target/trailing)."""
@@ -314,13 +321,15 @@ class OrderWatcherEngine(threading.Thread):
             "target": record.target,
             "trailing_type": record.trailing_type,
             "trailing_value": record.trailing_value,
+            "trail_when": record.trail_when,
+            "trailing_activated": False,
             "highest_price": None,
             "lowest_price": None,
             "registered_at": time.time(),
         }
 
         logger.warning(
-            "MANAGED_EXIT_REGISTERED | cmd_id=%s | %s | side=%s | qty=%s | SL=%s | target=%s | trail=%s/%s",
+            "MANAGED_EXIT_REGISTERED | cmd_id=%s | %s | side=%s | qty=%s | SL=%s | target=%s | trail=%s/%s | trail_when=%s",
             record.command_id,
             record.symbol,
             record.side,
@@ -329,6 +338,7 @@ class OrderWatcherEngine(threading.Thread):
             record.target,
             record.trailing_type,
             record.trailing_value,
+            record.trail_when,
         )
 
     # ==================================================
@@ -341,8 +351,12 @@ class OrderWatcherEngine(threading.Thread):
         Trail the SL as price moves in the position's favour.
         Trigger MARKET exit when conditions are met.
         """
-        if not self._managed_exits:
-            return
+        with self._managed_exits_lock:
+            if not self._managed_exits:
+                return
+            # Shallow-copy each state dict so workers operate on local copies
+            # and don't race with other threads mutating the originals.
+            snapshot = [(cmd_id, dict(state)) for cmd_id, state in self._managed_exits.items()]
 
         try:
             positions = self.bot.api.get_positions() or []
@@ -357,8 +371,9 @@ class OrderWatcherEngine(threading.Thread):
                 pos_map[sym] = p
 
         to_remove: List[str] = []
+        updated_states: Dict[str, dict] = {}
 
-        for cmd_id, state in list(self._managed_exits.items()):
+        for cmd_id, state in snapshot:
             record = state["record"]
             symbol = record.symbol
 
@@ -369,7 +384,8 @@ class OrderWatcherEngine(threading.Thread):
                     to_remove.append(cmd_id)
                     continue
             except Exception:
-                pass
+                logger.warning("OrderWatcher: repo.get_by_id failed for cmd_id=%s", cmd_id, exc_info=True)
+                continue
 
             pos = pos_map.get(symbol)
             net_qty = int(pos.get("netqty", 0)) if pos else 0
@@ -402,30 +418,50 @@ class OrderWatcherEngine(threading.Thread):
 
             # ── TRAILING SL LOGIC ──
             if trailing_type and trailing_value and trailing_value > 0:
-                if is_long:
-                    if state["highest_price"] is None or ltp > state["highest_price"]:
-                        state["highest_price"] = ltp
-                    if trailing_type == "POINTS":
-                        new_sl = state["highest_price"] - trailing_value
-                    elif trailing_type == "PERCENT":
-                        new_sl = state["highest_price"] * (1 - trailing_value / 100)
+                # Check trail_when activation
+                trail_when = state.get("trail_when")
+                trailing_activated = state.get("trailing_activated", False)
+                if not trailing_activated and trail_when and trail_when > 0:
+                    # LONG: activate when price reaches up to trail_when
+                    # SHORT: activate when price drops to trail_when
+                    if is_long and ltp >= trail_when:
+                        state["trailing_activated"] = True
+                        trailing_activated = True
+                        logger.info("TRAILING_ACTIVATED | %s | ltp=%s >= trail_when=%s", symbol, ltp, trail_when)
+                    elif not is_long and ltp <= trail_when:
+                        state["trailing_activated"] = True
+                        trailing_activated = True
+                        logger.info("TRAILING_ACTIVATED | %s | ltp=%s <= trail_when=%s", symbol, ltp, trail_when)
+                elif not trail_when or trail_when <= 0:
+                    # No trail_when set — trailing is immediately active
+                    trailing_activated = True
+                    state["trailing_activated"] = True
+
+                if trailing_activated:
+                    if is_long:
+                        if state["highest_price"] is None or ltp > state["highest_price"]:
+                            state["highest_price"] = ltp
+                        if trailing_type == "POINTS":
+                            new_sl = state["highest_price"] - trailing_value
+                        elif trailing_type == "PERCENT":
+                            new_sl = state["highest_price"] * (1 - trailing_value / 100)
+                        else:
+                            new_sl = state["highest_price"] - trailing_value
+                        if sl is None or new_sl > sl:
+                            state["stop_loss"] = new_sl
+                            sl = new_sl
                     else:
-                        new_sl = state["highest_price"] - trailing_value
-                    if sl is None or new_sl > sl:
-                        state["stop_loss"] = new_sl
-                        sl = new_sl
-                else:
-                    if state["lowest_price"] is None or ltp < state["lowest_price"]:
-                        state["lowest_price"] = ltp
-                    if trailing_type == "POINTS":
-                        new_sl = state["lowest_price"] + trailing_value
-                    elif trailing_type == "PERCENT":
-                        new_sl = state["lowest_price"] * (1 + trailing_value / 100)
-                    else:
-                        new_sl = state["lowest_price"] + trailing_value
-                    if sl is None or new_sl < sl:
-                        state["stop_loss"] = new_sl
-                        sl = new_sl
+                        if state["lowest_price"] is None or ltp < state["lowest_price"]:
+                            state["lowest_price"] = ltp
+                        if trailing_type == "POINTS":
+                            new_sl = state["lowest_price"] + trailing_value
+                        elif trailing_type == "PERCENT":
+                            new_sl = state["lowest_price"] * (1 + trailing_value / 100)
+                        else:
+                            new_sl = state["lowest_price"] + trailing_value
+                        if sl is None or new_sl < sl:
+                            state["stop_loss"] = new_sl
+                            sl = new_sl
 
             # ── CHECK SL HIT ──
             if sl is not None:
@@ -452,16 +488,25 @@ class OrderWatcherEngine(threading.Thread):
                 )
                 self._execute_managed_exit(record, abs(net_qty))
                 to_remove.append(cmd_id)
+            else:
+                # Track locally-modified states to merge back
+                updated_states[cmd_id] = state
 
-        for cmd_id in to_remove:
-            self._managed_exits.pop(cmd_id, None)
+        with self._managed_exits_lock:
+            # Merge updated trailing state back into shared dict
+            for cmd_id, local_state in updated_states.items():
+                if cmd_id in self._managed_exits:
+                    orig = self._managed_exits[cmd_id]
+                    orig["trailing_activated"] = local_state["trailing_activated"]
+                    orig["highest_price"] = local_state["highest_price"]
+                    orig["lowest_price"] = local_state["lowest_price"]
+                    orig["stop_loss"] = local_state["stop_loss"]
+            for cmd_id in to_remove:
+                self._managed_exits.pop(cmd_id, None)
 
     def _execute_managed_exit(self, record: OrderRecord, broker_qty: int):
         """Execute a managed exit by placing a MARKET order."""
         try:
-            self.repo.update_status(record.command_id, "FAILED")
-            self.repo.update_tag(record.command_id, "MANAGED_EXIT_TRIGGERED")
-
             from uuid import uuid4
             exit_cmd_id = f"EXIT_MANAGED_{record.symbol}_{int(time.time() * 1000)}_{uuid4().hex[:8]}"
 
@@ -503,15 +548,18 @@ class OrderWatcherEngine(threading.Thread):
                     "MANAGED_EXIT_DISPATCHED | cmd_id=%s | %s %s qty=%d",
                     exit_cmd_id, record.symbol, record.side, broker_qty,
                 )
+                # Only mark original record after successful dispatch
+                self.repo.update_status(record.command_id, "FAILED")
+                self.repo.update_tag(record.command_id, "MANAGED_EXIT_TRIGGERED")
             else:
                 err = getattr(result, "error_message", "unknown") if result else "no result"
                 logger.error(
-                    "MANAGED_EXIT_DISPATCH_FAILED | cmd_id=%s | %s | error=%s",
+                    "MANAGED_EXIT_DISPATCH_FAILED | cmd_id=%s | %s | error=%s — original record left active",
                     exit_cmd_id, record.symbol, err,
                 )
         except Exception:
             logger.exception(
-                "MANAGED_EXIT_EXCEPTION | cmd_id=%s | %s",
+                "MANAGED_EXIT_EXCEPTION | cmd_id=%s | %s — original record left active",
                 record.command_id, record.symbol,
             )
 
@@ -678,3 +726,169 @@ class OrderWatcherEngine(threading.Thread):
         with lock:
             tracked = positions.get(strategy_name) or {}
             return set(tracked.keys())
+
+    # ==================================================
+    # PUBLIC API: Managed Exit State (for Dashboard)
+    # ==================================================
+
+    def get_managed_exits_snapshot(self) -> List[dict]:
+        """Return a snapshot of all currently managed exit orders for dashboard display."""
+        result = []
+        with self._managed_exits_lock:
+            for cmd_id, state in list(self._managed_exits.items()):
+                record = state["record"]
+                result.append({
+                    "command_id": cmd_id,
+                    "symbol": record.symbol,
+                    "exchange": record.exchange,
+                    "side": record.side,
+                    "quantity": record.quantity,
+                    "product": record.product,
+                    "strategy_name": record.strategy_name,
+                    "stop_loss": state.get("stop_loss"),
+                    "target": state.get("target"),
+                    "trailing_type": state.get("trailing_type"),
+                    "trailing_value": state.get("trailing_value"),
+                    "trail_when": state.get("trail_when"),
+                    "trailing_activated": state.get("trailing_activated", False),
+                    "highest_price": state.get("highest_price"),
+                    "lowest_price": state.get("lowest_price"),
+                    "registered_at": state.get("registered_at"),
+                })
+        return result
+
+    def update_managed_exit(self, symbol: str, updates: dict) -> bool:
+        """
+        Update SL/target/trailing for a managed exit identified by symbol.
+        Returns True if found and updated, False otherwise.
+        """
+        with self._managed_exits_lock:
+            for cmd_id, state in list(self._managed_exits.items()):
+                record = state["record"]
+                if record.symbol == symbol:
+                    if "stop_loss" in updates and updates["stop_loss"] is not None:
+                        state["stop_loss"] = float(updates["stop_loss"])
+                    if "target" in updates and updates["target"] is not None:
+                        state["target"] = float(updates["target"])
+                    if "trailing_value" in updates and updates["trailing_value"] is not None:
+                        state["trailing_value"] = float(updates["trailing_value"])
+                    if "trailing_type" in updates:
+                        state["trailing_type"] = updates["trailing_type"]
+                    if "trail_when" in updates:
+                        val = updates["trail_when"]
+                        state["trail_when"] = float(val) if val is not None else None
+                        # Reset trailing activated if trail_when changed
+                        state["trailing_activated"] = False
+
+                    # Also update the DB record for persistence across restarts
+                    try:
+                        self._update_order_risk_fields(record.command_id, updates)
+                    except Exception:
+                        logger.exception("Failed to update DB risk fields for %s", symbol)
+
+                    logger.warning(
+                        "MANAGED_EXIT_UPDATED | cmd_id=%s | %s | SL=%s | target=%s | trail=%s/%s",
+                        cmd_id, symbol,
+                        state.get("stop_loss"), state.get("target"),
+                        state.get("trailing_type"), state.get("trailing_value"),
+                    )
+                    return True
+        return False
+
+    def remove_managed_exit(self, symbol: str) -> bool:
+        """Remove a managed exit by symbol (disables SL/target monitoring)."""
+        with self._managed_exits_lock:
+            for cmd_id, state in list(self._managed_exits.items()):
+                record = state["record"]
+                if record.symbol == symbol:
+                    self._managed_exits.pop(cmd_id, None)
+                    try:
+                        self.repo.update_status(cmd_id, "FAILED")
+                        self.repo.update_tag(cmd_id, "MANAGER_DISABLED")
+                    except Exception:
+                        pass
+                    logger.warning("MANAGED_EXIT_REMOVED | cmd_id=%s | %s", cmd_id, symbol)
+                    return True
+        return False
+
+    def _update_order_risk_fields(self, command_id: str, updates: dict):
+        """Update risk fields on the DB order record."""
+        from shoonya_platform.persistence.database import get_connection
+        conn = get_connection()
+        try:
+            sets = []
+            params = []
+            for field in ("stop_loss", "target", "trailing_type", "trailing_value", "trail_when"):
+                if field in updates:
+                    sets.append(f"{field} = ?")
+                    params.append(updates[field])
+            if not sets:
+                return
+            params.append(datetime.utcnow().isoformat())
+            params.append(command_id)
+            conn.execute(
+                f"UPDATE orders SET {', '.join(sets)}, updated_at = ? WHERE command_id = ?",
+                params,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def enable_managed_exit(self, symbol: str, exchange: str, side: str,
+                            quantity: int, product: str, stop_loss: float = None,
+                            target: float = None, trailing_type: str = None,
+                            trailing_value: float = None, trail_when: float = None) -> bool:
+        """
+        Create and register a new managed exit for an existing broker position.
+        Called from dashboard when user enables position manager for a position.
+        """
+        from uuid import uuid4
+
+        # Check if already managed
+        with self._managed_exits_lock:
+            for state in self._managed_exits.values():
+                if state["record"].symbol == symbol:
+                    # Already managed — update instead (release lock, update_managed_exit takes it)
+                    break
+            else:
+                state = None
+        if state and state["record"].symbol == symbol:
+            return self.update_managed_exit(symbol, {
+                "stop_loss": stop_loss,
+                "target": target,
+                "trailing_type": trailing_type,
+                "trailing_value": trailing_value,
+                "trail_when": trail_when,
+            })
+
+        cmd_id = f"MANAGED_{symbol}_{int(time.time() * 1000)}_{uuid4().hex[:8]}"
+        strategy_name = f"__BASKET__:DASH-MGR-{uuid4().hex[:10]}:LEG_0"
+
+        record = OrderRecord(
+            command_id=cmd_id,
+            broker_order_id=None,
+            execution_type="EXIT",
+            source="STRATEGY",
+            user=self.bot.client_id,
+            strategy_name=strategy_name,
+            exchange=exchange,
+            symbol=symbol,
+            side=side,
+            quantity=quantity,
+            product=product,
+            order_type="MARKET",
+            price=0.0,
+            stop_loss=stop_loss,
+            target=target,
+            trailing_type=trailing_type or "NONE",
+            trailing_value=trailing_value,
+            trail_when=trail_when,
+            status="CREATED",
+            created_at=datetime.utcnow().isoformat(),
+            updated_at=datetime.utcnow().isoformat(),
+            tag="MANAGED_EXIT",
+        )
+        self.repo.create(record)
+        with self._managed_exits_lock:
+            self._register_managed_exit(record)
+        return True

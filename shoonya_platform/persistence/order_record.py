@@ -48,3 +48,6 @@ class OrderRecord:
     created_at: str
     updated_at: str
     tag: Optional[str]          # ENTRY_CE | ENTRY_PE | EXIT | MANUAL_EXIT
+
+    # ---- Extended Risk (optional, added later) ----
+    trail_when: Optional[float] = None

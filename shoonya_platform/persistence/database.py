@@ -106,6 +106,26 @@ def get_connection():
             )
             conn.commit()
 
+            # Add trail_when column if missing (migration)
+            try:
+                existing_cols = {row[1] for row in conn.execute("PRAGMA table_info('orders')").fetchall()}
+                if 'trail_when' not in existing_cols:
+                    conn.execute("ALTER TABLE orders ADD COLUMN trail_when REAL")
+                    conn.commit()
+            except sqlite3.OperationalError:
+                # Column already exists or table locked — non-fatal
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            except Exception:
+                logger.exception("Unexpected error adding trail_when column")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+
             # 🔒 PRODUCTION INDEXES — prevent full table scans on client_id
             # and enforce uniqueness on (command_id, client_id) to prevent
             # duplicate order execution from retries or race conditions.
@@ -151,6 +171,10 @@ def get_connection():
                     # Recreate table without UNIQUE constraint on command_id
                     conn.execute('BEGIN IMMEDIATE')
                     conn.execute("ALTER TABLE orders RENAME TO orders_old")
+                    # Check if old table has trail_when column
+                    old_cols = {row[1] for row in conn.execute("PRAGMA table_info('orders_old')").fetchall()}
+                    has_trail_when = 'trail_when' in old_cols
+
                     conn.execute(
                         """
                         CREATE TABLE orders (
@@ -174,6 +198,7 @@ def get_connection():
                             target REAL,
                             trailing_type TEXT,
                             trailing_value REAL,
+                            trail_when REAL,
 
                             broker_order_id TEXT,
                             execution_type TEXT,
@@ -185,23 +210,42 @@ def get_connection():
                         )
                         """
                     )
-                    conn.execute(
-                        """
-                        INSERT INTO orders (
-                            id, client_id, command_id, source, user, strategy_name,
-                            exchange, symbol, side, quantity, product,
-                            order_type, price, stop_loss, target, trailing_type,
-                            trailing_value, broker_order_id, execution_type,
-                            status, created_at, updated_at, tag
+                    if has_trail_when:
+                        conn.execute(
+                            """
+                            INSERT INTO orders (
+                                id, client_id, command_id, source, user, strategy_name,
+                                exchange, symbol, side, quantity, product,
+                                order_type, price, stop_loss, target, trailing_type,
+                                trailing_value, trail_when, broker_order_id, execution_type,
+                                status, created_at, updated_at, tag
+                            )
+                            SELECT id, client_id, command_id, source, user, strategy_name,
+                                   exchange, symbol, side, quantity, product,
+                                   order_type, price, stop_loss, target, trailing_type,
+                                   trailing_value, trail_when, broker_order_id, execution_type,
+                                   status, created_at, updated_at, tag
+                            FROM orders_old
+                            """
                         )
-                        SELECT id, client_id, command_id, source, user, strategy_name,
-                               exchange, symbol, side, quantity, product,
-                               order_type, price, stop_loss, target, trailing_type,
-                               trailing_value, broker_order_id, execution_type,
-                               status, created_at, updated_at, tag
-                        FROM orders_old
-                        """
-                    )
+                    else:
+                        conn.execute(
+                            """
+                            INSERT INTO orders (
+                                id, client_id, command_id, source, user, strategy_name,
+                                exchange, symbol, side, quantity, product,
+                                order_type, price, stop_loss, target, trailing_type,
+                                trailing_value, broker_order_id, execution_type,
+                                status, created_at, updated_at, tag
+                            )
+                            SELECT id, client_id, command_id, source, user, strategy_name,
+                                   exchange, symbol, side, quantity, product,
+                                   order_type, price, stop_loss, target, trailing_type,
+                                   trailing_value, broker_order_id, execution_type,
+                                   status, created_at, updated_at, tag
+                            FROM orders_old
+                            """
+                        )
                     conn.execute("DROP TABLE orders_old")
                     conn.commit()
                     

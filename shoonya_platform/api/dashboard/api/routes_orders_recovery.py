@@ -586,7 +586,7 @@ def exit_position(
 ):
     """
     Exit a single broker position by symbol.
-    Payload: { "symbol": "GOLDPETAL30APR26", "exchange": "MCX", "product": "ALL" }
+    Payload: { "symbol": "GOLDPETAL30APR26", "product": "ALL" }
     """
     bot = ctx.get("bot")
     if not bot:
@@ -645,3 +645,153 @@ def exit_all_positions(
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"accepted": True, "scope": "ALL", "product": product_scope}
+
+
+# ==================================================
+# POSITION MANAGER — Managed Exit State
+# ==================================================
+
+@sub_router.get("/positions/managed-exits")
+def get_managed_exits(
+    ctx=Depends(require_dashboard_auth),
+):
+    """Return all currently managed exit orders with live SL/target/trailing state."""
+    bot = ctx.get("bot")
+    if not bot:
+        raise HTTPException(status_code=503, detail="Bot not available")
+
+    watcher = getattr(bot, "order_watcher", None)
+    if not watcher:
+        return {"managed_exits": []}
+
+    return {"managed_exits": watcher.get_managed_exits_snapshot()}
+
+
+@sub_router.post("/positions/managed-exit/enable")
+def enable_managed_exit(
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Enable position manager for a broker position.
+    Payload: { "symbol", "exchange", "side", "quantity", "product",
+               "stop_loss", "target", "trailing_type", "trailing_value", "trail_when" }
+    """
+    bot = ctx.get("bot")
+    if not bot:
+        raise HTTPException(status_code=503, detail="Bot not available")
+
+    watcher = getattr(bot, "order_watcher", None)
+    if not watcher:
+        raise HTTPException(status_code=503, detail="OrderWatcher not available")
+
+    symbol = (payload.get("symbol") or "").strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Missing symbol")
+
+    exchange = (payload.get("exchange") or "").strip()
+    side = (payload.get("side") or "").strip()
+    product = (payload.get("product") or "").strip()
+
+    try:
+        quantity = int(payload.get("quantity") or 0)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid quantity: must be an integer")
+
+    if not all([exchange, side, quantity, product]):
+        raise HTTPException(status_code=400, detail="Missing required fields: exchange, side, quantity, product")
+
+    def _parse_float(val, name):
+        if val is None or val == "":
+            return None
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid {name}: must be a number")
+
+    stop_loss = _parse_float(payload.get("stop_loss"), "stop_loss")
+    target = _parse_float(payload.get("target"), "target")
+    trailing_type = payload.get("trailing_type")
+    trailing_value = _parse_float(payload.get("trailing_value"), "trailing_value")
+    trail_when = _parse_float(payload.get("trail_when"), "trail_when")
+
+    # Validate at least one risk param is set
+    has_sl = stop_loss is not None and stop_loss > 0
+    has_target = target is not None and target > 0
+    has_trail = trailing_value is not None and trailing_value > 0
+
+    if not (has_sl or has_target or has_trail):
+        raise HTTPException(status_code=400, detail="At least one of stop_loss, target, or trailing_value must be set")
+
+    ok = watcher.enable_managed_exit(
+        symbol=symbol,
+        exchange=exchange,
+        side=side,
+        quantity=quantity,
+        product=product,
+        stop_loss=stop_loss,
+        target=target,
+        trailing_type=trailing_type or ("POINTS" if has_trail else "NONE"),
+        trailing_value=trailing_value,
+        trail_when=trail_when,
+    )
+
+    return {"accepted": ok, "symbol": symbol}
+
+
+@sub_router.post("/positions/managed-exit/update")
+def update_managed_exit(
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """
+    Update SL/target/trailing for an existing managed exit.
+    Payload: { "symbol", "stop_loss"?, "target"?, "trailing_type"?, "trailing_value"?, "trail_when"? }
+    """
+    bot = ctx.get("bot")
+    if not bot:
+        raise HTTPException(status_code=503, detail="Bot not available")
+
+    watcher = getattr(bot, "order_watcher", None)
+    if not watcher:
+        raise HTTPException(status_code=503, detail="OrderWatcher not available")
+
+    symbol = (payload.get("symbol") or "").strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Missing symbol")
+
+    updates = {}
+    for field in ("stop_loss", "target", "trailing_type", "trailing_value", "trail_when"):
+        if field in payload:
+            updates[field] = payload[field]
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    ok = watcher.update_managed_exit(symbol, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"No managed exit found for {symbol}")
+
+    return {"accepted": True, "symbol": symbol}
+
+
+@sub_router.post("/positions/managed-exit/disable")
+def disable_managed_exit(
+    payload: dict = Body(...),
+    ctx=Depends(require_dashboard_auth),
+):
+    """Remove managed exit monitoring for a position."""
+    bot = ctx.get("bot")
+    if not bot:
+        raise HTTPException(status_code=503, detail="Bot not available")
+
+    watcher = getattr(bot, "order_watcher", None)
+    if not watcher:
+        raise HTTPException(status_code=503, detail="OrderWatcher not available")
+
+    symbol = (payload.get("symbol") or "").strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Missing symbol")
+
+    ok = watcher.remove_managed_exit(symbol)
+    return {"accepted": ok, "symbol": symbol}

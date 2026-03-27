@@ -646,7 +646,8 @@ class ExecutionMixin:
                     result = OrderResult(success=False, error_message="MOCK_TEST_FAILURE")
                 else:
                     _cmd_suffix = (command.command_id or "NOCMD")[:8]
-                    mock_order_id = f"MOCK_{int(time.time() * 1000)}_{_cmd_suffix}"
+                    import uuid
+                    mock_order_id = f"MOCK_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}_{_cmd_suffix}"
                     _paper_status = "PAPER_EXECUTED" if _force_paper else "MOCK_EXECUTED"
                     result = OrderResult(success=True, order_id=mock_order_id, status=_paper_status)
             else:

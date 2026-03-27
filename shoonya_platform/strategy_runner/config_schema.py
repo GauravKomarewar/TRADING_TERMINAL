@@ -787,8 +787,11 @@ def _validate_condition(cond: Dict, path: str, errors: List[ValidationError]):
                 errors.append(ValidationError(f"{path}.value", f"Comparator '{comp}' array must have exactly 2 elements"))
             else:
                 try:
-                    float(val[0])
-                    float(val[1])
+                    if isinstance(val, list):
+                        cond["value"] = [float(val[0]), float(val[1])]
+                    else:
+                        float(val[0])
+                        float(val[1])
                 except (TypeError, ValueError):
                     errors.append(ValidationError(f"{path}.value", "Both elements of value must be numbers"))
         else:

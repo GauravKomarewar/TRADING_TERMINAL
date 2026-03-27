@@ -91,6 +91,7 @@ class OrderRepository:
                 target,
                 trailing_type,
                 trailing_value,
+                trail_when,
 
                 broker_order_id,
                 execution_type,
@@ -100,7 +101,7 @@ class OrderRepository:
                 updated_at,
                 tag
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 self.client_id,
@@ -122,6 +123,7 @@ class OrderRepository:
                 record.target,
                 record.trailing_type,
                 record.trailing_value,
+                record.trail_when,
 
                 record.broker_order_id,
                 record.execution_type,

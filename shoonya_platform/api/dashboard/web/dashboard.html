@@ -1055,7 +1055,7 @@
         thead.querySelectorAll('.pm-th').forEach(function(th) { th.remove(); });
         if (posManagerMode) {
             var actionTh = thead.lastElementChild;
-            ['SL', 'Target', 'Trail', 'Trail@', '', ''].forEach(function(label) {
+            ['SL', 'Target', 'Trail', 'Trail@', 'Base SL', 'Start LTP', 'Act@', '', ''].forEach(function(label) {
                 var th = document.createElement('th');
                 th.className = 'pm-th';
                 th.textContent = label;
@@ -1076,25 +1076,32 @@
         var exitSide = qty > 0 ? 'SELL' : 'BUY';
 
         if (isFlat) {
-            return '<td colspan="6" style="text-align:center;color:var(--muted);font-size:11px">—</td>';
+            return '<td colspan="9" style="text-align:center;color:var(--muted);font-size:11px">—</td>';
         }
 
         var slVal = isManaged && me.stop_loss != null ? me.stop_loss : '';
         var tgtVal = isManaged && me.target != null ? me.target : '';
         var trailVal = isManaged && me.trailing_value != null ? me.trailing_value : '';
         var twVal = isManaged && me.trail_when != null ? me.trail_when : '';
+        var baseSlVal = isManaged && me.base_stop_loss != null ? me.base_stop_loss : '';
+        var startLtpVal = isManaged && me.initial_ltp != null ? me.initial_ltp : '';
+        var actVal = isManaged && me.activation_price != null ? me.activation_price : '';
 
         var statusHtml = isManaged
             ? '<span class="pm-status-pill active">ACTIVE</span>'
             : '<span class="pm-status-pill off">OFF</span>';
 
-        var btns = '<button class="pm-btn-inline save" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" data-qty="' + Math.abs(qty) + '" data-side="' + exitSide + '">Save</button>';
-        if (isManaged) btns += ' <button class="pm-btn-inline remove" data-sym="' + encodeAttr(sym) + '">✕</button>';
+        var saveLabel = isManaged ? 'Update' : 'Activate';
+        var btns = '<button class="pm-btn-inline save" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" data-qty="' + Math.abs(qty) + '" data-side="' + exitSide + '">' + saveLabel + '</button>';
+        if (isManaged) btns += ' <button class="pm-btn-inline remove" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '">Deactivate</button>';
 
         return '<td class="pm-live-cell"><input type="number" step="any" data-field="stop_loss" data-live="' + slVal + '" value="' + slVal + '" placeholder="—"></td>'
              + '<td class="pm-live-cell"><input type="number" step="any" data-field="target" data-live="' + tgtVal + '" value="' + tgtVal + '" placeholder="—"></td>'
              + '<td class="pm-live-cell"><input type="number" step="any" data-field="trailing_value" data-live="' + trailVal + '" value="' + trailVal + '" placeholder="—"></td>'
              + '<td class="pm-live-cell"><input type="number" step="any" data-field="trail_when" data-live="' + twVal + '" value="' + twVal + '" placeholder="—"></td>'
+               + '<td class="pm-meta-cell" data-pm="base-stop">' + (baseSlVal !== '' ? fmt(baseSlVal) : '—') + '</td>'
+               + '<td class="pm-meta-cell" data-pm="initial-ltp">' + (startLtpVal !== '' ? fmt(startLtpVal) : '—') + '</td>'
+               + '<td class="pm-meta-cell" data-pm="activation-price">' + (actVal !== '' ? fmt(actVal) : '—') + '</td>'
              + '<td>' + statusHtml + '</td>'
              + '<td style="white-space:nowrap">' + btns + '</td>';
     }
@@ -1154,6 +1161,25 @@
                 pill.textContent = isManaged ? 'ACTIVE' : 'OFF';
             }
 
+            var saveBtn = row.querySelector('.pm-btn-inline.save');
+            if (saveBtn) {
+                saveBtn.textContent = isManaged ? 'Update' : 'Activate';
+            }
+
+            var setMeta = function(field, value) {
+                var cell = row.querySelector('[data-pm="' + field + '"]');
+                if (!cell) return;
+                var nextText = value != null && value !== '' ? fmt(value) : '—';
+                if (cell.textContent !== nextText) {
+                    cell.textContent = nextText;
+                    flashEl(cell);
+                }
+            };
+
+            setMeta('base-stop', isManaged ? me.base_stop_loss : null);
+            setMeta('initial-ltp', isManaged ? me.initial_ltp : null);
+            setMeta('activation-price', isManaged ? me.activation_price : null);
+
             if (!isManaged) return;
 
             // Live-update input values — skip if user is editing that field
@@ -1181,10 +1207,12 @@
                 var saveBtn = row.querySelector('.pm-btn-inline.save');
                 if (saveBtn && saveBtn.parentNode) {
                     var sym = row.dataset.sym;
+                    var prd = row.dataset.prd;
                     var rmBtn = document.createElement('button');
                     rmBtn.className = 'pm-btn-inline remove';
                     rmBtn.dataset.sym = sym;
-                    rmBtn.textContent = '✕';
+                    rmBtn.dataset.prd = prd || '';
+                    rmBtn.textContent = 'Deactivate';
                     saveBtn.parentNode.appendChild(document.createTextNode(' '));
                     saveBtn.parentNode.appendChild(rmBtn);
                 }
@@ -1223,7 +1251,7 @@
         countEl.textContent = countText;
         exitAllBtn.style.display = openPositions.length > 0 ? 'inline-block' : 'none';
 
-        var colSpan = posManagerMode ? 12 : 10;
+        var colSpan = posManagerMode ? 19 : 10;
 
         if (!positions.length) {
             tbody.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">No positions</td></tr>';
@@ -1366,6 +1394,7 @@
         var url = isManaged ? '/dashboard/positions/managed-exit/update' : '/dashboard/positions/managed-exit/enable';
 
         var body = { symbol: sym };
+        if (prd) body.product = prd;
         if (sl != null) body.stop_loss = sl;
         if (tgt != null) body.target = tgt;
         if (trail != null) { body.trailing_value = trail; body.trailing_type = 'POINTS'; }
@@ -1398,20 +1427,21 @@
         } catch (err) {
             showError('Manager save failed: ' + err.message);
         } finally {
-            btn.disabled = false; btn.textContent = 'Save';
+            btn.disabled = false; btn.textContent = isManaged ? 'Update' : 'Activate';
         }
     }
 
     async function pmDisableRow(btn) {
         if (!btn) return;
         var sym = btn.dataset.sym;
+        var prd = btn.dataset.prd;
         btn.disabled = true; btn.textContent = '…';
         try {
             var res = await fetch('/dashboard/positions/managed-exit/disable', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol: sym }),
+                body: JSON.stringify({ symbol: sym, product: prd || null }),
             });
             var data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Failed');
@@ -1420,7 +1450,7 @@
         } catch (err) {
             showError('Disable failed: ' + err.message);
         } finally {
-            btn.disabled = false; btn.textContent = '✕';
+            btn.disabled = false; btn.textContent = 'Deactivate';
         }
     }
 

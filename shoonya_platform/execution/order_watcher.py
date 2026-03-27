@@ -315,13 +315,37 @@ class OrderWatcherEngine(threading.Thread):
         except Exception:
             pass
 
+        initial_ltp = None
+        try:
+            positions = self.bot.api.get_positions() or []
+            for pos in positions:
+                if pos.get("tsym") != record.symbol:
+                    continue
+                pos_product = pos.get("prd") or pos.get("product")
+                if record.product and pos_product and pos_product != record.product:
+                    continue
+                live_price = pos.get("ltp", pos.get("lp", 0))
+                if live_price is not None:
+                    initial_ltp = float(live_price or 0) or None
+                break
+        except Exception:
+            logger.warning(
+                "MANAGED_EXIT_REGISTER_LTP_LOOKUP_FAILED | cmd_id=%s | %s",
+                record.command_id,
+                record.symbol,
+                exc_info=True,
+            )
+
         self._managed_exits[record.command_id] = {
             "record": record,
             "stop_loss": record.stop_loss,
+            "base_stop_loss": record.stop_loss,
             "target": record.target,
             "trailing_type": record.trailing_type,
             "trailing_value": record.trailing_value,
             "trail_when": record.trail_when,
+            "initial_ltp": initial_ltp,
+            "activation_price": None,
             "trailing_activated": False,
             "highest_price": None,
             "lowest_price": None,
@@ -329,7 +353,7 @@ class OrderWatcherEngine(threading.Thread):
         }
 
         logger.warning(
-            "MANAGED_EXIT_REGISTERED | cmd_id=%s | %s | side=%s | qty=%s | SL=%s | target=%s | trail=%s/%s | trail_when=%s",
+            "MANAGED_EXIT_REGISTERED | cmd_id=%s | %s | side=%s | qty=%s | SL=%s | target=%s | trail=%s/%s | trail_when=%s | initial_ltp=%s",
             record.command_id,
             record.symbol,
             record.side,
@@ -339,6 +363,7 @@ class OrderWatcherEngine(threading.Thread):
             record.trailing_type,
             record.trailing_value,
             record.trail_when,
+            initial_ltp,
         )
 
     # ==================================================
@@ -403,7 +428,9 @@ class OrderWatcherEngine(threading.Thread):
                 to_remove.append(cmd_id)
                 continue
 
-            ltp = float(pos.get("ltp", 0) or 0)
+            # Broker payloads may expose live price as either `ltp` or `lp`.
+            # Fall back to `lp` so managed exits keep working across brokers.
+            ltp = float(pos.get("ltp", pos.get("lp", 0)) or 0)
             if ltp <= 0:
                 continue
 
@@ -412,56 +439,117 @@ class OrderWatcherEngine(threading.Thread):
             target = state.get("target")
             trailing_type = state.get("trailing_type")
             trailing_value = state.get("trailing_value")
-
             trigger_exit = False
             trigger_reason = ""
 
             # ── TRAILING SL LOGIC ──
             if trailing_type and trailing_value and trailing_value > 0:
+                if state.get("initial_ltp") is None:
+                    state["initial_ltp"] = ltp
+
                 # Check trail_when activation
                 trail_when = state.get("trail_when")
                 trailing_activated = state.get("trailing_activated", False)
                 if not trailing_activated and trail_when and trail_when > 0:
-                    # LONG: activate when price reaches up to trail_when
-                    # SHORT: activate when price drops to trail_when
-                    if is_long and ltp >= trail_when:
+                    initial_ltp = float(state.get("initial_ltp") or 0)
+                    activation_price = initial_ltp + float(trail_when) if is_long else initial_ltp - float(trail_when)
+                    state["activation_price"] = activation_price
+
+                    # LONG: activate after favorable move above anchor by trail_when steps.
+                    # SHORT: activate after favorable move below anchor by trail_when steps.
+                    if is_long and ltp >= activation_price:
                         state["trailing_activated"] = True
                         trailing_activated = True
-                        logger.info("TRAILING_ACTIVATED | %s | ltp=%s >= trail_when=%s", symbol, ltp, trail_when)
-                    elif not is_long and ltp <= trail_when:
+                        logger.info(
+                            "TRAILING_ACTIVATED | %s | ltp=%s >= activation=%s | anchor=%s | trail_when=%s",
+                            symbol, ltp, activation_price, initial_ltp, trail_when,
+                        )
+                    elif not is_long and ltp <= activation_price:
                         state["trailing_activated"] = True
                         trailing_activated = True
-                        logger.info("TRAILING_ACTIVATED | %s | ltp=%s <= trail_when=%s", symbol, ltp, trail_when)
+                        logger.info(
+                            "TRAILING_ACTIVATED | %s | ltp=%s <= activation=%s | anchor=%s | trail_when=%s",
+                            symbol, ltp, activation_price, initial_ltp, trail_when,
+                        )
                 elif not trail_when or trail_when <= 0:
                     # No trail_when set — trailing is immediately active
                     trailing_activated = True
                     state["trailing_activated"] = True
+                    state["activation_price"] = state.get("initial_ltp")
 
                 if trailing_activated:
-                    if is_long:
-                        if state["highest_price"] is None or ltp > state["highest_price"]:
-                            state["highest_price"] = ltp
-                        if trailing_type == "POINTS":
-                            new_sl = state["highest_price"] - trailing_value
-                        elif trailing_type == "PERCENT":
-                            new_sl = state["highest_price"] * (1 - trailing_value / 100)
-                        else:
-                            new_sl = state["highest_price"] - trailing_value
-                        if sl is None or new_sl > sl:
-                            state["stop_loss"] = new_sl
-                            sl = new_sl
+                    # POINTS trailing (dashboard PM): move SL in fixed steps
+                    # from the original configured stop-loss, not as ltp +/- trail.
+                    if trailing_type == "POINTS":
+                        base_sl = state.get("base_stop_loss")
+                        if base_sl is None and sl is not None:
+                            base_sl = float(sl)
+                            state["base_stop_loss"] = base_sl
+
+                        initial_ltp = float(state.get("initial_ltp") or 0)
+                        step_trigger = float(trail_when) if trail_when and trail_when > 0 else float(trailing_value)
+                        step_move = float(trailing_value)
+
+                        if base_sl is not None and initial_ltp > 0 and step_trigger > 0 and step_move > 0:
+                            favorable_move = (ltp - initial_ltp) if is_long else (initial_ltp - ltp)
+                            favorable_move = max(0.0, favorable_move)
+                            steps = int(favorable_move // step_trigger)
+
+                            if steps > 0:
+                                if is_long:
+                                    new_sl = float(base_sl) + (steps * step_move)
+                                    if sl is None or new_sl > sl:
+                                        old_sl = sl
+                                        state["stop_loss"] = new_sl
+                                        sl = new_sl
+                                        logger.info(
+                                            "TRAILING_SL_UPDATED | %s | old_sl=%s | new_sl=%s | base_sl=%s | anchor=%s | ltp=%s | steps=%s",
+                                            symbol,
+                                            old_sl,
+                                            new_sl,
+                                            base_sl,
+                                            initial_ltp,
+                                            ltp,
+                                            steps,
+                                        )
+                                else:
+                                    new_sl = float(base_sl) - (steps * step_move)
+                                    if sl is None or new_sl < sl:
+                                        old_sl = sl
+                                        state["stop_loss"] = new_sl
+                                        sl = new_sl
+                                        logger.info(
+                                            "TRAILING_SL_UPDATED | %s | old_sl=%s | new_sl=%s | base_sl=%s | anchor=%s | ltp=%s | steps=%s",
+                                            symbol,
+                                            old_sl,
+                                            new_sl,
+                                            base_sl,
+                                            initial_ltp,
+                                            ltp,
+                                            steps,
+                                        )
                     else:
-                        if state["lowest_price"] is None or ltp < state["lowest_price"]:
-                            state["lowest_price"] = ltp
-                        if trailing_type == "POINTS":
-                            new_sl = state["lowest_price"] + trailing_value
-                        elif trailing_type == "PERCENT":
-                            new_sl = state["lowest_price"] * (1 + trailing_value / 100)
+                        # Keep legacy behaviour for non-POINTS modes.
+                        if is_long:
+                            if state["highest_price"] is None or ltp > state["highest_price"]:
+                                state["highest_price"] = ltp
+                            if trailing_type == "PERCENT":
+                                new_sl = state["highest_price"] * (1 - trailing_value / 100)
+                            else:
+                                new_sl = state["highest_price"] - trailing_value
+                            if sl is None or new_sl > sl:
+                                state["stop_loss"] = new_sl
+                                sl = new_sl
                         else:
-                            new_sl = state["lowest_price"] + trailing_value
-                        if sl is None or new_sl < sl:
-                            state["stop_loss"] = new_sl
-                            sl = new_sl
+                            if state["lowest_price"] is None or ltp < state["lowest_price"]:
+                                state["lowest_price"] = ltp
+                            if trailing_type == "PERCENT":
+                                new_sl = state["lowest_price"] * (1 + trailing_value / 100)
+                            else:
+                                new_sl = state["lowest_price"] + trailing_value
+                            if sl is None or new_sl < sl:
+                                state["stop_loss"] = new_sl
+                                sl = new_sl
 
             # ── CHECK SL HIT ──
             if sl is not None:
@@ -501,6 +589,9 @@ class OrderWatcherEngine(threading.Thread):
                     orig["highest_price"] = local_state["highest_price"]
                     orig["lowest_price"] = local_state["lowest_price"]
                     orig["stop_loss"] = local_state["stop_loss"]
+                    orig["base_stop_loss"] = local_state.get("base_stop_loss")
+                    orig["initial_ltp"] = local_state.get("initial_ltp")
+                    orig["activation_price"] = local_state.get("activation_price")
             for cmd_id in to_remove:
                 self._managed_exits.pop(cmd_id, None)
 
@@ -746,10 +837,13 @@ class OrderWatcherEngine(threading.Thread):
                     "product": record.product,
                     "strategy_name": record.strategy_name,
                     "stop_loss": state.get("stop_loss"),
+                    "base_stop_loss": state.get("base_stop_loss"),
                     "target": state.get("target"),
                     "trailing_type": state.get("trailing_type"),
                     "trailing_value": state.get("trailing_value"),
                     "trail_when": state.get("trail_when"),
+                    "initial_ltp": state.get("initial_ltp"),
+                    "activation_price": state.get("activation_price"),
                     "trailing_activated": state.get("trailing_activated", False),
                     "highest_price": state.get("highest_price"),
                     "lowest_price": state.get("lowest_price"),
@@ -757,7 +851,7 @@ class OrderWatcherEngine(threading.Thread):
                 })
         return result
 
-    def update_managed_exit(self, symbol: str, updates: dict) -> bool:
+    def update_managed_exit(self, symbol: str, updates: dict, product: str = None) -> bool:
         """
         Update SL/target/trailing for a managed exit identified by symbol.
         Returns True if found and updated, False otherwise.
@@ -765,9 +859,10 @@ class OrderWatcherEngine(threading.Thread):
         with self._managed_exits_lock:
             for cmd_id, state in list(self._managed_exits.items()):
                 record = state["record"]
-                if record.symbol == symbol:
+                if record.symbol == symbol and (product is None or record.product == product):
                     if "stop_loss" in updates and updates["stop_loss"] is not None:
                         state["stop_loss"] = float(updates["stop_loss"])
+                        state["base_stop_loss"] = float(updates["stop_loss"])
                     if "target" in updates and updates["target"] is not None:
                         state["target"] = float(updates["target"])
                     if "trailing_value" in updates and updates["trailing_value"] is not None:
@@ -777,8 +872,13 @@ class OrderWatcherEngine(threading.Thread):
                     if "trail_when" in updates:
                         val = updates["trail_when"]
                         state["trail_when"] = float(val) if val is not None else None
-                        # Reset trailing activated if trail_when changed
+                    if any(field in updates for field in ("trailing_type", "trailing_value", "trail_when")):
+                        # Keep the original anchor, but clear trailing progression so the
+                        # new trailing config starts fresh from that saved activation point.
                         state["trailing_activated"] = False
+                        state["activation_price"] = None
+                        state["highest_price"] = None
+                        state["lowest_price"] = None
 
                     # Also update the DB record for persistence across restarts
                     try:
@@ -787,27 +887,34 @@ class OrderWatcherEngine(threading.Thread):
                         logger.exception("Failed to update DB risk fields for %s", symbol)
 
                     logger.warning(
-                        "MANAGED_EXIT_UPDATED | cmd_id=%s | %s | SL=%s | target=%s | trail=%s/%s",
+                        "MANAGED_EXIT_UPDATED | cmd_id=%s | %s | product=%s | SL=%s | target=%s | trail=%s/%s | trail_when=%s | anchor=%s",
                         cmd_id, symbol,
+                        record.product,
                         state.get("stop_loss"), state.get("target"),
-                        state.get("trailing_type"), state.get("trailing_value"),
+                        state.get("trailing_type"), state.get("trailing_value"), state.get("trail_when"), state.get("initial_ltp"),
                     )
                     return True
         return False
 
-    def remove_managed_exit(self, symbol: str) -> bool:
+    def remove_managed_exit(self, symbol: str, product: str = None) -> bool:
         """Remove a managed exit by symbol (disables SL/target monitoring)."""
         with self._managed_exits_lock:
             for cmd_id, state in list(self._managed_exits.items()):
                 record = state["record"]
-                if record.symbol == symbol:
+                if record.symbol == symbol and (product is None or record.product == product):
                     self._managed_exits.pop(cmd_id, None)
                     try:
                         self.repo.update_status(cmd_id, "FAILED")
                         self.repo.update_tag(cmd_id, "MANAGER_DISABLED")
                     except Exception:
                         pass
-                    logger.warning("MANAGED_EXIT_REMOVED | cmd_id=%s | %s", cmd_id, symbol)
+                    logger.warning(
+                        "MANAGED_EXIT_REMOVED | cmd_id=%s | %s | product=%s | cleared_anchor=%s",
+                        cmd_id,
+                        symbol,
+                        record.product,
+                        state.get("initial_ltp"),
+                    )
                     return True
         return False
 
@@ -847,19 +954,19 @@ class OrderWatcherEngine(threading.Thread):
         # Check if already managed
         with self._managed_exits_lock:
             for state in self._managed_exits.values():
-                if state["record"].symbol == symbol:
+                if state["record"].symbol == symbol and state["record"].product == product:
                     # Already managed — update instead (release lock, update_managed_exit takes it)
                     break
             else:
                 state = None
-        if state and state["record"].symbol == symbol:
+        if state and state["record"].symbol == symbol and state["record"].product == product:
             return self.update_managed_exit(symbol, {
                 "stop_loss": stop_loss,
                 "target": target,
                 "trailing_type": trailing_type,
                 "trailing_value": trailing_value,
                 "trail_when": trail_when,
-            })
+            }, product=product)
 
         cmd_id = f"MANAGED_{symbol}_{int(time.time() * 1000)}_{uuid4().hex[:8]}"
         strategy_name = f"__BASKET__:DASH-MGR-{uuid4().hex[:10]}:LEG_0"

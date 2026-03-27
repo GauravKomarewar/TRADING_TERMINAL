@@ -746,7 +746,7 @@ def update_managed_exit(
 ):
     """
     Update SL/target/trailing for an existing managed exit.
-    Payload: { "symbol", "stop_loss"?, "target"?, "trailing_type"?, "trailing_value"?, "trail_when"? }
+    Payload: { "symbol", "product"?, "stop_loss"?, "target"?, "trailing_type"?, "trailing_value"?, "trail_when"? }
     """
     bot = ctx.get("bot")
     if not bot:
@@ -759,6 +759,7 @@ def update_managed_exit(
     symbol = (payload.get("symbol") or "").strip()
     if not symbol:
         raise HTTPException(status_code=400, detail="Missing symbol")
+    product = (payload.get("product") or "").strip() or None
 
     updates = {}
     for field in ("stop_loss", "target", "trailing_type", "trailing_value", "trail_when"):
@@ -768,9 +769,9 @@ def update_managed_exit(
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    ok = watcher.update_managed_exit(symbol, updates)
+    ok = watcher.update_managed_exit(symbol, updates, product=product)
     if not ok:
-        raise HTTPException(status_code=404, detail=f"No managed exit found for {symbol}")
+        raise HTTPException(status_code=404, detail=f"No managed exit found for {symbol}{'/' + product if product else ''}")
 
     return {"accepted": True, "symbol": symbol}
 
@@ -792,6 +793,7 @@ def disable_managed_exit(
     symbol = (payload.get("symbol") or "").strip()
     if not symbol:
         raise HTTPException(status_code=400, detail="Missing symbol")
+    product = (payload.get("product") or "").strip() or None
 
-    ok = watcher.remove_managed_exit(symbol)
+    ok = watcher.remove_managed_exit(symbol, product=product)
     return {"accepted": ok, "symbol": symbol}

@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════
+   SHOONYA TRADING PLATFORM V2 — DESIGN TOKENS
+   TradingView-inspired dark trading UI
+   ══════════════════════════════════════════════ */
+
+:root {
+  /* ── Brand ── */
+  --color-primary: #22d3ee;
+  --color-primary-dim: #0e7490;
+  --color-accent: #818cf8;
+
+  /* ── Semantic ── */
+  --color-profit: #4ade80;
+  --color-loss: #fb7185;
+  --color-warning: #fbbf24;
+  --color-info: #60a5fa;
+  --color-buy: #4ade80;
+  --color-sell: #fb7185;
+
+  /* ── Surface Palette (TradingView dark) ── */
+  --color-bg-base: #0c0e14;
+  --color-bg-surface: #131722;
+  --color-bg-card: #1a1e2e;
+  --color-bg-elevated: #222738;
+  --color-bg-hover: #2a3040;
+  --color-bg-input: #181c28;
+
+  /* ── Border ── */
+  --color-border: #2a2e3e;
+  --color-border-hover: #3a3f52;
+
+  /* ── Text ── */
+  --color-text-primary: #d1d4dc;
+  --color-text-secondary: #848e9c;
+  --color-text-muted: #5d6785;
+  --color-text-bright: #f0f2f5;
+
+  /* ── Sizing ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* ── Font ── */
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+  --font-sans: "Inter", -apple-system, system-ui, sans-serif;
+}
+
+/* ── Base ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+#root { min-height: 100dvh; display: flex; flex-direction: column; }
+
+/* ── Scrollbar (Chromium) ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2e3e; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3f52; }
+
+/* ── Focus ── */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(34, 211, 238, 0.25);
+  color: #f0f2f5;
+}
+
+/* ── Keyframes ── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.4); }
+  50% { box-shadow: 0 0 12px 4px rgba(34, 211, 238, 0.15); }
+}
+
+@keyframes flash-value {
+  0% { background: rgba(34, 211, 238, 0.3); }
+  100% { background: transparent; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-flash { animation: flash-value 0.6s ease-out; }
+.animate-slide-up { animation: slide-up 0.3s ease-out; }
+.animate-fade-in { animation: fade-in 0.2s ease-out; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+/* ── Utility ── */
+.font-mono { font-family: var(--font-mono); }
+
+.pnl-positive { color: var(--color-profit); }
+.pnl-negative { color: var(--color-loss); }
+.pnl-zero { color: var(--color-text-muted); }
+
+/* ── Number Tabular ── */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* ── Glass Card ── */
+.glass {
+  background: rgba(26, 30, 46, 0.8);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border);
+}
+
+/* ── Trading Badge ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.badge-buy { background: rgba(74,222,128,0.15); color: var(--color-buy); }
+.badge-sell { background: rgba(251,113,133,0.15); color: var(--color-sell); }
+.badge-live { background: rgba(251,113,133,0.2); color: #fb7185; border: 1px solid rgba(251,113,133,0.3); }
+.badge-mock { background: rgba(34,211,238,0.15); color: #22d3ee; border: 1px solid rgba(34,211,238,0.2); }
+.badge-safe { background: rgba(74,222,128,0.15); color: #4ade80; }
+.badge-warning { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.badge-danger { background: rgba(251,113,133,0.15); color: #fb7185; }
+.badge-neutral { background: rgba(93,103,133,0.2); color: #848e9c; }
+
+/* ── Responsive Helpers ── */
+.hide-mobile { @media (max-width: 768px) { display: none !important; } }
+.hide-desktop { @media (min-width: 769px) { display: none !important; } }

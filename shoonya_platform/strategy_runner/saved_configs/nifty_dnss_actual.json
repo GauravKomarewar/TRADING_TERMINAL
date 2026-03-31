@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "COMPLETED",
   "identity": {
     "exchange": "NFO",
     "underlying": "NIFTY",
@@ -228,5 +228,5 @@
   "test_mode": true,
   "created_at": "2026-02-27T12:53:41Z",
   "updated_at": "2026-03-26T09:03:09",
-  "status_updated_at": "2026-03-26T09:03:13.392010"
+  "status_updated_at": "2026-03-30T15:28:04.271898"
 }

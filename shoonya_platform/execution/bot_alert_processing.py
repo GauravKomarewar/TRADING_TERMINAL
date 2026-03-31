@@ -633,13 +633,16 @@ class AlertProcessingMixin:
                     logger.warning(f"Failed to send order placing message: {e}")
 
             # Execute through single command-service path.
+            # BUG FIX: Stamp TEST_MODE marker on ALL order types (including EXIT)
+            # so execute_command() can detect mock mode even after strategy unregistration.
+            if test_mode:
+                marker = f"TEST_MODE_{str(test_mode).upper()}"
+                prior = str(cmd.comment or "")
+                cmd = replace(cmd, comment=f"{prior}|{marker}" if prior else marker)
+
             if execution_type == "EXIT":
                 self.command_service.register(cmd)
             else:
-                if test_mode:
-                    marker = f"TEST_MODE_{str(test_mode).upper()}"
-                    prior = str(cmd.comment or "")
-                    cmd = replace(cmd, comment=f"{prior}|{marker}" if prior else marker)
                 self.command_service.submit(cmd, execution_type=execution_type)
 
             if test_mode:

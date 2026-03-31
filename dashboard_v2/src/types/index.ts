@@ -284,6 +284,55 @@ export interface OhlcCandle {
   oi?: number
 }
 
+export interface OptionInstrument {
+  exchange: string
+  symbol: string
+  expiries: string[]
+}
+
+export interface OptionChainHealth {
+  total_chains?: number
+  active_chains?: number
+  stale_chains?: number
+  max_snapshot_age?: number
+  [key: string]: unknown
+}
+
+export interface MarketDataIndex {
+  symbol: string
+  name?: string
+  exchange?: string
+  token?: string | number
+  subscribed: boolean
+  configured?: boolean
+}
+
+export interface MarketDataSettings {
+  indices: MarketDataIndex[]
+  ticker_symbols: string[]
+  sticky_symbols: string[]
+}
+
+export interface StrategyValidationIssue {
+  path?: string
+  message?: string
+  severity?: 'error' | 'warning' | string
+}
+
+export interface StrategyValidationResult {
+  valid: boolean
+  errors?: string[]
+  warnings?: string[]
+  issues?: StrategyValidationIssue[]
+}
+
+export interface OrderModifyPayload {
+  order_id: string
+  order_type: 'MARKET' | 'LIMIT'
+  price?: number | null
+  quantity?: number | null
+}
+
 // ── Toast ──
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 

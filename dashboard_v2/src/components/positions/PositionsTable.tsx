@@ -205,12 +205,12 @@ function PositionRow({ position: p, managed, pmMode }: PositionRowProps) {
 
   const handleDisable = useCallback(async () => {
     try {
-      await api.disableManagedExit(sym)
+      await api.disableManagedExit(sym, prd)
       addToast('success', `Manager disabled for ${sym}`)
     } catch (e: unknown) {
       addToast('error', 'Disable failed: ' + (e instanceof Error ? e.message : 'Unknown'))
     }
-  }, [sym, addToast])
+  }, [sym, prd, addToast])
 
   const handleExit = useCallback(async () => {
     try {

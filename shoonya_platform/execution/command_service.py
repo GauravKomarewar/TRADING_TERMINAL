@@ -61,6 +61,15 @@ class CommandService:
             
         validate_order(cmd)
 
+        # Preserve TEST_MODE marker in the tag field so OrderWatcher
+        # can reconstruct mock-mode info after strategy unregistration.
+        _tag = "EXIT"
+        _comment = str(getattr(cmd, "comment", "") or "").upper()
+        if "TEST_MODE_SUCCESS" in _comment:
+            _tag = "EXIT|TEST_MODE_SUCCESS"
+        elif "TEST_MODE_FAILURE" in _comment:
+            _tag = "EXIT|TEST_MODE_FAILURE"
+
         record = OrderRecord(
             command_id=cmd.command_id,
             broker_order_id=None,
@@ -87,7 +96,7 @@ class CommandService:
             status="CREATED",
             created_at=datetime.utcnow().isoformat(),
             updated_at=datetime.utcnow().isoformat(),
-            tag="EXIT",
+            tag=_tag,
         )
 
         self.bot.order_repo.create(record)

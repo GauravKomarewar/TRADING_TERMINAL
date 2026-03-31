@@ -10,15 +10,23 @@ import {
 import { ToastContainer } from '../common/Toast'
 import PlaceOrderModal from '../orders/PlaceOrderModal'
 
-const NAV_ITEMS = [
+type NavItem = {
+  to: string
+  icon: typeof LayoutDashboard
+  label: string
+  exact?: boolean
+  badge?: string
+}
+
+const NAV_ITEMS: NavItem[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { to: '/strategies', icon: Zap, label: 'Strategies' },
-  { to: '/strategy-builder', icon: Cpu, label: 'Strategy Builder', badge: 'Read only' },
+  { to: '/strategy-builder', icon: Cpu, label: 'Strategy Builder' },
   { to: '/orderbook', icon: BookOpen, label: 'Orderbook' },
   { to: '/charts', icon: BarChart3, label: 'Charts' },
   { to: '/option-chain', icon: Grid3X3, label: 'Option Chain' },
   { to: '/diagnostics', icon: Stethoscope, label: 'Diagnostics' },
-  { to: '/settings', icon: Settings, label: 'Settings', badge: 'Preview' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
 export default function AppLayout() {

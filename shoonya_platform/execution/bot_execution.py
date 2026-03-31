@@ -501,6 +501,11 @@ class ExecutionMixin:
                     mode_getter = getattr(svc, "get_strategy_mode", None) if svc else None
                     if callable(mode_getter) and strategy_id and strategy_id != "UNKNOWN":
                         is_mock_execution = str(mode_getter(strategy_id) or "LIVE").upper() == "MOCK"
+                    # BUG FIX: Fallback — check persisted config on disk.
+                    # Handles race condition where strategy is unregistered between
+                    # EXIT order registration and OrderWatcher dispatch.
+                    if not is_mock_execution and strategy_id and strategy_id != "UNKNOWN":
+                        is_mock_execution = self._check_saved_config_paper_mode(strategy_id)
                 except Exception:
                     is_mock_execution = False
 
@@ -777,6 +782,34 @@ class ExecutionMixin:
     # ------------------------------------------------------------------
     # MOCK PIPELINE HELPERS — virtual position tracking for test parity
     # ------------------------------------------------------------------
+
+    def _check_saved_config_paper_mode(self, strategy_id: str) -> bool:
+        """
+        Fallback mock-mode check: read the strategy's saved config JSON from disk.
+
+        This handles the race condition where a strategy is unregistered
+        (removed from _strategies dict) between EXIT order registration
+        and OrderWatcher dispatch.  The saved config on disk retains the
+        paper_mode / test_mode flags even after unregistration.
+        """
+        try:
+            from pathlib import Path
+            config_dir = (
+                Path(__file__).resolve().parent.parent
+                / "strategy_runner" / "saved_configs"
+            )
+            cfg_path = config_dir / f"{strategy_id}.json"
+            if not cfg_path.exists():
+                return False
+            import json
+            config = json.loads(cfg_path.read_text(encoding="utf-8"))
+            identity = config.get("identity", {}) or {}
+            return bool(identity.get("paper_mode") or identity.get("test_mode"))
+        except Exception as e:
+            logger.warning(
+                "_check_saved_config_paper_mode failed for %s: %s", strategy_id, e
+            )
+            return False
 
     def _build_mock_position_map(self, strategy_name: str) -> Dict[str, Dict[str, int]]:
         """Build a broker-compatible position map from executor state legs."""

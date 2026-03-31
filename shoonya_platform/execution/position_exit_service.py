@@ -293,6 +293,10 @@ class PositionExitService:
         open_orders = self.repo.get_open_orders()
 
         for order in open_orders:
+            # Managed exits are persistent monitor intents, not one-shot manual exits.
+            # They should not block an explicit dashboard kill-switch exit.
+            if (order.tag or "").upper() == "MANAGED_EXIT":
+                continue
             if (
                 order.execution_type == "EXIT"
                 and order.symbol == symbol

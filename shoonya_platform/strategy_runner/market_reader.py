@@ -1339,7 +1339,7 @@ class MarketReader:
 class MockMarketReader(MarketReader):
     """Simple mock for testing."""
 
-    def __init__(self, exchange: str = "NFO", symbol: str = "NIFTY"):
+    def __init__(self, exchange: str = "NFO", symbol: str = "NIFTY", **kwargs):
         super().__init__(exchange, symbol)
         self._spot = 25000.0
         self._atm = 25000.0

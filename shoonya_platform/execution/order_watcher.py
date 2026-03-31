@@ -229,7 +229,12 @@ class OrderWatcherEngine(threading.Thread):
 
         - Simple MARKET EXITs (no SL/target/trailing): execute immediately via execute_command()
         - Managed EXITs (with SL/target/trailing): register as managed and monitor
+        - Only dispatches orders created TODAY to prevent stale orders from
+          previous days being sent to the broker (e.g. MIS auto-squared).
         """
+        from datetime import datetime as _dt
+        today_str = _dt.now().strftime("%Y-%m-%d")
+
         with self._dispatch_lock:
             try:
                 open_orders = self.repo.get_open_orders()
@@ -241,6 +246,16 @@ class OrderWatcherEngine(threading.Thread):
                 if record.status != "CREATED":
                     continue
                 if (record.execution_type or "").upper() != "EXIT":
+                    continue
+
+                # Skip stale orders from previous days — they will be expired
+                # by the daily reset in PerStrategyExecutor.
+                created_date = str(getattr(record, "created_at", "") or "")[:10]
+                if created_date < today_str:
+                    logger.warning(
+                        "OrderWatcher: SKIPPING stale EXIT order from %s | cmd_id=%s | symbol=%s | strategy=%s",
+                        created_date, record.command_id, record.symbol, record.strategy_name,
+                    )
                     continue
 
                 has_sl = record.stop_loss is not None and record.stop_loss > 0

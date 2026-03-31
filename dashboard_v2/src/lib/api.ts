@@ -3,14 +3,19 @@ import type {
   DashboardSnapshot,
   HistoricalSymbolCatalog,
   Holding,
+  MarketDataSettings,
   LoadedOptionChain,
   OhlcCandle,
+  OptionChainHealth,
+  OptionInstrument,
   OptionChainSnapshot,
   OptionChainStrike,
+  OrderModifyPayload,
   Order,
   Position,
   RiskState,
   Strategy,
+  StrategyValidationResult,
   SymbolInfo,
   TelegramMessage,
   TelegramPreferences,
@@ -423,19 +428,47 @@ export const api = {
     post('/dashboard/positions/managed-exit/enable', data),
   updateManagedExit: (data: Record<string, unknown>) =>
     post('/dashboard/positions/managed-exit/update', data),
-  disableManagedExit: (symbol: string) =>
-    post('/dashboard/positions/managed-exit/disable', { symbol }),
+  disableManagedExit: (symbol: string, product?: string) =>
+    post('/dashboard/positions/managed-exit/disable', { symbol, product: product || null }),
 
   orderbook: async (limit = 500) =>
     normalizeOrderbook(await get<JsonRecord>(`/dashboard/orderbook?limit=${limit}`)),
   cancelOrder: (orderId: string) =>
     post('/dashboard/orders/cancel/system', { order_id: orderId }),
+  cancelBrokerOrder: (orderId: string) =>
+    post('/dashboard/orders/cancel/broker', { order_id: orderId }),
+  cancelAllSystemOrders: () =>
+    post('/dashboard/orders/cancel/system/all', {}),
+  cancelAllBrokerOrders: () =>
+    post('/dashboard/orders/cancel/broker/all', {}),
+  modifySystemOrder: (payload: OrderModifyPayload) =>
+    post('/dashboard/orders/modify/system', payload),
+  modifyBrokerOrder: (payload: OrderModifyPayload) =>
+    post('/dashboard/orders/modify/broker', payload),
 
   listStrategies: fetchStrategies,
   getStrategyConfig: (name: string) =>
     get<JsonRecord>(`/dashboard/strategy/config/${encodeURIComponent(name)}`),
   getRawStrategyConfig: (name: string) =>
     get<JsonRecord>(`/dashboard/strategy/config/${encodeURIComponent(name)}`),
+  validateStrategyConfig: (config: JsonRecord) =>
+    post<StrategyValidationResult>('/dashboard/strategy/validate', config),
+  createStrategyConfig: (config: JsonRecord) =>
+    post('/dashboard/strategy/create', config),
+  updateStrategyConfig: (name: string, config: JsonRecord) =>
+    request(`/dashboard/strategy/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    }),
+  deleteStrategyConfig: (name: string) =>
+    request(`/dashboard/strategy/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  cloneStrategyConfig: (name: string, newName: string, underlying?: string) =>
+    post(`/dashboard/strategy/config/${encodeURIComponent(name)}/clone`, {
+      new_name: newName,
+      ...(underlying ? { underlying } : {}),
+    }),
+  renameStrategyConfig: (name: string, newName: string) =>
+    post(`/dashboard/strategy/config/${encodeURIComponent(name)}/rename`, { new_name: newName }),
   startStrategy: (name: string, freshStart = false) =>
     post(`/dashboard/strategy/${encodeURIComponent(name)}/start-execution`, { fresh_start: freshStart }),
   stopStrategy: (name: string) =>
@@ -457,6 +490,14 @@ export const api = {
     const data = await get<JsonRecord>('/dashboard/settings/option-chains/loaded')
     return Array.isArray(data.chains) ? data.chains as LoadedOptionChain[] : []
   },
+  availableOptionInstruments: async () => {
+    const data = await get<JsonRecord>('/dashboard/settings/option-chains/available')
+    return Array.isArray(data.instruments) ? data.instruments as OptionInstrument[] : []
+  },
+  optionChainHealth: () =>
+    get<OptionChainHealth>('/dashboard/settings/option-chains/health'),
+  searchOptionExpiries: (exchange: string, symbol: string) =>
+    get(`/dashboard/settings/option-chains/search-expiries?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(symbol)}`),
   loadChain: (data: unknown) => post('/dashboard/settings/option-chains/load', data),
   unloadChain: (data: unknown) => post('/dashboard/settings/option-chains/unload', data),
   optionChain: async (chain: LoadedOptionChain) => {
@@ -496,6 +537,25 @@ export const api = {
       active_strategies: runner.strategies_active ?? runner.active_strategies ?? 0,
     }
   },
+  runnerFileLogs: async (params: {
+    lines?: number
+    strategy?: string
+    level?: string
+    component?: string
+  }) => {
+    const query = new URLSearchParams()
+    if (params.lines != null) query.set('lines', String(params.lines))
+    if (params.strategy) query.set('strategy', params.strategy)
+    if (params.level) query.set('level', params.level)
+    if (params.component) query.set('component', params.component)
+    const payload = await get<JsonRecord>(`/dashboard/runner/file-logs?${query.toString()}`)
+    return {
+      lines: Array.isArray(payload.lines) ? payload.lines.map(String) : [],
+      path: typeof payload.path === 'string' ? payload.path : '',
+      component: typeof payload.component === 'string' ? payload.component : '',
+      updated_at: typeof payload.updated_at === 'string' ? payload.updated_at : '',
+    }
+  },
 
   historicalSymbols: () => get<HistoricalSymbolCatalog>('/dashboard/historical/available-symbols'),
   indexOhlc: async (symbol: string, interval: number, limit = 500) => {
@@ -509,9 +569,29 @@ export const api = {
   },
 
   submitIntent: (data: unknown) => post('/dashboard/intent/generic', data),
+  submitBasketIntent: (data: unknown) => post('/dashboard/intent/basket', data),
+  submitAdvancedIntent: (data: unknown) => post('/dashboard/intent/advanced', data),
   submitStrategyIntent: (data: unknown) => post('/dashboard/intent/strategy', data),
   forceExit: (strategyName: string) =>
     post('/dashboard/system/force-exit', { strategy_name: strategyName }),
+
+  marketDataSettings: async () => {
+    const data = await get<JsonRecord>('/dashboard/settings/market-data/available')
+    return {
+      indices: Array.isArray(data.indices) ? data.indices : [],
+      ticker_symbols: Array.isArray(data.ticker_symbols) ? data.ticker_symbols.map(String) : [],
+      sticky_symbols: Array.isArray(data.sticky_symbols) ? data.sticky_symbols.map(String) : [],
+    } satisfies MarketDataSettings
+  },
+  subscribeMarketData: (symbol: string) =>
+    post('/dashboard/settings/market-data/subscribe', { symbol }),
+  unsubscribeMarketData: (symbol: string) =>
+    post('/dashboard/settings/market-data/unsubscribe', { symbol }),
+  saveTickerConfig: (tickerSymbols: string[], stickySymbols: string[]) =>
+    post('/dashboard/settings/market-data/ticker-config', {
+      ticker_symbols: tickerSymbols,
+      sticky_symbols: stickySymbols,
+    }),
 
   placeOrder: (data: unknown) => post('/dashboard/intent/generic', data),
 }

@@ -1410,8 +1410,10 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            var data = await res.json();
-            if (!res.ok) throw new Error(data.detail || 'Failed');
+            var raw = await res.text();
+            var data = {};
+            try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = {}; }
+            if (!res.ok) throw new Error(data.detail || raw || ('HTTP ' + res.status));
             showSuccess((isManaged ? 'Updated' : 'Enabled') + ' manager for ' + sym);
             // Clear editing state on all inputs in this row
             row.querySelectorAll('.pm-live-cell input.editing').forEach(function(inp) {

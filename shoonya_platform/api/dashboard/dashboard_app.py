@@ -171,7 +171,7 @@ def create_dashboard_app() -> FastAPI:
     logger.info("✅ Dashboard API router mounted")
 
     # --------------------------------------------------
-    # 🎨 STATIC WEB ASSETS
+    # 🎨 STATIC WEB ASSETS (legacy multi-page HTML)
     # --------------------------------------------------
     app.mount(
         "/dashboard/web",
@@ -179,6 +179,27 @@ def create_dashboard_app() -> FastAPI:
         name="dashboard-web",
     )
     logger.info("✅ Static files mounted from %s", WEB_DIR)
+
+    # --------------------------------------------------
+    # ⚛️  REACT SPA (dashboard_v2) — served at /v2/
+    # --------------------------------------------------
+    V2_DIST = Path(__file__).parents[3] / "dashboard_v2" / "dist"
+    if V2_DIST.exists():
+        @app.get("/v2")
+        @app.get("/v2/")
+        async def _v2_index():
+            return FileResponse(V2_DIST / "index.html")
+
+        @app.get("/v2/{path:path}")
+        async def _v2_spa(path: str):
+            candidate = V2_DIST / path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(V2_DIST / "index.html")
+
+        logger.info("✅ React SPA (v2) mounted from %s", V2_DIST)
+    else:
+        logger.warning("⚠️  React SPA dist not found at %s — run 'npm run build' in dashboard_v2/", V2_DIST)
 
     logger.info(
         "🚀 Dashboard initialized | env=%s | pid=%s",

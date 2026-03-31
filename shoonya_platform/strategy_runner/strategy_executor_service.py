@@ -723,8 +723,46 @@ class StrategyExecutorService:
         except Exception as e:
             logger.debug("Could not expire stale orders: %s", e)
 
+    def _cancel_all_pending_orders(self):
+        """Cancel / expire ALL lingering CREATED and SENT_TO_BROKER orders.
+
+        Called:
+        - In ``stop()`` before the service shuts down.
+        - Automatically at 23:45 IST via ``_run_loop`` nightly cleanup.
+
+        This is the final safety net: any orders that were not dispatched
+        or got stuck are cleaned up so they don't leak into the next day.
+        """
+        try:
+            from shoonya_platform.persistence.database import get_connection
+            now = datetime.now()
+            conn = get_connection()
+            cursor = conn.execute(
+                "UPDATE orders SET status = 'EXPIRED', "
+                "  updated_at = ?, "
+                "  tag = COALESCE(tag, '') || '|EOD_CLEANUP' "
+                "WHERE status IN ('CREATED', 'SENT_TO_BROKER')",
+                (now.isoformat(),),
+            )
+            count = cursor.rowcount
+            conn.commit()
+            if count > 0:
+                logger.warning(
+                    "EOD_CLEANUP | expired %d pending orders (CREATED/SENT_TO_BROKER) at %s",
+                    count, now.strftime("%H:%M:%S"),
+                )
+            else:
+                logger.info("EOD_CLEANUP | no pending orders to expire at %s", now.strftime("%H:%M:%S"))
+        except Exception as e:
+            logger.warning("EOD_CLEANUP failed: %s", e)
+
     def stop(self):
-        """Stop the background thread."""
+        """Stop the background thread.  Expires leftover orders first."""
+        # ── EOD cleanup: Cancel/expire all lingering CREATED / SENT_TO_BROKER ──
+        try:
+            self._cancel_all_pending_orders()
+        except Exception as e:
+            logger.warning("EOD order cleanup during stop() failed: %s", e)
         self._running = False
         self._stop_event.set()
         if self._thread:
@@ -737,10 +775,23 @@ class StrategyExecutorService:
     def _run_loop(self):
         """Main loop: iterate over all strategies and process each concurrently."""
         import concurrent.futures
+
+        # Track nightly cleanup so it fires at most once per day.
+        _eod_cleanup_done_date = None
         
         # Use a thread pool with a reasonable max workers
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as thread_pool:
             while self._running and not self._stop_event.is_set():
+
+                # ── Nightly EOD order cleanup at 23:45 ──
+                now = datetime.now()
+                if now.hour == 23 and now.minute >= 45 and _eod_cleanup_done_date != now.date():
+                    try:
+                        self._cancel_all_pending_orders()
+                        _eod_cleanup_done_date = now.date()
+                    except Exception as e:
+                        logger.warning("Nightly EOD cleanup failed: %s", e)
+
                 with self._lock:
                     names = list(self._executors.keys())
                 
@@ -781,6 +832,18 @@ class StrategyExecutorService:
                         
                 for name in completed_names:
                     try:
+                        # BUG FIX: Do NOT unregister strategy while it has pending
+                        # EXIT orders (CREATED / SENT_TO_BROKER).  Unregistering
+                        # removes the strategy from _strategies, so get_strategy_mode()
+                        # can no longer return "MOCK".  If the OrderWatcher dispatches
+                        # remaining EXIT legs after unregistration, they would fall
+                        # through to the LIVE broker — catastrophic for mock strategies.
+                        if self._has_pending_exit_orders(name):
+                            logger.info(
+                                "UNREGISTER_DEFERRED | strategy=%s | reason=pending_exit_orders",
+                                name,
+                            )
+                            continue
                         self._archive_completed_strategy(name)
                         self._mark_config_status(name, "COMPLETED")
                         self.unregister_strategy(name)
@@ -795,6 +858,37 @@ class StrategyExecutorService:
             if strategy_name not in self._mode_change_lock:
                 self._mode_change_lock[strategy_name] = threading.Lock()
             return self._mode_change_lock[strategy_name]
+
+    def _has_pending_exit_orders(self, strategy_name: str) -> bool:
+        """Check whether any EXIT orders for this strategy are still pending dispatch.
+
+        Returns True if there are CREATED or SENT_TO_BROKER EXIT orders
+        *from today*, meaning the OrderWatcher has not finished processing
+        all exit legs.  Orders from previous days are ignored — they will
+        be expired by the daily reset.
+        """
+        try:
+            repo = getattr(self.bot, "order_repo", None)
+            if repo is None:
+                return False
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            open_orders = repo.get_open_orders_by_strategy(strategy_name) or []
+            for order in open_orders:
+                exec_type = str(getattr(order, "execution_type", "") or "").upper()
+                status = str(getattr(order, "status", "") or "").upper()
+                if exec_type != "EXIT" or status not in ("CREATED", "SENT_TO_BROKER"):
+                    continue
+                # Only count today's orders — stale orders from previous days
+                # should not prevent unregistration.
+                created = str(getattr(order, "created_at", "") or "")
+                if created[:10] < today_str:
+                    continue
+                return True
+            return False
+        except Exception as e:
+            logger.warning("_has_pending_exit_orders check failed for %s: %s", strategy_name, e)
+            # If we can't check, err on the side of caution — keep registered
+            return True
 
     def notify_fill(self, strategy_name: str, **kwargs):
         """Delegate fill notification to the appropriate executor."""
@@ -1462,6 +1556,41 @@ class PerStrategyExecutor:
                     "Purged %d stale inactive legs from previous runs for %s",
                     len(stale_keys), self.name,
                 )
+
+            # ── DAILY BOUNDARY FIX: Clear execution guard for this strategy ──
+            # If the bot runs across midnight, yesterday's guard positions
+            # would block today's ENTRY.  Force-clear so today starts clean.
+            try:
+                guard = getattr(self.bot, "execution_guard", None)
+                if guard is not None and guard.has_strategy(self.name):
+                    guard.force_close_strategy(self.name)
+                    logger.info(
+                        "DAILY_RESET_GUARD_CLEAR | strategy=%s | cleared stale guard positions from previous day",
+                        self.name,
+                    )
+            except Exception as e:
+                logger.warning("Daily guard clear failed for %s: %s", self.name, e)
+
+            # ── DAILY BOUNDARY FIX: Reset cycle_completed ──
+            # If yesterday's exit set cycle_completed=True but the strategy
+            # was not yet unregistered (e.g. deferred due to pending orders),
+            # reset it so the strategy can re-enter today.
+            if self.cycle_completed:
+                logger.info(
+                    "DAILY_RESET_CYCLE | strategy=%s | resetting cycle_completed from previous day",
+                    self.name,
+                )
+                self.cycle_completed = False
+
+            # ── DAILY BOUNDARY FIX: Expire stale CREATED orders for this strategy ──
+            # _expire_stale_orders() in the service only runs at startup.
+            # If the bot runs across midnight, stale CREATED EXIT orders from
+            # yesterday would be picked up by OrderWatcher and dispatched today.
+            try:
+                self._expire_strategy_stale_orders(now)
+            except Exception as e:
+                logger.warning("Daily order expiry failed for %s: %s", self.name, e)
+
             self._last_date = now.date()
             logger.info(f"Daily counters reset for {self.name}")
 
@@ -1614,6 +1743,34 @@ class PerStrategyExecutor:
             self.persistence.save(self.state, str(self.state_file))
 
     # ==================== NEW METHODS ====================
+
+    def _expire_strategy_stale_orders(self, now: datetime):
+        """Expire stale CREATED orders for THIS strategy from previous days.
+
+        Called during daily reset to prevent the OrderWatcher from dispatching
+        yesterday's unfinished EXIT orders today (e.g. MIS positions that were
+        auto-squared by the broker at market close).
+        """
+        try:
+            from shoonya_platform.persistence.database import get_connection
+            today_str = now.strftime("%Y-%m-%d")
+            conn = get_connection()
+            cursor = conn.execute(
+                "UPDATE orders SET status = 'EXPIRED', updated_at = ? "
+                "WHERE status IN ('CREATED', 'SENT_TO_BROKER') "
+                "AND created_at < ? "
+                "AND strategy_name = ?",
+                (now.isoformat(), today_str, self.name),
+            )
+            count = cursor.rowcount
+            conn.commit()
+            if count > 0:
+                logger.warning(
+                    "DAILY_EXPIRE_STALE_ORDERS | strategy=%s | expired %d stale orders from previous days",
+                    self.name, count,
+                )
+        except Exception as e:
+            logger.warning("_expire_strategy_stale_orders failed for %s: %s", self.name, e)
 
     def _reconcile_pending_orders(self):
         """Query repository for orders and update pending legs."""

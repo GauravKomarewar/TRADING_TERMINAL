@@ -175,6 +175,17 @@ class Config:
         # === Security ===
         self.webhook_secret: Optional[str] = self._strip_comment(os.getenv("WEBHOOK_SECRET_KEY", "")) or None
 
+        # === SEBI Algo Trading: Limit Orders ===
+        # SEBI mandates all algo orders must be limit orders (not market orders).
+        # When enabled, every MKT order is automatically converted to LMT using
+        # the live LTP ± SEBI_LIMIT_BUFFER_PCT before sending to the broker.
+        self.sebi_limit_orders: bool = self._strip_comment(
+            os.getenv("SEBI_LIMIT_ORDERS", "true")
+        ).lower() in ("true", "1", "yes")
+        self.sebi_limit_buffer_pct: float = self._parse_float(
+            os.getenv("SEBI_LIMIT_BUFFER_PCT", "0.5"), "SEBI_LIMIT_BUFFER_PCT"
+        )
+
         # === Telegram (optional) ===
         self.telegram_bot_token: Optional[str] = self._strip_comment(os.getenv("TELEGRAM_TOKEN", "")) or None
         self.telegram_chat_id: Optional[str] = self._strip_comment(os.getenv("TELEGRAM_CHAT_ID", "")) or None

@@ -633,6 +633,9 @@ class ExecutionMixin:
 
             order_params = command.to_broker_params()
 
+            # SEBI Rule: all algo orders must be limit orders
+            order_params = self._sebi_convert_to_limit(order_params)
+
             logger.info(
                 f"BROKER_PARAMS | {order_params.get('exchange')} | "
                 f"{order_params.get('tradingsymbol')} | "
@@ -911,3 +914,60 @@ class ExecutionMixin:
         except Exception as e:
             logger.debug("Tick store LTP lookup failed for %s: %s", symbol, e)
         return 0.0
+
+    def _sebi_convert_to_limit(self, order_params: dict) -> dict:
+        """
+        SEBI compliance: convert a MKT order to LMT using live LTP ± buffer.
+
+        Returns a NEW dict so the caller's original is not mutated.
+        If LTP cannot be determined, logs a warning and returns params unchanged
+        (broker will receive market order — operator must manually review).
+        """
+        if not getattr(getattr(self, 'config', None), 'sebi_limit_orders', False):
+            return order_params
+        if order_params.get('price_type') != 'MKT':
+            return order_params
+
+        exchange = order_params.get('exchange', '')
+        symbol = order_params.get('tradingsymbol', '')
+        side = order_params.get('buy_or_sell', 'B')  # 'B'=BUY, 'S'=SELL
+        buf_pct = getattr(self.config, 'sebi_limit_buffer_pct', 0.5)
+
+        # Try tick store first (fastest, no REST call)
+        ltp = self._get_ltp_from_tick_store(exchange, symbol)
+
+        # Fallback: broker REST get_quotes via searchscrip
+        if ltp <= 0:
+            try:
+                res = self.api.searchscrip(exchange, symbol)
+                values = (res or {}).get("values") or []
+                if values:
+                    token = values[0].get("token")
+                    if token:
+                        quotes = self.api.get_quotes(exchange, token)
+                        if quotes:
+                            ltp = float(quotes.get("lp") or quotes.get("ltp") or 0)
+            except Exception as e:
+                logger.warning("SEBI_LTP_FALLBACK_FAILED | %s %s | %s", exchange, symbol, e)
+
+        if ltp <= 0:
+            logger.warning(
+                "SEBI_LTP_UNAVAILABLE | %s %s | LTP=0 — keeping MKT order (SEBI non-compliant fallback)",
+                exchange, symbol,
+            )
+            return order_params
+
+        buf = buf_pct / 100.0
+        if side == 'B':
+            limit_price = round(ltp * (1 + buf), 2)
+        else:
+            limit_price = round(ltp * (1 - buf), 2)
+
+        params = dict(order_params)
+        params['price_type'] = 'LMT'
+        params['price'] = limit_price
+        logger.info(
+            "SEBI_MKT_TO_LMT | %s %s %s | ltp=%.2f | buf=%.1f%% | limit=%.2f",
+            side, exchange, symbol, ltp, buf_pct, limit_price,
+        )
+        return params

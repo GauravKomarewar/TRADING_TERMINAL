@@ -495,19 +495,30 @@ class ExecutionMixin:
             explicit_mock_success = "TEST_MODE_SUCCESS" in comment
             explicit_mock_failure = "TEST_MODE_FAILURE" in comment
             is_mock_execution = explicit_mock_success or explicit_mock_failure
+            _mock_source = "TEST_MODE_TAG" if is_mock_execution else None
             if not is_mock_execution:
                 try:
                     svc = getattr(self, "strategy_executor_service", None)
                     mode_getter = getattr(svc, "get_strategy_mode", None) if svc else None
                     if callable(mode_getter) and strategy_id and strategy_id != "UNKNOWN":
-                        is_mock_execution = str(mode_getter(strategy_id) or "LIVE").upper() == "MOCK"
+                        _mode = str(mode_getter(strategy_id) or "LIVE").upper()
+                        if _mode == "MOCK":
+                            is_mock_execution = True
+                            _mock_source = "STRATEGY_REGISTRY"
                     # BUG FIX: Fallback — check persisted config on disk.
                     # Handles race condition where strategy is unregistered between
                     # EXIT order registration and OrderWatcher dispatch.
                     if not is_mock_execution and strategy_id and strategy_id != "UNKNOWN":
-                        is_mock_execution = self._check_saved_config_paper_mode(strategy_id)
+                        if self._check_saved_config_paper_mode(strategy_id):
+                            is_mock_execution = True
+                            _mock_source = "SAVED_CONFIG_FILE"
                 except Exception:
                     is_mock_execution = False
+            if is_mock_execution:
+                logger.info(
+                    "MOCK_MODE_CONFIRMED | cmd_id=%s | strategy=%s | source=%s",
+                    command.command_id, strategy_id, _mock_source,
+                )
 
             _intent_is_exit = getattr(command, 'intent', None) == 'EXIT'
             _prefix_is_exit = hasattr(command, 'command_id') and str(command.command_id).startswith('EXIT_')

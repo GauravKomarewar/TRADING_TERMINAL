@@ -1390,12 +1390,29 @@
         var url = isManaged ? '/dashboard/positions/managed-exit/update' : '/dashboard/positions/managed-exit/enable';
 
         var body = { symbol: sym };
-        if (prd) body.product = prd;
-        if (sl != null) body.stop_loss = sl;
-        if (tgt != null) body.target = tgt;
-        if (trail != null) { body.trailing_value = trail; body.trailing_type = 'POINTS'; }
-        if (tw != null) body.trail_when = tw;
-        if (!isManaged) {
+        if (isManaged) {
+            // UPDATE: always send product for unambiguous matching.
+            // Explicitly send null for cleared fields to allow removing SL/target/trail.
+            body.product = prd;
+            body.stop_loss = sl;    // null if field was cleared
+            body.target = tgt;      // null if field was cleared
+            if (trail != null) {
+                body.trailing_value = trail;
+                body.trailing_type = 'POINTS';
+                body.trail_when = tw;
+            } else {
+                // User cleared trailing — explicitly remove it
+                body.trailing_value = null;
+                body.trailing_type = null;
+                body.trail_when = null;
+            }
+        } else {
+            // NEW ENABLE: only send fields that have values
+            if (prd) body.product = prd;
+            if (sl != null) body.stop_loss = sl;
+            if (tgt != null) body.target = tgt;
+            if (trail != null) { body.trailing_value = trail; body.trailing_type = 'POINTS'; }
+            if (tw != null) body.trail_when = tw;
             body.exchange = exch;
             body.side = side;
             body.quantity = qty;

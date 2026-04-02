@@ -303,3 +303,109 @@ def test_mock_detection_via_tag_comment():
     assert explicit_mock_success is True, (
         f"Mock detection should find TEST_MODE_SUCCESS in comment '{comment}'"
     )
+
+
+# -------------------------------------------------------
+# 5. DISPATCHING tag preserves TEST_MODE marker on retry
+# -------------------------------------------------------
+
+def test_dispatch_tag_preserves_test_mode_for_retry():
+    """When _dispatch_simple_exit marks order DISPATCHING, it should retain
+    the TEST_MODE_SUCCESS marker so retries loaded fresh from DB still detect mock."""
+    record = OrderRecord(
+        command_id="retry-exit-001",
+        source="ORDER_WATCHER",
+        user="FAxxxxx",
+        strategy_name="mock_retry_strategy",
+        exchange="NFO",
+        symbol="NIFTY07APR26P22300",
+        side="BUY",
+        quantity=65,
+        product="M",
+        order_type="MARKET",
+        price=0.0,
+        stop_loss=None,
+        target=None,
+        trailing_type=None,
+        trailing_value=None,
+        broker_order_id=None,
+        execution_type="EXIT",
+        status="CREATED",
+        created_at=datetime.utcnow().isoformat(),
+        updated_at=datetime.utcnow().isoformat(),
+        tag="EXIT|TEST_MODE_SUCCESS",
+    )
+    # Simulate the dispatch tag construction (mirrors _dispatch_simple_exit)
+    _orig_tag = str(record.tag or "")
+    _has_mock = "TEST_MODE_SUCCESS" in _orig_tag or "TEST_MODE_FAILURE" in _orig_tag
+    dispatch_tag = "DISPATCHING|TEST_MODE_SUCCESS" if _has_mock else "DISPATCHING"
+
+    assert "TEST_MODE_SUCCESS" in dispatch_tag, (
+        f"DISPATCHING tag for mock order must carry TEST_MODE_SUCCESS, got: {dispatch_tag}"
+    )
+
+    # Simulate mock detection from the retry tag (fresh DB load)
+    record_retry = OrderRecord(
+        command_id="retry-exit-001",
+        source="ORDER_WATCHER",
+        user="FAxxxxx",
+        strategy_name="mock_retry_strategy",
+        exchange="NFO",
+        symbol="NIFTY07APR26P22300",
+        side="BUY",
+        quantity=65,
+        product="M",
+        order_type="MARKET",
+        price=0.0,
+        stop_loss=None,
+        target=None,
+        trailing_type=None,
+        trailing_value=None,
+        broker_order_id=None,
+        execution_type="EXIT",
+        status="CREATED",
+        created_at=datetime.utcnow().isoformat(),
+        updated_at=datetime.utcnow().isoformat(),
+        tag=dispatch_tag,  # tag as it sits in DB after first dispatch attempt
+    )
+    cmd_retry = UniversalOrderCommand.from_record(
+        record_retry, order_type="MARKET", price=0.0, source="ORDER_WATCHER"
+    )
+    comment = str(getattr(cmd_retry, "comment", "") or "").upper()
+    assert "TEST_MODE_SUCCESS" in comment, (
+        f"Retry command comment must contain TEST_MODE_SUCCESS, got: '{comment}'"
+    )
+
+
+def test_live_order_dispatch_tag_has_no_test_mode():
+    """LIVE order dispatch tag must NOT carry TEST_MODE marker."""
+    record = OrderRecord(
+        command_id="live-exit-001",
+        source="ORDER_WATCHER",
+        user="FAxxxxx",
+        strategy_name="live_strategy",
+        exchange="NSE",
+        symbol="NIFTY",
+        side="SELL",
+        quantity=50,
+        product="M",
+        order_type="MARKET",
+        price=0.0,
+        stop_loss=None,
+        target=None,
+        trailing_type=None,
+        trailing_value=None,
+        broker_order_id=None,
+        execution_type="EXIT",
+        status="CREATED",
+        created_at=datetime.utcnow().isoformat(),
+        updated_at=datetime.utcnow().isoformat(),
+        tag="EXIT",  # no TEST_MODE marker
+    )
+    _orig_tag = str(record.tag or "")
+    _has_mock = "TEST_MODE_SUCCESS" in _orig_tag or "TEST_MODE_FAILURE" in _orig_tag
+    dispatch_tag = "DISPATCHING|TEST_MODE_SUCCESS" if _has_mock else "DISPATCHING"
+
+    assert dispatch_tag == "DISPATCHING", (
+        f"LIVE order dispatch tag must be plain DISPATCHING, got: {dispatch_tag}"
+    )

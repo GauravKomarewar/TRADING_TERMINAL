@@ -1,0 +1,1079 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AreaSeries,
+  CandlestickSeries,
+  ColorType,
+  createChart,
+  LineSeries,
+  type CandlestickData,
+  type IChartApi,
+  type LineData,
+  type Time,
+} from 'lightweight-charts'
+import {
+  BarChart3,
+  ChartCandlestick,
+  LineChart,
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
+  Activity,
+} from 'lucide-react'
+import { api } from '../lib/api'
+import { cn, formatNum } from '../lib/utils'
+import { useUIStore } from '../stores'
+import type { OhlcCandle, SymbolInfo } from '../types'
+
+type ChartMode = 'candles' | 'line' | 'area'
+type RangePreset = 'today' | '2d' | '7d' | '1m' | '3m'
+type ThemePreset = 'trading-dark' | 'dawn' | 'matrix'
+
+interface OverlaySymbol {
+  symbol: string
+  color: string
+}
+
+interface OhlcView {
+  open: number
+  high: number
+  low: number
+  close: number
+  changePct: number
+}
+
+interface ChartWorkspaceState {
+  symbol: string
+  interval: number
+  range: RangePreset
+  mode: ChartMode
+  theme: ThemePreset
+  overlays: OverlaySymbol[]
+  showSma: boolean
+  showEma: boolean
+  showVolume: boolean
+  showRsi: boolean
+  showBb: boolean
+  showCci: boolean
+  showAtr: boolean
+  showMacd: boolean
+  smaPeriod: number
+  emaPeriod: number
+  rsiPeriod: number
+  bbPeriod: number
+  bbStdDev: number
+  cciPeriod: number
+  atrPeriod: number
+  macdFast: number
+  macdSlow: number
+  macdSignal: number
+  levels: number[]
+  autoRefresh: boolean
+}
+
+const STORE_KEY = 'dashboard_v2.chart_workspace'
+const OVERLAY_COLORS = ['#22d3ee', '#f59e0b', '#818cf8', '#fb7185', '#4ade80', '#38bdf8']
+
+const THEME_OPTIONS: Record<ThemePreset, {
+  panelClass: string
+  chartBg: string
+  grid: string
+  text: string
+  up: string
+  down: string
+}> = {
+  'trading-dark': {
+    panelClass: 'bg-bg-base',
+    chartBg: '#0f131f',
+    grid: '#242b3d',
+    text: '#8a95ad',
+    up: '#22c55e',
+    down: '#f43f5e',
+  },
+  dawn: {
+    panelClass: 'bg-[#f8fafc]',
+    chartBg: '#f8fafc',
+    grid: '#d7dee9',
+    text: '#4b5563',
+    up: '#059669',
+    down: '#dc2626',
+  },
+  matrix: {
+    panelClass: 'bg-[#08120b]',
+    chartBg: '#08120b',
+    grid: '#174724',
+    text: '#4ade80',
+    up: '#22c55e',
+    down: '#facc15',
+  },
+}
+
+const INTERVALS = [1, 3, 5, 15, 30, 60]
+const RANGES: Array<{ key: RangePreset; label: string; limit: number }> = [
+  { key: 'today', label: 'Today', limit: 220 },
+  { key: '2d', label: '2D', limit: 450 },
+  { key: '7d', label: '7D', limit: 1200 },
+  { key: '1m', label: '1M', limit: 3000 },
+  { key: '3m', label: '3M', limit: 5000 },
+]
+
+const defaultState: ChartWorkspaceState = {
+  symbol: 'NIFTY',
+  interval: 3,
+  range: '7d',
+  mode: 'candles',
+  theme: 'trading-dark',
+  overlays: [],
+  showSma: true,
+  showEma: false,
+  showVolume: true,
+  showRsi: false,
+  showBb: false,
+  showCci: false,
+  showAtr: false,
+  showMacd: false,
+  smaPeriod: 20,
+  emaPeriod: 50,
+  rsiPeriod: 14,
+  bbPeriod: 20,
+  bbStdDev: 2,
+  cciPeriod: 20,
+  atrPeriod: 14,
+  macdFast: 12,
+  macdSlow: 26,
+  macdSignal: 9,
+  levels: [],
+  autoRefresh: true,
+}
+
+function sanitizeState(input: Partial<ChartWorkspaceState> | null): ChartWorkspaceState {
+  if (!input) return defaultState
+  const levels = Array.isArray(input.levels)
+    ? input.levels.map(Number).filter((n) => Number.isFinite(n))
+    : defaultState.levels
+  const overlays = Array.isArray(input.overlays)
+    ? input.overlays
+      .filter((o): o is OverlaySymbol => Boolean(o?.symbol))
+      .slice(0, 6)
+    : defaultState.overlays
+  return {
+    ...defaultState,
+    ...input,
+    overlays,
+    levels,
+    interval: INTERVALS.includes(Number(input.interval)) ? Number(input.interval) : defaultState.interval,
+    range: RANGES.some((item) => item.key === input.range) ? (input.range as RangePreset) : defaultState.range,
+    mode: input.mode === 'line' || input.mode === 'area' || input.mode === 'candles' ? input.mode : defaultState.mode,
+    theme: input.theme && input.theme in THEME_OPTIONS ? input.theme : defaultState.theme,
+  }
+}
+
+function toChartData(candles: OhlcCandle[]): Array<CandlestickData<Time>> {
+  return candles
+    .map((candle) => {
+      const ts = Math.floor(new Date(candle.bucket).getTime() / 1000)
+      if (!Number.isFinite(ts)) return null
+      return {
+        time: ts as Time,
+        open: Number(candle.open),
+        high: Number(candle.high),
+        low: Number(candle.low),
+        close: Number(candle.close),
+      }
+    })
+    .filter((item): item is CandlestickData<Time> => Boolean(item))
+}
+
+function toLineData(candles: Array<CandlestickData<Time>>): Array<LineData<Time>> {
+  return candles.map((item) => ({ time: item.time, value: item.close }))
+}
+
+function sma(values: number[], period: number): Array<number | null> {
+  if (period <= 1) return values
+  const output: Array<number | null> = []
+  let sum = 0
+  for (let i = 0; i < values.length; i += 1) {
+    sum += values[i]
+    if (i >= period) sum -= values[i - period]
+    output.push(i < period - 1 ? null : sum / period)
+  }
+  return output
+}
+
+function ema(values: number[], period: number): Array<number | null> {
+  if (!values.length) return []
+  const multiplier = 2 / (period + 1)
+  const output: Array<number | null> = []
+  let prev = values[0]
+  for (let i = 0; i < values.length; i += 1) {
+    if (i === 0) {
+      output.push(values[i])
+      continue
+    }
+    prev = (values[i] - prev) * multiplier + prev
+    output.push(i < period - 1 ? null : prev)
+  }
+  return output
+}
+
+function rsi(data: Array<CandlestickData<Time>>, period: number): Array<LineData<Time>> {
+  if (data.length < period + 1) return []
+  let gains = 0, losses = 0
+  for (let i = 1; i <= period; i++) {
+    const d = data[i].close - data[i - 1].close
+    if (d > 0) gains += d
+    else losses -= d
+  }
+  let avgG = gains / period, avgL = losses / period
+  const r: Array<LineData<Time>> = [{
+    time: data[period].time,
+    value: avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL)),
+  }]
+  for (let i = period + 1; i < data.length; i++) {
+    const d = data[i].close - data[i - 1].close
+    avgG = (avgG * (period - 1) + (d > 0 ? d : 0)) / period
+    avgL = (avgL * (period - 1) + (d < 0 ? -d : 0)) / period
+    r.push({
+      time: data[i].time,
+      value: avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL)),
+    })
+  }
+  return r
+}
+
+function bollingerBands(data: Array<CandlestickData<Time>>, period: number, stdDev: number): { upper: LineData<Time>[]; mid: LineData<Time>[]; lower: LineData<Time>[] } {
+  const u: LineData<Time>[] = [], l: LineData<Time>[] = [], m: LineData<Time>[] = []
+  for (let i = period - 1; i < data.length; i++) {
+    let s = 0
+    for (let j = i - period + 1; j <= i; j++) s += data[j].close
+    const avg = s / period
+    let sq = 0
+    for (let j = i - period + 1; j <= i; j++) sq += (data[j].close - avg) ** 2
+    const std = Math.sqrt(sq / period)
+    m.push({ time: data[i].time, value: avg })
+    u.push({ time: data[i].time, value: avg + stdDev * std })
+    l.push({ time: data[i].time, value: avg - stdDev * std })
+  }
+  return { upper: u, mid: m, lower: l }
+}
+
+function cci(data: Array<CandlestickData<Time>>, period: number): Array<LineData<Time>> {
+  const r: LineData<Time>[] = []
+  for (let i = period - 1; i < data.length; i++) {
+    let sm = 0
+    for (let j = i - period + 1; j <= i; j++) sm += (data[j].high + data[j].low + data[j].close) / 3
+    const avg = sm / period
+    let md = 0
+    for (let j = i - period + 1; j <= i; j++) md += Math.abs((data[j].high + data[j].low + data[j].close) / 3 - avg)
+    md /= period
+    const tp = (data[i].high + data[i].low + data[i].close) / 3
+    r.push({ time: data[i].time, value: md === 0 ? 0 : (tp - avg) / (0.015 * md) })
+  }
+  return r
+}
+
+function atr(data: Array<CandlestickData<Time>>, period: number): Array<LineData<Time>> {
+  if (data.length < period + 1) return []
+  const trs: number[] = []
+  for (let i = 1; i < data.length; i++) {
+    trs.push(Math.max(data[i].high - data[i].low, Math.abs(data[i].high - data[i - 1].close), Math.abs(data[i].low - data[i - 1].close)))
+  }
+  const r: Array<LineData<Time>> = []
+  let atrVal = trs.slice(0, period).reduce((a, b) => a + b, 0) / period
+  r.push({ time: data[period].time, value: atrVal })
+  for (let i = period; i < trs.length; i++) {
+    atrVal = (atrVal * (period - 1) + trs[i]) / period
+    r.push({ time: data[i + 1].time, value: atrVal })
+  }
+  return r
+}
+
+function macd(closes: number[], fast: number, slow: number, signal: number): { macd: Array<LineData<Time>>; signal: Array<LineData<Time>>; histogram: Array<LineData<Time>> } {
+  const fastEMA = ema(closes, fast)
+  const slowEMA = ema(closes, slow)
+  const macdLine: number[] = []
+  const closes_: Array<CandlestickData<Time>> = closes.map((c, i) => ({
+    open: c, high: c, low: c, close: c, time: i as Time,
+  }))
+  for (let i = 0; i < fastEMA.length; i++) {
+    if (fastEMA[i] == null || slowEMA[i] == null) {
+      macdLine.push(0)
+    } else {
+      macdLine.push((fastEMA[i] as number) - (slowEMA[i] as number))
+    }
+  }
+  const signalLine = ema(macdLine, signal)
+  const m: Array<LineData<Time>> = []
+  const s: Array<LineData<Time>> = []
+  const h: Array<LineData<Time>> = []
+  for (let i = 0; i < macdLine.length; i++) {
+    m.push({ time: closes_[i].time, value: macdLine[i] })
+    if (signalLine[i] != null) {
+      s.push({ time: closes_[i].time, value: signalLine[i] as number })
+      h.push({ time: closes_[i].time, value: macdLine[i] - (signalLine[i] as number) })
+    }
+  }
+  return { macd: m, signal: s, histogram: h }
+}
+
+function buildIndicatorLine(
+  candles: Array<CandlestickData<Time>>,
+  values: Array<number | null>,
+): Array<LineData<Time>> {
+  return candles
+    .map((candle, idx) => {
+      const value = values[idx]
+      if (value == null || !Number.isFinite(value)) return null
+      return { time: candle.time, value }
+    })
+    .filter((item): item is LineData<Time> => Boolean(item))
+}
+
+export default function ChartsPage() {
+  const addToast = useUIStore((s) => s.addToast)
+
+  const [state, setState] = useState<ChartWorkspaceState>(() => {
+    try {
+      const raw = localStorage.getItem(STORE_KEY)
+      if (!raw) return defaultState
+      return sanitizeState(JSON.parse(raw) as Partial<ChartWorkspaceState>)
+    } catch {
+      return defaultState
+    }
+  })
+  const [symbolUniverse, setSymbolUniverse] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [query, setQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<SymbolInfo[]>([])
+  const [searching, setSearching] = useState(false)
+  const [levelInput, setLevelInput] = useState('')
+  const [ohlc, setOhlc] = useState<OhlcView | null>(null)
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null)
+
+  const chartRef = useRef<IChartApi | null>(null)
+  const mainSeriesRef = useRef<ReturnType<IChartApi['addSeries']> | null>(null)
+  const volumeSeriesRef = useRef<ReturnType<IChartApi['addSeries']> | null>(null)
+  const smaSeriesRef = useRef<ReturnType<IChartApi['addSeries']> | null>(null)
+  const emaSeriesRef = useRef<ReturnType<IChartApi['addSeries']> | null>(null)
+  const rsiSeriesRef = useRef<ReturnType<IChartApi['addSeries']> | null>(null)
+  const bbSeriesRef = useRef<Array<ReturnType<IChartApi['addSeries']>> | null>(null)
+  const cciSeriesRef = useRef<ReturnType<IChartApi['addSeries']> | null>(null)
+  const atrSeriesRef = useRef<ReturnType<IChartApi['addSeries']> | null>(null)
+  const macdSeriesRef = useRef<{ macd: ReturnType<IChartApi['addSeries']>; signal: ReturnType<IChartApi['addSeries']>; histogram: ReturnType<IChartApi['addSeries']> } | null>(null)
+  const overlaySeriesRef = useRef<Map<string, ReturnType<IChartApi['addSeries']>>>(new Map())
+  const levelLineRefs = useRef<Array<{ price: number; remove: () => void }>>([])
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const candleDataRef = useRef<Array<CandlestickData<Time>>>([])
+
+  const themeTokens = THEME_OPTIONS[state.theme]
+  const rangeLimit = useMemo(
+    () => RANGES.find((item) => item.key === state.range)?.limit ?? 1200,
+    [state.range],
+  )
+
+  useEffect(() => {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state))
+  }, [state])
+
+  const updateState = useCallback((patch: Partial<ChartWorkspaceState>) => {
+    setState((prev) => ({ ...prev, ...patch }))
+  }, [])
+
+  const loadUniverse = useCallback(async () => {
+    try {
+      const catalog = await api.historicalSymbols()
+      const symbols = Array.from(new Set(catalog.index_symbols.map((item) => item.toUpperCase())))
+      setSymbolUniverse(symbols)
+      if (symbols.length && !symbols.includes(state.symbol.toUpperCase())) {
+        updateState({ symbol: symbols[0] })
+      }
+    } catch (error) {
+      addToast('warning', error instanceof Error ? error.message : 'Failed to load symbol catalog')
+    }
+  }, [addToast, state.symbol, updateState])
+
+  useEffect(() => {
+    loadUniverse()
+  }, [loadUniverse])
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const chart = createChart(containerRef.current, {
+      autoSize: true,
+      layout: {
+        background: { type: ColorType.Solid, color: themeTokens.chartBg },
+        textColor: themeTokens.text,
+      },
+      grid: {
+        vertLines: { color: themeTokens.grid },
+        horzLines: { color: themeTokens.grid },
+      },
+      rightPriceScale: {
+        borderColor: themeTokens.grid,
+      },
+      timeScale: {
+        borderColor: themeTokens.grid,
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      crosshair: {
+        vertLine: { color: themeTokens.grid },
+        horzLine: { color: themeTokens.grid },
+      },
+    })
+    chartRef.current = chart
+
+    return () => {
+      chart.remove()
+      chartRef.current = null
+      mainSeriesRef.current = null
+      volumeSeriesRef.current = null
+      smaSeriesRef.current = null
+      emaSeriesRef.current = null
+      rsiSeriesRef.current = null
+      bbSeriesRef.current = null
+      cciSeriesRef.current = null
+      atrSeriesRef.current = null
+      macdSeriesRef.current = null
+      overlaySeriesRef.current.clear()
+      levelLineRefs.current = []
+    }
+  }, [themeTokens.chartBg, themeTokens.grid, themeTokens.text])
+
+  const clearSeries = useCallback(() => {
+    if (!chartRef.current) return
+    const chart = chartRef.current
+    if (mainSeriesRef.current) {
+      chart.removeSeries(mainSeriesRef.current)
+      mainSeriesRef.current = null
+    }
+    if (volumeSeriesRef.current) {
+      chart.removeSeries(volumeSeriesRef.current)
+      volumeSeriesRef.current = null
+    }
+    if (smaSeriesRef.current) {
+      chart.removeSeries(smaSeriesRef.current)
+      smaSeriesRef.current = null
+    }
+    if (emaSeriesRef.current) {
+      chart.removeSeries(emaSeriesRef.current)
+      emaSeriesRef.current = null
+    }
+    if (rsiSeriesRef.current) {
+      chart.removeSeries(rsiSeriesRef.current)
+      rsiSeriesRef.current = null
+    }
+    if (bbSeriesRef.current) {
+      bbSeriesRef.current.forEach((s) => chart.removeSeries(s))
+      bbSeriesRef.current = null
+    }
+    if (cciSeriesRef.current) {
+      chart.removeSeries(cciSeriesRef.current)
+      cciSeriesRef.current = null
+    }
+    if (atrSeriesRef.current) {
+      chart.removeSeries(atrSeriesRef.current)
+      atrSeriesRef.current = null
+    }
+    if (macdSeriesRef.current) {
+      chart.removeSeries(macdSeriesRef.current.macd)
+      chart.removeSeries(macdSeriesRef.current.signal)
+      chart.removeSeries(macdSeriesRef.current.histogram)
+      macdSeriesRef.current = null
+    }
+    overlaySeriesRef.current.forEach((series) => chart.removeSeries(series))
+    overlaySeriesRef.current.clear()
+    levelLineRefs.current = []
+  }, [])
+
+  const loadChart = useCallback(async () => {
+    if (!chartRef.current) return
+    setLoading(true)
+    try {
+      const candles = toChartData(await api.indexOhlc(state.symbol, state.interval, rangeLimit))
+      candleDataRef.current = candles
+      if (!candles.length) {
+        clearSeries()
+        addToast('warning', `No chart data for ${state.symbol}`)
+        setLoading(false)
+        return
+      }
+
+      clearSeries()
+      const chart = chartRef.current
+      const closes = candles.map((item) => item.close)
+
+      if (state.mode === 'candles') {
+        const series = chart.addSeries(CandlestickSeries, {
+          upColor: themeTokens.up,
+          downColor: themeTokens.down,
+          borderVisible: false,
+          wickUpColor: themeTokens.up,
+          wickDownColor: themeTokens.down,
+          priceLineVisible: false,
+        })
+        series.setData(candles)
+        mainSeriesRef.current = series
+      } else if (state.mode === 'line') {
+        const series = chart.addSeries(LineSeries, {
+          color: '#22d3ee',
+          lineWidth: 2,
+          priceLineVisible: false,
+          crosshairMarkerVisible: true,
+        })
+        series.setData(toLineData(candles))
+        mainSeriesRef.current = series
+      } else {
+        const series = chart.addSeries(AreaSeries, {
+          lineColor: '#818cf8',
+          topColor: 'rgba(129, 140, 248, 0.35)',
+          bottomColor: 'rgba(129, 140, 248, 0.04)',
+          lineWidth: 2,
+          priceLineVisible: false,
+          crosshairMarkerVisible: true,
+        })
+        series.setData(toLineData(candles))
+        mainSeriesRef.current = series
+      }
+
+      if (state.showVolume) {
+        const volSeries = chart.addSeries(LineSeries, {
+          color: '#3b82f6',
+          lineWidth: 1,
+          lineStyle: 3,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        })
+        const maxVol = Math.max(...candles.map((_, idx) => Number((idx + 1) * 1)))
+        const normalized = candles.map((c, idx) => ({
+          time: c.time,
+          value: Number(((idx + 1) / maxVol) * (Math.max(...closes) * 0.12)),
+        }))
+        volSeries.setData(normalized)
+        volumeSeriesRef.current = volSeries
+      }
+
+      if (state.showSma) {
+        const series = chart.addSeries(LineSeries, {
+          color: '#f59e0b',
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        })
+        series.setData(buildIndicatorLine(candles, sma(closes, state.smaPeriod)))
+        smaSeriesRef.current = series
+      }
+
+      if (state.showEma) {
+        const series = chart.addSeries(LineSeries, {
+          color: '#34d399',
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        })
+        series.setData(buildIndicatorLine(candles, ema(closes, state.emaPeriod)))
+        emaSeriesRef.current = series
+      }
+
+      if (state.showRsi) {
+        const series = chart.addSeries(LineSeries, {
+          color: '#ec4899',
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+        })
+        series.setData(rsi(candles, state.rsiPeriod))
+        rsiSeriesRef.current = series
+      }
+
+      if (state.showBb) {
+        const bb = bollingerBands(candles, state.bbPeriod, state.bbStdDev)
+        if (bb.upper.length) {
+          const s1 = chart.addSeries(LineSeries, {
+            color: '#8b5cf6',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+          })
+          const s2 = chart.addSeries(LineSeries, {
+            color: '#8b5cf6',
+            lineWidth: 2,
+            priceLineVisible: false,
+          })
+          const s3 = chart.addSeries(LineSeries, {
+            color: '#8b5cf6',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+          })
+          s1.setData(bb.upper)
+          s2.setData(bb.mid)
+          s3.setData(bb.lower)
+          bbSeriesRef.current = [s1, s2, s3]
+        }
+      }
+
+      if (state.showCci) {
+        const series = chart.addSeries(LineSeries, {
+          color: '#06b6d4',
+          lineWidth: 1,
+          priceLineVisible: false,
+        })
+        series.setData(cci(candles, state.cciPeriod))
+        cciSeriesRef.current = series
+      }
+
+      if (state.showAtr) {
+        const series = chart.addSeries(LineSeries, {
+          color: '#f97316',
+          lineWidth: 1,
+          priceLineVisible: false,
+        })
+        series.setData(atr(candles, state.atrPeriod))
+        atrSeriesRef.current = series
+      }
+
+      if (state.showMacd) {
+        const m = macd(closes, state.macdFast, state.macdSlow, state.macdSignal)
+        if (m.macd.length) {
+          const s1 = chart.addSeries(LineSeries, {
+            color: '#06b6d4',
+            lineWidth: 2,
+            priceLineVisible: false,
+          })
+          const s2 = chart.addSeries(LineSeries, {
+            color: '#ef4444',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+          })
+          const s3 = chart.addSeries(LineSeries, {
+            color: '#22c55e',
+            lineWidth: 1,
+            priceLineVisible: false,
+          })
+          s1.setData(m.macd)
+          s2.setData(m.signal)
+          s3.setData(m.histogram)
+          macdSeriesRef.current = { macd: s1, signal: s2, histogram: s3 }
+        }
+      }
+
+      for (let i = 0; i < state.overlays.length; i += 1) {
+        const overlay = state.overlays[i]
+        try {
+          const overlayCandles = toChartData(await api.indexOhlc(overlay.symbol, state.interval, rangeLimit))
+          if (!overlayCandles.length) continue
+          const series = chart.addSeries(LineSeries, {
+            color: overlay.color,
+            lineWidth: 2,
+            priceLineVisible: false,
+          })
+          series.setData(toLineData(overlayCandles))
+          overlaySeriesRef.current.set(overlay.symbol, series)
+        } catch {
+          addToast('warning', `Overlay data unavailable for ${overlay.symbol}`)
+        }
+      }
+
+      const latest = candles[candles.length - 1]
+      const first = candles[0]
+      setOhlc({
+        open: latest.open,
+        high: latest.high,
+        low: latest.low,
+        close: latest.close,
+        changePct: first.close ? ((latest.close - first.close) / first.close) * 100 : 0,
+      })
+      setLastRefreshTime(new Date())
+
+      chart.timeScale().fitContent()
+      state.levels.forEach((level) => {
+        if (!mainSeriesRef.current) return
+        const line = mainSeriesRef.current.createPriceLine({
+          price: level,
+          color: '#f97316',
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: 'Level',
+        })
+        levelLineRefs.current.push({
+          price: level,
+          remove: () => {
+            if (mainSeriesRef.current) mainSeriesRef.current.removePriceLine(line)
+          },
+        })
+      })
+
+      if (mainSeriesRef.current) {
+        chart.subscribeCrosshairMove((param) => {
+          if (!param.time) return
+          const point = candleDataRef.current.find((item) => item.time === param.time)
+          if (!point) return
+          const firstPoint = candleDataRef.current[0]
+          setOhlc({
+            open: point.open,
+            high: point.high,
+            low: point.low,
+            close: point.close,
+            changePct: firstPoint.close ? ((point.close - firstPoint.close) / firstPoint.close) * 100 : 0,
+          })
+        })
+      }
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to load chart data')
+    } finally {
+      setLoading(false)
+    }
+  }, [
+    addToast,
+    clearSeries,
+    rangeLimit,
+    state.atrPeriod,
+    state.bbPeriod,
+    state.bbStdDev,
+    state.cciPeriod,
+    state.emaPeriod,
+    state.interval,
+    state.levels,
+    state.macdFast,
+    state.macdSlow,
+    state.macdSignal,
+    state.mode,
+    state.overlays,
+    state.rsiPeriod,
+    state.showAtr,
+    state.showBb,
+    state.showCci,
+    state.showEma,
+    state.showMacd,
+    state.showRsi,
+    state.showSma,
+    state.showVolume,
+    state.smaPeriod,
+    state.symbol,
+    themeTokens.down,
+    themeTokens.up,
+  ])
+
+  useEffect(() => {
+    loadChart()
+  }, [loadChart])
+
+  // Auto-refresh polling
+  useEffect(() => {
+    if (!state.autoRefresh) return
+    const timer = window.setInterval(loadChart, 3000)
+    return () => window.clearInterval(timer)
+  }, [state.autoRefresh, loadChart])
+
+  const searchSymbol = useCallback(async () => {
+    const text = query.trim()
+    if (text.length < 2) {
+      setSuggestions([])
+      return
+    }
+    setSearching(true)
+    try {
+      const results = await api.searchSymbols(text)
+      setSuggestions(results.slice(0, 18))
+    } catch {
+      setSuggestions([])
+    } finally {
+      setSearching(false)
+    }
+  }, [query])
+
+  const assignMainSymbol = (value: string) => {
+    updateState({ symbol: value.toUpperCase() })
+    setQuery(value.toUpperCase())
+    setSuggestions([])
+  }
+
+  const addOverlay = (value: string) => {
+    const symbol = value.toUpperCase().trim()
+    if (!symbol) return
+    if (symbol === state.symbol.toUpperCase()) {
+      addToast('warning', 'Main symbol cannot be added as overlay')
+      return
+    }
+    if (state.overlays.some((item) => item.symbol === symbol)) return
+    const color = OVERLAY_COLORS[state.overlays.length % OVERLAY_COLORS.length]
+    updateState({ overlays: [...state.overlays, { symbol, color }] })
+    setSuggestions([])
+    setQuery('')
+  }
+
+  const removeOverlay = (symbol: string) => {
+    updateState({ overlays: state.overlays.filter((item) => item.symbol !== symbol) })
+  }
+
+  const addLevel = () => {
+    const value = Number(levelInput)
+    if (!Number.isFinite(value)) return
+    if (state.levels.includes(value)) return
+    updateState({ levels: [...state.levels, value] })
+    setLevelInput('')
+  }
+
+  const removeLevel = (level: number) => {
+    updateState({ levels: state.levels.filter((item) => item !== level) })
+  }
+
+  return (
+    <div className="space-y-3 animate-fade-in h-[calc(100vh-132px)] min-h-[520px] flex flex-col">
+      <div className="glass rounded-xl px-3 py-2.5 flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[11px] font-semibold">
+            <BarChart3 className="w-3.5 h-3.5" /> Live Pro Charts
+          </div>
+          <div className="text-[11px] text-text-muted">
+            Native v2: All major indicators, live 3s polling, full type-safe architecture
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              onClick={() => updateState({ autoRefresh: !state.autoRefresh })}
+              className={cn(
+                'px-2 py-1 rounded text-[10px] font-semibold border transition-colors',
+                state.autoRefresh
+                  ? 'bg-primary/15 text-primary border-primary/40'
+                  : 'bg-bg-input text-text-muted border-border',
+              )}
+              title={state.autoRefresh ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}
+            >
+              {state.autoRefresh ? '🔄' : '⏸'}
+            </button>
+            {lastRefreshTime && (
+              <span className="text-[10px] text-text-muted hidden sm:inline">
+                {Math.round((Date.now() - lastRefreshTime.getTime()) / 1000)}s ago
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto_auto_auto] gap-2">
+          <div className="relative">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && searchSymbol()}
+                  placeholder="Search symbol..."
+                  className="w-full pl-8 pr-3 py-2 rounded-lg bg-bg-input border border-border text-[11px] text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+              <button
+                onClick={searchSymbol}
+                className="px-3 py-2 rounded-lg text-[11px] font-semibold bg-bg-base border border-border hover:border-border-hover"
+              >
+                {searching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Search'}
+              </button>
+            </div>
+            {suggestions.length > 0 ? (
+              <div className="absolute z-20 mt-1 w-full glass rounded-lg border border-border max-h-48 overflow-auto">
+                {suggestions.map((item, idx) => {
+                  const symbol = (item.trading_symbol || item.tradingsymbol || item.symbol).toUpperCase()
+                  return (
+                    <div key={`${symbol}-${idx}`} className="px-2.5 py-2 text-[11px] border-b last:border-b-0 border-border/40 flex items-center gap-2">
+                      <button
+                        onClick={() => assignMainSymbol(symbol)}
+                        className="text-left flex-1 text-text-bright hover:text-primary"
+                      >
+                        {symbol}
+                      </button>
+                      <button
+                        onClick={() => addOverlay(symbol)}
+                        className="px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[10px]"
+                      >
+                        +Overlay
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+
+          <select
+            value={state.symbol}
+            onChange={(e) => updateState({ symbol: e.target.value })}
+            className="px-2.5 py-2 rounded-lg bg-bg-input border border-border text-[11px] text-text-primary focus:outline-none focus:border-primary min-w-[150px]"
+          >
+            {symbolUniverse.map((symbol) => (
+              <option key={symbol} value={symbol}>{symbol}</option>
+            ))}
+          </select>
+
+          <div className="inline-flex rounded-lg border border-border overflow-hidden">
+            {[{ key: 'candles', icon: ChartCandlestick }, { key: 'line', icon: LineChart }, { key: 'area', icon: BarChart3 }].map((item) => (
+              <button
+                key={item.key}
+                onClick={() => updateState({ mode: item.key as ChartMode })}
+                className={cn(
+                  'px-2.5 py-2 text-[11px] inline-flex items-center gap-1.5',
+                  state.mode === item.key ? 'bg-primary/15 text-primary' : 'bg-bg-input text-text-muted hover:text-text-primary',
+                )}
+              >
+                <item.icon className="w-3.5 h-3.5" /> {item.key}
+              </button>
+            ))}
+          </div>
+
+          <select
+            value={state.theme}
+            onChange={(e) => updateState({ theme: e.target.value as ThemePreset })}
+            className="px-2.5 py-2 rounded-lg bg-bg-input border border-border text-[11px] text-text-primary focus:outline-none focus:border-primary min-w-[140px]"
+          >
+            <option value="trading-dark">Trading Dark</option>
+            <option value="dawn">Dawn Light</option>
+            <option value="matrix">Matrix</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[auto_auto_1fr] gap-2 items-start">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {INTERVALS.map((interval) => (
+              <button
+                key={interval}
+                onClick={() => updateState({ interval })}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[10px] font-semibold border',
+                  state.interval === interval
+                    ? 'bg-primary/15 text-primary border-primary/40'
+                    : 'text-text-muted border-border hover:border-border-hover',
+                )}
+              >
+                {interval}m
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {RANGES.map((range) => (
+              <button
+                key={range.key}
+                onClick={() => updateState({ range: range.key })}
+                className={cn(
+                  'px-2.5 py-1.5 rounded-md text-[10px] font-semibold border',
+                  state.range === range.key
+                    ? 'bg-accent/15 text-accent border-accent/40'
+                    : 'text-text-muted border-border hover:border-border-hover',
+                )}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-start xl:justify-end gap-2 text-[10px]">
+            <label className="inline-flex items-center gap-1 text-text-secondary">
+              <input type="checkbox" checked={state.showSma} onChange={(e) => updateState({ showSma: e.target.checked })} size={20} />
+              SMA
+            </label>
+            <input type="number" value={state.smaPeriod} min={5} max={200} onChange={(e) => updateState({ smaPeriod: Math.max(5, Number(e.target.value || 20)) })} className="w-12 px-1 py-0.5 rounded bg-bg-input border border-border text-[9px]" disabled={!state.showSma} />
+            <span className="text-text-muted">|</span>
+            <label className="inline-flex items-center gap-1 text-text-secondary">
+              <input type="checkbox" checked={state.showEma} onChange={(e) => updateState({ showEma: e.target.checked })} />
+              EMA
+            </label>
+            <input type="number" value={state.emaPeriod} min={5} max={300} onChange={(e) => updateState({ emaPeriod: Math.max(5, Number(e.target.value || 50)) })} className="w-12 px-1 py-0.5 rounded bg-bg-input border border-border text-[9px]" disabled={!state.showEma} />
+            <span className="text-text-muted">|</span>
+            <label className="inline-flex items-center gap-1 text-text-secondary">
+              <input type="checkbox" checked={state.showVolume} onChange={(e) => updateState({ showVolume: e.target.checked })} />
+              Vol
+            </label>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-start gap-2 text-[10px]">
+          <span className="text-text-muted font-semibold">Oscillators:</span>
+          <label className="inline-flex items-center gap-1 text-text-secondary">
+            <input type="checkbox" checked={state.showRsi} onChange={(e) => updateState({ showRsi: e.target.checked })} />
+            RSI
+          </label>
+          <input type="number" value={state.rsiPeriod} min={2} max={100} onChange={(e) => updateState({ rsiPeriod: Math.max(2, Number(e.target.value || 14)) })} className="w-12 px-1 py-0.5 rounded bg-bg-input border border-border text-[9px]" disabled={!state.showRsi} />
+          <label className="inline-flex items-center gap-1 text-text-secondary">
+            <input type="checkbox" checked={state.showCci} onChange={(e) => updateState({ showCci: e.target.checked })} />
+            CCI
+          </label>
+          <input type="number" value={state.cciPeriod} min={2} max={100} onChange={(e) => updateState({ cciPeriod: Math.max(2, Number(e.target.value || 20)) })} className="w-12 px-1 py-0.5 rounded bg-bg-input border border-border text-[9px]" disabled={!state.showCci} />
+          <span className="text-text-muted">|</span>
+          <label className="inline-flex items-center gap-1 text-text-secondary">
+            <input type="checkbox" checked={state.showBb} onChange={(e) => updateState({ showBb: e.target.checked })} />
+            BB
+          </label>
+          <input type="number" value={state.bbPeriod} min={5} max={100} onChange={(e) => updateState({ bbPeriod: Math.max(5, Number(e.target.value || 20)) })} className="w-12 px-1 py-0.5 rounded bg-bg-input border border-border text-[9px]" disabled={!state.showBb} />
+          <label className="inline-flex items-center gap-1 text-text-secondary">
+            <input type="checkbox" checked={state.showAtr} onChange={(e) => updateState({ showAtr: e.target.checked })} />
+            ATR
+          </label>
+          <input type="number" value={state.atrPeriod} min={2} max={100} onChange={(e) => updateState({ atrPeriod: Math.max(2, Number(e.target.value || 14)) })} className="w-12 px-1 py-0.5 rounded bg-bg-input border border-border text-[9px]" disabled={!state.showAtr} />
+          <label className="inline-flex items-center gap-1 text-text-secondary">
+            <input type="checkbox" checked={state.showMacd} onChange={(e) => updateState({ showMacd: e.target.checked })} />
+            MACD
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-[10px]">
+          <span className="text-text-muted">Overlays:</span>
+          {state.overlays.length === 0 ? <span className="text-text-muted">none</span> : null}
+          {state.overlays.map((overlay) => (
+            <span key={overlay.symbol} className="inline-flex items-center gap-1 rounded-md px-2 py-1 border border-border bg-bg-base">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: overlay.color }} />
+              {overlay.symbol}
+              <button onClick={() => removeOverlay(overlay.symbol)} className="text-loss/90 hover:text-loss">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-[10px]">
+          <span className="text-text-muted">Draw Levels:</span>
+          <input
+            value={levelInput}
+            onChange={(e) => setLevelInput(e.target.value)}
+            placeholder="Price"
+            className="w-24 px-2 py-1 rounded bg-bg-input border border-border text-[11px]"
+          />
+          <button onClick={addLevel} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-primary/15 text-primary border border-primary/30 hover:bg-primary/20">
+            <Plus className="w-3 h-3" /> Add
+          </button>
+          {state.levels.map((level) => (
+            <span key={level} className="inline-flex items-center gap-1 rounded-md px-2 py-1 border border-border bg-bg-base">
+              {formatNum(level)}
+              <button onClick={() => removeLevel(level)} className="text-loss/90 hover:text-loss">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className={cn('glass rounded-xl overflow-hidden flex-1 min-h-[420px] border border-border relative', themeTokens.panelClass)}>
+        <div className="absolute top-2 left-2 z-10 rounded-lg bg-bg-base/80 backdrop-blur px-2.5 py-1.5 text-[10px] border border-border/70">
+          <div className="text-text-muted uppercase tracking-wide flex items-center gap-1.5">
+            <Activity className="w-3 h-3" /> OHLC
+          </div>
+          <div className="text-text-bright font-semibold text-[11px] mt-0.5">
+            O {ohlc ? formatNum(ohlc.open) : '—'} · H {ohlc ? formatNum(ohlc.high) : '—'} · L {ohlc ? formatNum(ohlc.low) : '—'} · C {ohlc ? formatNum(ohlc.close) : '—'}
+          </div>
+          <div className={cn('text-[10px] font-semibold', (ohlc?.changePct ?? 0) >= 0 ? 'text-profit' : 'text-loss')}>
+            {ohlc ? `${ohlc.changePct >= 0 ? '+' : ''}${formatNum(ohlc.changePct)}%` : '—'}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="absolute inset-0 z-20 bg-bg-base/35 backdrop-blur-[1px] flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          </div>
+        ) : null}
+
+        <div ref={containerRef} className="w-full h-full min-h-[420px]" />
+      </div>
+    </div>
+  )
+}

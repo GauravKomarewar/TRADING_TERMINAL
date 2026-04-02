@@ -1,0 +1,352 @@
+import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useStrategies } from '../hooks'
+import { useUIStore } from '../stores'
+import { api } from '../lib/api'
+import { formatINR, pnlClass, cn } from '../lib/utils'
+import {
+  Play, Square, Search, Zap,
+  TrendingUp, Activity, Clock, RefreshCw
+} from 'lucide-react'
+
+type FilterType = 'all' | 'running' | 'stopped' | 'paused' | 'live' | 'mock'
+
+export default function StrategiesPage() {
+  const { data, isLoading } = useStrategies()
+  const { addToast } = useUIStore()
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<FilterType>('all')
+  const [selectedStrategy, setSelectedStrategy] = useState('__all__')
+  const [logLevel, setLogLevel] = useState('')
+  const [logLinesLimit, setLogLinesLimit] = useState(200)
+  const [logSearch, setLogSearch] = useState('')
+  const [autoLogs, setAutoLogs] = useState(true)
+  const [logLoading, setLogLoading] = useState(false)
+  const [sourceLabel, setSourceLabel] = useState('--')
+  const [updatedLabel, setUpdatedLabel] = useState('--')
+  const [rawLogs, setRawLogs] = useState<string[]>([])
+  const strategies = data?.strategies || []
+
+  const filtered = strategies.filter(s => {
+    if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false
+    if (filter === 'running') return s.status === 'RUNNING'
+    if (filter === 'stopped') return s.status === 'STOPPED' || s.status === 'IDLE'
+    if (filter === 'paused') return s.status === 'PAUSED'
+    if (filter === 'live') return s.mode === 'LIVE'
+    if (filter === 'mock') return s.mode === 'MOCK'
+    return true
+  })
+
+  const runningCount = strategies.filter(s => s.status === 'RUNNING').length
+  const liveCount = strategies.filter(s => s.mode === 'LIVE').length
+  const totalPnl = strategies.reduce((acc, s) => acc + (s.total_pnl || s.cumulative_daily_pnl || s.pnl || 0), 0)
+
+  const filters: { key: FilterType; label: string; count?: number }[] = [
+    { key: 'all', label: 'All', count: strategies.length },
+    { key: 'running', label: 'Running', count: runningCount },
+    { key: 'live', label: 'LIVE', count: liveCount },
+    { key: 'mock', label: 'MOCK', count: strategies.length - liveCount },
+    { key: 'stopped', label: 'Stopped' },
+    { key: 'paused', label: 'Paused' },
+  ]
+
+  const loadLogs = useCallback(async () => {
+    setLogLoading(true)
+    try {
+      const payload = await api.runnerFileLogs({
+        lines: logLinesLimit,
+        strategy: selectedStrategy !== '__all__' ? selectedStrategy : undefined,
+        level: logLevel || undefined,
+        component: 'strategy_executor',
+      })
+      setRawLogs(payload.lines)
+      setSourceLabel(payload.component || payload.path || '--')
+      setUpdatedLabel(new Date().toLocaleTimeString())
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to load strategy logs')
+    } finally {
+      setLogLoading(false)
+    }
+  }, [addToast, logLevel, logLinesLimit, selectedStrategy])
+
+  useEffect(() => {
+    loadLogs()
+  }, [loadLogs])
+
+  useEffect(() => {
+    if (!autoLogs) return
+    const timer = window.setInterval(loadLogs, 2000)
+    return () => window.clearInterval(timer)
+  }, [autoLogs, loadLogs])
+
+  const filteredLogs = useMemo(() => {
+    const q = logSearch.trim().toLowerCase()
+    if (!q) return rawLogs
+    return rawLogs.filter((line) => line.toLowerCase().includes(q))
+  }, [logSearch, rawLogs])
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <StatCard icon={Zap} label="Total" value={String(strategies.length)} color="text-primary" />
+        <StatCard icon={Activity} label="Running" value={String(runningCount)} color="text-profit" />
+        <StatCard icon={TrendingUp} label="Day's P&L" value={formatINR(totalPnl)} color={pnlClass(totalPnl)} />
+        <StatCard icon={Clock} label="LIVE" value={String(liveCount)} color="text-loss" />
+      </div>
+
+      {/* Search & Filters */}
+      <div className="glass rounded-xl px-4 py-3 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search strategies..."
+            className="w-full h-8 pl-8 pr-3 rounded-lg bg-bg-input border border-border text-[12px]
+              text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+          />
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {filters.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={cn(
+                'px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors',
+                filter === f.key
+                  ? 'bg-primary/10 text-primary border-primary/30'
+                  : 'text-text-muted border-border hover:border-border-hover'
+              )}
+            >
+              {f.label}
+              {f.count != null && <span className="ml-1 opacity-60">{f.count}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Strategy Cards */}
+      {isLoading ? (
+        <div className="text-center py-12 text-text-muted">Loading strategies...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-text-muted">No strategies found</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {filtered.map(s => (
+            <StrategyCard key={s.name} strategy={s} />
+          ))}
+        </div>
+      )}
+
+      <div className="glass rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-semibold text-text-bright">Strategy Logs</div>
+            <div className="text-[11px] text-text-muted">Live runner logs with strategy, level, and text filters.</div>
+          </div>
+          <button
+            onClick={() => loadLogs()}
+            className="px-2.5 py-1.5 rounded-lg border border-border text-text-secondary hover:border-border-hover inline-flex items-center gap-1.5 text-[11px]"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', logLoading && 'animate-spin')} /> Refresh
+          </button>
+        </div>
+
+        <div className="p-3 border-b border-border grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-2">
+          <select
+            value={selectedStrategy}
+            onChange={(e) => setSelectedStrategy(e.target.value)}
+            className="h-9 rounded-lg bg-bg-input border border-border px-3 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+          >
+            <option value="__all__">All Strategies</option>
+            {strategies.map((strategy) => (
+              <option key={strategy.name} value={strategy.name}>{strategy.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={logLevel}
+            onChange={(e) => setLogLevel(e.target.value)}
+            className="h-9 rounded-lg bg-bg-input border border-border px-3 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+          >
+            <option value="">All Levels</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="CRITICAL">CRITICAL</option>
+          </select>
+
+          <select
+            value={String(logLinesLimit)}
+            onChange={(e) => setLogLinesLimit(Number(e.target.value))}
+            className="h-9 rounded-lg bg-bg-input border border-border px-3 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+          >
+            <option value="100">100 lines</option>
+            <option value="200">200 lines</option>
+            <option value="500">500 lines</option>
+            <option value="1000">1000 lines</option>
+          </select>
+
+          <input
+            value={logSearch}
+            onChange={(e) => setLogSearch(e.target.value)}
+            placeholder="Search text in logs..."
+            className="h-9 rounded-lg bg-bg-input border border-border px-3 text-[12px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary xl:col-span-2"
+          />
+
+          <button
+            onClick={() => setAutoLogs((prev) => !prev)}
+            className={cn(
+              'h-9 rounded-lg border px-3 text-[12px] font-semibold',
+              autoLogs
+                ? 'border-profit/40 text-profit bg-profit/10'
+                : 'border-border text-text-secondary bg-bg-input',
+            )}
+          >
+            Auto: {autoLogs ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
+        <div className="px-4 py-2 flex flex-wrap items-center gap-3 text-[11px] text-text-muted border-b border-border">
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cn('w-2 h-2 rounded-full', autoLogs ? 'bg-profit animate-pulse' : 'bg-text-muted')} />
+            {autoLogs ? 'Live polling every 2s' : 'Auto polling paused'}
+          </span>
+          <span>Lines: {filteredLogs.length}</span>
+          <span>Source: {sourceLabel}</span>
+          <span>Updated: {updatedLabel}</span>
+        </div>
+
+        <div className="p-3">
+          <div className="h-[360px] xl:h-[430px] rounded-lg border border-border bg-[#0b1220] overflow-auto p-3">
+            {filteredLogs.length ? (
+              <pre className="text-[11px] md:text-[12px] leading-5 text-[#dbe6ff] whitespace-pre-wrap break-words font-mono">
+                {filteredLogs.join('\n')}
+              </pre>
+            ) : (
+              <div className="text-[12px] text-text-muted">
+                {logLoading ? 'Loading logs...' : 'No logs match current filters.'}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Stat Card ──
+function StatCard({ icon: Icon, label, value, color }: { icon: typeof Zap; label: string; value: string; color: string }) {
+  return (
+    <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
+      <Icon className={cn('w-5 h-5', color)} />
+      <div>
+        <div className="text-[10px] text-text-muted uppercase tracking-wider">{label}</div>
+        <div className={cn('text-base font-bold tabular-nums', color)}>{value}</div>
+      </div>
+    </div>
+  )
+}
+
+// ── Strategy Card ──
+function StrategyCard({ strategy: s }: { strategy: import('../types').Strategy }) {
+  const { addToast } = useUIStore()
+  const [loading, setLoading] = useState<string | null>(null)
+
+  const isLive = s.mode === 'LIVE'
+  const isRunning = s.status === 'RUNNING'
+  const pnl = s.total_pnl || s.cumulative_daily_pnl || s.combined_pnl || s.pnl || 0
+  const legs = s.legs_count || s.legs || 0
+  const displayName = s.display_name || s.name
+
+  const action = useCallback(async (act: string) => {
+    setLoading(act)
+    try {
+      if (act === 'start') await api.startStrategy(s.name)
+      else if (act === 'stop') await api.stopStrategy(s.name)
+      addToast('success', `${act} → ${s.name}`)
+    } catch (e: unknown) {
+      addToast('error', `${act} failed: ${e instanceof Error ? e.message : 'Unknown'}`)
+    } finally {
+      setLoading(null)
+    }
+  }, [s.name, addToast])
+
+  return (
+    <div className={cn(
+      'glass rounded-xl overflow-hidden transition-all hover:border-border-hover',
+      isLive && isRunning && 'border-loss/30 shadow-[0_0_20px_rgba(251,113,133,0.05)]',
+      !isLive && isRunning && 'border-primary/30',
+    )}>
+      {/* Header */}
+      <div className={cn(
+        'px-4 py-3 flex items-center justify-between border-b',
+        isLive ? 'border-loss/20 bg-loss/5' : 'border-border bg-bg-surface/30'
+      )}>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className={cn('badge text-[10px]', isLive ? 'badge-live' : 'badge-mock')}>
+              {s.mode}
+            </span>
+            <span className={cn('badge text-[10px]',
+              isRunning ? 'badge-safe' : s.status === 'PAUSED' ? 'badge-warning' : 'badge-neutral'
+            )}>
+              {s.status}
+            </span>
+          </div>
+          <h3 className="text-[13px] font-bold text-text-bright mt-1 truncate">{displayName}</h3>
+          {displayName !== s.name ? (
+            <div className="text-[10px] text-text-muted font-mono truncate">{s.name}</div>
+          ) : null}
+        </div>
+        <div className={cn('text-right tabular-nums font-bold text-sm', pnlClass(pnl))}>
+          {formatINR(pnl)}
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="px-4 py-3 space-y-2">
+        <div className="flex justify-between text-[11px]">
+          <span className="text-text-muted">Legs</span>
+          <span className="text-text-secondary">{legs}</span>
+        </div>
+        {s.entry_time && (
+          <div className="flex justify-between text-[11px]">
+            <span className="text-text-muted">Entry</span>
+            <span className="text-text-secondary">{s.entry_time}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="px-4 py-2.5 border-t border-border flex items-center gap-1.5">
+        {!isRunning && (
+          <ActionBtn icon={Play} label="Start" color="text-profit" onClick={() => action('start')} loading={loading === 'start'} />
+        )}
+        {isRunning && (
+          <ActionBtn icon={Square} label="Stop" color="text-loss" onClick={() => action('stop')} loading={loading === 'stop'} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ActionBtn({ icon: Icon, label, color, onClick, loading }: {
+  icon: typeof Play; label: string; color: string; onClick: () => void; loading: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className={cn(
+        'flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[10px] font-semibold',
+        'bg-bg-elevated border border-border hover:border-border-hover transition-all',
+        'disabled:opacity-50', color
+      )}
+    >
+      <Icon className="w-3 h-3" />
+      {loading ? '...' : label}
+    </button>
+  )
+}

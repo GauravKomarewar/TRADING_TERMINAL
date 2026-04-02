@@ -280,9 +280,14 @@ class OrderWatcherEngine(threading.Thread):
     def _dispatch_simple_exit(self, record: OrderRecord) -> bool:
         """Dispatch a simple MARKET EXIT order to broker via execute_command(). Returns True on success."""
         try:
-            # Mark as dispatching to prevent re-dispatch on next cycle
+            # Mark as dispatching to prevent re-dispatch on next cycle.
+            # Preserve any TEST_MODE marker so retries loaded from DB still
+            # detect mock-mode even after the strategy is unregistered.
+            _orig_tag = str(record.tag or "")
+            _has_mock = "TEST_MODE_SUCCESS" in _orig_tag or "TEST_MODE_FAILURE" in _orig_tag
+            _dispatch_tag = "DISPATCHING|TEST_MODE_SUCCESS" if _has_mock else "DISPATCHING"
             try:
-                self.repo.update_tag(record.command_id, "DISPATCHING")
+                self.repo.update_tag(record.command_id, _dispatch_tag)
             except Exception:
                 pass
 
@@ -935,26 +940,29 @@ class OrderWatcherEngine(threading.Thread):
         """
         Update SL/target/trailing for a managed exit identified by symbol.
         Returns True if found and updated, False otherwise.
+        Explicitly null/None values are honoured to allow the caller to clear a field.
         """
         with self._managed_exits_lock:
             for cmd_id, state in list(self._managed_exits.items()):
                 record = state["record"]
                 if record.symbol == symbol and (product is None or record.product == product):
-                    if "stop_loss" in updates and updates["stop_loss"] is not None:
-                        state["stop_loss"] = float(updates["stop_loss"])
-                        state["base_stop_loss"] = float(updates["stop_loss"])
-                    if "target" in updates and updates["target"] is not None:
-                        state["target"] = float(updates["target"])
-                    if "trailing_value" in updates and updates["trailing_value"] is not None:
-                        state["trailing_value"] = float(updates["trailing_value"])
+                    if "stop_loss" in updates:
+                        val = updates["stop_loss"]
+                        state["stop_loss"] = float(val) if val is not None else None
+                        state["base_stop_loss"] = float(val) if val is not None else state.get("base_stop_loss")
+                    if "target" in updates:
+                        val = updates["target"]
+                        state["target"] = float(val) if val is not None else None
+                    if "trailing_value" in updates:
+                        val = updates["trailing_value"]
+                        state["trailing_value"] = float(val) if val is not None else None
                     if "trailing_type" in updates:
-                        state["trailing_type"] = updates["trailing_type"]
+                        state["trailing_type"] = updates["trailing_type"]  # may be None to clear
                     if "trail_when" in updates:
                         val = updates["trail_when"]
                         state["trail_when"] = float(val) if val is not None else None
                     if any(field in updates for field in ("trailing_type", "trailing_value", "trail_when")):
-                        # Keep the original anchor, but clear trailing progression so the
-                        # new trailing config starts fresh from that saved activation point.
+                        # Clear trailing progression so new config starts fresh.
                         state["trailing_activated"] = False
                         state["activation_price"] = None
                         state["highest_price"] = None

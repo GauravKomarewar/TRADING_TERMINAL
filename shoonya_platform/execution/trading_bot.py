@@ -243,14 +243,42 @@ class ShoonyaBot(AlertProcessingMixin, ExecutionMixin, StatusSchedulingMixin):
         # -------------------------------------------------
         # INITIAL LOGIN (ONCE, BLOCKING)
         # -------------------------------------------------
-        login_ok = self.login()
-        if not login_ok:
-            logger.warning("\u26a0\ufe0f First login failed — waiting 35s for fresh TOTP window and retrying")
-            time.sleep(35)
+        # Retry startup login with backoff so a temporary API outage (e.g. 502
+        # during maintenance) does not immediately crash the process and exhaust
+        # systemd's StartLimitBurst.  Strategy:
+        #   attempt 1  – immediate
+        #   attempt 2  – 35s wait  (fresh TOTP window)
+        #   attempts 3-8 – 60s, 120s, 120s, 120s, 120s, 120s  (API-down backoff)
+        # Total patience before aborting: ~11 minutes.
+        _startup_delays = [35, 60, 120, 120, 120, 120, 120]
+        _max_startup_attempts = 1 + len(_startup_delays)  # = 8
+        login_ok = False
+        for _attempt in range(1, _max_startup_attempts + 1):
             login_ok = self.login()
+            if login_ok:
+                break
+            if _attempt < _max_startup_attempts:
+                _delay = _startup_delays[_attempt - 1]
+                if _attempt == 1:
+                    logger.warning(
+                        "\u26a0\ufe0f First login failed — waiting %ds for fresh TOTP window and retrying",
+                        _delay,
+                    )
+                else:
+                    logger.warning(
+                        "\u26a0\ufe0f Login attempt %d/%d failed (broker API may be down) — "
+                        "waiting %ds before retry",
+                        _attempt,
+                        _max_startup_attempts,
+                        _delay,
+                    )
+                time.sleep(_delay)
 
         if not login_ok:
-            logger.critical("\u274c Broker login failed after 2 attempts — aborting startup")
+            logger.critical(
+                "\u274c Broker login failed after %d attempts — aborting startup",
+                _max_startup_attempts,
+            )
             raise RuntimeError("BROKER_LOGIN_FAILED")
 
         # -------------------------------------------------

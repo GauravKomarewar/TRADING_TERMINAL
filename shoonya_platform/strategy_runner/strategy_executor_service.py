@@ -498,6 +498,22 @@ class StrategyExecutorService:
                 persisted_cache = self.state_mgr.load_monitor_snapshot(name)
             except Exception as e:
                 logger.debug("Could not load monitor cache for %s: %s", name, e)
+            # BUG-FIX: Drop legs from previous days when loading monitor cache.
+            # If a strategy was never unregistered (e.g. it hit SL and stayed
+            # registered waiting for EOD) its old closed legs from yesterday
+            # persist in monitor_leg_rows and would mix with today's new run.
+            # Keep only legs opened today (or still ACTIVE from today).
+            today_prefix = datetime.now().date().isoformat()  # "YYYY-MM-DD"
+            if isinstance(persisted_cache, dict):
+                persisted_cache = {
+                    k: v for k, v in persisted_cache.items()
+                    if str(v.get("opened_at", ""))[:10] >= today_prefix
+                }
+                # Also clear stale rows from DB so they don't reload next restart
+                try:
+                    self.state_mgr.save_monitor_snapshot(name, persisted_cache)
+                except Exception as _e:
+                    logger.debug("Could not prune stale monitor rows for %s: %s", name, _e)
             self._monitor_cache[name] = persisted_cache if isinstance(persisted_cache, dict) else {}
             logger.info(f"Registered strategy: {name}")
 
@@ -694,6 +710,10 @@ class StrategyExecutorService:
         # Expire stale CREATED orders from previous days to prevent
         # historical symbols from mixing with today's positions.
         self._expire_stale_orders()
+        # Remove ACTIVE monitor rows from previous days for strategies that are
+        # not currently registered. These are orphan entries left behind when
+        # the service crashed or the strategy was never cleanly unregistered.
+        self._cleanup_stale_monitor_rows()
         self._running = True
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -722,6 +742,44 @@ class StrategyExecutorService:
                 logger.warning("Expired %d stale CREATED strategy orders from previous days", count)
         except Exception as e:
             logger.debug("Could not expire stale orders: %s", e)
+
+    def _cleanup_stale_monitor_rows(self):
+        """Delete ACTIVE monitor_leg_rows from previous days for unregistered strategies.
+
+        Called at service start. Fixes two classes of orphan data:
+        1. Strategies that hit stop-loss and stayed registered without being
+           unregistered — their old CLOSED legs from yesterday mix with today's run.
+        2. Strategies that were unregistered but `clear_monitor_snapshot` was
+           never reached (e.g. crash mid-unregister).
+
+        Only removes rows where opened_at < today so same-day CLOSED legs
+        (legitimate lifecycle records) are preserved.
+        """
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            conn = self.state_mgr._connect()
+            try:
+                # Extract opened_at date from JSON payload.
+                # json.dumps uses ": " (colon + space), so the value starts
+                # at offset +14 after the key: '"opened_at"' (11) + ': "' (3) = 14
+                cursor = conn.execute(
+                    """
+                    DELETE FROM monitor_leg_rows
+                    WHERE substr(payload, instr(payload, '"opened_at"') + 14, 10) < ?
+                    """,
+                    (today,),
+                )
+                count = cursor.rowcount
+                conn.commit()
+                if count > 0:
+                    logger.warning(
+                        "STARTUP_CLEANUP | Deleted %d stale monitor leg rows from previous days",
+                        count,
+                    )
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.debug("Could not clean up stale monitor rows: %s", e)
 
     def _cancel_all_pending_orders(self):
         """Cancel / expire ALL lingering CREATED and SENT_TO_BROKER orders.
@@ -1047,6 +1105,19 @@ class StrategyExecutorService:
                         continue
                     stale = cache.get(k) or {}
                     if str(stale.get("status", "")).upper() != "CLOSED":
+                        cache.pop(k, None)
+
+                # BUG-FIX: Drop CLOSED legs from previous days so they don't appear
+                # as orphan positions on the strategy page. Legs from previous runs
+                # that are CLOSED should only appear in completed_monitor_history,
+                # not in the live strategy view.
+                today_str = datetime.now().date().isoformat()
+                for k in list(cache.keys()):
+                    row_data = cache.get(k) or {}
+                    if str(row_data.get("status", "")).upper() != "CLOSED":
+                        continue
+                    opened = str(row_data.get("opened_at", ""))[:10]
+                    if opened and opened < today_str:
                         cache.pop(k, None)
 
                 legs_payload: List[Dict[str, Any]] = list(cache.values())
@@ -2367,9 +2438,15 @@ class PerStrategyExecutor:
             if is_stop_loss_exit:
                 sl_cfg = self.config.get("exit", {}).get("stop_loss", {})
                 if sl_cfg.get("allow_reentry"):
+                    # allow_reentry=True → stay registered and wait for next entry window
                     self.state.entered_today = False
                 else:
+                    # ✅ ISOLATION FIX: allow_reentry=False → this cycle is permanently done.
+                    # Must set cycle_completed=True so _run_loop triggers clean unregistration.
+                    # Previously missing this caused the strategy to stay registered indefinitely
+                    # after SL exit, accumulating stale monitor rows that mixed into the next run.
                     self.state.entered_today = True
+                    self.cycle_completed = True
             else:
                 self.state.entered_today = True
                 self.cycle_completed = True

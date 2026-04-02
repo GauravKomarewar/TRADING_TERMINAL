@@ -111,6 +111,7 @@ class Config:
         self.totp_key: Optional[str] = self._strip_comment(os.getenv("TOKEN", "")) or None
         self.vendor_code: Optional[str] = self._strip_comment(os.getenv("VC", "")) or None
         self.api_secret: Optional[str] = self._strip_comment(os.getenv("APP_KEY", "")) or None
+        self.oauth_secret: Optional[str] = self._strip_comment(os.getenv("OAUTH_SECRET", "")) or None
         self.imei: str = self._strip_comment(os.getenv("IMEI", "mac"))
 
         # === Fyers Credentials (required when BROKER=fyers) ===
@@ -196,8 +197,8 @@ class Config:
         )
 
         # === API Endpoints ===
-        self.shoonya_host: str = "https://api.shoonya.com/NorenWClientTP/"
-        self.shoonya_websocket: str = "wss://api.shoonya.com/NorenWSTP/"
+        self.shoonya_host: str = "https://trade.shoonya.com/NorenWClientAPI/"
+        self.shoonya_websocket: str = "wss://trade.shoonya.com/NorenWS/"
 
         # ---------------------------------------------------------------
         # === Client Gateway Alias ===

@@ -5,7 +5,7 @@
   "description": "",
   "type": "neutral",
   "enabled": true,
-  "status": "RUNNING",
+  "status": "COMPLETED",
   "identity": {
     "exchange": "NFO",
     "underlying": "BANKNIFTY",
@@ -230,5 +230,5 @@
     "updated_at": "2026-03-26T09:03:04.099964",
     "status_updated_at": "2026-03-26T09:03:04.099964"
   },
-  "status_updated_at": "2026-03-30T09:27:24.419101"
+  "status_updated_at": "2026-04-02T15:15:13.236824"
 }

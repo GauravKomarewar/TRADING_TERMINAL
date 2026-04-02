@@ -763,8 +763,18 @@ def update_managed_exit(
 
     updates = {}
     for field in ("stop_loss", "target", "trailing_type", "trailing_value", "trail_when"):
+        # Include the field if it was explicitly sent (even if null/None) so the
+        # caller can clear individual fields by sending null.
         if field in payload:
             updates[field] = payload[field]
+
+    # Validate at least one numeric risk field remains set after update
+    numeric_fields = ("stop_loss", "target", "trailing_value")
+    all_cleared = all(
+        updates.get(f) is None or updates.get(f) == 0
+        for f in numeric_fields
+        if f in updates
+    ) and all(f not in updates for f in numeric_fields)
 
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")

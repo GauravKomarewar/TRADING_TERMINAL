@@ -76,11 +76,20 @@ export interface ManagedExit {
   side?: string
   quantity?: number
   stop_loss?: number | null
+  base_stop_loss?: number | null
   target?: number | null
   trailing_value?: number | null
-  trailing_type?: string
+  trailing_type?: string | null
   trail_when?: number | null
   trailing_activated?: boolean
+  initial_ltp?: number | null
+  activation_price?: number | null
+  next_trail_price?: number | null
+  highest_price?: number | null
+  lowest_price?: number | null
+  registered_at?: number | null
+  command_id?: string
+  strategy_name?: string
 }
 
 // ── Risk State ──

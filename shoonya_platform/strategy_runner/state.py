@@ -107,11 +107,15 @@ class LegState:
 
     @property
     def pnl(self) -> float:
-        """PnL in absolute currency terms (price_diff * lots * lot_size)."""
+        """PnL in absolute currency terms (price_diff * lots * lot_size).
+        Uses entry_price as effective LTP when ltp is 0 or None (no tick received yet),
+        so pnl returns 0 rather than a spuriously large value.
+        """
+        ltp = self.ltp if (self.ltp is not None and self.ltp != 0.0) else self.entry_price
         if self.side == Side.BUY:
-            return (self.ltp - self.entry_price) * self.order_qty
+            return (ltp - self.entry_price) * self.order_qty
         else:
-            return (self.entry_price - self.ltp) * self.order_qty
+            return (self.entry_price - ltp) * self.order_qty
 
     @property
     def pnl_pct(self) -> float:

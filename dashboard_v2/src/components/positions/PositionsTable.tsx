@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { usePositions, useManagedExitsMap } from '../../hooks'
 import { useUIStore } from '../../stores'
 import { api } from '../../lib/api'
@@ -160,6 +160,16 @@ function PositionRow({ position: p, managed, pmMode }: PositionRowProps) {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // Sync displayed SL/target/trail values when the managed prop updates from backend
+  // (e.g. trailing SL being ratcheted by the bot) — but only when user is not editing.
+  useEffect(() => {
+    if (dirty) return
+    setSl(managed?.stop_loss != null ? String(managed.stop_loss) : '')
+    setTarget(managed?.target != null ? String(managed.target) : '')
+    setTrail(managed?.trailing_value != null ? String(managed.trailing_value) : '')
+    setTrailAt(managed?.trail_when != null ? String(managed.trail_when) : '')
+  }, [managed?.stop_loss, managed?.target, managed?.trailing_value, managed?.trail_when, dirty])
+
   const markDirty = () => setDirty(true)
 
   const handleSave = useCallback(async () => {
@@ -176,11 +186,29 @@ function PositionRow({ position: p, managed, pmMode }: PositionRowProps) {
     const isManaged = !!managed
     const exitSide = qty > 0 ? 'SELL' : 'BUY'
     const body: Record<string, unknown> = { symbol: sym }
-    if (slNum) body.stop_loss = slNum
-    if (tgtNum) body.target = tgtNum
-    if (trailNum) { body.trailing_value = trailNum; body.trailing_type = 'POINTS' }
-    if (twNum) body.trail_when = twNum
-    if (!isManaged) {
+
+    if (isManaged) {
+      // UPDATE: always include product for unambiguous matching.
+      // Explicitly send null for cleared fields so the backend can remove them.
+      body.product = prd
+      body.stop_loss = slNum  // null if cleared
+      body.target = tgtNum    // null if cleared
+      if (trailNum) {
+        body.trailing_value = trailNum
+        body.trailing_type = 'POINTS'
+        body.trail_when = twNum ?? null
+      } else {
+        // User cleared trailing — explicitly remove it
+        body.trailing_value = null
+        body.trailing_type = null
+        body.trail_when = null
+      }
+    } else {
+      // NEW ENABLE: requires full position details
+      if (slNum) body.stop_loss = slNum
+      if (tgtNum) body.target = tgtNum
+      if (trailNum) { body.trailing_value = trailNum; body.trailing_type = 'POINTS' }
+      if (twNum) body.trail_when = twNum
       body.exchange = exch
       body.side = exitSide
       body.quantity = Math.abs(qty)
@@ -206,7 +234,13 @@ function PositionRow({ position: p, managed, pmMode }: PositionRowProps) {
   const handleDisable = useCallback(async () => {
     try {
       await api.disableManagedExit(sym, prd)
-      addToast('success', `Manager disabled for ${sym}`)
+      // Clear all PM state so the row is ready for a fresh Activate
+      setSl('')
+      setTarget('')
+      setTrail('')
+      setTrailAt('')
+      setDirty(false)
+      addToast('success', `Manager disabled for ${sym} — position stays open`)
     } catch (e: unknown) {
       addToast('error', 'Disable failed: ' + (e instanceof Error ? e.message : 'Unknown'))
     }
@@ -326,9 +360,25 @@ function PositionRow({ position: p, managed, pmMode }: PositionRowProps) {
             />
           </td>
           <td className="px-2 py-2 text-center">
-            <span className={cn('badge', managed ? 'badge-safe' : 'badge-neutral')}>
-              {managed ? 'ACTIVE' : 'OFF'}
-            </span>
+            {managed ? (
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="badge badge-safe">ACTIVE</span>
+                {managed.trailing_value != null && (
+                  <span className={cn('text-[9px] font-mono', managed.trailing_activated ? 'text-profit' : 'text-text-muted')}>
+                    {managed.trailing_activated
+                      ? `trail ✓`
+                      : managed.activation_price != null
+                        ? `@${managed.activation_price}`
+                        : 'trail…'}
+                  </span>
+                )}
+                {managed.next_trail_price != null && (
+                  <span className="text-[9px] font-mono text-accent">next:{managed.next_trail_price}</span>
+                )}
+              </div>
+            ) : (
+              <span className="badge badge-neutral">OFF</span>
+            )}
           </td>
           <td className="px-2 py-2 text-center whitespace-nowrap">
             <button
@@ -336,12 +386,12 @@ function PositionRow({ position: p, managed, pmMode }: PositionRowProps) {
               disabled={saving || (!dirty && !!managed)}
               className={cn(
                 'inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-all',
-                dirty
+                dirty || !managed
                   ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
                   : 'bg-bg-elevated text-text-muted border border-border opacity-50'
               )}
             >
-              <Save className="w-3 h-3" />{saving ? '...' : 'Save'}
+              <Save className="w-3 h-3" />{saving ? '...' : managed ? 'Update' : 'Activate'}
             </button>
             {managed && (
               <button

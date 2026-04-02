@@ -470,6 +470,11 @@ class OrderWatcherEngine(threading.Thread):
             if ltp <= 0:
                 continue
 
+            # Skip if we're in a retry backoff window after a failed dispatch
+            if time.time() < state.get("_exit_next_retry", 0):
+                updated_states[cmd_id] = state
+                continue
+
             is_long = net_qty > 0
             sl = state.get("stop_loss")
             target = state.get("target")
@@ -626,8 +631,40 @@ class OrderWatcherEngine(threading.Thread):
                     "MANAGED_EXIT_TRIGGERED | cmd_id=%s | %s | %s | net_qty=%d",
                     cmd_id, symbol, trigger_reason, net_qty,
                 )
-                self._execute_managed_exit(record, abs(net_qty))
-                to_remove.append(cmd_id)
+                dispatched_ok = self._execute_managed_exit(record, abs(net_qty))
+                if dispatched_ok:
+                    to_remove.append(cmd_id)
+                else:
+                    # Dispatch failed (e.g. broker unavailable / market closed).
+                    # Keep the record alive but apply exponential backoff so we
+                    # don't hammer the broker every 6 seconds indefinitely.
+                    fail_count = state.get("_dispatch_failures", 0) + 1
+                    state["_dispatch_failures"] = fail_count
+                    max_failures = 5
+                    if fail_count >= max_failures:
+                        # Give up — mark DB record FAILED so it won't be
+                        # reloaded by _dispatch_pending_exits on next cycle.
+                        try:
+                            self.repo.update_status(record.command_id, "FAILED")
+                            self.repo.update_tag(record.command_id, "BROKER_UNAVAILABLE_GAVE_UP")
+                        except Exception:
+                            pass
+                        to_remove.append(cmd_id)
+                        logger.error(
+                            "MANAGED_EXIT_GAVE_UP | cmd_id=%s | %s | after %d failures — "
+                            "deactivating managed exit, position still open, manual action required",
+                            cmd_id, symbol, fail_count,
+                        )
+                    else:
+                        # Exponential backoff: 30s, 60s, 120s, 240s before next trigger
+                        delay = min(30 * (2 ** (fail_count - 1)), 240)
+                        state["_exit_next_retry"] = time.time() + delay
+                        updated_states[cmd_id] = state
+                        logger.warning(
+                            "MANAGED_EXIT_RETRY_SCHEDULED | cmd_id=%s | %s | "
+                            "fail=%d/%d | retry_in=%ds",
+                            cmd_id, symbol, fail_count, max_failures - 1, delay,
+                        )
             else:
                 # Track locally-modified states to merge back
                 updated_states[cmd_id] = state
@@ -644,11 +681,13 @@ class OrderWatcherEngine(threading.Thread):
                     orig["base_stop_loss"] = local_state.get("base_stop_loss")
                     orig["initial_ltp"] = local_state.get("initial_ltp")
                     orig["activation_price"] = local_state.get("activation_price")
+                    orig["_dispatch_failures"] = local_state.get("_dispatch_failures", 0)
+                    orig["_exit_next_retry"] = local_state.get("_exit_next_retry", 0)
             for cmd_id in to_remove:
                 self._managed_exits.pop(cmd_id, None)
 
-    def _execute_managed_exit(self, record: OrderRecord, broker_qty: int):
-        """Execute a managed exit by placing a MARKET order."""
+    def _execute_managed_exit(self, record: OrderRecord, broker_qty: int) -> bool:
+        """Execute a managed exit by placing a MARKET order. Returns True on success, False on failure."""
         try:
             from uuid import uuid4
             exit_cmd_id = f"EXIT_MANAGED_{record.symbol}_{int(time.time() * 1000)}_{uuid4().hex[:8]}"
@@ -694,17 +733,20 @@ class OrderWatcherEngine(threading.Thread):
                 # Only mark original record after successful dispatch
                 self.repo.update_status(record.command_id, "FAILED")
                 self.repo.update_tag(record.command_id, "MANAGED_EXIT_TRIGGERED")
+                return True
             else:
                 err = getattr(result, "error_message", "unknown") if result else "no result"
                 logger.error(
-                    "MANAGED_EXIT_DISPATCH_FAILED | cmd_id=%s | %s | error=%s — original record left active",
+                    "MANAGED_EXIT_DISPATCH_FAILED | cmd_id=%s | %s | error=%s",
                     exit_cmd_id, record.symbol, err,
                 )
+                return False
         except Exception:
             logger.exception(
-                "MANAGED_EXIT_EXCEPTION | cmd_id=%s | %s — original record left active",
+                "MANAGED_EXIT_EXCEPTION | cmd_id=%s | %s",
                 record.command_id, record.symbol,
             )
+            return False
 
     # --------------------------------------------------
     # ExecutionGuard reconciliation (BROKER-DRIVEN ONLY)

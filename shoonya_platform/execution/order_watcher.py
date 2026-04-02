@@ -38,7 +38,7 @@ Invariants:
 import time
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, time as dtime
 from typing import Dict, Optional, List
 
 from shoonya_platform.logging.logger_config import get_component_logger
@@ -475,6 +475,13 @@ class OrderWatcherEngine(threading.Thread):
                 updated_states[cmd_id] = state
                 continue
 
+            # Skip if the exchange/segment is currently closed
+            # (e.g. MCX AGRI closes at 17:00; dispatching after close always
+            # returns an empty broker response)
+            if not self._is_exchange_open(record.exchange, record.symbol):
+                updated_states[cmd_id] = state
+                continue
+
             is_long = net_qty > 0
             sl = state.get("stop_loss")
             target = state.get("target")
@@ -685,6 +692,54 @@ class OrderWatcherEngine(threading.Thread):
                     orig["_exit_next_retry"] = local_state.get("_exit_next_retry", 0)
             for cmd_id in to_remove:
                 self._managed_exits.pop(cmd_id, None)
+
+    # --------------------------------------------------
+    # Exchange market hours helper
+    # --------------------------------------------------
+    _MCX_AGRI_SYMBOLS = frozenset({
+        "GOLDPETAL", "SILVERMIC", "CASTORSEED", "CARDAMOM",
+        "MENTHAOIL", "COTTON", "KAPAS", "CORIANDER", "JEERASEED",
+    })
+    # MCX segment hours (IST, server local time)
+    _EXCHANGE_HOURS: Dict[str, tuple] = {
+        # exchange : (open_time, close_time)
+        # MCX metals/energy: 09:00 – 23:30
+        "MCX": (dtime(9, 0), dtime(23, 30)),
+        # MCX AGRI: 09:00 – 17:00
+        "MCX_AGRI": (dtime(9, 0), dtime(17, 0)),
+        # NSE/BSE equity & derivatives
+        "NFO": (dtime(9, 15), dtime(15, 30)),
+        "BFO": (dtime(9, 15), dtime(15, 30)),
+        "NSE": (dtime(9, 15), dtime(15, 30)),
+        "BSE": (dtime(9, 15), dtime(15, 30)),
+    }
+
+    def _is_exchange_open(self, exchange: str, symbol: str) -> bool:
+        """Return True if the exchange segment is currently within trading hours."""
+        try:
+            exch = (exchange or "").upper()
+            # Detect MCX AGRI by checking symbol prefix against known AGRI commodity roots
+            if exch == "MCX":
+                sym_root = (symbol or "").upper()
+                for agri in self._MCX_AGRI_SYMBOLS:
+                    if sym_root.startswith(agri):
+                        exch = "MCX_AGRI"
+                        break
+            hours = self._EXCHANGE_HOURS.get(exch)
+            if not hours:
+                return True  # Unknown exchange — don't block
+            now = dtime(datetime.now().hour, datetime.now().minute, datetime.now().second)
+            open_t, close_t = hours
+            if open_t <= now <= close_t:
+                return True
+            logger.info(
+                "MANAGED_EXIT_DEFERRED | %s %s | exchange=%s closed (%s–%s) | will retry when market opens",
+                exchange, symbol, exch,
+                open_t.strftime("%H:%M"), close_t.strftime("%H:%M"),
+            )
+            return False
+        except Exception:
+            return True  # Fail open — don't block exits
 
     def _execute_managed_exit(self, record: OrderRecord, broker_qty: int) -> bool:
         """Execute a managed exit by placing a MARKET order. Returns True on success, False on failure."""

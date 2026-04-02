@@ -1049,6 +1049,8 @@
     var _pmForceRebuild = false;
     // Track which inputs user is actively editing (field → key)
     var _pmFocusedField = null; // { key, field }
+    // Persistent store of user's in-progress PM edits — survives PM toggle and auto-refresh rebuilds
+    var _pmPendingEdits = {}; // { [sym|prd]: { stop_loss: "21000", target: "22000", ... } }
 
     function _updatePosTableHeaders() {
         var thead = document.querySelector('#posTable thead tr');
@@ -1074,17 +1076,32 @@
         var me = _managedExitsMap[key];
         var isManaged = !!me;
         var exitSide = qty > 0 ? 'SELL' : 'BUY';
+        var pending = _pmPendingEdits[key] || {}; // user's in-progress edits
 
         if (isFlat) {
             return '<td colspan="8" style="text-align:center;color:var(--muted);font-size:11px">—</td>';
         }
 
-        var slVal = isManaged && me.stop_loss != null ? me.stop_loss : '';
-        var tgtVal = isManaged && me.target != null ? me.target : '';
-        var trailVal = isManaged && me.trailing_value != null ? me.trailing_value : '';
-        var twVal = isManaged && me.trail_when != null ? me.trail_when : '';
+        // Preference: pending user edit > managed backend value > empty
+        var slVal   = pending.stop_loss      != null ? pending.stop_loss      : (isManaged && me.stop_loss      != null ? me.stop_loss      : '');
+        var tgtVal  = pending.target         != null ? pending.target         : (isManaged && me.target         != null ? me.target         : '');
+        var trailVal= pending.trailing_value != null ? pending.trailing_value : (isManaged && me.trailing_value != null ? me.trailing_value : '');
+        var twVal   = pending.trail_when     != null ? pending.trail_when     : (isManaged && me.trail_when     != null ? me.trail_when     : '');
         var startLtpVal = isManaged && me.initial_ltp != null ? me.initial_ltp : '';
-        var actVal = isManaged && me.next_trail_price != null ? me.next_trail_price : '';
+        var actVal      = isManaged && me.next_trail_price != null ? me.next_trail_price : '';
+
+        // If user has a pending edit for this field, mark the input as 'editing'
+        // so that _pmLiveUpdate won't overwrite it and the Save button shows dirty
+        var slClass    = pending.stop_loss      != null ? ' editing' : '';
+        var tgtClass   = pending.target         != null ? ' editing' : '';
+        var trailClass = pending.trailing_value != null ? ' editing' : '';
+        var twClass    = pending.trail_when     != null ? ' editing' : '';
+
+        // data-live holds the backend value (used to detect when user reverts to it)
+        var slLive    = isManaged && me.stop_loss      != null ? me.stop_loss      : '';
+        var tgtLive   = isManaged && me.target         != null ? me.target         : '';
+        var trailLive = isManaged && me.trailing_value != null ? me.trailing_value : '';
+        var twLive    = isManaged && me.trail_when     != null ? me.trail_when     : '';
 
         var statusHtml = isManaged
             ? '<span class="pm-status-pill active">ACTIVE</span>'
@@ -1094,12 +1111,12 @@
         var btns = '<button class="pm-btn-inline save" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" data-qty="' + Math.abs(qty) + '" data-side="' + exitSide + '">' + saveLabel + '</button>';
         if (isManaged) btns += ' <button class="pm-btn-inline remove" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '">Deactivate</button>';
 
-        return '<td class="pm-live-cell"><input type="number" step="any" data-field="stop_loss" data-live="' + slVal + '" value="' + slVal + '" placeholder="—"></td>'
-             + '<td class="pm-live-cell"><input type="number" step="any" data-field="target" data-live="' + tgtVal + '" value="' + tgtVal + '" placeholder="—"></td>'
-             + '<td class="pm-live-cell"><input type="number" step="any" data-field="trailing_value" data-live="' + trailVal + '" value="' + trailVal + '" placeholder="—"></td>'
-             + '<td class="pm-live-cell"><input type="number" step="any" data-field="trail_when" data-live="' + twVal + '" value="' + twVal + '" placeholder="—"></td>'
-               + '<td class="pm-meta-cell" data-pm="initial-ltp">' + (startLtpVal !== '' ? fmt(startLtpVal) : '—') + '</td>'
-                             + '<td class="pm-meta-cell" data-pm="next-trail-price">' + (actVal !== '' ? fmt(actVal) : '—') + '</td>'
+        return '<td class="pm-live-cell"><input type="number" step="any"' + slClass    + ' data-field="stop_loss"      data-live="' + slLive    + '" value="' + slVal    + '" placeholder="—"></td>'
+             + '<td class="pm-live-cell"><input type="number" step="any"' + tgtClass   + ' data-field="target"          data-live="' + tgtLive   + '" value="' + tgtVal   + '" placeholder="—"></td>'
+             + '<td class="pm-live-cell"><input type="number" step="any"' + trailClass + ' data-field="trailing_value"  data-live="' + trailLive + '" value="' + trailVal + '" placeholder="—"></td>'
+             + '<td class="pm-live-cell"><input type="number" step="any"' + twClass    + ' data-field="trail_when"      data-live="' + twLive    + '" value="' + twVal    + '" placeholder="—"></td>'
+             + '<td class="pm-meta-cell" data-pm="initial-ltp">' + (startLtpVal !== '' ? fmt(startLtpVal) : '—') + '</td>'
+             + '<td class="pm-meta-cell" data-pm="next-trail-price">' + (actVal !== '' ? fmt(actVal) : '—') + '</td>'
              + '<td>' + statusHtml + '</td>'
              + '<td style="white-space:nowrap">' + btns + '</td>';
     }
@@ -1262,7 +1279,21 @@
         _pmForceRebuild = false;
 
         if (rebuild) {
-            var savedEdits = posManagerMode ? _pmSaveEditing(tbody) : {};
+            // Flush any live edits from DOM inputs into _pmPendingEdits BEFORE wiping innerHTML
+            // so values typed by the user survive any rebuild (including PM toggle off→on)
+            if (posManagerMode) {
+                tbody.querySelectorAll('tr[data-key]').forEach(function(row) {
+                    var k = row.dataset.key;
+                    row.querySelectorAll('.pm-live-cell input').forEach(function(inp) {
+                        var v = inp.value.trim();
+                        var live = inp.dataset.live || '';
+                        if (v !== '' && v !== String(live)) {
+                            if (!_pmPendingEdits[k]) _pmPendingEdits[k] = {};
+                            _pmPendingEdits[k][inp.dataset.field] = v;
+                        }
+                    });
+                });
+            }
 
             tbody.innerHTML = positions.map(function(p) {
                 var net = parseFloat(p.rpnl || 0) + parseFloat(p.urmtom || 0);
@@ -1276,11 +1307,12 @@
                 var qtyColor = isFlat ? 'var(--muted)' : (side==='LONG'?'var(--success)':'var(--danger)');
                 var actionHtml = isFlat
                     ? '<span style="font-size:11px;color:var(--muted)">CLOSED</span>'
-                                        : '<button class="btn-exit btn-exit-pos" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '" title="Exit ' + encodeAttr(sym) + '">EXIT</button>';
+                    : '<button class="btn-exit btn-exit-pos" data-sym="' + encodeAttr(sym) + '" data-prd="' + encodeAttr(prd) + '" title="Exit ' + encodeAttr(sym) + '">EXIT</button>';
                 var key = sym + '|' + prd;
+                var rowLtp = parseFloat(p._ltp || p.lp || p.ltp || 0);
                 var pmCells = posManagerMode ? _pmCellsHtml(p) : '';
 
-                return '<tr data-key="' + key + '" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" style="' + rowStyle + '">'
+                return '<tr data-key="' + key + '" data-ltp="' + rowLtp + '" data-sym="' + encodeAttr(sym) + '" data-exch="' + encodeAttr(exch) + '" data-prd="' + encodeAttr(prd) + '" style="' + rowStyle + '">'
                     + '<td style="font-weight:700">' + (sym || '-') + '</td>'
                     + '<td data-f="ltp">' + fmt(p._ltp || p.lp || p.ltp || 0) + '</td>'
                     + '<td class="pm-hide" data-f="net" style="color:' + pnlColor(net) + ';font-weight:700">' + fmt(net) + '</td>'
@@ -1295,8 +1327,11 @@
                     + '</tr>';
             }).join('');
 
-            if (posManagerMode && Object.keys(savedEdits).length > 0) {
-                _pmRestoreEditing(tbody, savedEdits);
+            // After rebuild, update dirty-state buttons for rows that have pending edits
+            if (posManagerMode) {
+                tbody.querySelectorAll('tr[data-key]').forEach(function(row) {
+                    _pmUpdateDirtyState(row);
+                });
             }
         } else {
             positions.forEach(function(p) {
@@ -1338,23 +1373,40 @@
         _pmFocusedField = null;
         // If user blanked it or returned to live value, remove editing state
         var liveVal = inp.dataset.live || '';
+        var row = inp.closest('tr[data-key]');
+        var key = row ? row.dataset.key : null;
         if (inp.value === liveVal || inp.value.trim() === '') {
             inp.classList.remove('editing');
             if (liveVal) inp.value = liveVal;
+            // Clear from pending edits so the backend value shows on next render
+            if (key && _pmPendingEdits[key]) {
+                delete _pmPendingEdits[key][inp.dataset.field];
+                if (!Object.keys(_pmPendingEdits[key]).length) delete _pmPendingEdits[key];
+            }
         }
-        var row = inp.closest('tr[data-key]');
         if (row) _pmUpdateDirtyState(row);
     });
     document.getElementById('positionRows').addEventListener('input', function(e) {
         var inp = e.target.closest('.pm-live-cell input');
         if (!inp) return;
+        var row = inp.closest('tr[data-key]');
+        var key = row ? row.dataset.key : null;
         var liveVal = inp.dataset.live || '';
-        if (inp.value !== liveVal && inp.value.trim() !== '') {
+        var v = inp.value.trim();
+        if (v !== '' && v !== String(liveVal)) {
             inp.classList.add('editing');
+            // Persist to _pmPendingEdits so the value survives any table rebuild
+            if (key) {
+                if (!_pmPendingEdits[key]) _pmPendingEdits[key] = {};
+                _pmPendingEdits[key][inp.dataset.field] = v;
+            }
         } else {
             inp.classList.remove('editing');
+            if (key && _pmPendingEdits[key]) {
+                delete _pmPendingEdits[key][inp.dataset.field];
+                if (!Object.keys(_pmPendingEdits[key]).length) delete _pmPendingEdits[key];
+            }
         }
-        var row = inp.closest('tr[data-key]');
         if (row) _pmUpdateDirtyState(row);
     });
 
@@ -1384,6 +1436,32 @@
         if (!sl && !tgt && !trail) {
             showError('Set at least one of SL, Target, or Trail');
             return;
+        }
+
+        // Validate that SL / Target aren't already breached at current LTP
+        // (if they are, the monitor will fire an exit the instant Activate completes)
+        var ltp = parseFloat(row.dataset.ltp || 0);
+        var isLong = (side === 'SELL'); // EXIT side SELL = closing a LONG position
+        if (ltp > 0) {
+            if (isLong) {
+                if (sl != null && sl >= ltp) {
+                    showError('SL (' + sl + ') must be BELOW current LTP (' + ltp + ') for a LONG — exit would fire immediately.');
+                    return;
+                }
+                if (tgt != null && tgt <= ltp) {
+                    showError('Target (' + tgt + ') must be ABOVE current LTP (' + ltp + ') for a LONG — exit would fire immediately.');
+                    return;
+                }
+            } else {
+                if (sl != null && sl <= ltp) {
+                    showError('SL (' + sl + ') must be ABOVE current LTP (' + ltp + ') for a SHORT — exit would fire immediately.');
+                    return;
+                }
+                if (tgt != null && tgt >= ltp) {
+                    showError('Target (' + tgt + ') must be BELOW current LTP (' + ltp + ') for a SHORT — exit would fire immediately.');
+                    return;
+                }
+            }
         }
 
         var isManaged = !!_managedExitsMap[key];
@@ -1437,6 +1515,8 @@
                 inp.classList.remove('editing');
                 inp.dataset.live = inp.value;
             });
+            // Clear pending edits — backend is now the source of truth
+            delete _pmPendingEdits[key];
             _pmUpdateDirtyState(row);
             setTimeout(function() { updateDashboard(false); }, 500);
         } catch (err) {
@@ -1461,6 +1541,8 @@
             var data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Failed');
             showSuccess('Manager disabled for ' + sym);
+            // Clear pending edits for this position
+            delete _pmPendingEdits[sym + '|' + (prd || '')];
             setTimeout(function() { updateDashboard(false); }, 500);
         } catch (err) {
             showError('Disable failed: ' + err.message);
